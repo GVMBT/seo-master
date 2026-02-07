@@ -1,0 +1,403 @@
+2026-02-05 11:37:27,583 - ERROR - Infinity polling: polling exited
+2026-02-05 11:37:27,583 - ERROR - Break infinity polling
+2026-02-05 11:45:59,914 - ERROR - Infinity polling: polling exited
+2026-02-05 11:45:59,914 - ERROR - Break infinity polling
+2026-02-05 12:00:01,357 - ERROR - ❌ VK: VK подключение 9241460 не найдено
+2026-02-05 12:00:01,357 - ERROR - ❌ [vk] Публикация не удалась: VK подключение 9241460 не найдено
+2026-02-05 12:00:01,357 - ERROR - ❌ Pinterest: Категория 1 не найдена
+2026-02-05 12:00:01,357 - ERROR - ❌ [pinterest] Публикация не удалась: Категория 1 не найдена
+2026-02-05 12:03:12,783 - ERROR - Infinity polling: polling exited
+2026-02-05 12:03:12,783 - ERROR - Break infinity polling
+2026-02-05 12:08:03,835 - ERROR - Infinity polling: polling exited
+2026-02-05 12:08:03,835 - ERROR - Break infinity polling
+2026-02-05 12:26:05,343 - ERROR - Infinity polling: polling exited
+2026-02-05 12:26:05,344 - ERROR - Break infinity polling
+2026-02-05 13:00:00,510 - ERROR - ❌ VK: 'NoneType' object has no attribute 'get'
+2026-02-05 13:00:00,510 - ERROR - ❌ Pinterest: Категория 1 не найдена
+2026-02-05 13:00:00,510 - ERROR - ❌ [vk] Публикация не удалась: 'NoneType' object has no attribute 'get'
+2026-02-05 13:00:00,510 - ERROR - ❌ [pinterest] Публикация не удалась: Категория 1 не найдена
+2026-02-05 13:35:51,610 - ERROR - Infinity polling: polling exited
+2026-02-05 13:35:51,611 - ERROR - Break infinity polling
+2026-02-05 14:00:01,751 - ERROR - ❌ Pinterest: 'TextRules' object has no attribute 'SYSTEM_PROMPT'
+2026-02-05 14:00:01,754 - ERROR - ❌ [pinterest] Публикация не удалась: 'TextRules' object has no attribute 'SYSTEM_PROMPT'
+2026-02-05 14:07:55,503 - ERROR - Infinity polling: polling exited
+2026-02-05 14:07:55,504 - ERROR - Break infinity polling
+2026-02-05 14:33:07,054 - ERROR - Infinity polling: polling exited
+2026-02-05 14:33:07,054 - ERROR - Break infinity polling
+2026-02-05 15:00:06,329 - ERROR - ❌ Pinterest: Ошибка генерации: Ошибка генерации текста: 'TextRules' object has no attribute 'validate_text'
+2026-02-05 15:00:06,330 - ERROR - ❌ [pinterest] Публикация не удалась: Ошибка генерации: Ошибка генерации текста: 'TextRules' object has no attribute 'validate_text'
+2026-02-05 15:51:56,914 - ERROR - Infinity polling: polling exited
+2026-02-05 15:51:56,914 - ERROR - Break infinity polling
+2026-02-05 16:36:30,289 - ERROR - Infinity polling: polling exited
+2026-02-05 16:36:30,289 - ERROR - Break infinity polling
+2026-02-05 16:59:19,411 - ERROR - Infinity polling: polling exited
+2026-02-05 16:59:19,411 - ERROR - Break infinity polling
+2026-02-05 17:41:44,934 - ERROR - Infinity polling: polling exited
+2026-02-05 17:41:44,935 - ERROR - Break infinity polling
+2026-02-05 18:12:54,564 - ERROR - Infinity polling: polling exited
+2026-02-05 18:12:54,564 - ERROR - Break infinity polling
+2026-02-05 18:34:16,155 - ERROR - Infinity polling exception: name 'total_cost' is not defined
+2026-02-05 18:34:16,158 - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\website\article_generation.py", line 929, in handle_website_article_generate
+    article_result = generate_website_article(
+        keyword=article_keyword,
+    ...<22 lines>...
+        image_collage_percent=platform_image_settings.get('collage_percent', 0)
+    )
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\ai\article\generator.py", line 95, in generate_website_article
+    user_prompt = build_article_prompt(
+        keyword=keyword,
+    ...<21 lines>...
+        image_collage_percent=image_collage_percent
+    )
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\ai\website_article_prompt_v4.py", line 582, in build_article_prompt
+    - {image_collage_percent}% изображений должны быть коллажами (несколько фото в одном)''' if (image_text_percent > 0 or image_collage_percent > 0) else ''}
+                                                                                                 ^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '>' not supported between instances of 'str' and 'int'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1110, in infinity_polling
+    self.polling(non_stop=True, timeout=timeout, long_polling_timeout=long_polling_timeout,
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 logger_level=logger_level, allowed_updates=allowed_updates, restart_on_change=False,
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 *args, **kwargs)
+                 ^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1198, in polling
+    self.__threaded_polling(non_stop=non_stop, interval=interval, timeout=timeout, long_polling_timeout=long_polling_timeout,
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                            logger_level=logger_level, allowed_updates=allowed_updates)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1273, in __threaded_polling
+    raise e
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1235, in __threaded_polling
+    self.worker_pool.raise_exceptions()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 154, in raise_exceptions
+    raise self.exception_info
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 10134, in _run_middlewares_and_handler
+    result = handler['function'](message)
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\platform_category\main_menu.py", line 876, in handle_ai_post_confirm
+    handle_platform_ai_post_website(call)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\website\article_generation.py", line 270, in handle_platform_ai_post_website
+    handle_website_article_generate(call)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\website\article_generation.py", line 989, in handle_website_article_generate
+    db.update_tokens(user_id, total_cost)
+                              ^^^^^^^^^^
+NameError: name 'total_cost' is not defined
+
+2026-02-05 18:36:25,548 - ERROR - Infinity polling: polling exited
+2026-02-05 18:36:25,548 - ERROR - Break infinity polling
+2026-02-05 19:03:12,069 - ERROR - Infinity polling: polling exited
+2026-02-05 19:03:12,070 - ERROR - Break infinity polling
+2026-02-05 19:15:43,618 - ERROR - Infinity polling: polling exited
+2026-02-05 19:15:43,618 - ERROR - Break infinity polling
+2026-02-05 19:29:15,799 - ERROR - Infinity polling: polling exited
+2026-02-05 19:29:15,799 - ERROR - Break infinity polling
+2026-02-05 20:24:57,735 - ERROR - Infinity polling: polling exited
+2026-02-05 20:24:57,736 - ERROR - Break infinity polling
+2026-02-05 20:43:14,629 - ERROR - Infinity polling: polling exited
+2026-02-05 20:43:14,629 - ERROR - Break infinity polling
+2026-02-05 21:04:28,332 - ERROR - Infinity polling: polling exited
+2026-02-05 21:04:28,332 - ERROR - Break infinity polling
+2026-02-05 21:05:08,901 - ERROR - ❌ Pinterest: Ошибка генерации: Ошибка генерации текста: 'TextRules' object has no attribute 'validate_text'
+2026-02-05 21:32:23,626 - ERROR - Infinity polling: polling exited
+2026-02-05 21:32:23,627 - ERROR - Break infinity polling
+2026-02-05 22:12:54,115 - ERROR - Infinity polling: polling exited
+2026-02-05 22:12:54,115 - ERROR - Break infinity polling
+2026-02-06 11:59:42,341 - ERROR - Ошибка загрузки модулей: cannot import name 'connections' from 'handlers' (C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\__init__.py)
+Traceback (most recent call last):
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\main.py", line 71, in <module>
+    from handlers import (start, projects, bot_creation, bot_card, profile,
+    ...<5 lines>...
+                         notification_scheduler)
+ImportError: cannot import name 'connections' from 'handlers' (C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\__init__.py)
+2026-02-06 12:02:49,998 - ERROR - ❌ Pinterest: Ошибка генерации: Ошибка генерации текста: 'TextRules' object has no attribute 'validate_text'
+2026-02-06 12:04:13,418 - ERROR - Infinity polling: polling exited
+2026-02-06 12:04:13,418 - ERROR - Break infinity polling
+2026-02-06 12:05:25,146 - ERROR - Ошибка логирования публикации: column "user_id" of relation "publication_logs" does not exist
+LINE 3:                     user_id, bot_id, category_id, platform_t...
+                            ^
+
+2026-02-06 12:08:00,377 - ERROR - Ошибка логирования публикации: column "user_id" of relation "publication_logs" does not exist
+LINE 3:                     user_id, bot_id, category_id, platform_t...
+                            ^
+
+2026-02-06 12:09:13,346 - ERROR - Ошибка логирования публикации: column "user_id" of relation "publication_logs" does not exist
+LINE 3:                     user_id, bot_id, category_id, platform_t...
+                            ^
+
+2026-02-06 12:10:40,656 - ERROR - Ошибка логирования публикации: column "user_id" of relation "publication_logs" does not exist
+LINE 3:                     user_id, bot_id, category_id, platform_t...
+                            ^
+
+2026-02-06 13:00:01,135 - ERROR - ❌ VK: VK подключение -53628858 не найдено
+2026-02-06 13:00:01,135 - ERROR - ❌ Pinterest: Категория 1 не найдена
+2026-02-06 13:00:01,135 - ERROR - ❌ [vk] Публикация не удалась: VK подключение -53628858 не найдено
+2026-02-06 13:00:01,135 - ERROR - ❌ [pinterest] Публикация не удалась: Категория 1 не найдена
+2026-02-06 16:47:19,587 - ERROR - Infinity polling: polling exited
+2026-02-06 16:47:19,587 - ERROR - Break infinity polling
+2026-02-06 17:18:48,970 - ERROR - Infinity polling: polling exited
+2026-02-06 17:18:48,970 - ERROR - Break infinity polling
+2026-02-06 17:22:50,154 - ERROR - Infinity polling: polling exited
+2026-02-06 17:22:50,154 - ERROR - Break infinity polling
+2026-02-06 17:40:23,481 - ERROR - Infinity polling: polling exited
+2026-02-06 17:40:23,481 - ERROR - Break infinity polling
+2026-02-06 17:46:40,657 - ERROR - Infinity polling exception: cannot access local variable 'total_cost' where it is not associated with a value
+2026-02-06 17:46:40,660 - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\website\article_generation.py", line 1279, in handle_website_article_generate
+    raise Exception(article_result.get('error', 'Ошибка генерации статьи'))
+Exception: Ошибка Claude AI: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purcha
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1110, in infinity_polling
+    self.polling(non_stop=True, timeout=timeout, long_polling_timeout=long_polling_timeout,
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 logger_level=logger_level, allowed_updates=allowed_updates, restart_on_change=False,
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 *args, **kwargs)
+                 ^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1198, in polling
+    self.__threaded_polling(non_stop=non_stop, interval=interval, timeout=timeout, long_polling_timeout=long_polling_timeout,
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                            logger_level=logger_level, allowed_updates=allowed_updates)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1273, in __threaded_polling
+    raise e
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1235, in __threaded_polling
+    self.worker_pool.raise_exceptions()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 154, in raise_exceptions
+    raise self.exception_info
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 10134, in _run_middlewares_and_handler
+    result = handler['function'](message)
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\platform_category\main_menu.py", line 866, in handle_ai_post_confirm
+    handle_platform_ai_post_website(call)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\website\article_generation.py", line 270, in handle_platform_ai_post_website
+    handle_website_article_generate(call)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\website\article_generation.py", line 1471, in handle_website_article_generate
+    db.update_tokens(user_id, total_cost)
+                              ^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'total_cost' where it is not associated with a value
+
+2026-02-07 01:39:17,455 - ERROR - Threaded polling exception: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+2026-02-07 01:39:17,456 - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1234, in __threaded_polling
+    polling_thread.raise_exceptions()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 115, in raise_exceptions
+    raise self.exception_info
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 688, in __retrieve_updates
+    updates = self.get_updates(offset=(self.last_update_id + 1),
+                               allowed_updates=allowed_updates,
+                               timeout=timeout, long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 660, in get_updates
+    json_updates = apihelper.get_updates(
+        self.token, offset=offset, limit=limit, timeout=timeout, allowed_updates=allowed_updates,
+        long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 339, in get_updates
+    return _make_request(token, method_url, params=payload)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 168, in _make_request
+    json_result = _check_result(method_name, result)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 197, in _check_result
+    raise ApiTelegramException(method_name, result, result_json)
+telebot.apihelper.ApiTelegramException: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+
+2026-02-07 01:39:17,945 - ERROR - Threaded polling exception: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+2026-02-07 01:39:17,946 - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1234, in __threaded_polling
+    polling_thread.raise_exceptions()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 115, in raise_exceptions
+    raise self.exception_info
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 688, in __retrieve_updates
+    updates = self.get_updates(offset=(self.last_update_id + 1),
+                               allowed_updates=allowed_updates,
+                               timeout=timeout, long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 660, in get_updates
+    json_updates = apihelper.get_updates(
+        self.token, offset=offset, limit=limit, timeout=timeout, allowed_updates=allowed_updates,
+        long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 339, in get_updates
+    return _make_request(token, method_url, params=payload)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 168, in _make_request
+    json_result = _check_result(method_name, result)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 197, in _check_result
+    raise ApiTelegramException(method_name, result, result_json)
+telebot.apihelper.ApiTelegramException: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+
+2026-02-07 01:39:18,683 - ERROR - Threaded polling exception: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+2026-02-07 01:39:18,684 - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1234, in __threaded_polling
+    polling_thread.raise_exceptions()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 115, in raise_exceptions
+    raise self.exception_info
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 688, in __retrieve_updates
+    updates = self.get_updates(offset=(self.last_update_id + 1),
+                               allowed_updates=allowed_updates,
+                               timeout=timeout, long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 660, in get_updates
+    json_updates = apihelper.get_updates(
+        self.token, offset=offset, limit=limit, timeout=timeout, allowed_updates=allowed_updates,
+        long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 339, in get_updates
+    return _make_request(token, method_url, params=payload)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 168, in _make_request
+    json_result = _check_result(method_name, result)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 197, in _check_result
+    raise ApiTelegramException(method_name, result, result_json)
+telebot.apihelper.ApiTelegramException: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+
+2026-02-07 01:39:19,925 - ERROR - Threaded polling exception: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+2026-02-07 01:39:19,926 - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1234, in __threaded_polling
+    polling_thread.raise_exceptions()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 115, in raise_exceptions
+    raise self.exception_info
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 688, in __retrieve_updates
+    updates = self.get_updates(offset=(self.last_update_id + 1),
+                               allowed_updates=allowed_updates,
+                               timeout=timeout, long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 660, in get_updates
+    json_updates = apihelper.get_updates(
+        self.token, offset=offset, limit=limit, timeout=timeout, allowed_updates=allowed_updates,
+        long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 339, in get_updates
+    return _make_request(token, method_url, params=payload)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 168, in _make_request
+    json_result = _check_result(method_name, result)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 197, in _check_result
+    raise ApiTelegramException(method_name, result, result_json)
+telebot.apihelper.ApiTelegramException: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+
+2026-02-07 01:39:22,166 - ERROR - Threaded polling exception: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+2026-02-07 01:39:22,167 - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1234, in __threaded_polling
+    polling_thread.raise_exceptions()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 115, in raise_exceptions
+    raise self.exception_info
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 688, in __retrieve_updates
+    updates = self.get_updates(offset=(self.last_update_id + 1),
+                               allowed_updates=allowed_updates,
+                               timeout=timeout, long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 660, in get_updates
+    json_updates = apihelper.get_updates(
+        self.token, offset=offset, limit=limit, timeout=timeout, allowed_updates=allowed_updates,
+        long_polling_timeout=long_polling_timeout)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 339, in get_updates
+    return _make_request(token, method_url, params=payload)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 168, in _make_request
+    json_result = _check_result(method_name, result)
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\apihelper.py", line 197, in _check_result
+    raise ApiTelegramException(method_name, result, result_json)
+telebot.apihelper.ApiTelegramException: A request to the Telegram API was unsuccessful. Error code: 502. Description: Bad Gateway
+
+2026-02-07 09:00:02,050 - ERROR - ❌ Ошибка проверки уведомлений: column "created_at" does not exist
+LINE 2:             SELECT id, created_at, username
+                               ^
+
+2026-02-07 09:02:02,214 - ERROR - Ошибка получения расписания из БД: current transaction is aborted, commands ignored until end of transaction block
+
+2026-02-07 10:00:02,579 - ERROR - ❌ Ошибка проверки уведомлений: column "created_at" does not exist
+LINE 2:             SELECT id, created_at, username
+                               ^
+
+2026-02-07 10:02:02,756 - ERROR - Ошибка получения расписания из БД: current transaction is aborted, commands ignored until end of transaction block
+
+2026-02-07 11:00:02,719 - ERROR - ❌ Telegram: Ошибка генерации: Ошибка генерации текста: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXtMbQ7dhNsGU8KFSZ8Tn'}
+2026-02-07 11:00:02,719 - ERROR - ❌ [telegram] Публикация не удалась: Ошибка генерации: Ошибка генерации текста: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXtMbQ7dhNsGU8KFSZ8Tn'}
+2026-02-07 11:00:03,121 - ERROR - ❌ Ошибка проверки уведомлений: column "created_at" does not exist
+LINE 2:             SELECT id, created_at, username
+                               ^
+
+2026-02-07 11:02:03,288 - ERROR - Ошибка получения расписания из БД: current transaction is aborted, commands ignored until end of transaction block
+
+2026-02-07 12:00:01,371 - ERROR - ❌ VK: 'NoneType' object has no attribute 'get'
+2026-02-07 12:00:01,372 - ERROR - ❌ [vk] Публикация не удалась: 'NoneType' object has no attribute 'get'
+2026-02-07 12:00:01,372 - ERROR - ❌ Pinterest: Категория 1 не найдена
+2026-02-07 12:00:01,373 - ERROR - ❌ [pinterest] Публикация не удалась: Категория 1 не найдена
+2026-02-07 13:00:00,677 - ERROR - ❌ VK: VK подключение -53628858 не найдено
+2026-02-07 13:00:00,677 - ERROR - ❌ Pinterest: Категория 1 не найдена
+2026-02-07 13:00:00,678 - ERROR - ❌ [pinterest] Публикация не удалась: Категория 1 не найдена
+2026-02-07 13:00:00,678 - ERROR - ❌ [vk] Публикация не удалась: VK подключение -53628858 не найдено
+2026-02-07 13:26:00,506 - ERROR - Infinity polling: polling exited
+2026-02-07 13:26:00,506 - ERROR - Break infinity polling
+2026-02-07 14:00:03,352 - ERROR - ❌ Pinterest: Ошибка генерации: Ошибка генерации текста: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXtbKajHomdQG3CkUc9NH'}
+2026-02-07 14:00:03,352 - ERROR - ❌ [pinterest] Публикация не удалась: Ошибка генерации: Ошибка генерации текста: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXtbKajHomdQG3CkUc9NH'}
+2026-02-07 15:00:02,500 - ERROR - ❌ Pinterest: Ошибка генерации: Ошибка генерации текста: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXtfttz2XxUSxowWvc8V2'}
+2026-02-07 15:00:02,500 - ERROR - ❌ [pinterest] Публикация не удалась: Ошибка генерации: Ошибка генерации текста: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXtfttz2XxUSxowWvc8V2'}
+2026-02-07 15:25:32,256 - ERROR - Infinity polling exception: 'emoji'
+2026-02-07 15:25:32,257 - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1110, in infinity_polling
+    self.polling(non_stop=True, timeout=timeout, long_polling_timeout=long_polling_timeout,
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 logger_level=logger_level, allowed_updates=allowed_updates, restart_on_change=False,
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 *args, **kwargs)
+                 ^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1198, in polling
+    self.__threaded_polling(non_stop=non_stop, interval=interval, timeout=timeout, long_polling_timeout=long_polling_timeout,
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                            logger_level=logger_level, allowed_updates=allowed_updates)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1273, in __threaded_polling
+    raise e
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 1235, in __threaded_polling
+    self.worker_pool.raise_exceptions()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 154, in raise_exceptions
+    raise self.exception_info
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Local\Programs\Python\Python314\Lib\site-packages\telebot\__init__.py", line 10134, in _run_middlewares_and_handler
+    result = handler['function'](message)
+  File "C:\Users\Admin\Desktop\GIT\NEW_bot\handlers\platform_connections\website_menu.py", line 28, in add_website_menu
+    f"{cms_info['emoji']} {cms_info['name']}",
+       ~~~~~~~~^^^^^^^^^
+KeyError: 'emoji'
+
+2026-02-07 16:00:02,682 - ERROR - ❌ Pinterest: Ошибка генерации: Ошибка генерации текста: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXtkUGgPRKb3kzs6TQ7ik'}
+2026-02-07 16:00:02,682 - ERROR - ❌ [pinterest] Публикация не удалась: Ошибка генерации: Ошибка генерации текста: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXtkUGgPRKb3kzs6TQ7ik'}
+2026-02-07 16:00:41,772 - ERROR - Infinity polling: polling exited
+2026-02-07 16:00:41,772 - ERROR - Break infinity polling
