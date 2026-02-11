@@ -1,0 +1,745 @@
+# SEO Master Bot v2 — Техническая архитектура
+
+> Связанные документы: [PRD.md](PRD.md) (продуктовые требования), [API_CONTRACTS.md](API_CONTRACTS.md) (QStash, Stars, rate limits, сервисные контракты, промпты, ротация фраз), [FSM_SPEC.md](FSM_SPEC.md) (FSM-состояния и валидация), [EDGE_CASES.md](EDGE_CASES.md) (обработка ошибок), [USER_FLOWS_AND_UI_MAP.md](USER_FLOWS_AND_UI_MAP.md) (экраны и навигация)
+
+---
+
+## 1. Стек технологий
+
+| Слой | Технология | Назначение |
+|------|-----------|------------|
+| Рантайм | Python 3.14.3 | JIT-компилятор, +25% производительности |
+| Пакетный менеджер | uv | В 100 раз быстрее pip |
+| Фреймворк бота | Aiogram 3.25+ | Async, роутеры, FSM, middleware, Bot API 9.4 |
+| База данных | Supabase (PostgreSQL 17) | Managed, RLS, миграции, realtime |
+| Кеш/Состояние | Upstash Redis | Хранение FSM, лимиты запросов, кеширование |
+| Планировщик | Upstash QStash | Бессерверный cron, гарантированная доставка |
+| AI-модели | OpenRouter (OpenAI-совместимый API) | 300+ моделей, fallbacks, structured outputs, prompt caching, streaming. Контракт: [API_CONTRACTS.md §3.1](API_CONTRACTS.md) |
+| Веб-данные | Firecrawl API | Краулинг, брендинг, извлечение данных |
+| Аудит сайтов | Google PageSpeed API | Бесплатный, всесторонний аудит |
+| SEO-данные | DataForSEO API | Реальные объемы поиска, сложность ключевиков |
+| Web Search | Serper API | Актуальные данные Google для промптов статей |
+| Предпросмотр статей | Telegraph API | Бесплатное превью перед публикацией |
+| Платежи | Telegram Stars + ЮKassa | Нативные + карточные платежи |
+| Мониторинг | Sentry + структурированный логгинг | Отслеживание ошибок, производительность |
+
+---
+
+## 2. Структура проекта
+
+```
+seo-master-bot-v2/
+├── bot/
+│   ├── main.py                     # Запуск Aiogram, вебхук
+│   ├── config.py                   # Pydantic Settings v2
+│   └── middlewares/
+│       ├── auth.py                 # Регистрация, проверка GOD_MODE
+│       ├── throttling.py           # Лимиты запросов через Redis
+│       └── db.py                   # Инъекция сессии Supabase
+│
+├── routers/                        # Роутеры Aiogram (~25 роутеров вместо 382 обработчиков)
+│   ├── start.py                    # /start, главное меню
+│   ├── projects/
+│   │   ├── create.py               # FSM быстрый старт (4 поля) + редактирование (11 доп.)
+│   │   ├── card.py                 # Карточка проекта и действия
+│   │   └── list.py                 # Список с пагинацией
+│   ├── categories/
+│   │   ├── manage.py               # CRUD
+│   │   ├── keywords.py             # Генерация SEO ключевых фраз (FSM)
+│   │   ├── media.py                # Медиа-галерея
+│   │   ├── prices.py               # Загрузка/скачивание Excel
+│   │   └── reviews.py              # AI-генерация отзывов
+│   ├── platforms/
+│   │   ├── connections.py          # Добавление/удаление/валидация всех платформ
+│   │   └── settings.py             # Настройки контента по платформам
+│   ├── publishing/
+│   │   ├── preview.py              # Telegraph-предпросмотр + подтверждение
+│   │   ├── scheduler.py            # Настройка расписания (FSM)
+│   │   └── quick.py                # Быстрая публикация (1 клик)
+│   ├── profile.py                  # Профиль, расходы, реферал
+│   ├── tariffs.py                  # Пакеты + Telegram Stars
+│   ├── settings.py                 # Пользовательские настройки
+│   ├── help.py                     # Встроенная справка (F46)
+│   ├── analysis.py                 # Аудит сайта (Firecrawl + PSI)
+│   └── admin/
+│       ├── dashboard.py            # Статистика, статус AI, статус БД
+│       ├── broadcast.py            # Рассылки
+│       └── monitoring.py           # Системные метрики, логи
+│
+├── services/                       # Бизнес-логика (без зависимости от Telegram)
+│   ├── ai/
+│   │   ├── orchestrator.py         # Маршрутизация OpenRouter + резерв + исправление
+│   │   ├── articles.py             # Генерация SEO-статей
+│   │   ├── social_posts.py         # Генерация постов для TG/VK/Pinterest
+│   │   ├── keywords.py             # Генерация семантического ядра
+│   │   ├── images.py               # Генерация изображений (Nano Banana / Gemini via OpenRouter)
+│   │   ├── reviews.py              # Генерация отзывов
+│   │   ├── description.py          # Генерация описаний категорий
+│   │   └── prompts/                # YAML-шаблоны промптов
+│   │       ├── article_v5.yaml
+│   │       ├── social.yaml
+│   │       ├── keywords.yaml
+│   │       ├── image.yaml
+│   │       ├── review.yaml
+│   │       └── description.yaml
+│   ├── publishers/
+│   │   ├── base.py                 # BasePublisher (валидация -> публикация -> отчет)
+│   │   ├── wordpress.py            # WP REST API
+│   │   ├── telegram.py             # Bot API
+│   │   ├── vk.py                   # VK API
+│   │   └── pinterest.py            # Pinterest API v5
+│   ├── external/
+│   │   ├── firecrawl.py            # Клиент Firecrawl (краулинг, брендинг, извлечение)
+│   │   ├── pagespeed.py            # Клиент Google PSI
+│   │   ├── dataforseo.py           # Клиент DataForSEO (объемы, сложность ключевиков)
+│   │   ├── serper.py               # Клиент Serper (поиск Google в реальном времени)
+│   │   └── telegraph.py            # Клиент Telegraph API (предпросмотр статей)
+│   ├── tokens.py                   # Токеновая экономика (проверка, списание, возврат)
+│   ├── notifications.py            # Автоуведомления
+│   └── payments.py                 # Интеграция Telegram Stars
+│
+├── db/
+│   ├── client.py                   # Асинхронный клиент Supabase
+│   ├── models.py                   # Pydantic-модели
+│   ├── repositories/               # Паттерн Repository
+│   │   ├── users.py
+│   │   ├── projects.py
+│   │   ├── categories.py
+│   │   ├── schedules.py
+│   │   └── publications.py
+│   └── migrations/                 # Миграции Supabase
+│
+├── api/                            # HTTP-эндпоинты для вебхуков QStash и OAuth
+│   ├── publish.py                  # QStash -> автопубликация
+│   ├── cleanup.py                  # QStash -> очистка expired превью, старых логов
+│   ├── notify.py                   # QStash -> уведомления
+│   ├── yookassa.py                 # YooKassa webhook + QStash renew подписки
+│   ├── auth.py                     # Pinterest OAuth callback
+│   └── health.py                   # Проверка здоровья
+│
+├── cache/
+│   ├── client.py                   # Асинхронный клиент Upstash Redis
+│   ├── fsm_storage.py              # FSM Aiogram на Redis
+│   └── keys.py                     # Определения пространств имен ключей
+│
+└── platform_rules/                 # Валидация контента по платформам
+    ├── telegram.py
+    ├── vk.py
+    ├── pinterest.py
+    └── website.py
+```
+
+---
+
+## 2.1 Middleware chain (Aiogram)
+
+Порядок выполнения — сверху вниз при входящем update, снизу вверх при ответе:
+
+| # | Middleware | Файл | Что делает |
+|---|-----------|------|------------|
+| 1 | **DBSessionMiddleware** | `middlewares/db.py` | Инъекция Supabase-сессии в `data["db"]`. Закрытие после обработки. |
+| 2 | **AuthMiddleware** | `middlewares/auth.py` | Автозагрузка/авторегистрация пользователя → `data["user"]`. Проверка `role == 'admin'` → `data["is_admin"]`. |
+| 3 | **ThrottlingMiddleware** | `middlewares/throttling.py` | Redis token-bucket: 30 msg/min per user (rate limits §4.1 API_CONTRACTS). При превышении → "Слишком много запросов" + `drop_event`. |
+| 4 | **FSMInactivityMiddleware** | `middlewares/auth.py` | Проверяет `last_update_time` в `state.data`. Если `now - last_update_time > FSM_INACTIVITY_TIMEOUT` → сброс FSM, сообщение "Сессия истекла". Обновляет `last_update_time`. |
+| 5 | **LoggingMiddleware** | `middlewares/db.py` | Записывает `correlation_id` (UUID4) в `data["correlation_id"]`. Структурированный JSON-лог: user_id, update_type, handler, latency_ms. |
+
+**Регистрация:** `dp.update.outer_middleware(DBSessionMiddleware())`, далее inner middleware в порядке 2-5.
+
+**Обработка ошибок:** Aiogram global error handler перехватывает все необработанные исключения → Sentry capture + лог ERROR + ответ пользователю "Произошла ошибка. Попробуйте позже." FSM НЕ сбрасывается при ошибке (пользователь может повторить действие).
+
+---
+
+## 2.2 Пулы соединений
+
+| Клиент | Библиотека | Параметры |
+|--------|-----------|-----------|
+| Supabase PostgreSQL | `supabase-py` async client | Supabase Pooler (PgBouncer, transaction mode), макс. 50 connections на Railway instance |
+| Upstash Redis | `upstash-redis` (HTTP-based) | Stateless HTTP-запросы, без пула TCP-соединений (serverless-архитектура Upstash) |
+| Внешние API (OpenRouter, Firecrawl, DataForSEO) | `httpx.AsyncClient` | `limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)`, один shared client на приложение, `timeout=httpx.Timeout(30.0, connect=5.0)` |
+
+**Инициализация:** Все клиенты создаются в `main.py` при старте (`on_startup`), закрываются при остановке (`on_shutdown`). Инъекция через middleware `data["db"]`, `data["redis"]`, `data["http_client"]`.
+
+---
+
+## 3. Полная схема базы данных (Supabase PostgreSQL)
+
+> **Примечание:** Это единственная актуальная схема БД. BUSINESS_LOGIC_SPEC.md раздел 2 содержит устаревшую модель (подключения в JSONB на уровне users). В v2 подключения — **отдельная таблица на уровне проекта**.
+
+### 3.1 Схема связей
+
+```
+users (1) ──── (N) projects ──── (N) categories ──── (N) platform_schedules
+  │                   │               │
+  │                   │               ├── (N) platform_content_overrides
+  │                   │               ├── image_settings (JSONB)
+  │                   │               ├── text_settings (JSONB)
+  │                   │               └── keywords (JSONB)
+  │                   │
+  │                   ├── (N) platform_connections
+  │                   ├── (1) site_audit  (UNIQUE project_id)
+  │                   └── (1) site_branding (UNIQUE project_id)
+  │
+  ├── (N) payments
+  ├── (N) token_expenses
+  ├── (N) publication_logs
+  └── (N) article_previews
+
+prompt_versions — глобальная таблица (без FK на пользователей)
+```
+
+### 3.2 SQL-определения таблиц
+
+#### Таблица: users
+
+```sql
+CREATE TABLE users (
+    id              BIGINT PRIMARY KEY,        -- Telegram user ID
+    username        VARCHAR(255),              -- @username
+    first_name      VARCHAR(255),              -- Имя
+    last_name       VARCHAR(255),              -- Фамилия
+    balance         INTEGER NOT NULL DEFAULT 1500, -- Баланс токенов (1500 welcome bonus)
+    language        VARCHAR(10) DEFAULT 'ru',
+    role            VARCHAR(20) DEFAULT 'user', -- user, admin
+    referrer_id     BIGINT REFERENCES users(id) ON DELETE SET NULL, -- Кто пригласил
+    notify_publications BOOLEAN DEFAULT TRUE,   -- Уведомления о публикациях
+    notify_balance  BOOLEAN DEFAULT TRUE,      -- Уведомления о балансе
+    notify_news     BOOLEAN DEFAULT TRUE,      -- Уведомления о новостях
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    last_activity   TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_users_referrer ON users(referrer_id);
+CREATE INDEX idx_users_activity ON users(last_activity);
+```
+
+#### Таблица: projects (бывш. bots)
+
+```sql
+CREATE TABLE projects (
+    id              SERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name            VARCHAR(255) NOT NULL,     -- Название проекта
+    company_name    VARCHAR(255) NOT NULL,      -- Название компании (обязательно при создании)
+    specialization  TEXT NOT NULL,              -- Чем занимается (обязательно при создании)
+    website_url     VARCHAR(500),              -- URL сайта (может быть пустым)
+    -- Дополнительные поля (заполняются при редактировании)
+    company_city    VARCHAR(255),
+    company_address TEXT,
+    company_phone   VARCHAR(50),
+    company_email   VARCHAR(255),
+    company_instagram VARCHAR(255),
+    company_vk      VARCHAR(255),
+    company_pinterest VARCHAR(255),
+    company_telegram VARCHAR(255),
+    experience      TEXT,
+    advantages      TEXT,
+    description     TEXT,
+    timezone        VARCHAR(50) DEFAULT 'Europe/Moscow',
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_projects_user ON projects(user_id);
+```
+
+#### Таблица: platform_connections
+
+```sql
+CREATE TABLE platform_connections (
+    id              SERIAL PRIMARY KEY,
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    platform_type   VARCHAR(20) NOT NULL,      -- wordpress, telegram, vk, pinterest
+    status          VARCHAR(20) DEFAULT 'active', -- active, error, disconnected
+    credentials     TEXT NOT NULL,              -- Зашифрованный JSON (Fernet), расшифровывается в repository layer
+    metadata        JSONB DEFAULT '{}',        -- Доп. данные платформы
+    identifier      VARCHAR(500) NOT NULL,     -- Идентификатор подключения (plaintext, для UNIQUE)
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(project_id, platform_type, identifier)
+);
+CREATE INDEX idx_connections_project ON platform_connections(project_id);
+```
+
+**Структура credentials по платформам:**
+```json
+// WordPress:
+{"url": "https://...", "login": "admin", "app_password": "xxxx xxxx xxxx xxxx",
+ "wp_categories": ["Блог"], "wp_tags": [], "internal_links": [...],
+ "seo_canonical": "", "seo_robots": "index, follow", "schema_type": "Article",
+ "identifier": "https://example.com"}
+
+// Telegram:
+{"channel_id": "-100123456", "channel_username": "@channel",
+ "bot_token": "123:ABC...", "identifier": "-100123456"}
+
+// VK:
+{"group_id": "-123456", "group_name": "Группа", "token": "vk1.a.XXX",
+ "identifier": "-123456"}
+
+// Pinterest:
+{"access_token": "pina_...", "refresh_token": "pinr_...", "expires_at": "2026-03-14T00:00:00Z",
+ "board_id": "12345", "board_name": "My Board", "identifier": "12345"}
+```
+
+#### Таблица: categories
+
+```sql
+CREATE TABLE categories (
+    id              SERIAL PRIMARY KEY,
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name            VARCHAR(255) NOT NULL,
+    description     TEXT,                      -- Описание (промпт для AI)
+    keywords        JSONB DEFAULT '[]',        -- [{phrase, volume, difficulty, intent, cpc}]
+    media           JSONB DEFAULT '[]',        -- [{file_id, type, file_size, uploaded_at}]
+    prices          TEXT,                      -- Текстовый прайс-лист ("Товар — Цена" per line)
+    reviews         JSONB DEFAULT '[]',        -- [{author, date, rating(1-5), text, pros, cons}]
+    -- Настройки контента (наследуются всеми платформами, переопределяются в platform_content_overrides)
+    image_settings  JSONB DEFAULT '{}',        -- {formats, styles, tones, cameras, angles, quality, count, text_on_image, collage}
+                                               -- Fallback при пустом {}: см. IMAGE_DEFAULTS ниже
+    text_settings   JSONB DEFAULT '{}',        -- {style, html_style, words_min, words_max}
+                                               -- Fallback при пустом {}: см. TEXT_DEFAULTS ниже
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_categories_project ON categories(project_id);
+```
+
+**Дефолтные настройки контента (fallback в коде при `{}`):**
+
+```python
+IMAGE_DEFAULTS = {
+    "formats": ["1:1"],
+    "styles": ["Фотореализм"],
+    "tones": ["Нейтральный"],
+    "cameras": [],                # не указано — AI решает
+    "angles": [],                 # не указано — AI решает
+    "quality": "HD",
+    "count": 1,                   # для соцсетей; для статей WP — 4
+    "text_on_image": 0,
+    "collage": 0,
+}
+
+TEXT_DEFAULTS = {
+    "style": "Информативный",     # для сайта; "Разговорный" для соцсетей
+    "html_style": "Блог",
+    "words_min": 1500,            # для статей; ~100 для соцсетей
+    "words_max": 2500,
+}
+```
+
+> Единственный источник истины для дефолтов. PRD §6 (Правило 2) ссылается сюда. Применяются на уровне `services/ai/` при сборке промпта, если `image_settings = {}`.
+
+#### Таблица: platform_content_overrides
+
+```sql
+CREATE TABLE platform_content_overrides (
+    id              SERIAL PRIMARY KEY,
+    category_id     INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    platform_type   VARCHAR(20) NOT NULL,      -- wordpress, telegram, vk, pinterest
+    image_settings  JSONB,                     -- NULL = наследовать от категории
+    text_settings   JSONB,                     -- NULL = наследовать от категории
+    UNIQUE(category_id, platform_type)
+);
+```
+
+#### Таблица: platform_schedules
+
+```sql
+CREATE TABLE platform_schedules (
+    id              SERIAL PRIMARY KEY,
+    category_id     INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    platform_type   VARCHAR(20) NOT NULL,
+    connection_id   INTEGER NOT NULL REFERENCES platform_connections(id) ON DELETE CASCADE,
+    schedule_days   TEXT[] DEFAULT '{}',        -- {mon, tue, wed, thu, fri, sat, sun}
+    schedule_times  TEXT[] DEFAULT '{}',        -- {09:00, 12:00, 18:00}
+    posts_per_day   INTEGER DEFAULT 1 CHECK (posts_per_day BETWEEN 1 AND 5),
+    enabled         BOOLEAN DEFAULT FALSE,
+    qstash_schedule_ids TEXT[] DEFAULT '{}',   -- ID расписаний в QStash (один per time slot)
+    last_post_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(category_id, platform_type, connection_id),
+    CHECK (schedule_times = '{}' OR array_length(schedule_times, 1) = posts_per_day)
+    -- schedule_times пуст при создании (CHECK пропускает '{}'); при заполнении — ровно posts_per_day элементов
+);
+CREATE INDEX idx_schedules_enabled ON platform_schedules(enabled) WHERE enabled = TRUE;
+
+-- Правило: len(schedule_times) == posts_per_day.
+-- Валидация в FSM: при выборе времени кнопки ограничены значением posts_per_day.
+-- Если posts_per_day=2, пользователь выбирает ровно 2 времени.
+```
+
+#### Таблица: publication_logs
+
+```sql
+CREATE TABLE publication_logs (
+    id              SERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    category_id     INTEGER REFERENCES categories(id) ON DELETE SET NULL,  -- NULL = категория удалена, лог сохранён
+    platform_type   VARCHAR(20) NOT NULL,
+    connection_id   INTEGER REFERENCES platform_connections(id) ON DELETE SET NULL,
+    keyword         VARCHAR(500),              -- Ключевая фраза для ротации
+    content_type    VARCHAR(20) NOT NULL DEFAULT 'article', -- article, social_post, review
+    images_count    INTEGER DEFAULT 0,         -- Количество сгенерированных изображений
+    post_url        TEXT,
+    word_count      INTEGER DEFAULT 0,
+    tokens_spent    INTEGER DEFAULT 0,
+    ai_model        VARCHAR(100),              -- anthropic/claude-sonnet-4.5, deepseek/deepseek-v3.2
+    generation_time_ms INTEGER,
+    prompt_version  VARCHAR(20),               -- v1, v2, v3...
+    status          VARCHAR(20) DEFAULT 'success', -- success, failed, cancelled
+    error_message   TEXT,
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_pub_logs_user ON publication_logs(user_id, created_at DESC);
+CREATE INDEX idx_pub_logs_project ON publication_logs(project_id);
+CREATE INDEX idx_pub_logs_category ON publication_logs(category_id, created_at DESC);
+-- Covering index для ротации ключевых фраз (API_CONTRACTS §6):
+CREATE INDEX idx_pub_logs_rotation ON publication_logs(category_id, created_at DESC) INCLUDE (keyword);
+```
+
+#### Таблица: token_expenses
+
+```sql
+CREATE TABLE token_expenses (
+    id              SERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL REFERENCES users(id),
+    amount          INTEGER NOT NULL,          -- Отрицательное = списание, положительное = пополнение/возврат
+    operation_type  VARCHAR(50) NOT NULL,      -- text_generation, image_generation, keyword_generation, audit, review, description, competitor_analysis, purchase, refund, referral_bonus, api_openrouter, api_dataforseo, api_firecrawl, api_pagespeed
+    description     TEXT,
+    ai_model        VARCHAR(100),
+    input_tokens    INTEGER,                   -- Токены LLM (входящие)
+    output_tokens   INTEGER,                   -- Токены LLM (исходящие)
+    cost_usd        DECIMAL(10,6),             -- Себестоимость в USD
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_expenses_user ON token_expenses(user_id, created_at DESC);
+```
+
+#### Таблица: payments
+
+```sql
+CREATE TABLE payments (
+    id              SERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL REFERENCES users(id),
+    provider        VARCHAR(20) NOT NULL,      -- stars, yookassa
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending, completed, refunded, failed
+    -- Stars-специфичные поля
+    telegram_payment_charge_id VARCHAR(255),
+    provider_payment_charge_id VARCHAR(255),
+    stars_amount    INTEGER,                   -- Количество Stars
+    -- ЮKassa-специфичные поля
+    yookassa_payment_id VARCHAR(255),
+    yookassa_payment_method_id VARCHAR(255), -- Сохранённый метод для автоплатежей (рекуррентные подписки)
+    -- Общие поля
+    package_name    VARCHAR(50),               -- mini, starter, pro, business, enterprise
+    tokens_amount   INTEGER NOT NULL,          -- Сколько токенов начислено
+    amount_rub      DECIMAL(10,2),             -- Сумма в рублях
+    is_subscription BOOLEAN DEFAULT FALSE,     -- Подписка или разовый платёж
+    subscription_id VARCHAR(255),              -- ID подписки Stars (для отмены)
+    subscription_status VARCHAR(20),            -- active, paused, cancelled (NULL для разовых)
+    subscription_expires_at TIMESTAMPTZ,        -- Дата следующего продления
+    referral_bonus_credited BOOLEAN DEFAULT FALSE, -- Был ли начислен реферальный бонус
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_payments_user ON payments(user_id);
+CREATE INDEX idx_payments_status ON payments(status) WHERE status = 'pending';
+```
+
+#### Таблица: site_audits
+
+```sql
+CREATE TABLE site_audits (
+    id              SERIAL PRIMARY KEY,
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    url             VARCHAR(500) NOT NULL,
+    -- PageSpeed метрики
+    performance     INTEGER,                   -- 0-100
+    accessibility   INTEGER,
+    best_practices  INTEGER,
+    seo_score       INTEGER,
+    lcp_ms          INTEGER,                   -- Largest Contentful Paint
+    inp_ms          INTEGER,                   -- Interaction to Next Paint (заменяет FID с марта 2024)
+    cls             DECIMAL(5,3),              -- Cumulative Layout Shift
+    ttfb_ms         INTEGER,                   -- Time to First Byte
+    full_report     JSONB,                     -- Полный JSON ответ PageSpeed API
+    recommendations JSONB DEFAULT '[]',        -- [{title, description, priority}]
+    audited_at      TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(project_id)
+);
+CREATE INDEX idx_audits_project ON site_audits(project_id);
+```
+
+#### Таблица: site_brandings
+
+```sql
+CREATE TABLE site_brandings (
+    id              SERIAL PRIMARY KEY,
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    url             VARCHAR(500) NOT NULL,
+    colors          JSONB DEFAULT '{}',        -- {background, text, accent, primary, secondary}
+    fonts           JSONB DEFAULT '{}',        -- {heading, body}
+    logo_url        TEXT,
+    extracted_at    TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(project_id)
+);
+CREATE INDEX idx_brandings_project ON site_brandings(project_id);
+```
+
+#### Таблица: article_previews
+
+```sql
+CREATE TABLE article_previews (
+    id              SERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL REFERENCES users(id),
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    category_id     INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    connection_id   INTEGER REFERENCES platform_connections(id) ON DELETE SET NULL,
+    telegraph_url   VARCHAR(500),              -- telegra.ph/...
+    telegraph_path  VARCHAR(255),              -- Для удаления через API
+    title           TEXT,
+    keyword         VARCHAR(500),
+    word_count      INTEGER,
+    images_count    INTEGER,
+    tokens_charged  INTEGER,                   -- Сколько списано
+    regeneration_count INTEGER DEFAULT 0,      -- 0, 1, 2 (бесплатные), 3+ (платные)
+    status          VARCHAR(20) DEFAULT 'draft', -- draft, published, cancelled, expired
+    content_html    TEXT,                      -- Полный HTML (для перепубликации)
+    images          JSONB DEFAULT '[]',        -- [{url, storage_path, width, height}]
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    expires_at      TIMESTAMPTZ DEFAULT (now() + INTERVAL '24 hours')
+);
+CREATE INDEX idx_previews_user ON article_previews(user_id);
+CREATE INDEX idx_previews_expires ON article_previews(expires_at) WHERE status = 'draft';
+```
+
+#### Таблица: prompt_versions
+
+```sql
+CREATE TABLE prompt_versions (
+    id              SERIAL PRIMARY KEY,
+    task_type       VARCHAR(50) NOT NULL,      -- seo_article, social_post, keywords, review
+    version         VARCHAR(20) NOT NULL,      -- v1, v2, v3...
+    prompt_yaml     TEXT NOT NULL,             -- YAML-содержимое промпта
+    is_active       BOOLEAN DEFAULT FALSE,
+    ab_test_group   VARCHAR(10),               -- A, B, control
+    success_rate    DECIMAL(5,2),              -- % успешных генераций
+    avg_quality     DECIMAL(3,1),              -- Средняя оценка качества
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(task_type, version)
+);
+```
+
+### 3.3 Итого: 13 таблиц
+
+| # | Таблица | Назначение |
+|---|---------|------------|
+| 1 | `users` | Пользователи + баланс + настройки уведомлений |
+| 2 | `projects` | Проекты (бывш. bots) + данные компании |
+| 3 | `platform_connections` | Подключения платформ (привязаны к проекту) |
+| 4 | `categories` | Категории + ключевые фразы + медиа + настройки контента |
+| 5 | `platform_content_overrides` | Переопределение настроек на уровне платформы |
+| 6 | `platform_schedules` | Расписания автопубликации |
+| 7 | `publication_logs` | Журнал публикаций |
+| 8 | `token_expenses` | История расходов токенов |
+| 9 | `payments` | Транзакции Stars/ЮKassa |
+| 10 | `site_audits` | Результаты PageSpeed-аудита |
+| 11 | `site_brandings` | Цвета/шрифты сайта (Firecrawl) |
+| 12 | `article_previews` | Telegraph-превью (временные, TTL 24ч) |
+| 13 | `prompt_versions` | Версии AI-промптов + A/B тесты |
+
+---
+
+## 4. Привязка подключений к проектам и категориям
+
+**Иерархия:** Пользователь → Проект → Подключения (уровень проекта) → Категории → Расписания
+
+```
+Подключения создаются на уровне ПРОЕКТА (не глобально):
+  │
+  ├── Пользователь подключает WordPress-сайт в "Настройки проекта → Подключения"
+  │     → запись в таблице `platform_connections` с FK на `project_id`
+  │
+  ├── Все категории проекта автоматически видят ВСЕ подключения проекта
+  │     → карточка категории показывает платформы из `platform_connections WHERE project_id = текущий проект`
+  │
+  ├── Настройки контента (изображения, текст) задаются на уровне КАТЕГОРИИ
+  │     → и наследуются всеми платформами этой категории
+  │     → переопределение для конкретной платформы — опционально
+  │
+  └── Расписание задаётся для комбинации: категория + платформа
+        → таблица `platform_schedules` (category_id, connection_id, days, times, posts_per_day)
+```
+
+**Модель данных (уточнение):**
+
+| Таблица | Ключевые поля | Связь |
+|---------|--------------|-------|
+| `platform_connections` | id, project_id (FK), platform_type, credentials, status | Привязка к проекту |
+| `categories` | ..., image_settings (JSONB), text_settings (JSONB) | Настройки контента — поля в таблице categories |
+| `platform_content_overrides` | id, category_id (FK), platform_type, image_settings (JSONB), text_settings (JSONB) | Переопределение (nullable — если null, берётся из категории) |
+| `platform_schedules` | id, category_id (FK), platform_type, connection_id (FK), days, times, posts_per_day | Расписание |
+
+**Логика наследования настроек (F41):**
+```python
+def get_content_settings(category_id, platform_type):
+    override = platform_content_overrides.get(category_id, platform_type)
+    if override and override.image_settings is not None:
+        return override
+    return categories.get(category_id)  # дефолт из полей категории (image_settings, text_settings)
+```
+
+В UI платформы: если настройки переопределены — показывать "(свои настройки)" рядом с кнопкой. Кнопка "Сбросить к настройкам категории" удаляет override.
+
+---
+
+## 5. Паттерны реализации
+
+### 5.1 Удаление сущностей с внешними зависимостями (QStash)
+
+CASCADE в PostgreSQL — синхронный, нельзя вставить async-вызов QStash между DELETE и CASCADE. Отмена внешних расписаний — **в application layer до DELETE**:
+
+```python
+async def delete_category(category_id: int):
+    # 1. Сначала отменить QStash-расписания (async, внешний сервис)
+    schedules = await repo.get_schedules_by_category(category_id)
+    for s in schedules:
+        for sid in (s.qstash_schedule_ids or []):
+            await qstash.schedules.delete(sid)
+    # 2. Потом удалить в БД (CASCADE удалит platform_schedules, overrides, previews)
+    await repo.delete_category(category_id)
+
+async def delete_project(project_id: int):
+    # Аналогично: отменить все QStash перед CASCADE
+    schedules = await repo.get_schedules_by_project(project_id)
+    for s in schedules:
+        for sid in (s.qstash_schedule_ids or []):
+            await qstash.schedules.delete(sid)
+    await repo.delete_project(project_id)
+```
+
+> См. E11 и E24 в [EDGE_CASES.md](EDGE_CASES.md).
+
+### 5.2 Формат callback_data
+
+Для callback-driven экранов (не FSM) — единый формат callback_data:
+
+```
+{entity}:{id}:{action}
+{entity}:{id}:{sub_entity}:{sub_id}:{action}
+```
+
+Примеры:
+```
+project:5:card                        — карточка проекта
+project:5:category:12:settings        — настройки категории
+category:12:platform:wordpress:publish — публикация
+schedule:42:toggle                    — вкл/выкл расписания
+tariff:pro:stars                      — оплата Stars
+tariff:pro:yookassa                   — оплата ЮKassa
+quick:project:5                       — быстрая публикация: выбор проекта
+quick:cat:12:wp:7                     — быстрая публикация: категория+платформа
+page:projects:2                       — пагинация: страница 2
+```
+
+Максимальная длина callback_data в Telegram: **64 байта**. Числовые ID экономят место.
+
+### 5.3 Health Check
+
+Эндпоинт `/api/health` — проверка доступности всех зависимостей:
+
+```python
+# GET /api/health → 200 OK | 503 Service Unavailable
+{
+    "status": "ok",         # ok | degraded | down
+    "version": "2.0.0",
+    "uptime_seconds": 86400,
+    "checks": {
+        "database": {"status": "ok", "latency_ms": 12},
+        "redis": {"status": "ok", "latency_ms": 3},
+        "openrouter": {"status": "ok"},        # ping /api/v1/models
+        "qstash": {"status": "ok"}             # проверка signing key
+    }
+}
+```
+
+Логика статуса: `down` если database или redis недоступны; `degraded` если openrouter или qstash недоступны; `ok` иначе. Railway использует health endpoint для zero-downtime deploys.
+
+### 5.4 Админ-панель (F20) — источники данных
+
+Доступ: `users.role = 'admin'` (проверка по `ADMIN_ID` из env).
+
+**Дашборд (основной экран):**
+
+```sql
+-- Пользователи: всего / платных / бесплатных
+SELECT
+  count(*) AS total,
+  count(*) FILTER (WHERE id IN (
+    SELECT DISTINCT user_id FROM payments WHERE status = 'completed'
+  )) AS paid
+FROM users;
+
+-- Выручка за период
+SELECT coalesce(sum(amount_rub), 0) AS revenue
+FROM payments
+WHERE status = 'completed'
+  AND created_at >= now() - interval '30 days';
+
+-- Распределение по тарифам (последний платёж каждого пользователя)
+SELECT p.package_name, count(*) AS cnt
+FROM payments p
+JOIN (
+  SELECT user_id, max(created_at) AS last_pay
+  FROM payments WHERE status = 'completed' GROUP BY user_id
+) lp ON p.user_id = lp.user_id AND p.created_at = lp.last_pay
+GROUP BY p.package_name;
+
+-- Последние 5 платежей
+SELECT u.first_name, p.amount_rub, p.package_name, p.created_at
+FROM payments p JOIN users u ON p.user_id = u.id
+WHERE p.status = 'completed'
+ORDER BY p.created_at DESC LIMIT 5;
+
+-- Реферальная программа
+SELECT
+  count(*) FILTER (WHERE referral_bonus_credited = true) AS activations,
+  coalesce(sum(te.amount), 0) AS total_bonus
+FROM payments
+LEFT JOIN token_expenses te ON te.user_id = payments.user_id
+  AND te.operation_type = 'referral_bonus';
+```
+
+**Затраты API ($):**
+
+```sql
+-- Расходы за 7/30/90 дней (из token_expenses с типом api_cost)
+SELECT
+  operation_type,  -- 'api_openrouter', 'api_dataforseo', 'api_firecrawl', 'api_pagespeed'
+  sum(cost_usd) AS total_cost_usd,
+  count(*) AS requests
+FROM token_expenses
+WHERE operation_type LIKE 'api_%'
+  AND created_at >= now() - interval '30 days'
+GROUP BY operation_type;
+```
+
+Примечание: API-расходы в USD хранятся в `token_expenses.cost_usd` с `operation_type = 'api_openrouter'` и т.д. Конвертация USD→RUB — по курсу из env (`USD_RUB_RATE`).
+
+**Рассылка (broadcast):**
+
+```python
+async def broadcast(text: str, audience: str):
+    """audience: 'all' | 'active_7d' | 'active_30d' | 'paid'"""
+    filters = {
+        "all": "1=1",
+        "active_7d": "last_activity >= now() - interval '7 days'",
+        "active_30d": "last_activity >= now() - interval '30 days'",
+        "paid": "id IN (SELECT DISTINCT user_id FROM payments WHERE status = 'completed')",
+    }
+    users = await db.fetch(f"SELECT id FROM users WHERE {filters[audience]}")
+    sent, failed = 0, 0
+    for user in users:
+        try:
+            await bot.send_message(user["id"], text)
+            sent += 1
+        except TelegramForbiddenError:
+            failed += 1  # пользователь заблокировал бота
+        await asyncio.sleep(0.05)  # rate limit: 20 msg/sec
+    return {"sent": sent, "failed": failed}
+```

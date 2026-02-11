@@ -32,6 +32,7 @@ env/
 
 # Pytest
 .cache
+.pytest_cache/
 
 # Editor
 .vscode/
@@ -47,6 +48,11 @@ env/
 *.db
 database/*.db
 
+# Claude Code (personal)
+CLAUDE.local.md
+.progress/
+
 # OS
 .DS_Store
 Thumbs.db
+nul

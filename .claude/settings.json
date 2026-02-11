@@ -1,0 +1,88 @@
+{
+  "model": "claude-opus-4-6",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(uv run *)",
+      "Bash(cd *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(git *)",
+      "mcp__supabase__*",
+      "mcp__upstash__*",
+      "mcp__context7__*"
+    ],
+    "deny": ["Bash(rm -rf *)", "Bash(git push --force*)", "Bash(curl * | bash)"]
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0",
+    "UV_PYTHON": "3.14"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export PATH=\"/c/Users/GVMBT/.local/bin:$PATH\" && cd \"$CLAUDE_PROJECT_DIR\" && uv run pytest tests/ -x -q --timeout=60 2>&1; EXIT=$?; if [ $EXIT -ne 0 ]; then echo 'Tests failed. Fix the failing tests before finishing.' >&2; exit 2; fi",
+            "timeout": 120
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export PATH=\"/c/Users/GVMBT/.local/bin:$PATH\" && cd \"$CLAUDE_PROJECT_DIR\" && uv run ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF --quiet 2>&1; EXIT=$?; if [ $EXIT -ne 0 ]; then echo 'Linter errors found. Fix before finishing.' >&2; exit 2; fi",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export PATH=\"/c/Users/GVMBT/.local/bin:$PATH\" && cd \"$CLAUDE_PROJECT_DIR\" && uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs --no-error-summary 2>&1; EXIT=$?; if [ $EXIT -ne 0 ]; then echo 'mypy type errors found. Fix before finishing.' >&2; exit 2; fi",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before writing to routers/ — verify the file does NOT contain business logic (SQL queries, token calculations, external API calls). Business logic must be in services/."
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}",
+        "SUPABASE_PROJECT_ID": "${SUPABASE_PROJECT_ID}"
+      }
+    },
+    "upstash": {
+      "command": "npx",
+      "args": ["-y", "@upstash/mcp-server"],
+      "env": {
+        "UPSTASH_EMAIL": "${UPSTASH_EMAIL}",
+        "UPSTASH_API_KEY": "${UPSTASH_API_KEY}"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
+}
