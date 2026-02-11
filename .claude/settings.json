@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"/c/Users/GVMBT/.local/bin:$PATH\" && cd \"$CLAUDE_PROJECT_DIR\" && uv run pytest tests/ -x -q --timeout=60 2>&1; EXIT=$?; if [ $EXIT -ne 0 ]; then echo 'Tests failed. Fix the failing tests before finishing.' >&2; exit 2; fi",
+            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" pytest tests/ -x -q --timeout=60",
             "timeout": 120
           }
         ]
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"/c/Users/GVMBT/.local/bin:$PATH\" && cd \"$CLAUDE_PROJECT_DIR\" && uv run ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF --quiet 2>&1; EXIT=$?; if [ $EXIT -ne 0 ]; then echo 'Linter errors found. Fix before finishing.' >&2; exit 2; fi",
+            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF --quiet",
             "timeout": 60
           }
         ]
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"/c/Users/GVMBT/.local/bin:$PATH\" && cd \"$CLAUDE_PROJECT_DIR\" && uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs --no-error-summary 2>&1; EXIT=$?; if [ $EXIT -ne 0 ]; then echo 'mypy type errors found. Fix before finishing.' >&2; exit 2; fi",
+            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs --no-error-summary",
             "timeout": 60
           }
         ]
