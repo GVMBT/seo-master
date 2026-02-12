@@ -4,8 +4,12 @@ from bot.exceptions import (
     AIGenerationError,
     AppError,
     ConnectionValidationError,
+    ContentValidationError,
+    ExternalServiceError,
     InsufficientBalanceError,
     PublishError,
+    RateLimitError,
+    ScheduleError,
 )
 
 
@@ -43,8 +47,37 @@ class TestSubclasses:
         assert isinstance(err, AppError)
         assert "публикац" in err.user_message.lower()
 
+    def test_rate_limit_inherits_app_error(self) -> None:
+        err = RateLimitError()
+        assert isinstance(err, AppError)
+        assert "лимит" in err.user_message.lower()
+
+    def test_schedule_error_inherits_app_error(self) -> None:
+        err = ScheduleError()
+        assert isinstance(err, AppError)
+        assert "расписани" in err.user_message.lower()
+
+    def test_external_service_inherits_app_error(self) -> None:
+        err = ExternalServiceError()
+        assert isinstance(err, AppError)
+        assert "сервис" in err.user_message.lower()
+
+    def test_content_validation_inherits_app_error(self) -> None:
+        err = ContentValidationError()
+        assert isinstance(err, AppError)
+        assert "валидаци" in err.user_message.lower()
+
     def test_all_catchable_as_app_error(self) -> None:
-        for exc_cls in (InsufficientBalanceError, ConnectionValidationError, AIGenerationError, PublishError):
+        for exc_cls in (
+            InsufficientBalanceError,
+            ConnectionValidationError,
+            AIGenerationError,
+            PublishError,
+            RateLimitError,
+            ScheduleError,
+            ExternalServiceError,
+            ContentValidationError,
+        ):
             try:
                 raise exc_cls()
             except AppError:

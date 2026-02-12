@@ -68,13 +68,15 @@ class TestProjectModel:
 
 class TestPlatformConnectionModel:
     def test_defaults(self) -> None:
-        c = PlatformConnection(id=1, project_id=1, platform_type="wordpress", credentials="encrypted", identifier="x")
+        c = PlatformConnection(
+            id=1, project_id=1, platform_type="wordpress", credentials={"token": "abc"}, identifier="x"
+        )
         assert c.status == "active"
         assert c.metadata == {}
 
     def test_create(self) -> None:
         cc = PlatformConnectionCreate(
-            project_id=1, platform_type="telegram", credentials="enc", identifier="-100123"
+            project_id=1, platform_type="telegram", identifier="-100123"
         )
         assert cc.platform_type == "telegram"
 
@@ -206,7 +208,6 @@ class TestPromptVersionModel:
     def test_defaults(self) -> None:
         pv = PromptVersion(id=1, task_type="seo_article", version="v5", prompt_yaml="test: true")
         assert pv.is_active is False
-        assert pv.ab_test_group is None
         assert pv.success_rate is None
 
     def test_create(self) -> None:

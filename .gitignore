@@ -48,9 +48,17 @@ env/
 *.db
 database/*.db
 
-# Claude Code (personal)
+# Claude Code (personal/dev)
 CLAUDE.local.md
+.claude/settings.local.json
 .progress/
+
+# Development documentation
+audit.md
+claude-workflow.md
+
+# IDE / type checker config
+pyrightconfig.json
 
 # OS
 .DS_Store

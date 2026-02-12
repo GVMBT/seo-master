@@ -10,10 +10,22 @@ paths:
 - Форматирование: ruff format, линтинг: ruff check
 - Импорты: стандартная библиотека, сторонние, локальные — разделены пустой строкой
 - Dataclasses или Pydantic v2 для моделей данных
-- Logging: structlog с JSON-выводом, не print()
-- Ошибки: кастомные исключения наследуют от базового AppError
+- Logging: `log = structlog.get_logger()` в начале модуля, не print()
+- Ошибки: кастомные исключения наследуют от AppError (bot/exceptions.py)
+- `except Exception` — ВСЕГДА `log.exception(...)` + re-raise или return error. ЗАПРЕЩЕНО: `except Exception: pass`
 - Docstrings только для публичных API (не для каждой функции)
 - Максимальная длина строки: 120 символов
+- callback_data: формат `{entity}:{id}:{action}`, макс. 64 байта (см. CLAUDE.md)
+
+## Типизация в хендлерах и репозиториях
+- `db` параметр: `db: SupabaseClient` из `db.client` (ЗАПРЕЩЕНО: `object`, `Any`)
+- `callback.message`: перед доступом проверяй `if callback.message and isinstance(callback.message, Message):`
+- Bare `list`, `dict` без параметров запрещены в Pydantic моделях — `list[str]`, `dict[str, Any]`
+
+## assert в продакшен-коде
+- `assert` ЗАПРЕЩЁН вне тестов — удаляется при `python -O`
+- Вместо `assert row is not None` → `if row is None: raise AppError("Insert returned no data")`
+- В тестах `assert` допустим (S101 в noqa)
 
 ## Ruff (расширенный набор правил)
 `ruff check --select=E,F,I,S,C901,B,UP,SIM,RUF`

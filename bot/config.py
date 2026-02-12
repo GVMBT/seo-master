@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     railway_public_url: str = ""
     pinterest_app_id: str = ""
     pinterest_app_secret: SecretStr = SecretStr("")
+    health_check_token: SecretStr = SecretStr("")
     usd_rub_rate: float = 92.5
 
     # === Defaults ===
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
     fsm_inactivity_timeout: int = 1800
     preview_ttl_seconds: int = 86400
     max_regenerations_free: int = 2
+    railway_graceful_shutdown_timeout: int = 120
 
     @field_validator("supabase_url")
     @classmethod

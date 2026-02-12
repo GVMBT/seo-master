@@ -5,6 +5,7 @@ Schema source of truth: docs/ARCHITECTURE.md section 3.2.
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,6 +46,7 @@ class UserUpdate(BaseModel):
     balance: int | None = None
     language: str | None = None
     role: str | None = None
+    referrer_id: int | None = None
     notify_publications: bool | None = None
     notify_balance: bool | None = None
     notify_news: bool | None = None
@@ -117,8 +119,8 @@ class PlatformConnection(BaseModel):
     project_id: int
     platform_type: str
     status: str = "active"
-    credentials: str  # Fernet-encrypted TEXT, decrypted in repository layer
-    metadata: dict = Field(default_factory=dict)
+    credentials: dict[str, Any]  # Decrypted by repository layer, dict for consumers
+    metadata: dict[str, Any] = Field(default_factory=dict)
     identifier: str
     created_at: datetime | None = None
 
@@ -126,16 +128,13 @@ class PlatformConnection(BaseModel):
 class PlatformConnectionCreate(BaseModel):
     project_id: int
     platform_type: str
-    credentials: str
     identifier: str
-    status: str = "active"
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class PlatformConnectionUpdate(BaseModel):
     status: str | None = None
-    credentials: str | None = None
-    metadata: dict | None = None
+    metadata: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -149,12 +148,12 @@ class Category(BaseModel):
     project_id: int
     name: str
     description: str | None = None
-    keywords: list = Field(default_factory=list)  # [{phrase, volume, difficulty, intent, cpc}]
-    media: list = Field(default_factory=list)  # [{file_id, type, file_size, uploaded_at}]
+    keywords: list[dict[str, Any]] = Field(default_factory=list)  # [{phrase, volume, difficulty, intent, cpc}]
+    media: list[dict[str, Any]] = Field(default_factory=list)  # [{file_id, type, file_size, uploaded_at}]
     prices: str | None = None
-    reviews: list = Field(default_factory=list)  # [{author, date, rating, text, pros, cons}]
-    image_settings: dict = Field(default_factory=dict)
-    text_settings: dict = Field(default_factory=dict)
+    reviews: list[dict[str, Any]] = Field(default_factory=list)  # [{author, date, rating, text, pros, cons}]
+    image_settings: dict[str, Any] = Field(default_factory=dict)
+    text_settings: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
 
 
@@ -167,12 +166,12 @@ class CategoryCreate(BaseModel):
 class CategoryUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
-    keywords: list | None = None
-    media: list | None = None
+    keywords: list[dict[str, Any]] | None = None
+    media: list[dict[str, Any]] | None = None
     prices: str | None = None
-    reviews: list | None = None
-    image_settings: dict | None = None
-    text_settings: dict | None = None
+    reviews: list[dict[str, Any]] | None = None
+    image_settings: dict[str, Any] | None = None
+    text_settings: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -185,20 +184,20 @@ class PlatformContentOverride(BaseModel):
     id: int
     category_id: int
     platform_type: str
-    image_settings: dict | None = None
-    text_settings: dict | None = None
+    image_settings: dict[str, Any] | None = None
+    text_settings: dict[str, Any] | None = None
 
 
 class PlatformContentOverrideCreate(BaseModel):
     category_id: int
     platform_type: str
-    image_settings: dict | None = None
-    text_settings: dict | None = None
+    image_settings: dict[str, Any] | None = None
+    text_settings: dict[str, Any] | None = None
 
 
 class PlatformContentOverrideUpdate(BaseModel):
-    image_settings: dict | None = None
-    text_settings: dict | None = None
+    image_settings: dict[str, Any] | None = None
+    text_settings: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +213,9 @@ class PlatformSchedule(BaseModel):
     connection_id: int
     schedule_days: list[str] = Field(default_factory=list)
     schedule_times: list[str] = Field(default_factory=list)
-    posts_per_day: int = 1
+    posts_per_day: int = Field(default=1, ge=1, le=5)
     enabled: bool = False
+    status: str = "active"
     qstash_schedule_ids: list[str] = Field(default_factory=list)
     last_post_at: datetime | None = None
     created_at: datetime | None = None
@@ -227,14 +227,15 @@ class PlatformScheduleCreate(BaseModel):
     connection_id: int
     schedule_days: list[str] = Field(default_factory=list)
     schedule_times: list[str] = Field(default_factory=list)
-    posts_per_day: int = 1
+    posts_per_day: int = Field(default=1, ge=1, le=5)
 
 
 class PlatformScheduleUpdate(BaseModel):
     schedule_days: list[str] | None = None
     schedule_times: list[str] | None = None
-    posts_per_day: int | None = None
+    posts_per_day: int | None = Field(default=None, ge=1, le=5)
     enabled: bool | None = None
+    status: str | None = None
     qstash_schedule_ids: list[str] | None = None
     last_post_at: datetime | None = None
 
@@ -382,8 +383,8 @@ class SiteAudit(BaseModel):
     inp_ms: int | None = None
     cls: Decimal | None = None
     ttfb_ms: int | None = None
-    full_report: dict | None = None
-    recommendations: list = Field(default_factory=list)
+    full_report: dict[str, Any] | None = None
+    recommendations: list[Any] = Field(default_factory=list)
     audited_at: datetime | None = None
 
 
@@ -398,8 +399,8 @@ class SiteAuditCreate(BaseModel):
     inp_ms: int | None = None
     cls: Decimal | None = None
     ttfb_ms: int | None = None
-    full_report: dict | None = None
-    recommendations: list = Field(default_factory=list)
+    full_report: dict[str, Any] | None = None
+    recommendations: list[Any] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -412,8 +413,8 @@ class SiteBranding(BaseModel):
     id: int
     project_id: int
     url: str
-    colors: dict = Field(default_factory=dict)
-    fonts: dict = Field(default_factory=dict)
+    colors: dict[str, Any] = Field(default_factory=dict)
+    fonts: dict[str, Any] = Field(default_factory=dict)
     logo_url: str | None = None
     extracted_at: datetime | None = None
 
@@ -421,8 +422,8 @@ class SiteBranding(BaseModel):
 class SiteBrandingCreate(BaseModel):
     project_id: int
     url: str
-    colors: dict = Field(default_factory=dict)
-    fonts: dict = Field(default_factory=dict)
+    colors: dict[str, Any] = Field(default_factory=dict)
+    fonts: dict[str, Any] = Field(default_factory=dict)
     logo_url: str | None = None
 
 
@@ -448,7 +449,7 @@ class ArticlePreview(BaseModel):
     regeneration_count: int = 0
     status: str = "draft"
     content_html: str | None = None
-    images: list = Field(default_factory=list)  # [{url, storage_path, width, height}]
+    images: list[dict[str, Any]] = Field(default_factory=list)  # [{url, storage_path, width, height}]
     created_at: datetime | None = None
     expires_at: datetime | None = None
 
@@ -466,7 +467,7 @@ class ArticlePreviewCreate(BaseModel):
     images_count: int | None = None
     tokens_charged: int | None = None
     content_html: str | None = None
-    images: list = Field(default_factory=list)
+    images: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ArticlePreviewUpdate(BaseModel):
@@ -479,7 +480,7 @@ class ArticlePreviewUpdate(BaseModel):
     regeneration_count: int | None = None
     status: str | None = None
     content_html: str | None = None
-    images: list | None = None
+    images: list[dict[str, Any]] | None = None
     connection_id: int | None = None
 
 
@@ -495,7 +496,6 @@ class PromptVersion(BaseModel):
     version: str
     prompt_yaml: str
     is_active: bool = False
-    ab_test_group: str | None = None
     success_rate: Decimal | None = None
     avg_quality: Decimal | None = None
     created_at: datetime | None = None
@@ -506,12 +506,10 @@ class PromptVersionCreate(BaseModel):
     version: str
     prompt_yaml: str
     is_active: bool = False
-    ab_test_group: str | None = None
 
 
 class PromptVersionUpdate(BaseModel):
     prompt_yaml: str | None = None
     is_active: bool | None = None
-    ab_test_group: str | None = None
     success_rate: Decimal | None = None
     avg_quality: Decimal | None = None

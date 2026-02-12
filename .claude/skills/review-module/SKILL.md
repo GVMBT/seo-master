@@ -8,6 +8,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
+  - mcp__context7
 ---
 
 ## Задача

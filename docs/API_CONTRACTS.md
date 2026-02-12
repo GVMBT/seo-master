@@ -420,7 +420,7 @@ openai_client = AsyncOpenAI(
 )
 ```
 
-> **Выбор SDK:** OpenRouter SDK (beta) или OpenAI SDK — оба работают. OpenAI SDK стабильнее, OpenRouter SDK даёт нативный доступ к `provider`, `models`, `plugins`. Решение — при разработке.
+> **Решено:** OpenAI AsyncClient (`openai>=2.20`) с `base_url="https://openrouter.ai/api/v1"`. OpenRouter-специфичные фичи (`models[]`, `provider`, `plugins`) передаются через `extra_body`/`extra_headers`.
 
 #### Контракты данных
 
@@ -1026,6 +1026,8 @@ RAILWAY_PUBLIC_URL=           # URL приложения на Railway (для в
 PINTEREST_APP_ID=              # Pinterest App ID (OAuth)
 PINTEREST_APP_SECRET=          # Pinterest App Secret
 USD_RUB_RATE=92.5              # Курс USD→RUB для отображения API-расходов в админке
+HEALTH_CHECK_TOKEN=            # Bearer-токен для детального health check (generate: python -c "import secrets; print(secrets.token_hex(32))")
+RAILWAY_GRACEFUL_SHUTDOWN_TIMEOUT=120  # Секунд между SIGTERM и SIGKILL
 
 # === Дефолты (можно не указывать) ===
 DEFAULT_TIMEZONE=Europe/Moscow
@@ -1038,7 +1040,7 @@ MAX_REGENERATIONS_FREE=2       # Бесплатных перегенераций
 ### 4.3 Хранение секретов
 
 - Все credentials в `platform_connections.credentials` → **TEXT, зашифрованный Fernet** (symmetric encryption, ключ в env var `ENCRYPTION_KEY`). Расшифрованное значение — JSON-строка, парсится в dict на уровне приложения
-- Supabase RLS: дополнительный уровень защиты. Основная авторизация — в repository layer (WHERE user_id = ?). service_role key обходит RLS.
+- Supabase RLS **НЕ используется** — service_role key обходит все RLS-политики. Авторизация реализована в Repository layer (`WHERE user_id = ?`). Это сознательное решение: бот — единственный клиент БД, все запросы проходят через Repository.
 - API-ключи → только в Railway env vars, НЕ в коде
 - Telegram webhook secret → `secret_token` параметр в `set_webhook()`:
   ```python
@@ -1055,7 +1057,7 @@ MAX_REGENERATIONS_FREE=2       # Бесплатных перегенераций
 
 ## 5. Промпт-спецификация (пример)
 
-Промпты хранятся как YAML-файлы в `services/ai/prompts/` и дублируются в таблице `prompt_versions` для A/B тестирования.
+Промпты хранятся как YAML-файлы в `services/ai/prompts/` и дублируются в таблице `prompt_versions` для версионирования.
 
 ### 5.0 Движок рендеринга промптов
 
@@ -1079,7 +1081,7 @@ def render_prompt(template_yaml: str, context: dict) -> str:
     return template.render(**sanitize_variables(context))
 ```
 
-**Источник истины:** YAML-файлы — seed-данные. При деплое загружаются в таблицу `prompt_versions` командой `python -m bot.cli sync_prompts`. Во время выполнения читается ТОЛЬКО из БД. A/B варианты существуют только в БД.
+**Источник истины:** YAML-файлы — seed-данные. При деплое загружаются в таблицу `prompt_versions` командой `python -m bot.cli sync_prompts`. Во время выполнения читается ТОЛЬКО из БД.
 
 **Санитизация переменных (защита от prompt injection):**
 ```python
@@ -1101,7 +1103,7 @@ def sanitize_variables(context: dict) -> dict:
 
 ```yaml
 meta:
-  task_type: seo_article
+  task_type: article
   version: v5
   model_tier: premium
   max_tokens: 8000
@@ -1564,6 +1566,11 @@ user: |
   Изображение должно соответствовать теме и визуальному стилю бренда.
   НЕ добавляй текст на изображение, если не указано иное.
 
+  <% if image_number %>
+  Это изображение <<image_number>> из <<total_images>>.
+  Вариация: <<variation_hint>>.
+  <% endif %>
+
 variables:
   - name: keyword
     source: categories.keywords (выбранная фраза)
@@ -1605,6 +1612,18 @@ variables:
     source: site_brandings.colors.background
     required: false
     default: "#ffffff"
+  - name: image_number
+    source: индекс текущего изображения (1-based) при count > 1
+    required: false
+    default: ""
+  - name: total_images
+    source: image_settings.count
+    required: false
+    default: ""
+  - name: variation_hint
+    source: round-robin из image_settings.angles или ["крупный план", "общий план", "детали", "в контексте использования"]
+    required: false
+    default: ""
 ```
 
 ### 7.6 Стоимость

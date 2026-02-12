@@ -111,6 +111,7 @@ class KeywordUpload(StatesGroup):
 # ConnectPinterest.oauth_callback: бот отправляет ссылку авторизации,
 # пользователь переходит в браузер, после авторизации redirect на:
 # {RAILWAY_PUBLIC_URL}/api/auth/pinterest/callback?state={user_id}_{nonce}
+# state = HMAC-SHA256(user_id + nonce, ENCRYPTION_KEY) — защита от CSRF
 # Callback сохраняет токен в Redis и отправляет deep link:
 # tg://resolve?domain=BOT_USERNAME&start=pinterest_auth_{nonce}
 # При получении /start pinterest_auth_{nonce} → FSM переходит к select_board
@@ -125,6 +126,29 @@ class KeywordUpload(StatesGroup):
 - Таймаут неактивности: 30 мин (env: FSM_INACTIVITY_TIMEOUT) → автосброс FSM, сообщение "Сессия истекла. Начните заново"
 - Проверка: middleware сравнивает last_update_time в state.data с текущим временем
 - Кнопка [Прервать] сохраняет прогресс для проекта (только ProjectCreate)
+- **Конфликт FSM:** Если пользователь начинает новую FSM, находясь в другой — текущая FSM автоматически сбрасывается. Уведомление: "Предыдущий процесс ({old_fsm_name}) прерван. Начинаем {new_fsm_name}." Реализация: в middleware перед `set_state()` проверять `current_state != None`.
+
+### 2.1 Хранение промежуточных данных в FSM
+
+**SocialPostPublish:** Сгенерированный контент (текст + хештеги) хранится в `state.data["generated_content"]` (Redis, TTL = FSM_TTL). Это означает:
+- При таймауте 30 мин → контент теряется, токены НЕ возвращаются (для дешёвых соц. постов ~40 токенов — допустимо)
+- При Redis TTL 24ч → аналогично
+- Для **дорогих** операций (статьи, 320+ токенов) используется `article_previews` в PostgreSQL — устойчиво к перезапуску
+
+**ArticlePublish:** Контент НЕ хранится в FSM. Вместо этого:
+- `article_previews.id` сохраняется в `state.data["preview_id"]`
+- Сам контент — в PostgreSQL (`article_previews.content_html`, `article_previews.images`)
+- При таймауте/перезапуске → превью остаётся в БД, cleanup-задача вернёт токены через 24ч
+
+### 2.2 Лимиты перегенерации
+
+| FSM | Бесплатных перегенераций | После лимита | Хранение счётчика |
+|-----|-------------------------|-------------|-------------------|
+| ArticlePublish | 2 | Новый платный цикл (~320 токенов) | `article_previews.regeneration_count` (PostgreSQL) |
+| SocialPostPublish | 2 | Новый платный цикл (~40 токенов) | `state.data["regeneration_count"]` (Redis) |
+| DescriptionGenerate | 2 | Новый платный цикл (~20 токенов) | `state.data["regeneration_count"]` (Redis) |
+
+Стоимость перегенерации фиксируется на уровне первой генерации (даже если AI сгенерировал больше/меньше слов).
 
 ---
 
@@ -139,7 +163,7 @@ class KeywordUpload(StatesGroup):
 | ConnectWordPress | url | Текст | URL с http/https, проверка доступности | "Сайт недоступен. Проверьте URL" |
 | ConnectWordPress | login | Текст | 1-100 символов | "Введите логин WordPress" |
 | ConnectWordPress | password | Текст | Формат App Password (xxxx xxxx xxxx xxxx) | "Введите Application Password из WordPress" |
-| ConnectTelegram | channel | Текст | Формат @channel или t.me/channel | "Введите ссылку на канал (@name или t.me/name)" |
+| ConnectTelegram | channel | Текст | Формат @channel, t.me/channel, или -100XXXXXXXXXX (числовой ID) | "Введите @channel, t.me/channel или числовой ID" |
 | ConnectTelegram | token | Текст | Формат bot_id:hash (проверка через getMe) | "Токен невалиден. Получите токен у @BotFather" |
 | KeywordGeneration | products | Текст | 3-1000 символов | "Опишите товары/услуги подробнее" |
 | KeywordGeneration | geography | Текст | 2-200 символов | "Укажите географию работы" |
@@ -156,7 +180,6 @@ class KeywordUpload(StatesGroup):
 | ScheduleSetup | select_days | Кнопки (множ. выбор) | Мин. 1 день выбран | "Выберите хотя бы один день" |
 | ScheduleSetup | select_count | Кнопка | 1-5 | Показать кнопки повторно |
 | ScheduleSetup | select_times | Кнопки (множ. выбор) | Ровно posts_per_day штук (из предыдущего шага) | "Выберите ровно {n} временных слотов" |
-| ConnectTelegram | channel | Текст | Формат @channel, t.me/channel, или -100XXXXXXXXXX (числовой ID) | "Введите @channel, t.me/channel или числовой ID" |
 
 ---
 
@@ -193,7 +216,7 @@ CLEAR_STATE                     CLEAR_STATE + возврат токенов     
 ### SocialPostPublish (Telegram / VK / Pinterest)
 
 ```
-[Callback: qp:{project}:{cat}:{platform}]
+[Callback: quick:cat:{cat_id}:{platform}:{conn_id}]
   │
   ▼
 confirm_cost ──[Да]──► generating ──[OK]──► review

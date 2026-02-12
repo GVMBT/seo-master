@@ -22,7 +22,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
 - docs/FSM_SPEC.md — 15 FSM StatesGroup, валидация, переходы
-- docs/EDGE_CASES.md — E01-E25, обработка ошибок
+- docs/EDGE_CASES.md — E01-E30, обработка ошибок
 - docs/USER_FLOWS_AND_UI_MAP.md — все экраны, навигация
 
 ПЕРЕД реализацией любого модуля — ПРОЧИТАЙ соответствующие секции спеков.
@@ -30,14 +30,15 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 
 ## Архитектура (docs/ARCHITECTURE.md §2)
 ```
-bot/           — main.py, config.py, middlewares/ (запуск, конфиг, цепочка middleware)
-routers/       — Aiogram роутеры (ТОЛЬКО маршрутизация и UI, бизнес-логика в services/)
-services/      — бизнес-логика (ZERO зависимости от Telegram/Aiogram)
-db/            — client.py, models.py, repositories/ (Repository pattern, Fernet в repo layer)
-api/           — HTTP-эндпоинты (QStash webhooks, YooKassa, Pinterest OAuth, health)
-cache/         — Redis client, FSM storage, key namespaces
+bot/            — main.py, config.py, exceptions.py, middlewares/ (запуск, конфиг, ошибки, middleware)
+routers/        — Aiogram роутеры: nested packages (projects/, categories/, platforms/, publishing/, admin/)
+keyboards/      — reply.py, inline.py, pagination.py (UI-клавиатуры, PAGE_SIZE=8)
+services/       — бизнес-логика (ZERO зависимости от Telegram/Aiogram)
+db/             — client.py, models.py, credential_manager.py, repositories/ (Repository pattern, Fernet)
+api/            — HTTP-эндпоинты (QStash webhooks, YooKassa, Pinterest OAuth, health)
+cache/          — Redis client, FSM storage, key namespaces
 platform_rules/ — валидация контента по платформам
-tests/         — зеркалит top-level: unit/services/, unit/db/, integration/fsm/, integration/api/
+tests/          — зеркалит top-level: unit/bot/, unit/db/, unit/routers/, unit/keyboards/
 ```
 Каждый модуль имеет свой CLAUDE.md с деталями реализации — читай его перед работой с модулем.
 
@@ -79,6 +80,41 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 - Параметризованные SQL запросы ВСЕГДА
 - Кастомные исключения наследуют от базового AppError
 - Max line length: 120, cyclomatic complexity: 15
+- `db` параметр в хендлерах: `db: SupabaseClient` (НЕ `object`, НЕ `Any`)
+- `assert` запрещён в продакшен-коде — используй `if not x: raise AppError(...)`
+- `callback.message`: ВСЕГДА проверяй на None/InaccessibleMessage перед доступом
+- FSM-классы: суффикс `*FSM` (ProjectCreateFSM, CategoryCreateFSM, etc.)
+
+## Известные расхождения в спеках (audit.md + февр. 2026)
+Спеки — source of truth. Конфликты (из аудита Part 1):
+1. **Quick publish callback_data**: FSM_SPEC (`qp:`) vs ARCHITECTURE/API_CONTRACTS (`quick:`) — использовать `quick:`
+2. **VK credentials field**: ARCHITECTURE (`"token"`) vs API_CONTRACTS (`"access_token"`) — использовать `"access_token"`
+3. **platform_schedules.status**: колонка `status` ДОБАВЛЕНА в схему (ARCHITECTURE.md §3.2), active | error
+
+Решено из аудита Part 2 (#21-#43, февр. 2026):
+- #21 aiohttp: §2.3 добавлен в ARCHITECTURE.md — api/ на aiohttp.web
+- #22 atomic balance: §5.5 — RPC-функции charge_balance/refund_balance/credit_balance
+- #24 backpressure: §5.6 — asyncio.Semaphore(10) для publish webhook
+- #25 RLS: уточнено — RLS НЕ используется, service_role key, row filtering в Repository
+- #26 XSS: §5.8 — nh3 санитизация HTML перед публикацией
+- #27 health security: Bearer token для детального health check
+- #28 regen cost: фиксируется на первой генерации
+- #29 FSM conflict: автосброс текущей FSM при входе в новую
+- #31 referral renewal: бонус на КАЖДЫЙ successful_payment включая продления
+- #35 cost estimate: OpenRouter ~$1000-1500/мес (изображения 63% бюджета)
+- #37 Realtime: убрано из стека
+- #38 social post storage: FSM state.data (Redis), потеря при таймауте допустима
+- #39 image.yaml: image_number + variation_hint для multi-image
+- #40 social regen: 2 бесплатных, аналогично ArticlePublish
+- #42 graceful shutdown: §5.7 — SIGTERM + 120с drain
+- #43 multiple WP: шаг выбора подключения при >1 WP
+
+Нерешённые вопросы (решить до Phase 6):
+- Хранение изображений (Supabase Storage? S3?) — нужна секция в ARCHITECTURE.md
+- Стриминг (F34) — editMessage spec есть в API_CONTRACTS §3.1, но edge cases не описаны
+- QStash Pro plan limits (#23) — проверить при реализации Phase 9
+
+Решено: A/B тестирование промптов deferred to v3 (колонка ab_test_group убрана из схемы).
 
 ## Agent Teams (slash-команды)
 ```
@@ -86,6 +122,7 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 /review-module <path>     — code review (reviewer agent, read-only)
 /test-module <name>       — тесты до зелёного (tester agent)
 /verify-spec              — сквозная проверка vs спецификации (integrator agent)
+/enrich-specs <target>    — обновление rules/skills/specs (spec-enricher agent)
 ```
 
 ## Контекстные правила (.claude/rules/)
@@ -93,7 +130,7 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 - `python-style.md` → `**/*.py` (ruff, mypy, type hints)
 - `security.md` → `**/*.py` (Fernet, SQL injection, rate limits)
 - `testing.md` → `tests/**/*.py` (pytest-asyncio, httpx.MockTransport, naming)
-- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E25 чеклист)
+- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E30 чеклист)
 
 ## MCP-серверы (настроены в settings.json)
 - **supabase** — управление БД, миграции, SQL через MCP
@@ -101,7 +138,7 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 - **context7** — поиск актуальной документации библиотек (Aiogram, Pydantic, etc.)
 
 ## Фазы разработки
-Полный план в `.progress/phases.md` (10 фаз). Текущий статус в `.progress/current.md`.
+Полный план в `.progress/phases.md` (12 фаз). Текущий статус в `.progress/current.md`.
 
 ## Контекст-менеджмент
 При длинных сессиях: обнови `.progress/current.md` перед /compact или /clear.

@@ -1,6 +1,9 @@
 """Thin async wrapper around Upstash Redis HTTP client."""
 
+import structlog
 from upstash_redis.asyncio import Redis as AsyncRedis
+
+log = structlog.get_logger()
 
 
 class RedisClient:
@@ -39,3 +42,12 @@ class RedisClient:
 
     async def ttl(self, key: str) -> int:
         return await self._redis.ttl(key)
+
+    async def ping(self) -> bool:
+        """Check Redis connectivity. Returns True if healthy."""
+        try:
+            result = await self._redis.ping()
+            return result == "PONG"
+        except Exception:
+            log.warning("redis_ping_failed", exc_info=True)
+            return False

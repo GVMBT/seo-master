@@ -1,6 +1,6 @@
 """Tests for db/client.py — Supabase PostgREST client."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -31,3 +31,26 @@ class TestSupabaseClient:
         session_headers = dict(client._client.session.headers)
         assert session_headers["apikey"] == key
         assert session_headers["authorization"] == f"Bearer {key}"
+
+    @pytest.mark.asyncio
+    async def test_rpc_returns_data(self) -> None:
+        client = SupabaseClient(url="https://test.supabase.co", key="test-key")
+        mock_resp = MagicMock()
+        mock_resp.data = [{"id": 1, "balance": 2000}]
+        mock_builder = AsyncMock()
+        mock_builder.execute = AsyncMock(return_value=mock_resp)
+        with patch.object(client._client, "rpc", return_value=mock_builder) as mock_rpc:
+            result = await client.rpc("adjust_balance", {"uid": 1, "delta": 500})
+            mock_rpc.assert_called_once_with("adjust_balance", {"uid": 1, "delta": 500})
+            assert result == [{"id": 1, "balance": 2000}]
+
+    @pytest.mark.asyncio
+    async def test_rpc_returns_empty_on_none(self) -> None:
+        client = SupabaseClient(url="https://test.supabase.co", key="test-key")
+        mock_resp = MagicMock()
+        mock_resp.data = None
+        mock_builder = AsyncMock()
+        mock_builder.execute = AsyncMock(return_value=mock_resp)
+        with patch.object(client._client, "rpc", return_value=mock_builder):
+            result = await client.rpc("some_function")
+            assert result == []

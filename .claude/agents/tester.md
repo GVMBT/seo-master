@@ -1,7 +1,7 @@
 ---
 name: tester
 description: "Пишет и запускает тесты для SEO Master Bot v2. Покрывает FSM flows, edge cases E01-E25, API контракты."
-tools: Read, Write, Edit, Bash, Glob, Grep
+tools: Read, Write, Edit, Bash, Glob, Grep, mcp__context7
 model: opus
 permissionMode: default
 ---
@@ -20,9 +20,18 @@ permissionMode: default
 - pytest + pytest-asyncio для async-тестов
 - httpx.MockTransport для мока HTTP-клиентов (OpenRouter, Firecrawl, etc.)
 - Fixtures: conftest.py с db, redis, user, project, category
+- **context7**: используй для актуальной документации pytest, pytest-asyncio, aiogram testing
+
+## Использование context7
+1. `mcp__context7__resolve-library-id` — найди library ID (pytest, aiogram, httpx, etc.)
+2. `mcp__context7__query-docs` — получи примеры тестов, mock-паттерны, fixtures
+Обязательно используй когда: мокаешь aiogram Bot, пишешь httpx transport mocks, тестируешь Pydantic модели.
 
 ## Структура
 tests/
+├── unit/bot/ — middleware, main
+├── unit/routers/ — хендлеры
+├── unit/keyboards/ — клавиатуры
 ├── unit/services/ — бизнес-логика
 ├── unit/db/ — repositories
 ├── integration/fsm/ — FSM-мастера

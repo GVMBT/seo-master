@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: "Ревьюит код SEO Master Bot v2 на соответствие архитектуре, спецификациям и edge cases. Используй после написания кода."
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, mcp__context7
 model: opus
 permissionMode: default
 ---
@@ -9,6 +9,12 @@ permissionMode: default
 # Code Reviewer
 
 Проверяй код на соответствие спецификациям. Ты НЕ пишешь код — только ревью.
+
+## Использование context7
+Используй `mcp__context7` для проверки актуальности API:
+- Aiogram: правильные ли фильтры, middleware API, FSM API
+- Pydantic v2: правильные ли validators, model_config, Field() usage
+- OpenAI SDK: правильные ли streaming, structured output, extra_body patterns
 
 ## Чеклист
 
@@ -18,6 +24,7 @@ permissionMode: default
 - [ ] Все запросы к БД через repositories
 - [ ] SQL параметризован (нет f-string)
 - [ ] credentials расшифровываются ТОЛЬКО в repository layer
+- [ ] Нет cross-repository queries (репозиторий не обращается к чужой таблице напрямую)
 
 ### FSM
 - [ ] /cancel обработан из каждого состояния
@@ -46,6 +53,20 @@ permissionMode: default
 - [ ] callback_data <= 64 байта
 - [ ] Сообщения <= 4096 символов, caption <= 1024
 - [ ] Пагинация по 8 кнопок + [Ещё]
+- [ ] `callback.message` проверяется на None/InaccessibleMessage перед доступом
+- [ ] `allowed_updates` в main.py содержит ВСЕ нужные типы (message, callback_query, pre_checkout_query, successful_payment, my_chat_member)
+
+### Типизация и безопасность кода
+- [ ] `db` параметр: `SupabaseClient` (НЕ `object`, НЕ `Any`)
+- [ ] Нет `# type: ignore[arg-type]` при передаче db в репозитории
+- [ ] `assert` НЕ используется в продакшен-коде (только в тестах)
+- [ ] Bare `list`/`dict` без типов отсутствуют в Pydantic моделях
+- [ ] `update_balance` и финансовые операции — атомарны (RPC или lock)
+
+### Спек-консистентность
+- [ ] Имена FSM-классов с суффиксом `*FSM` (ProjectCreateFSM, не ProjectCreate)
+- [ ] Quick publish callback: `quick:` prefix (НЕ `qp:`)
+- [ ] VK credentials: `access_token` (НЕ `token`)
 
 ### Статический анализ (запусти и включи в отчёт)
 - [ ] `uv run ruff check {module} --select=E,F,I,S,C901,B,UP,SIM,RUF` — 0 ошибок

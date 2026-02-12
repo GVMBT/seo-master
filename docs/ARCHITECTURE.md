@@ -11,7 +11,7 @@
 | Рантайм | Python 3.14.3 | JIT-компилятор, +25% производительности |
 | Пакетный менеджер | uv | В 100 раз быстрее pip |
 | Фреймворк бота | Aiogram 3.25+ | Async, роутеры, FSM, middleware, Bot API 9.4 |
-| База данных | Supabase (PostgreSQL 17) | Managed, RLS, миграции, realtime |
+| База данных | Supabase (PostgreSQL 17) | Managed, миграции, Row Filtering в Repository layer |
 | Кеш/Состояние | Upstash Redis | Хранение FSM, лимиты запросов, кеширование |
 | Планировщик | Upstash QStash | Бессерверный cron, гарантированная доставка |
 | AI-модели | OpenRouter (OpenAI-совместимый API) | 300+ моделей, fallbacks, structured outputs, prompt caching, streaming. Контракт: [API_CONTRACTS.md §3.1](API_CONTRACTS.md) |
@@ -30,12 +30,19 @@
 ```
 seo-master-bot-v2/
 ├── bot/
-│   ├── main.py                     # Запуск Aiogram, вебхук
+│   ├── main.py                     # Запуск Aiogram, вебхук, lifecycle
 │   ├── config.py                   # Pydantic Settings v2
+│   ├── exceptions.py               # AppError hierarchy (9 классов)
 │   └── middlewares/
-│       ├── auth.py                 # Регистрация, проверка GOD_MODE
-│       ├── throttling.py           # Лимиты запросов через Redis
-│       └── db.py                   # Инъекция сессии Supabase
+│       ├── db.py                   # DBSessionMiddleware (outer)
+│       ├── auth.py                 # AuthMiddleware + FSMInactivityMiddleware
+│       ├── throttling.py           # ThrottlingMiddleware (Redis INCR+EXPIRE)
+│       └── logging.py             # LoggingMiddleware (correlation_id, latency)
+│
+├── keyboards/                      # Клавиатуры Telegram
+│   ├── inline.py                   # Inline-клавиатуры (проекты, категории, настройки)
+│   ├── reply.py                    # Reply-клавиатуры (главное меню, cancel, skip)
+│   └── pagination.py              # Generic paginator (PAGE_SIZE=8)
 │
 ├── routers/                        # Роутеры Aiogram (~25 роутеров вместо 382 обработчиков)
 │   ├── start.py                    # /start, главное меню
@@ -99,14 +106,21 @@ seo-master-bot-v2/
 │   └── payments.py                 # Интеграция Telegram Stars
 │
 ├── db/
-│   ├── client.py                   # Асинхронный клиент Supabase
-│   ├── models.py                   # Pydantic-модели
+│   ├── client.py                   # Асинхронный клиент Supabase (postgrest)
+│   ├── models.py                   # Pydantic-модели (35 моделей для 13 таблиц)
+│   ├── credential_manager.py       # Fernet encrypt/decrypt для credentials
 │   ├── repositories/               # Паттерн Repository
+│   │   ├── base.py                 # BaseRepository + typed PostgREST helpers
 │   │   ├── users.py
 │   │   ├── projects.py
 │   │   ├── categories.py
+│   │   ├── connections.py          # Fernet encrypt/decrypt через CredentialManager
 │   │   ├── schedules.py
-│   │   └── publications.py
+│   │   ├── publications.py         # + keyword rotation (round-robin, LRU)
+│   │   ├── payments.py             # payments + token_expenses
+│   │   ├── audits.py               # site_audits + site_brandings
+│   │   ├── previews.py             # article_previews
+│   │   └── prompts.py              # prompt_versions
 │   └── migrations/                 # Миграции Supabase
 │
 ├── api/                            # HTTP-эндпоинты для вебхуков QStash и OAuth
@@ -137,11 +151,11 @@ seo-master-bot-v2/
 
 | # | Middleware | Файл | Что делает |
 |---|-----------|------|------------|
-| 1 | **DBSessionMiddleware** | `middlewares/db.py` | Инъекция Supabase-сессии в `data["db"]`. Закрытие после обработки. |
+| 1 | **DBSessionMiddleware** | `middlewares/db.py` | Outer middleware. Инъекция `data["db"]`, `data["redis"]`, `data["http_client"]`. Клиенты — shared singletons, cleanup только в `on_shutdown`. |
 | 2 | **AuthMiddleware** | `middlewares/auth.py` | Автозагрузка/авторегистрация пользователя → `data["user"]`. Проверка `role == 'admin'` → `data["is_admin"]`. |
-| 3 | **ThrottlingMiddleware** | `middlewares/throttling.py` | Redis token-bucket: 30 msg/min per user (rate limits §4.1 API_CONTRACTS). При превышении → "Слишком много запросов" + `drop_event`. |
+| 3 | **ThrottlingMiddleware** | `middlewares/throttling.py` | Redis INCR+EXPIRE: 30 msg/min per user. При превышении — молча дропает event (`return None`). |
 | 4 | **FSMInactivityMiddleware** | `middlewares/auth.py` | Проверяет `last_update_time` в `state.data`. Если `now - last_update_time > FSM_INACTIVITY_TIMEOUT` → сброс FSM, сообщение "Сессия истекла". Обновляет `last_update_time`. |
-| 5 | **LoggingMiddleware** | `middlewares/db.py` | Записывает `correlation_id` (UUID4) в `data["correlation_id"]`. Структурированный JSON-лог: user_id, update_type, handler, latency_ms. |
+| 5 | **LoggingMiddleware** | `middlewares/logging.py` | Записывает `correlation_id` (UUID4) в `data["correlation_id"]`. Структурированный JSON-лог: user_id, update_type, latency_ms. |
 
 **Регистрация:** `dp.update.outer_middleware(DBSessionMiddleware())`, далее inner middleware в порядке 2-5.
 
@@ -153,11 +167,43 @@ seo-master-bot-v2/
 
 | Клиент | Библиотека | Параметры |
 |--------|-----------|-----------|
-| Supabase PostgreSQL | `supabase-py` async client | Supabase Pooler (PgBouncer, transaction mode), макс. 50 connections на Railway instance |
+| Supabase PostgreSQL | `postgrest` (AsyncPostgrestClient) | Supabase Pooler (PgBouncer, transaction mode), макс. 50 connections на Railway instance |
 | Upstash Redis | `upstash-redis` (HTTP-based) | Stateless HTTP-запросы, без пула TCP-соединений (serverless-архитектура Upstash) |
 | Внешние API (OpenRouter, Firecrawl, DataForSEO) | `httpx.AsyncClient` | `limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)`, один shared client на приложение, `timeout=httpx.Timeout(30.0, connect=5.0)` |
 
-**Инициализация:** Все клиенты создаются в `main.py` при старте (`on_startup`), закрываются при остановке (`on_shutdown`). Инъекция через middleware `data["db"]`, `data["redis"]`, `data["http_client"]`.
+**Инициализация:** Все клиенты создаются синхронно в `create_app()` при запуске приложения, закрываются в `on_shutdown`. Инъекция через `DBSessionMiddleware` в `data["db"]`, `data["redis"]`, `data["http_client"]`.
+
+---
+
+## 2.3 Web-фреймворк для API-эндпоинтов (aiohttp)
+
+Модуль `api/` (QStash webhooks, YooKassa, Pinterest OAuth, health) работает на **aiohttp.web** — том же HTTP-сервере, что использует Aiogram для вебхуков. Отдельный веб-фреймворк (FastAPI, Starlette) НЕ нужен.
+
+```python
+from aiohttp import web
+
+def create_app() -> web.Application:
+    app = web.Application()
+
+    # Aiogram webhook
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
+
+    # API endpoints (QStash, YooKassa, health)
+    app.router.add_post("/api/publish", publish_handler)
+    app.router.add_post("/api/cleanup", cleanup_handler)
+    app.router.add_post("/api/notify", notify_handler)
+    app.router.add_post("/api/yookassa/webhook", yookassa_handler)
+    app.router.add_get("/api/auth/pinterest/callback", pinterest_callback)
+    app.router.add_get("/api/health", health_handler)
+
+    return app
+```
+
+**Доступ к зависимостям:** API-хендлеры получают клиенты через `request.app["db"]`, `request.app["redis"]`, `request.app["http_client"]` (инициализируются в `on_startup`, НЕ через Aiogram middleware).
+
+**Отличие от роутеров Aiogram:** API-хендлеры — thin wrappers (JSON in → Pydantic validate → Service Layer → JSON out). Бизнес-логика — только в `services/`.
 
 ---
 
@@ -269,7 +315,7 @@ CREATE INDEX idx_connections_project ON platform_connections(project_id);
  "bot_token": "123:ABC...", "identifier": "-100123456"}
 
 // VK:
-{"group_id": "-123456", "group_name": "Группа", "token": "vk1.a.XXX",
+{"group_id": "-123456", "group_name": "Группа", "access_token": "vk1.a.XXX",
  "identifier": "-123456"}
 
 // Pinterest:
@@ -309,7 +355,7 @@ IMAGE_DEFAULTS = {
     "cameras": [],                # не указано — AI решает
     "angles": [],                 # не указано — AI решает
     "quality": "HD",
-    "count": 1,                   # для соцсетей; для статей WP — 4
+    "count": 1,                   # default; WP override = 4 через platform_content_overrides
     "text_on_image": 0,
     "collage": 0,
 }
@@ -349,6 +395,7 @@ CREATE TABLE platform_schedules (
     schedule_times  TEXT[] DEFAULT '{}',        -- {09:00, 12:00, 18:00}
     posts_per_day   INTEGER DEFAULT 1 CHECK (posts_per_day BETWEEN 1 AND 5),
     enabled         BOOLEAN DEFAULT FALSE,
+    status          VARCHAR(20) DEFAULT 'active', -- active | error (E24: 3 retry fail → error)
     qstash_schedule_ids TEXT[] DEFAULT '{}',   -- ID расписаний в QStash (один per time slot)
     last_post_at    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ DEFAULT now(),
@@ -513,13 +560,13 @@ CREATE INDEX idx_previews_expires ON article_previews(expires_at) WHERE status =
 ```sql
 CREATE TABLE prompt_versions (
     id              SERIAL PRIMARY KEY,
-    task_type       VARCHAR(50) NOT NULL,      -- seo_article, social_post, keywords, review
+    task_type       VARCHAR(50) NOT NULL,      -- article, social_post, keywords, review, image, description, competitor_analysis
     version         VARCHAR(20) NOT NULL,      -- v1, v2, v3...
     prompt_yaml     TEXT NOT NULL,             -- YAML-содержимое промпта
     is_active       BOOLEAN DEFAULT FALSE,
-    ab_test_group   VARCHAR(10),               -- A, B, control
-    success_rate    DECIMAL(5,2),              -- % успешных генераций
-    avg_quality     DECIMAL(3,1),              -- Средняя оценка качества
+    -- A/B testing deferred to v3 (см. audit.md #10)
+    success_rate    DECIMAL(5,2),              -- % успешных генераций (для ручного анализа)
+    avg_quality     DECIMAL(3,1),              -- Средняя оценка качества (для ручного анализа)
     created_at      TIMESTAMPTZ DEFAULT now(),
     UNIQUE(task_type, version)
 );
@@ -541,7 +588,7 @@ CREATE TABLE prompt_versions (
 | 10 | `site_audits` | Результаты PageSpeed-аудита |
 | 11 | `site_brandings` | Цвета/шрифты сайта (Firecrawl) |
 | 12 | `article_previews` | Telegraph-превью (временные, TTL 24ч) |
-| 13 | `prompt_versions` | Версии AI-промптов + A/B тесты |
+| 13 | `prompt_versions` | Версии AI-промптов |
 
 ---
 
@@ -660,6 +707,8 @@ page:projects:2                       — пагинация: страница 2
 
 Логика статуса: `down` если database или redis недоступны; `degraded` если openrouter или qstash недоступны; `ok` иначе. Railway использует health endpoint для zero-downtime deploys.
 
+**Безопасность health endpoint:** Эндпоинт по умолчанию возвращает только `{"status": "ok", "version": "2.0.0"}`. Детальные `checks` с `latency_ms` доступны только с заголовком `Authorization: Bearer {HEALTH_CHECK_TOKEN}` (env var). Без токена — никакой информации об инфраструктуре.
+
 ### 5.4 Админ-панель (F20) — источники данных
 
 Доступ: `users.role = 'admin'` (проверка по `ADMIN_ID` из env).
@@ -732,7 +781,9 @@ async def broadcast(text: str, audience: str):
         "active_30d": "last_activity >= now() - interval '30 days'",
         "paid": "id IN (SELECT DISTINCT user_id FROM payments WHERE status = 'completed')",
     }
-    users = await db.fetch(f"SELECT id FROM users WHERE {filters[audience]}")
+    # audience → pre-defined filter, no user input interpolation
+    rows = await db.rpc("get_broadcast_users", {"audience_key": audience}).execute()
+    users = rows.data or []
     sent, failed = 0, 0
     for user in users:
         try:
@@ -743,3 +794,141 @@ async def broadcast(text: str, audience: str):
         await asyncio.sleep(0.05)  # rate limit: 20 msg/sec
     return {"sent": sent, "failed": failed}
 ```
+
+### 5.5 Атомарные операции с балансом
+
+Баланс пользователя обновляется ТОЛЬКО через RPC-функции Supabase (серверные SQL-функции). Это гарантирует атомарность и защиту от race conditions при параллельных списаниях (автопубликация + ручная генерация).
+
+```sql
+-- charge_balance: атомарное списание с проверкой
+CREATE OR REPLACE FUNCTION charge_balance(p_user_id BIGINT, p_amount INTEGER)
+RETURNS INTEGER AS $$
+DECLARE
+    new_balance INTEGER;
+BEGIN
+    UPDATE users SET balance = balance - p_amount
+    WHERE id = p_user_id AND balance >= p_amount
+    RETURNING balance INTO new_balance;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'insufficient_balance';
+    END IF;
+    RETURN new_balance;
+END;
+$$ LANGUAGE plpgsql;
+
+-- refund_balance: атомарный возврат
+CREATE OR REPLACE FUNCTION refund_balance(p_user_id BIGINT, p_amount INTEGER)
+RETURNS INTEGER AS $$
+DECLARE
+    new_balance INTEGER;
+BEGIN
+    UPDATE users SET balance = balance + p_amount
+    WHERE id = p_user_id
+    RETURNING balance INTO new_balance;
+    RETURN new_balance;
+END;
+$$ LANGUAGE plpgsql;
+
+-- credit_balance: пополнение (покупка, реферальный бонус)
+CREATE OR REPLACE FUNCTION credit_balance(p_user_id BIGINT, p_amount INTEGER)
+RETURNS INTEGER AS $$
+DECLARE
+    new_balance INTEGER;
+BEGIN
+    UPDATE users SET balance = balance + p_amount
+    WHERE id = p_user_id
+    RETURNING balance INTO new_balance;
+    RETURN new_balance;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**Использование в Repository:**
+```python
+async def charge_balance(self, user_id: int, amount: int) -> int:
+    result = await self.db.rpc("charge_balance", {"p_user_id": user_id, "p_amount": amount}).execute()
+    return result.data  # new_balance
+```
+
+**Запрещено:** `UPDATE users SET balance = balance - ? WHERE id = ?` напрямую из Python без `WHERE balance >= ?`. Всегда через RPC.
+
+### 5.6 Backpressure для автопубликации
+
+QStash может отправить несколько вебхуков одновременно (несколько расписаний срабатывают в одну минуту). Для защиты от перегрузки AI-сервисов используется `asyncio.Semaphore`:
+
+```python
+# api/publish.py
+PUBLISH_SEMAPHORE = asyncio.Semaphore(10)  # Максимум 10 параллельных генераций
+
+async def publish_handler(request: web.Request) -> web.Response:
+    async with PUBLISH_SEMAPHORE:
+        result = await execute_publish(...)
+    return web.json_response(result)
+```
+
+**Параметры:** 10 параллельных генераций — компромисс между пропускной способностью и нагрузкой на OpenRouter. При 10 генерациях по 45с каждая — максимум 10 * 45с = 450с wall time, но OpenRouter обрабатывает параллельно.
+
+**Таймаут:** QStash имеет дефолтный таймаут 30 мин — достаточно для ожидания в очереди семафора.
+
+### 5.7 Graceful Shutdown (SIGTERM)
+
+Railway отправляет SIGTERM при деплое. Бот должен завершить in-flight генерации до принудительного SIGKILL.
+
+```python
+# bot/main.py
+SHUTDOWN_EVENT = asyncio.Event()
+
+async def on_shutdown(app: web.Application):
+    """Graceful shutdown: ждём завершения текущих генераций."""
+    SHUTDOWN_EVENT.set()
+    # Дождаться освобождения семафора (все генерации завершены)
+    for _ in range(120):  # макс. 120 секунд
+        if PUBLISH_SEMAPHORE._value == 10:  # все слоты свободны
+            break
+        await asyncio.sleep(1)
+    # Закрыть клиенты
+    await app["http_client"].aclose()
+    await app["db"].aclose()
+
+# Railway env: RAILWAY_GRACEFUL_SHUTDOWN_TIMEOUT=120
+```
+
+**Конфигурация Railway:** `RAILWAY_GRACEFUL_SHUTDOWN_TIMEOUT=120` — 120 секунд между SIGTERM и SIGKILL. Достаточно для завершения самой долгой генерации (статья + 4 изображения ≈ 90с).
+
+### 5.8 HTML-санитизация контента
+
+AI-генерируемый `content_html` ОБЯЗАТЕЛЬНО проходит санитизацию перед публикацией (защита от XSS и нежелательных тегов):
+
+```python
+import nh3
+
+ALLOWED_TAGS = {
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "a", "img", "ul", "ol", "li",
+    "strong", "em", "b", "i", "blockquote",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "span", "br", "hr", "figure", "figcaption",
+    "script",  # только type="application/ld+json" (Schema.org)
+}
+
+ALLOWED_ATTRIBUTES = {
+    "a": {"href", "title", "target", "rel"},
+    "img": {"src", "alt", "width", "height", "loading"},
+    "span": {"style"},
+    "td": {"colspan", "rowspan"},
+    "th": {"colspan", "rowspan"},
+    "script": {"type"},  # только application/ld+json
+}
+
+def sanitize_html(html: str) -> str:
+    """Санитизация AI-генерированного HTML перед публикацией."""
+    return nh3.clean(
+        html,
+        tags=ALLOWED_TAGS,
+        attributes=ALLOWED_ATTRIBUTES,
+        link_rel="noopener noreferrer",
+    )
+```
+
+**Применяется:** в `services/ai/articles.py` и `services/ai/social_posts.py` ПОСЛЕ генерации, ДО передачи в Publisher. Для `<script type="application/ld+json">` (Schema.org) — дополнительная валидация JSON перед включением.

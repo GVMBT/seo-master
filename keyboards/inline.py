@@ -1,0 +1,201 @@
+"""Inline keyboard builders for projects, categories, settings."""
+
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from db.models import Category, Project, User
+from keyboards.pagination import PAGE_SIZE, paginate
+
+# ---------------------------------------------------------------------------
+# Project fields (15 editable) — order matches USER_FLOWS_AND_UI_MAP.md §2
+# ---------------------------------------------------------------------------
+
+PROJECT_FIELDS: list[tuple[str, str]] = [
+    ("name", "Название"),
+    ("company_name", "Компания"),
+    ("specialization", "Специализация"),
+    ("website_url", "Сайт"),
+    ("company_city", "Город"),
+    ("company_address", "Адрес"),
+    ("company_phone", "Телефон"),
+    ("company_email", "Email"),
+    ("company_instagram", "Instagram"),
+    ("company_vk", "VK"),
+    ("company_pinterest", "Pinterest"),
+    ("company_telegram", "Telegram"),
+    ("experience", "Опыт работы"),
+    ("advantages", "Преимущества"),
+    ("description", "Описание"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Project keyboards
+# ---------------------------------------------------------------------------
+
+
+def project_list_kb(projects: list[Project], page: int = 0) -> InlineKeyboardBuilder:
+    """Paginated project list + [Создать] + [Статистика] + [Главное меню].
+
+    When empty, shows [Создать проект] + [Помощь] (USER_FLOWS_AND_UI_MAP.md level 1).
+    """
+    if not projects:
+        builder = InlineKeyboardBuilder()
+        builder.button(text="Создать проект", callback_data="projects:new")
+        builder.button(text="Помощь", callback_data="help:main")
+        builder.adjust(1)
+        return builder
+
+    builder, _, nav_count = paginate(
+        items=projects,
+        page=page,
+        item_text_fn=lambda p: p.name,
+        item_callback_fn=lambda p: f"project:{p.id}:card",
+        page_callback_fn=lambda pg: f"page:projects:{pg}",
+    )
+    builder.button(text="Создать проект", callback_data="projects:new")
+    builder.button(text="Статистика", callback_data="stats:all")
+    builder.button(text="Главное меню", callback_data="menu:main")
+    # Rebuild sizes: paginate items + nav row + extra buttons 1-wide
+    page_size = PAGE_SIZE
+    page_count = len(projects[page * page_size : (page + 1) * page_size])
+    sizes = [1] * page_count
+    if nav_count:
+        sizes.append(nav_count)
+    sizes += [1, 1, 1]  # create + stats + menu
+    builder.adjust(*sizes)
+    return builder
+
+
+def project_card_kb(project: Project) -> InlineKeyboardBuilder:
+    """Project card action buttons (USER_FLOWS_AND_UI_MAP.md level 2, lines 507-516)."""
+    builder = InlineKeyboardBuilder()
+    tz = project.timezone or "Europe/Moscow"
+    # Exact order per spec:
+    builder.button(text="Редактировать данные", callback_data=f"project:{project.id}:edit")
+    builder.button(text="Управление категориями", callback_data=f"project:{project.id}:categories")
+    builder.button(text="Создать категорию", callback_data=f"project:{project.id}:cat:new")
+    builder.button(text="Подключения платформ", callback_data=f"project:{project.id}:connections")
+    builder.button(text="Планировщик публикаций", callback_data=f"project:{project.id}:scheduler")
+    builder.button(text="Анализ сайта", callback_data=f"project:{project.id}:audit")
+    builder.button(text=f"Часовой пояс: {tz}", callback_data=f"project:{project.id}:timezone")
+    # Destructive + navigation
+    builder.button(text="Удалить проект", callback_data=f"project:{project.id}:delete")
+    builder.button(text="К списку проектов", callback_data="projects:list")
+    builder.adjust(1)
+    return builder
+
+
+def project_edit_fields_kb(project: Project) -> InlineKeyboardBuilder:
+    """List of 15 editable fields with current values."""
+    builder = InlineKeyboardBuilder()
+    for field_name, label in PROJECT_FIELDS:
+        value = getattr(project, field_name, None)
+        display = f"{label}: {value}" if value else f"{label}: не заполнено"
+        if len(display) > 60:
+            display = display[:57] + "..."
+        builder.button(
+            text=display,
+            callback_data=f"project:{project.id}:field:{field_name}",
+        )
+    builder.button(text="Назад", callback_data=f"project:{project.id}:card")
+    builder.adjust(1)
+    return builder
+
+
+def project_delete_confirm_kb(project_id: int) -> InlineKeyboardBuilder:
+    """Delete confirmation: [Да, удалить] + [Отмена]."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Да, удалить", callback_data=f"project:{project_id}:delete:confirm")
+    builder.button(text="Отмена", callback_data=f"project:{project_id}:card")
+    builder.adjust(2)
+    return builder
+
+
+# ---------------------------------------------------------------------------
+# Category keyboards
+# ---------------------------------------------------------------------------
+
+
+def category_list_kb(
+    categories: list[Category], project_id: int, page: int = 0
+) -> InlineKeyboardBuilder:
+    """Paginated category list + [Добавить] + [К проекту]."""
+    builder, _, nav_count = paginate(
+        items=categories,
+        page=page,
+        item_text_fn=lambda c: c.name,
+        item_callback_fn=lambda c: f"category:{c.id}:card",
+        page_callback_fn=lambda pg: f"page:categories:{project_id}:{pg}",
+    )
+    builder.button(text="Добавить категорию", callback_data=f"project:{project_id}:cat:new")
+    builder.button(text="К проекту", callback_data=f"project:{project_id}:card")
+    # Rebuild sizes: paginate items + nav row + extra buttons 1-wide
+    page_count = len(categories[page * PAGE_SIZE : (page + 1) * PAGE_SIZE])
+    sizes = [1] * page_count
+    if nav_count:
+        sizes.append(nav_count)
+    sizes += [1, 1]  # add + back
+    builder.adjust(*sizes)
+    return builder
+
+
+def category_card_kb(category: Category) -> InlineKeyboardBuilder:
+    """Category card action buttons (stubs for Phase 10 features)."""
+    builder = InlineKeyboardBuilder()
+    # Phase 10 stubs
+    builder.button(text="Ключевые фразы", callback_data=f"category:{category.id}:keywords")
+    builder.button(text="Описание", callback_data=f"category:{category.id}:description")
+    builder.button(text="Цены", callback_data=f"category:{category.id}:prices")
+    builder.button(text="Отзывы", callback_data=f"category:{category.id}:reviews")
+    builder.button(text="Медиа", callback_data=f"category:{category.id}:media")
+    builder.button(text="Настройки изображений", callback_data=f"category:{category.id}:img_settings")
+    builder.button(text="Настройки текста", callback_data=f"category:{category.id}:text_settings")
+    # Actions
+    builder.button(text="Удалить категорию", callback_data=f"category:{category.id}:delete")
+    builder.button(
+        text="К списку категорий",
+        callback_data=f"project:{category.project_id}:categories",
+    )
+    builder.adjust(1)
+    return builder
+
+
+def category_delete_confirm_kb(category: Category) -> InlineKeyboardBuilder:
+    """Category delete confirmation."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Да, удалить", callback_data=f"category:{category.id}:delete:confirm")
+    builder.button(text="Отмена", callback_data=f"category:{category.id}:card")
+    builder.adjust(2)
+    return builder
+
+
+# ---------------------------------------------------------------------------
+# Settings keyboards
+# ---------------------------------------------------------------------------
+
+
+def settings_main_kb() -> InlineKeyboardBuilder:
+    """Settings menu with sub-sections."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Уведомления", callback_data="settings:notifications")
+    builder.button(text="Техподдержка", callback_data="settings:support")
+    builder.button(text="О боте", callback_data="settings:about")
+    builder.button(text="Главное меню", callback_data="menu:main")
+    builder.adjust(1)
+    return builder
+
+
+def settings_notifications_kb(user: User) -> InlineKeyboardBuilder:
+    """Notification toggles for 3 types."""
+    builder = InlineKeyboardBuilder()
+
+    pub_status = "ВКЛ" if user.notify_publications else "ВЫКЛ"
+    bal_status = "ВКЛ" if user.notify_balance else "ВЫКЛ"
+    news_status = "ВКЛ" if user.notify_news else "ВЫКЛ"
+
+    builder.button(text=f"Публикации: {pub_status}", callback_data="settings:notify:publications")
+    builder.button(text=f"Баланс: {bal_status}", callback_data="settings:notify:balance")
+    builder.button(text=f"Новости: {news_status}", callback_data="settings:notify:news")
+    builder.button(text="Назад", callback_data="settings:main")
+    builder.adjust(1)
+    return builder
