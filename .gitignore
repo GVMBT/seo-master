@@ -30,9 +30,11 @@ env/
 .venv/
 .ENV/
 
-# Pytest
+# Linters / type checkers / pytest cache
 .cache
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Editor
 .vscode/
