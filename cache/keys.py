@@ -3,6 +3,8 @@
 # TTL values in seconds
 FSM_TTL = 86400  # 24 hours
 PUBLISH_LOCK_TTL = 300  # 5 minutes
+CLEANUP_LOCK_TTL = 300  # 5 minutes
+NOTIFY_LOCK_TTL = 300  # 5 minutes
 BRANDING_TTL = 604800  # 7 days
 SERPER_TTL = 86400  # 24 hours
 PINTEREST_AUTH_TTL = 1800  # 30 minutes
@@ -40,6 +42,14 @@ class CacheKeys:
     @staticmethod
     def rate_limit(user_id: int, action: str) -> str:
         return f"rate:{user_id}:{action}"
+
+    @staticmethod
+    def cleanup_lock(msg_id: str) -> str:
+        return f"cleanup_lock:{msg_id}"
+
+    @staticmethod
+    def notify_lock(msg_id: str) -> str:
+        return f"notify_lock:{msg_id}"
 
     @staticmethod
     def prompt_cache(task_type: str) -> str:

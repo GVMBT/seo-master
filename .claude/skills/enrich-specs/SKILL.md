@@ -29,7 +29,7 @@ allowed-tools:
 6. Если есть breaking changes — обнови чеклисты агентов
 
 ### Если $ARGUMENTS = "edge-cases"
-1. Прочитай `docs/EDGE_CASES.md` (текущие E01-E30)
+1. Прочитай `docs/EDGE_CASES.md` (текущие E01-E42)
 2. Прочитай код в `routers/`, `services/`, `api/`
 3. Найди необработанные сценарии ошибок
 4. Добавь новые E-коды (E31+) в `docs/EDGE_CASES.md`

@@ -222,15 +222,16 @@ class TestCategoryDelete:
         project: Project, category: Category
     ) -> None:
         mock_callback.data = f"category:{category.id}:delete:confirm"
+        mock_scheduler = MagicMock()
+        mock_scheduler.cancel_schedules_for_category = AsyncMock()
         with (
             patch("routers.categories.manage.CategoriesRepository") as cat_cls,
             patch("routers.categories.manage.ProjectsRepository") as proj_cls,
-            patch("db.repositories.schedules.SchedulesRepository") as sched_cls,
         ):
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             proj_cls.return_value.get_by_id = AsyncMock(return_value=project)
             cat_cls.return_value.delete = AsyncMock(return_value=True)
             cat_cls.return_value.get_by_project = AsyncMock(return_value=[])
-            sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
-            await cb_category_delete_confirm(mock_callback, user, mock_db)
+            await cb_category_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
             cat_cls.return_value.delete.assert_awaited_once_with(category.id)
+            mock_scheduler.cancel_schedules_for_category.assert_awaited_once_with(category.id)

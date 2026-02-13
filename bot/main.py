@@ -258,6 +258,7 @@ def create_app() -> web.Application:
     app["ai_orchestrator"] = ai_orchestrator
     app["image_storage"] = image_storage
     app["bot"] = bot
+    app["settings"] = settings
 
     # Payment services (Phase 8)
     from services.payments.stars import StarsPaymentService
@@ -281,8 +282,19 @@ def create_app() -> web.Application:
     dp.workflow_data["stars_service"] = stars_service
     dp.workflow_data["yookassa_service"] = yookassa_service
 
+    # Scheduler service (Phase 9)
+    from services.scheduler import SchedulerService
+
+    scheduler_service = SchedulerService(
+        db=db,
+        qstash_token=settings.qstash_token.get_secret_value(),
+        base_url=settings.railway_public_url,
+    )
+    dp.workflow_data["scheduler_service"] = scheduler_service
+
     # Store payment services on app for webhook handlers
     app["yookassa_service"] = yookassa_service
+    app["scheduler_service"] = scheduler_service
 
     # Pinterest OAuth callback (needed for ConnectPinterestFSM)
     from api.auth import pinterest_callback
@@ -295,9 +307,14 @@ def create_app() -> web.Application:
     app.router.add_post("/api/yookassa/webhook", yookassa_webhook)
 
     # API routes (Phase 9: QStash webhooks, health)
-    # app.router.add_post("/api/publish", publish_handler)
-    # app.router.add_post("/api/cleanup", cleanup_handler)
-    # app.router.add_post("/api/notify", notify_handler)
-    # app.router.add_get("/api/health", health_handler)
+    from api.cleanup import cleanup_handler
+    from api.health import health_handler
+    from api.notify import notify_handler
+    from api.publish import publish_handler
+
+    app.router.add_post("/api/publish", publish_handler)
+    app.router.add_post("/api/cleanup", cleanup_handler)
+    app.router.add_post("/api/notify", notify_handler)
+    app.router.add_get("/api/health", health_handler)
 
     return app

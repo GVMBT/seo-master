@@ -141,6 +141,13 @@ class PlatformConnection(BaseModel):
 
 
 class PlatformConnectionCreate(BaseModel):
+    """Create model for platform_connections.
+
+    Note: `credentials` is NOT included here. The repository layer
+    encrypts credentials via CredentialManager and passes them
+    separately to the INSERT query. See db/credential_manager.py.
+    """
+
     project_id: int
     platform_type: str
     identifier: str
@@ -307,6 +314,14 @@ class PublicationLogCreate(BaseModel):
     error_message: str | None = None
 
 
+class PublicationLogUpdate(BaseModel):
+    status: str | None = None
+    error_message: str | None = None
+    post_url: str | None = None
+    rank_position: int | None = None
+    rank_checked_at: datetime | None = None
+
+
 # ---------------------------------------------------------------------------
 # 8. token_expenses
 # ---------------------------------------------------------------------------
@@ -367,7 +382,7 @@ class Payment(BaseModel):
 class PaymentCreate(BaseModel):
     user_id: int
     provider: str
-    tokens_amount: int
+    tokens_amount: int  # base + bonus (e.g. Starter = 3000 + 500 = 3500)
     package_name: str | None = None
     amount_rub: Decimal | None = None
     stars_amount: int | None = None
@@ -405,7 +420,7 @@ class SiteAudit(BaseModel):
     cls: Decimal | None = None
     ttfb_ms: int | None = None
     full_report: dict[str, Any] | None = None
-    recommendations: list[Any] = Field(default_factory=list)
+    recommendations: list[dict[str, Any]] = Field(default_factory=list)
     audited_at: datetime | None = None
 
 
@@ -421,7 +436,7 @@ class SiteAuditCreate(BaseModel):
     cls: Decimal | None = None
     ttfb_ms: int | None = None
     full_report: dict[str, Any] | None = None
-    recommendations: list[Any] = Field(default_factory=list)
+    recommendations: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

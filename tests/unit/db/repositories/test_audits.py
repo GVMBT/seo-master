@@ -23,7 +23,10 @@ def audit_row() -> dict:
         "cls": "0.1",
         "ttfb_ms": 800,
         "full_report": {"raw": "data"},
-        "recommendations": ["Optimize images", "Add meta descriptions"],
+        "recommendations": [
+            {"text": "Optimize images", "priority": "high"},
+            {"text": "Add meta descriptions", "priority": "medium"},
+        ],
         "audited_at": "2026-01-01T00:00:00+00:00",
     }
 

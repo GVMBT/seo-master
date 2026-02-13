@@ -7,7 +7,8 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from db.client import SupabaseClient
-from db.models import PlatformScheduleUpdate, Project, User
+from db.models import Project, User
+from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
     project_card_kb,
@@ -15,6 +16,8 @@ from keyboards.inline import (
     project_list_kb,
 )
 from routers._helpers import guard_callback_message
+from services.scheduler import SchedulerService
+from services.tokens import TokenService
 
 log = structlog.get_logger()
 
@@ -119,7 +122,7 @@ async def cb_project_card(callback: CallbackQuery, user: User, db: SupabaseClien
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data.regexp(r"^project:(\d+):(scheduler|audit|timezone)$"))
+@router.callback_query(F.data.regexp(r"^project:(\d+):(audit|timezone)$"))
 async def cb_project_feature_stub(callback: CallbackQuery) -> None:
     """Stub for not-yet-implemented project features."""
     await callback.answer("В разработке.", show_alert=True)
@@ -148,7 +151,9 @@ async def cb_project_delete(callback: CallbackQuery, user: User, db: SupabaseCli
 
 
 @router.callback_query(F.data.regexp(r"^project:(\d+):delete:confirm$"))
-async def cb_project_delete_confirm(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+async def cb_project_delete_confirm(
+    callback: CallbackQuery, user: User, db: SupabaseClient, scheduler_service: SchedulerService,
+) -> None:
     """Confirm deletion: delete project and show list."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -159,26 +164,27 @@ async def cb_project_delete_confirm(callback: CallbackQuery, user: User, db: Sup
         return
 
     # E11: cancel QStash schedules before CASCADE delete
-    from db.repositories.categories import CategoriesRepository
-    from db.repositories.schedules import SchedulesRepository
+    await scheduler_service.cancel_schedules_for_project(project_id)
 
-    categories = await CategoriesRepository(db).get_by_project(project_id)
-    if categories:
-        cat_ids = [c.id for c in categories]
-        sched_repo = SchedulesRepository(db)
-        schedules = await sched_repo.get_by_project(cat_ids)
-        for s in schedules:
-            if s.qstash_schedule_ids:
-                # Phase 9: add actual QStash API call here
-                log.warning(
-                    "orphan_qstash_schedules_on_delete",
-                    schedule_id=s.id,
-                    qstash_ids=s.qstash_schedule_ids,
-                )
-                await sched_repo.update(
-                    s.id,
-                    PlatformScheduleUpdate(qstash_schedule_ids=[], enabled=False),
-                )
+    # E42: refund active previews before CASCADE delete
+    previews_repo = PreviewsRepository(db)
+    active_previews = await previews_repo.get_active_drafts_by_project(project_id)
+    if active_previews:
+        from bot.config import get_settings
+
+        tokens_svc = TokenService(db, get_settings().admin_id)
+        for preview in active_previews:
+            tokens = preview.tokens_charged or 0
+            if tokens > 0:
+                try:
+                    await tokens_svc.refund(
+                        preview.user_id, tokens,
+                        reason="project_deleted",
+                        description=f"Project deleted, preview refund: {preview.keyword or 'unknown'}",
+                    )
+                except Exception:
+                    log.warning("e42_refund_failed", preview_id=preview.id, user_id=preview.user_id)
+            await previews_repo.atomic_mark_expired(preview.id)
 
     repo = ProjectsRepository(db)
     await repo.delete(project_id)

@@ -26,6 +26,8 @@ dependencies = [
     "cryptography>=46.0",
     # HTML sanitization (ARCHITECTURE.md §5.8)
     "nh3>=0.2",
+    # Image processing (WebP conversion, ARCHITECTURE.md §5.9)
+    "pillow>=11.0",
     # Templates
     "jinja2>=3.1",
     "pyyaml>=6.0",

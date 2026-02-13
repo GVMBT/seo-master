@@ -180,6 +180,14 @@ class PublicationsRepository(BaseRepository):
         first_phrase = sorted_kw[0].get("phrase", "") if sorted_kw else None
         return first_phrase or None, low_pool_warning
 
+    async def delete_old_logs(self, cutoff_iso: str) -> int:
+        """Delete publication logs created before cutoff date.
+
+        Returns the number of deleted rows.
+        """
+        resp = await self._table(_TABLE).delete().lt("created_at", cutoff_iso).execute()
+        return len(self._rows(resp))
+
     async def get_stats_by_user(self, user_id: int) -> dict[str, int]:
         """Get aggregated publication stats for a user."""
         resp = (

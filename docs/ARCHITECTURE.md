@@ -11,7 +11,7 @@
 | Рантайм | Python 3.14.3 | JIT-компилятор, +25% производительности |
 | Пакетный менеджер | uv | В 100 раз быстрее pip |
 | Фреймворк бота | Aiogram 3.25+ | Async, роутеры, FSM, middleware, Bot API 9.4 |
-| База данных | Supabase (PostgreSQL 17) | Managed, миграции, Row Filtering в Repository layer |
+| База данных | Supabase (PostgreSQL 17) | Managed, миграции, Row Filtering в Repository layer. RLS включён на всех таблицах (defense-in-depth), но политики не создаются — используется service_role key, который обходит RLS |
 | Кеш/Состояние | Upstash Redis | Хранение FSM, лимиты запросов, кеширование |
 | Планировщик | Upstash QStash | Бессерверный cron, гарантированная доставка |
 | AI-модели | OpenRouter (OpenAI-совместимый API) | 300+ моделей, fallbacks, structured outputs, prompt caching, streaming. Контракт: [API_CONTRACTS.md §3.1](API_CONTRACTS.md) |
@@ -61,8 +61,9 @@ seo-master-bot-v2/
 │   │   └── settings.py             # Настройки контента по платформам
 │   ├── publishing/
 │   │   ├── preview.py              # Telegraph-предпросмотр + подтверждение
+│   │   ├── social.py               # SocialPostPublishFSM (TG/VK/Pinterest генерация + публикация)
 │   │   ├── scheduler.py            # Настройка расписания (FSM)
-│   │   └── quick.py                # Быстрая публикация (1 клик)
+│   │   └── quick.py                # Быстрая публикация (callback → SocialPostPublishFSM)
 │   ├── profile.py                  # Профиль, расходы, реферал
 │   ├── tariffs.py                  # Пакеты + Telegram Stars
 │   ├── settings.py                 # Пользовательские настройки
@@ -82,15 +83,18 @@ seo-master-bot-v2/
 │   │   ├── images.py               # Генерация изображений (Nano Banana / Gemini via OpenRouter)
 │   │   ├── reviews.py              # Генерация отзывов
 │   │   ├── description.py          # Генерация описаний категорий
+│   │   ├── content_validator.py    # Валидация контента перед публикацией (nh3, лимиты)
+│   │   ├── rate_limiter.py         # Per-action rate limits (token-bucket в Redis)
+│   │   ├── prompt_engine.py        # Jinja2 рендеринг промптов (<< >> delimiters)
 │   │   └── prompts/                # YAML-шаблоны промптов (seed → DB prompt_versions)
 │   │       ├── article_v6.yaml          # v6: cluster-aware, dynamic length, image SEO
-│   │       ├── social.yaml
+│   │       ├── social_v3.yaml           # v3: social posts for TG/VK/Pinterest
 │   │       ├── keywords_cluster_v3.yaml  # v3: data-first clustering
-│   │       ├── keywords.yaml            # v2: legacy AI-only (fallback при E03)
-│   │       ├── image.yaml
-│   │       ├── review.yaml
-│   │       ├── description.yaml
-│   │       └── competitor_analysis_v1.yaml
+│   │       ├── keywords_v2.yaml         # v2: legacy AI-only (fallback при E03)
+│   │       ├── image_v1.yaml            # v1: image generation prompts
+│   │       ├── review_v1.yaml           # v1: review generation
+│   │       ├── description_v1.yaml      # v1: category description generation
+│   │       └── competitor_analysis_v1.yaml  # v1: standalone F39 competitor analysis
 │   ├── publishers/
 │   │   ├── base.py                 # BasePublisher (валидация -> публикация -> отчет)
 │   │   ├── wordpress.py            # WP REST API
@@ -104,8 +108,12 @@ seo-master-bot-v2/
 │   │   ├── serper.py               # Клиент Serper (поиск Google в реальном времени)
 │   │   └── telegraph.py            # Клиент Telegraph API (предпросмотр статей)
 │   ├── tokens.py                   # Токеновая экономика (проверка, списание, возврат)
+│   ├── storage.py                  # ImageStorage: Supabase Storage upload/cleanup (§5.9)
 │   ├── notifications.py            # Автоуведомления
-│   └── payments.py                 # Интеграция Telegram Stars
+│   └── payments/                   # Платежи
+│       ├── packages.py             # Пакеты и тарифы
+│       ├── stars.py                # Telegram Stars
+│       └── yookassa.py             # YooKassa (recurring + autopayments)
 │
 ├── db/
 │   ├── client.py                   # Асинхронный клиент Supabase (postgrest)
@@ -131,6 +139,7 @@ seo-master-bot-v2/
 │   ├── notify.py                   # QStash -> уведомления
 │   ├── yookassa.py                 # YooKassa webhook + QStash renew подписки
 │   ├── auth.py                     # Pinterest OAuth callback
+│   ├── auth_service.py             # Pinterest OAuth service logic (token exchange)
 │   └── health.py                   # Проверка здоровья
 │
 ├── cache/
@@ -190,7 +199,9 @@ def create_app() -> web.Application:
     # Aiogram webhook
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
+    SimpleRequestHandler(
+        dispatcher=dp, bot=bot, secret_token=config.telegram_webhook_secret
+    ).register(app, path="/webhook")
 
     # API endpoints (QStash, YooKassa, health)
     app.router.add_post("/api/publish", publish_handler)
@@ -208,7 +219,7 @@ def create_app() -> web.Application:
 
 **Отличие от роутеров Aiogram:** API-хендлеры — thin wrappers (JSON in → Pydantic validate → Service Layer → JSON out). Бизнес-логика — только в `services/`.
 
-**Верификация подписи QStash** — декоратор `@require_qstash_signature` (реализация в `api/auth.py`):
+**Верификация подписи QStash** — декоратор `@require_qstash_signature` (реализация в `api/__init__.py`):
 
 ```python
 from upstash_qstash import Receiver
@@ -487,7 +498,7 @@ CREATE INDEX idx_pub_logs_rotation ON publication_logs(category_id, created_at D
 ```sql
 CREATE TABLE token_expenses (
     id              SERIAL PRIMARY KEY,
-    user_id         BIGINT NOT NULL REFERENCES users(id),
+    user_id         BIGINT NOT NULL REFERENCES users(id),  -- NO ACTION: финансовые записи не удаляются при удалении пользователя (аудит)
     amount          INTEGER NOT NULL,          -- Отрицательное = списание, положительное = пополнение/возврат
     operation_type  VARCHAR(50) NOT NULL,      -- text_generation (статьи И соц. посты), image_generation, keyword_generation, audit, review, description, competitor_analysis, purchase, refund, referral_bonus, api_openrouter, api_dataforseo, api_firecrawl, api_pagespeed
     description     TEXT,
@@ -505,7 +516,7 @@ CREATE INDEX idx_expenses_user ON token_expenses(user_id, created_at DESC);
 ```sql
 CREATE TABLE payments (
     id              SERIAL PRIMARY KEY,
-    user_id         BIGINT NOT NULL REFERENCES users(id),
+    user_id         BIGINT NOT NULL REFERENCES users(id),  -- NO ACTION: платежи сохраняются для финансового аудита
     provider        VARCHAR(20) NOT NULL,      -- stars, yookassa
     status          VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending, completed, refunded, failed
     -- Stars-специфичные поля
@@ -575,7 +586,7 @@ CREATE INDEX idx_brandings_project ON site_brandings(project_id);
 ```sql
 CREATE TABLE article_previews (
     id              SERIAL PRIMARY KEY,
-    user_id         BIGINT NOT NULL REFERENCES users(id),
+    user_id         BIGINT NOT NULL REFERENCES users(id),  -- NO ACTION: превью не удаляются при удалении пользователя (cleanup по TTL)
     project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     category_id     INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
     connection_id   INTEGER REFERENCES platform_connections(id) ON DELETE SET NULL,
@@ -631,6 +642,8 @@ CREATE TABLE prompt_versions (
 | 11 | `site_brandings` | Цвета/шрифты сайта (Firecrawl) |
 | 12 | `article_previews` | Telegraph-превью (временные, TTL 24ч) |
 | 13 | `prompt_versions` | Версии AI-промптов |
+
+**ON DELETE policy:** `token_expenses`, `payments`, `article_previews` используют `REFERENCES users(id)` без ON DELETE (= NO ACTION). Это намеренно: финансовые записи и превью не должны удаляться при удалении пользователя. Удаление пользователей не поддерживается в v2. Если потребуется (GDPR, v3) — создать отдельный процесс с soft-delete и анонимизацией.
 
 ---
 
@@ -824,6 +837,7 @@ async def broadcast(text: str, audience: str):
         "paid": "id IN (SELECT DISTINCT user_id FROM payments WHERE status = 'completed')",
     }
     # audience → pre-defined filter, no user input interpolation
+    # NOTE: get_broadcast_users RPC will be created in Phase 12 (admin panel)
     rows = await db.rpc("get_broadcast_users", {"audience_key": audience}).execute()
     users = rows.data or []
     sent, failed = 0, 0

@@ -37,6 +37,12 @@ def get_content_settings(category_id, platform_type):
     return categories.get(category_id)  # fallback
 ```
 
+### Phase 9 repository methods
+- **PublicationsRepository.delete_old_logs(cutoff_iso)** — deletes publication_logs older than cutoff; used by CleanupService._delete_old_logs()
+- **PreviewsRepository.get_active_drafts_by_project(project_id)** — non-expired draft previews for a project (E42: refund before project delete)
+- **PreviewsRepository.get_expired_drafts()** — expired draft previews for daily cleanup
+- **PreviewsRepository.atomic_mark_expired(preview_id)** — CAS update (status='draft' -> 'expired'), returns None if already processed (prevents double refund)
+
 ### Ротация кластеров ключевых фраз (docs/API_CONTRACTS.md §6)
 1. Все кластеры категории, filter cluster_type="article"
 2. Сортировка: total_volume DESC, avg_difficulty ASC

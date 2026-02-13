@@ -1,6 +1,6 @@
 ---
 name: gap-finder
-description: "Ищет дыры между спеками, кодом и тестами SEO Master Bot v2. Только критические пробелы, не шум."
+description: "Ищет дыры между спеками (как и в самих спеках), кодом и тестами SEO Master Bot v2. Только критические пробелы, не шум."
 tools: Read, Bash, Glob, Grep, mcp__context7
 model: opus
 permissionMode: default

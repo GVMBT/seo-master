@@ -24,11 +24,12 @@ from bot.exceptions import AppError
 from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
-from db.models import PlatformConnection, PlatformConnectionCreate, PlatformScheduleUpdate, User
+from db.models import PlatformConnection, PlatformConnectionCreate, User
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.reply import cancel_kb, main_menu
 from routers._helpers import guard_callback_message
+from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
 
@@ -241,7 +242,9 @@ async def cb_connection_delete(callback: CallbackQuery, user: User, db: Supabase
 
 
 @router.callback_query(F.data.regexp(r"^conn:(\d+):delete:confirm$"))
-async def cb_connection_delete_confirm(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+async def cb_connection_delete_confirm(
+    callback: CallbackQuery, user: User, db: SupabaseClient, scheduler_service: SchedulerService,
+) -> None:
     """Confirm and delete a connection."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -259,22 +262,7 @@ async def cb_connection_delete_confirm(callback: CallbackQuery, user: User, db: 
         return
 
     # E24: cancel QStash schedules referencing this connection before delete
-    from db.repositories.schedules import SchedulesRepository
-
-    sched_repo = SchedulesRepository(db)
-    schedules = await sched_repo.get_by_connection(conn.id)
-    for s in schedules:
-        if s.qstash_schedule_ids:
-            # Phase 9: add actual QStash API call here
-            log.warning(
-                "orphan_qstash_schedules_on_delete",
-                schedule_id=s.id,
-                qstash_ids=s.qstash_schedule_ids,
-            )
-            await sched_repo.update(
-                s.id,
-                PlatformScheduleUpdate(qstash_schedule_ids=[], enabled=False),
-            )
+    await scheduler_service.cancel_schedules_for_connection(conn.id)
 
     await repo.delete(conn.id)
 

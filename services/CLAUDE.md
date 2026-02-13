@@ -16,10 +16,13 @@ class ArticleService:
 
 ## services/ai/
 - orchestrator.py — AIOrchestrator: generate(), generate_stream()
-- MODEL_CHAINS по задачам (docs/API_CONTRACTS.md §3.1):
+- MODEL_CHAINS по задачам (docs/API_CONTRACTS.md §3.1, 7 task types):
   article: claude-sonnet-4.5 → gpt-5.2 → deepseek-v3.2
   social_post: deepseek-v3.2 → claude-sonnet-4.5
   keywords: deepseek-v3.2 → gpt-5.2
+  review: deepseek-v3.2 → gpt-5.2
+  description: deepseek-v3.2 → gpt-5.2
+  competitor_analysis: deepseek-v3.2 → claude-sonnet-4.5
   image: gemini-3-pro-image → gemini-2.5-flash-image
 - OpenAI SDK с base_url="https://openrouter.ai/api/v1"
 - extra_body.models для нативных fallbacks
@@ -54,3 +57,41 @@ class ArticleService:
 - ЮKassa: Payment.create → redirect → webhook → начисление
 - Подписки Stars: createInvoiceLink(subscription_period=2592000)
 - Подписки ЮKassa: save_payment_method → payment_method_id → QStash cron
+
+## services/scheduler.py (Phase 9)
+- SchedulerService: QStash cron schedule management
+- __init__(db, qstash_token, base_url) — wraps QStash SDK
+- create_schedule() — DB insert + QStash cron creation for each time slot
+- delete_schedule() — cancel QStash first, then delete DB row
+- toggle_schedule() — enable/disable: creates or deletes QStash cron jobs
+- cancel_schedules_for_category() — E24: cancel all QStash before CASCADE delete
+- cancel_schedules_for_project() — E11: cancel all QStash for all project categories
+- cancel_schedules_for_connection() — cancel QStash when connection removed
+- estimate_weekly_cost() — static, calculates token cost per week
+- Cron format: CRON_TZ={timezone} {min} {hour} * * {days}
+- Injected via dp.workflow_data["scheduler_service"] + app["scheduler_service"]
+
+## services/publish.py (Phase 9)
+- PublishService: auto-publish pipeline triggered by QStash webhook
+- __init__(db, redis, http_client, ai_orchestrator, image_storage, admin_id)
+- execute(PublishPayload) -> PublishOutcome(status, reason, post_url, keyword, tokens_spent, user_id, notify)
+- Pipeline: load user -> load category -> check keywords (E17) -> load connection -> rotate keyword (E22/E23) -> check balance (E01) -> charge -> generate+publish -> log -> return
+- Insufficient balance (E01): sets schedule status="error" via SchedulesRepository.update() to flag in UI; notifies user if user.notify_balance is True
+- Refund on any error after charge (with sentry capture if refund fails)
+- TODO Phase 10: actual AI generation + publisher integration (currently logs placeholder)
+
+## services/cleanup.py (Phase 9)
+- CleanupService: daily cleanup triggered by QStash cron
+- __init__(db, http_client, image_storage, admin_id)
+- execute() -> CleanupResult(expired_count, refunded[], logs_deleted, images_deleted)
+- _expire_previews(): find expired draft previews, atomic_mark_expired (prevents double-processing), refund tokens, clean Supabase Storage images, delete Telegraph pages
+  - Loads user to read notify_balance preference; each refund entry includes {user_id, keyword, tokens_refunded, notify_balance}
+  - Cleanup handler in api/cleanup.py respects notify_balance before sending notification
+- _delete_old_logs(): delegates to PublicationsRepository.delete_old_logs(cutoff_iso) (not inline SQL)
+
+## services/notifications.py (Phase 9)
+- NotifyService: batch notification builder (zero Telegram deps)
+- __init__(db)
+- build_low_balance(threshold=100) -> list[(user_id, text)] — users with low balance + notify_balance=True
+- build_weekly_digest() -> list[(user_id, text)] — active users (30 days) + notify_news=True
+- build_reactivation() -> list[(user_id, text)] — inactive users (>14 days)

@@ -22,7 +22,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
 - docs/FSM_SPEC.md — 16 FSM StatesGroup, валидация, переходы
-- docs/EDGE_CASES.md — E01-E36, обработка ошибок
+- docs/EDGE_CASES.md — E01-E42, обработка ошибок
 - docs/USER_FLOWS_AND_UI_MAP.md — все экраны, навигация
 
 ПЕРЕД реализацией любого модуля — ПРОЧИТАЙ соответствующие секции спеков.
@@ -120,8 +120,16 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 - Хранение изображений: Supabase Storage bucket `content-images` для промежуточного хранения (ARCHITECTURE.md §5.9). Генерация → in-memory → WebP → Supabase Storage (24ч) → publish на платформу
 - Стриминг (F34) — editMessage spec есть в API_CONTRACTS §3.1
 
+Решено (Phase 9):
+- **QStash schedule management**: SchedulerService wraps QStash SDK; injected via dp.workflow_data["scheduler_service"] + app["scheduler_service"]
+- **Backpressure**: PUBLISH_SEMAPHORE(10) + SHUTDOWN_EVENT in bot/main.py; publish_handler acquires semaphore with 300s timeout
+- **Idempotency**: Redis NX lock by Upstash-Message-Id for /api/publish, /api/cleanup, /api/notify
+- **QStash signature**: `require_qstash_signature` decorator in api/__init__.py; Receiver.verify()
+- **Notifications delivery**: _send_notifications() in api/notify.py; TelegramRetryAfter retry, 50ms spacing
+- **Cleanup refund**: atomic_mark_expired prevents double-processing; refund + notify user + clean images + delete Telegraph
+
 Нерешённые вопросы:
-- QStash Pro plan limits (#23) — проверить при реализации Phase 9
+- QStash Pro plan limits (#23) — проверить при росте числа расписаний
 - F34 streaming edge cases (mid-stream error, rate limits) — не описаны
 
 AI Pipeline Rework (Phase 10):
@@ -175,7 +183,7 @@ Phase N:
 - `python-style.md` → `**/*.py` (ruff, mypy, type hints)
 - `security.md` → `**/*.py` (Fernet, SQL injection, rate limits)
 - `testing.md` → `tests/**/*.py` (pytest-asyncio, httpx.MockTransport, naming)
-- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E36 чеклист)
+- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E42 чеклист)
 - `aiohttp-handlers.md` → `api/**/*.py` (thin handlers, shared http_client, Service Layer)
 
 ## MCP-серверы (настроены в settings.json)

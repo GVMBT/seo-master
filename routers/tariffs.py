@@ -292,7 +292,6 @@ async def cb_subscription_cancel_confirm(
             log.exception("stars_cancel_api_error", user_id=user.id)
     elif result["provider"] == "yookassa":
         await yookassa_service.cancel_subscription(user.id)
-        # TODO Phase 9: cancel QStash renewal schedule for this subscription (G2)
     await msg.edit_text(
         "Подписка отменена. Она будет действовать до окончания текущего периода.",
         reply_markup=tariffs_main_kb().as_markup(),

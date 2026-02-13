@@ -46,6 +46,19 @@ class PreviewsRepository(BaseRepository):
         row = self._first(resp)
         return ArticlePreview(**row) if row else None
 
+    async def get_active_drafts_by_project(self, project_id: int) -> list[ArticlePreview]:
+        """Get non-expired draft previews for a project (E42: refund before delete)."""
+        now = datetime.now(tz=UTC).isoformat()
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .eq("project_id", project_id)
+            .eq("status", "draft")
+            .gte("expires_at", now)
+            .execute()
+        )
+        return [ArticlePreview(**row) for row in self._rows(resp)]
+
     async def get_expired_drafts(self) -> list[ArticlePreview]:
         """Get expired draft previews for cleanup.
 
@@ -64,3 +77,18 @@ class PreviewsRepository(BaseRepository):
     async def mark_expired(self, preview_id: int) -> None:
         """Mark a single preview as expired (called after refund + notification)."""
         await self._table(_TABLE).update({"status": "expired"}).eq("id", preview_id).execute()
+
+    async def atomic_mark_expired(self, preview_id: int) -> ArticlePreview | None:
+        """Atomically mark preview as expired (CAS: only if status='draft').
+
+        Returns the updated preview, or None if already expired/processed (race condition).
+        """
+        resp = (
+            await self._table(_TABLE)
+            .update({"status": "expired"})
+            .eq("id", preview_id)
+            .eq("status", "draft")
+            .execute()
+        )
+        row = self._first(resp)
+        return ArticlePreview(**row) if row else None

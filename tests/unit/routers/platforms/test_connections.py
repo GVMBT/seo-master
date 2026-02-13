@@ -448,23 +448,24 @@ class TestCbConnectionDeleteConfirm:
     ) -> None:
         mock_callback.data = f"conn:{connection.id}:delete:confirm"
         mock_project = Project(id=1, user_id=user.id, name="P", company_name="C", specialization="S")
+        mock_scheduler = MagicMock()
+        mock_scheduler.cancel_schedules_for_connection = AsyncMock()
 
         with (
             patch("routers.platforms.connections.guard_callback_message", return_value=mock_callback.message),
             patch("routers.platforms.connections._get_connections_repo") as mock_repo_fn,
             patch("routers.platforms.connections.ProjectsRepository") as mock_proj_cls,
-            patch("db.repositories.schedules.SchedulesRepository") as mock_sched_cls,
         ):
             repo = mock_repo_fn.return_value
             repo.get_by_id = AsyncMock(return_value=connection)
             repo.delete = AsyncMock()
             repo.get_by_project = AsyncMock(return_value=[])
             mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=mock_project)
-            mock_sched_cls.return_value.get_by_connection = AsyncMock(return_value=[])
 
-            await cb_connection_delete_confirm(mock_callback, user, mock_db)
+            await cb_connection_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
 
         repo.delete.assert_awaited_once_with(connection.id)
+        mock_scheduler.cancel_schedules_for_connection.assert_awaited_once_with(connection.id)
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "удалено" in text.lower()
 
@@ -472,6 +473,7 @@ class TestCbConnectionDeleteConfirm:
         self, mock_callback: MagicMock, user: User, mock_db: MagicMock
     ) -> None:
         mock_callback.data = "conn:999:delete:confirm"
+        mock_scheduler = MagicMock()
 
         with (
             patch("routers.platforms.connections.guard_callback_message", return_value=mock_callback.message),
@@ -479,7 +481,7 @@ class TestCbConnectionDeleteConfirm:
         ):
             mock_repo_fn.return_value.get_by_id = AsyncMock(return_value=None)
 
-            await cb_connection_delete_confirm(mock_callback, user, mock_db)
+            await cb_connection_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
 
         mock_callback.answer.assert_awaited_once()
 

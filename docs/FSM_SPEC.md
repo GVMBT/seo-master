@@ -4,6 +4,8 @@
 
 Все FSM-мастера используют Aiogram 3 StatesGroup с хранением в Redis (Upstash).
 
+**Итого: 16 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ArticlePublishFSM, SocialPostPublishFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, ReviewGenerationFSM, DescriptionGenerateFSM, CompetitorAnalysisFSM)
+
 ---
 
 ## 1. Определения StatesGroup
@@ -81,7 +83,9 @@ class PriceInputFSM(StatesGroup):
 # routers/categories/reviews.py
 class ReviewGenerationFSM(StatesGroup):
     quantity = State()       # 3/5/10 отзывов
-    confirm = State()        # Подтверждение
+    confirm_cost = State()   # Подтверждение стоимости (N × 10 токенов, проверка баланса)
+    generating = State()     # Генерация (ожидание)
+    review = State()         # Просмотр: [Сохранить/Перегенерировать/Отмена]
 
 # routers/categories/manage.py
 class DescriptionGenerateFSM(StatesGroup):
@@ -101,7 +105,7 @@ class CategoryCreateFSM(StatesGroup):
 class ProjectEditFSM(StatesGroup):
     field_value = State()    # Ввод нового значения поля (field_name в state.data)
 
-# routers/publishing/quick.py
+# routers/publishing/social.py (вызывается из quick.py и из карточки категории)
 class SocialPostPublishFSM(StatesGroup):
     confirm_cost = State()   # Подтверждение стоимости
     generating = State()     # Генерация (ожидание)
@@ -236,7 +240,7 @@ CLEAR_STATE                     CLEAR_STATE + возврат токенов     
 ### SocialPostPublishFSM (Telegram / VK / Pinterest)
 
 ```
-[Callback: quick:cat:{cat_id}:{platform}:{conn_id}]
+[Callback: quick:cat:{cat_id}:{plat}:{conn_id}]  # plat = wp|tg|vk|pin
   │
   ▼
 confirm_cost ──[Да]──► generating ──[OK]──► review

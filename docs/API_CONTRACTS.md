@@ -383,6 +383,22 @@ if webhook.object.metadata.get("is_subscription"):
 ```
 
 **Шаг 3: Автосписание (QStash cron, раз в 30 дней)**
+
+Эндпоинт: `POST /api/yookassa/renew`
+Верификация: QStash signature (`@require_qstash_signature`)
+
+```python
+# Body (от QStash):
+{
+    "user_id": 123456,
+    "payment_method_id": "pm_xxx",
+    "package": "pro"
+}
+```
+
+Идемпотентность: Redis NX lock `yookassa_renew:{user_id}` (TTL 1ч).
+При ошибке создания платежа → уведомить пользователя (E37), НЕ ретраить (QStash retry может создать дубликат).
+
 ```python
 # Эндпоинт /api/yookassa/renew (вызывается QStash)
 async def renew_subscription(user_id: int, payment_method_id: str, package: str):
@@ -397,7 +413,7 @@ async def renew_subscription(user_id: int, payment_method_id: str, package: str)
         },
         "description": f"Продление подписки {package}",
     })
-    # Результат придёт через вебхук payment.succeeded / payment.canceled
+    # Результат придёт через вебхук payment.succeeded / payment.canceled (E37)
 ```
 
 **Шаг 4: Отмена подписки**
@@ -468,6 +484,7 @@ class GenerationContext:
     specialization: str
     category_name: str
     keyword: str                                # ALWAYS populated. For clusters: = main_phrase. For legacy: = selected phrase
+                                                # NOTE: промпты используют <<keyword>> (social) и <<main_phrase>> (article). GenerationContext заполняет оба
     language: str = "ru"
     # === Cluster-aware fields (article_v6, keywords_cluster_v3) ===
     main_phrase: str | None = None              # cluster.main_phrase. If None → use keyword (legacy). New code should prefer main_phrase when not None
@@ -723,6 +740,8 @@ class BasePublisher(ABC):
 ```
 
 **Реализации:** `WordPressPublisher`, `TelegramPublisher`, `VKPublisher`, `PinterestPublisher`.
+
+> **Важно: shared HTTP client.** В примерах ниже `async with httpx.AsyncClient(...) as client:` используется для наглядности. В реальной реализации **ЗАПРЕЩЕНО** создавать новый `httpx.AsyncClient` на каждый запрос (см. ARCHITECTURE.md §2.2). Вместо этого используйте shared `http_client` из зависимостей. Для BasicAuth (WordPress): передавайте `auth` через параметры запроса (`client.post(..., auth=httpx.BasicAuth(...))`). Для Bearer (VK, Pinterest): передавайте через `headers`.
 
 ### 3.3 WordPressPublisher — WP REST API
 
@@ -1024,7 +1043,8 @@ class ContentValidator:
 
 ```
 Шаг 1 (если проектов >1): callback_data = "quick:project:{id}"
-Шаг 2: callback_data = "quick:cat:{cat_id}:{platform}:{conn_id}"
+Шаг 2: callback_data = "quick:cat:{cat_id}:{plat}:{conn_id}"
+  plat = short platform code: wp | tg | vk | pin (экономия байт, макс 64)
 ```
 
 После нажатия кнопки шага 2:
@@ -1118,6 +1138,8 @@ MAX_REGENERATIONS_FREE=2       # Бесплатных перегенераций
       allowed_updates=["message", "callback_query", "pre_checkout_query", "my_chat_member"],
   )
   # Aiogram верифицирует X-Telegram-Bot-Api-Secret-Token автоматически
+  # Примечание: my_chat_member отслеживает НАШЕГО бота. Для бота-публикатора пользователя
+  # (отдельный бот) статус в канале проверяется при каждой публикации (getChatMember)
   ```
 
 ---
@@ -1953,8 +1975,10 @@ variables:
 Социальные посты используют тот же пул кластеров, но с отличиями:
 
 ```
-1. Фильтр: cluster_type IN ("article", "social") — НЕ только "article"
-   (кластеры типа "social" — короткие фразы, хорошо подходят для постов)
+1. Фильтр: НЕТ фильтра по cluster_type — все кластеры пригодны для постов (и "article", и "product_page")
+   Причина: для статей фильтруем только "article" (product_page не подходит для длинного контента),
+   но для постов (100-300 слов) любой кластер работает.
+   Если cluster_type="article" И cluster_type="product_page" оба есть — используются все.
 2. Из выбранного кластера берётся ТОЛЬКО main_phrase (не весь кластер)
    → передаётся в social.yaml как <<keyword>>
 3. Cooldown ОБЩИЙ по content_type: статья и пост по одному кластеру НЕ конфликтуют
@@ -1991,12 +2015,12 @@ variables:
 ```python
 import openai
 
-client = openai.OpenAI(
+client = openai.AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.environ["OPENROUTER_API_KEY"],
 )
 
-response = client.chat.completions.create(
+response = await client.chat.completions.create(
     model="google/gemini-3-pro-image-preview",
     messages=[{
         "role": "user",

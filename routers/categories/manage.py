@@ -11,12 +11,13 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
-from db.models import Category, CategoryCreate, PlatformScheduleUpdate, User
+from db.models import Category, CategoryCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import category_card_kb, category_delete_confirm_kb, category_list_kb
 from keyboards.reply import cancel_kb, main_menu
 from routers._helpers import guard_callback_message
+from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
 
@@ -267,7 +268,9 @@ async def cb_category_delete(callback: CallbackQuery, user: User, db: SupabaseCl
 
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):delete:confirm$"))
-async def cb_category_delete_confirm(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+async def cb_category_delete_confirm(
+    callback: CallbackQuery, user: User, db: SupabaseClient, scheduler_service: SchedulerService,
+) -> None:
     """Confirm deletion and show updated category list."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -279,22 +282,7 @@ async def cb_category_delete_confirm(callback: CallbackQuery, user: User, db: Su
     _, project_id = result
 
     # E24: cancel QStash schedules before CASCADE delete
-    from db.repositories.schedules import SchedulesRepository
-
-    sched_repo = SchedulesRepository(db)
-    schedules = await sched_repo.get_by_category(category_id)
-    for s in schedules:
-        if s.qstash_schedule_ids:
-            # Phase 9: add actual QStash API call here
-            log.warning(
-                "orphan_qstash_schedules_on_delete",
-                schedule_id=s.id,
-                qstash_ids=s.qstash_schedule_ids,
-            )
-            await sched_repo.update(
-                s.id,
-                PlatformScheduleUpdate(qstash_schedule_ids=[], enabled=False),
-            )
+    await scheduler_service.cancel_schedules_for_category(category_id)
 
     repo = CategoriesRepository(db)
     await repo.delete(category_id)

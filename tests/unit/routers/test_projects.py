@@ -333,15 +333,16 @@ class TestProjectDelete:
         self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project
     ) -> None:
         mock_callback.data = f"project:{project.id}:delete:confirm"
+        mock_scheduler = MagicMock()
+        mock_scheduler.cancel_schedules_for_project = AsyncMock()
         with (
             patch("routers.projects.card.ProjectsRepository") as repo_cls,
-            patch("db.repositories.categories.CategoriesRepository") as cat_cls,
-            patch("db.repositories.schedules.SchedulesRepository") as sched_cls,
+            patch("routers.projects.card.PreviewsRepository") as previews_cls,
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=project)
             repo_cls.return_value.delete = AsyncMock(return_value=True)
             repo_cls.return_value.get_by_user = AsyncMock(return_value=[])
-            cat_cls.return_value.get_by_project = AsyncMock(return_value=[])
-            sched_cls.return_value.get_by_project = AsyncMock(return_value=[])
-            await cb_project_delete_confirm(mock_callback, user, mock_db)
+            previews_cls.return_value.get_active_drafts_by_project = AsyncMock(return_value=[])
+            await cb_project_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
             repo_cls.return_value.delete.assert_awaited_once_with(project.id)
+            mock_scheduler.cancel_schedules_for_project.assert_awaited_once_with(project.id)

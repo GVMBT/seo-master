@@ -1,6 +1,6 @@
 """Repository for users table."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -225,6 +225,39 @@ class UsersRepository(BaseRepository):
         """Update last_activity timestamp to current UTC time."""
         now = datetime.now(tz=UTC).isoformat()
         await self._table(_TABLE).update({"last_activity": now}).eq("id", user_id).execute()
+
+    async def get_low_balance_users(self, threshold: int = 100) -> list[User]:
+        """Get users with balance below threshold and notify_balance=True."""
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .lt("balance", threshold)
+            .eq("notify_balance", True)
+            .execute()
+        )
+        return [User(**row) for row in self._rows(resp)]
+
+    async def get_inactive_users(self, days: int = 14) -> list[User]:
+        """Get users inactive for more than N days."""
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .lt("last_activity", cutoff)
+            .execute()
+        )
+        return [User(**row) for row in self._rows(resp)]
+
+    async def get_active_users(self, days: int = 30) -> list[User]:
+        """Get users active within the last N days."""
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .gte("last_activity", cutoff)
+            .execute()
+        )
+        return [User(**row) for row in self._rows(resp)]
 
     async def get_referral_count(self, user_id: int) -> int:
         """Count users who have this user as referrer."""
