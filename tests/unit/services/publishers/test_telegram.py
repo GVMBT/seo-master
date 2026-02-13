@@ -19,7 +19,7 @@ from services.publishers.telegram import _CAPTION_LIMIT, _TEXT_LIMIT, TelegramPu
 # Helpers
 # ---------------------------------------------------------------------------
 
-_BOT_TOKEN = "00000000:TEST_" + "x" * 30  # noqa: S105
+_BOT_TOKEN = "00000000:TEST_" + "x" * 30
 _CHANNEL_ID = "-1001234567890"
 _API_PREFIX = f"https://api.telegram.org/bot{_BOT_TOKEN}"
 

@@ -83,7 +83,7 @@ class TestTgChannelRegex:
 
 class TestBotTokenRegex:
     def test_valid_token(self) -> None:
-        assert _BOT_TOKEN_RE.match("12345678:ABC" + "x" * 32) is not None  # noqa: S106
+        assert _BOT_TOKEN_RE.match("12345678:ABC" + "x" * 32) is not None
 
     def test_short_id_invalid(self) -> None:
         assert _BOT_TOKEN_RE.match("1234:ABCdefGHI_1234567890123456789012345") is None

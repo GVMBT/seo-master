@@ -5,6 +5,7 @@ Edge cases: E08 (VK token revoked), E20 (Pinterest OAuth timeout),
 E21 (Pinterest OAuth error), E30 (CSRF protection via HMAC state).
 """
 
+import html
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -149,7 +150,7 @@ def _format_connection_card(conn: PlatformConnection) -> str:
     status_text = status_map.get(conn.status, conn.status)
     return (
         f"<b>{platform_name}</b>\n"
-        f"Идентификатор: {conn.identifier}\n"
+        f"Идентификатор: {html.escape(conn.identifier)}\n"
         f"Статус: {status_text}"
     )
 
@@ -240,7 +241,7 @@ async def cb_connection_delete(callback: CallbackQuery, user: User, db: Supabase
 
     platform_name = _PLATFORM_NAMES.get(conn.platform_type, conn.platform_type)
     await msg.edit_text(
-        f"Удалить подключение {platform_name} ({conn.identifier})?\n"
+        f"Удалить подключение {platform_name} ({html.escape(conn.identifier)})?\n"
         "Все связанные расписания будут отменены.",
         reply_markup=_connection_delete_confirm_kb(conn.id, conn.project_id).as_markup(),
     )
@@ -613,9 +614,9 @@ async def fsm_vk_token(
     vk_version = "5.199"
 
     try:
-        resp = await http_client.get(
+        resp = await http_client.post(
             f"{vk_api}/groups.get",
-            params={
+            data={
                 "access_token": token,
                 "filter": "admin,editor",
                 "extended": "1",

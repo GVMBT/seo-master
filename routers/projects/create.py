@@ -1,6 +1,7 @@
 """Router: project create FSM (4 steps) + edit FSM (single field)."""
 
 import re
+import typing
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -47,43 +48,60 @@ _NAME_RE = re.compile(r"^[\w\s\-.,!?()\"'«»/&#@:;№]+$")
 _URL_RE = re.compile(r"^https?://\S+$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _PHONE_RE = re.compile(r"^[\d\s()+\-]{5,20}$")
+_WHITESPACE_ONLY_RE = re.compile(r"^\s+$")
 
 _FIELD_NAMES = {name for name, _ in PROJECT_FIELDS}
 _FIELD_LABELS = {name: label for name, label in PROJECT_FIELDS}
 
 
+def _validate_name(value: str) -> str | None:
+    if len(value.strip()) < 2 or len(value) > 100:
+        return "Введите название от 2 до 100 символов."
+    if not _NAME_RE.match(value):
+        return "Название содержит недопустимые символы."
+    return None
+
+
+def _validate_company_name(value: str) -> str | None:
+    return "Введите название компании от 2 до 200 символов." if len(value) < 2 or len(value) > 200 else None
+
+
+def _validate_specialization(value: str) -> str | None:
+    return "Опишите подробнее (от 5 до 500 символов)." if len(value) < 5 or len(value) > 500 else None
+
+
+def _validate_website_url(value: str) -> str | None:
+    return "Введите корректный URL (https://...)." if not _URL_RE.match(value) else None
+
+
+def _validate_email(value: str) -> str | None:
+    return "Введите корректный email." if not _EMAIL_RE.match(value) else None
+
+
+def _validate_phone(value: str) -> str | None:
+    return "Введите корректный номер телефона." if not _PHONE_RE.match(value) else None
+
+
+def _validate_generic(value: str) -> str | None:
+    return "Введите значение от 2 до 500 символов." if len(value) < 2 or len(value) > 500 else None
+
+
+_FIELD_VALIDATORS: dict[str, typing.Callable[[str], str | None]] = {
+    "name": _validate_name,
+    "company_name": _validate_company_name,
+    "specialization": _validate_specialization,
+    "website_url": _validate_website_url,
+    "company_email": _validate_email,
+    "company_phone": _validate_phone,
+}
+
+
 def _validate_field(field_name: str, value: str) -> str | None:
     """Validate a project field value. Returns error message or None."""
-    if field_name == "name":
-        if len(value) < 2 or len(value) > 100:
-            return "Введите название от 2 до 100 символов."
-        if not _NAME_RE.match(value):
-            return "Название содержит недопустимые символы."
-        return None
-    if field_name == "company_name":
-        if len(value) < 2 or len(value) > 200:
-            return "Введите название компании от 2 до 200 символов."
-        return None
-    if field_name == "specialization":
-        if len(value) < 5 or len(value) > 500:
-            return "Опишите подробнее (от 5 до 500 символов)."
-        return None
-    if field_name == "website_url":
-        if not _URL_RE.match(value):
-            return "Введите корректный URL (https://...)."
-        return None
-    if field_name == "company_email":
-        if not _EMAIL_RE.match(value):
-            return "Введите корректный email."
-        return None
-    if field_name == "company_phone":
-        if not _PHONE_RE.match(value):
-            return "Введите корректный номер телефона."
-        return None
-    # Generic text fields
-    if len(value) < 2 or len(value) > 500:
-        return "Введите значение от 2 до 500 символов."
-    return None
+    if _WHITESPACE_ONLY_RE.match(value):
+        return "Введите непустое значение."
+    validator = _FIELD_VALIDATORS.get(field_name, _validate_generic)
+    return validator(value)
 
 
 # ---------------------------------------------------------------------------
@@ -91,8 +109,13 @@ def _validate_field(field_name: str, value: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+_MAX_PROJECTS_PER_USER = 20
+
+
 @router.callback_query(F.data == "projects:new")
-async def cb_project_new(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_project_new(
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
+) -> None:
     """Start project creation FSM.
 
     TODO P4.11: [Прервать] (save progress) button requires a draft mechanism
@@ -100,6 +123,14 @@ async def cb_project_new(callback: CallbackQuery, state: FSMContext) -> None:
     """
     msg = await guard_callback_message(callback)
     if msg is None:
+        return
+
+    # Enforce project limit (S4)
+    count = await ProjectsRepository(db).get_count_by_user(user.id)
+    if count >= _MAX_PROJECTS_PER_USER:
+        await callback.answer(
+            f"Достигнут лимит: {_MAX_PROJECTS_PER_USER} проектов.", show_alert=True
+        )
         return
 
     # Auto-clear any active FSM (P4.11, FSM conflict resolution)

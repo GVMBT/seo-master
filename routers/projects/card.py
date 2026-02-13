@@ -1,5 +1,7 @@
 """Router: project card, stubs, delete (2-step)."""
 
+import html
+
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
@@ -52,9 +54,9 @@ def _format_project_card(
     filled = _count_filled_fields(project)
     platforms_str = ", ".join(platform_names) if platform_names else "не подключены"
     return (
-        f"<b>{project.name}</b>\n"
-        f"Компания: {project.company_name}\n"
-        f"Специализация: {project.specialization}\n"
+        f"<b>{html.escape(project.name)}</b>\n"
+        f"Компания: {html.escape(project.company_name)}\n"
+        f"Специализация: {html.escape(project.specialization)}\n"
         f"Заполнено: {filled}/15 полей\n"
         f"Категорий: {category_count}\n"
         f"Платформы: {platforms_str}"
@@ -136,7 +138,7 @@ async def cb_project_delete(callback: CallbackQuery, user: User, db: SupabaseCli
     if not project:
         return
     await msg.edit_text(
-        f"Удалить проект «{project.name}»? Все категории и данные будут удалены.",
+        f"Удалить проект «{html.escape(project.name)}»? Все категории и данные будут удалены.",
         reply_markup=project_delete_confirm_kb(project.id).as_markup(),
     )
     await callback.answer()

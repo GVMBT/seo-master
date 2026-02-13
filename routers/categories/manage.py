@@ -1,5 +1,6 @@
 """Router: category CRUD — list, card, create FSM, delete."""
 
+import html
 import re
 
 from aiogram import F, Router
@@ -37,7 +38,9 @@ _NAME_RE = re.compile(r"^[\w\s\-.,!?()\"'«»/&#@:;№]+$")
 
 def _validate_category_name(value: str) -> str | None:
     """Validate category name. Returns error message or None."""
-    if len(value) < 2 or len(value) > 100:
+    if not value.strip():
+        return "Введите непустое значение."
+    if len(value.strip()) < 2 or len(value) > 100:
         return "Введите название от 2 до 100 символов."
     if not _NAME_RE.match(value):
         return "Название содержит недопустимые символы."
@@ -88,7 +91,7 @@ def _format_category_card(category: Category) -> str:
     desc_status = "заполнено" if category.description else "не заполнено"
     prices_status = "загружен" if category.prices else "не загружен"
     return (
-        f"<b>{category.name}</b>\n\n"
+        f"<b>{html.escape(category.name)}</b>\n\n"
         f"Ключевые фразы: {kw_count}\n"
         f"Описание: {desc_status}\n"
         f"Медиа: {media_count} файлов\n"
@@ -177,6 +180,9 @@ async def cb_category_feature_stub(callback: CallbackQuery) -> None:
 # ---------------------------------------------------------------------------
 
 
+_MAX_CATEGORIES_PER_PROJECT = 50
+
+
 @router.callback_query(F.data.regexp(r"^project:(\d+):cat:new$"))
 async def cb_category_new(
     callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
@@ -187,6 +193,14 @@ async def cb_category_new(
         return
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     if not await _verify_project_owner(project_id, user.id, db, callback):
+        return
+
+    # Enforce category limit (S4)
+    existing = await CategoriesRepository(db).get_by_project(project_id)
+    if len(existing) >= _MAX_CATEGORIES_PER_PROJECT:
+        await callback.answer(
+            f"Достигнут лимит: {_MAX_CATEGORIES_PER_PROJECT} категорий.", show_alert=True
+        )
         return
 
     # Auto-clear any active FSM (P4.11, FSM conflict resolution)
@@ -243,7 +257,7 @@ async def cb_category_delete(callback: CallbackQuery, user: User, db: SupabaseCl
         return
     category, _ = result
     await msg.edit_text(
-        f"Удалить категорию «{category.name}»? Все данные категории будут удалены.",
+        f"Удалить категорию «{html.escape(category.name)}»? Все данные категории будут удалены.",
         reply_markup=category_delete_confirm_kb(category).as_markup(),
     )
     await callback.answer()

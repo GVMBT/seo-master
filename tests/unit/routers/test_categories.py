@@ -161,8 +161,12 @@ class TestCategoryCreateFSM:
     ) -> None:
         mock_callback.data = f"project:{project.id}:cat:new"
         mock_state.get_state = AsyncMock(return_value=None)
-        with patch("routers.categories.manage.ProjectsRepository") as proj_cls:
+        with (
+            patch("routers.categories.manage.ProjectsRepository") as proj_cls,
+            patch("routers.categories.manage.CategoriesRepository") as cat_cls,
+        ):
             proj_cls.return_value.get_by_id = AsyncMock(return_value=project)
+            cat_cls.return_value.get_by_project = AsyncMock(return_value=[])
             await cb_category_new(mock_callback, mock_state, user, mock_db)
             mock_state.set_state.assert_awaited_once_with(CategoryCreateFSM.name)
 

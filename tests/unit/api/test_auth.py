@@ -52,7 +52,7 @@ def _mock_settings() -> MagicMock:
     settings = MagicMock()
     settings.railway_public_url = "https://example.com"
     settings.encryption_key = MagicMock()
-    settings.encryption_key.get_secret_value.return_value = "x" * 32  # noqa: S106
+    settings.encryption_key.get_secret_value.return_value = "x" * 32
     settings.pinterest_app_id = "test_app"
     settings.pinterest_app_secret = MagicMock()
     settings.pinterest_app_secret.get_secret_value.return_value = "test_secret"

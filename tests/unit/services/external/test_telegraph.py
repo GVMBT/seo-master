@@ -52,7 +52,7 @@ class TestEnsureAccount:
             if "createAccount" in str(request.url):
                 return httpx.Response(200, json={
                     "ok": True,
-                    "result": {"access_token": "tok_test", "short_name": "SEO Master Bot"},  # noqa: S106
+                    "result": {"access_token": "tok_test", "short_name": "SEO Master Bot"},
                 })
             return httpx.Response(404)
 

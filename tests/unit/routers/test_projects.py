@@ -182,10 +182,16 @@ class TestCbProjectCard:
 
 class TestProjectCreateFSM:
     @pytest.mark.asyncio
-    async def test_new_starts_fsm(self, mock_callback: MagicMock, mock_state: AsyncMock) -> None:
+    async def test_new_starts_fsm(
+        self, mock_callback: MagicMock, mock_state: AsyncMock,
+        user: User, mock_db: MagicMock
+    ) -> None:
+        mock_callback.data = "projects:new"
         mock_state.get_state = AsyncMock(return_value=None)
-        await cb_project_new(mock_callback, mock_state)
-        mock_state.set_state.assert_awaited_once_with(ProjectCreateFSM.name)
+        with patch("routers.projects.create.ProjectsRepository") as repo_cls:
+            repo_cls.return_value.get_count_by_user = AsyncMock(return_value=0)
+            await cb_project_new(mock_callback, mock_state, user, mock_db)
+            mock_state.set_state.assert_awaited_once_with(ProjectCreateFSM.name)
 
     @pytest.mark.asyncio
     async def test_name_valid_advances(
