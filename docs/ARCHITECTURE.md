@@ -82,13 +82,15 @@ seo-master-bot-v2/
 │   │   ├── images.py               # Генерация изображений (Nano Banana / Gemini via OpenRouter)
 │   │   ├── reviews.py              # Генерация отзывов
 │   │   ├── description.py          # Генерация описаний категорий
-│   │   └── prompts/                # YAML-шаблоны промптов
-│   │       ├── article_v5.yaml
+│   │   └── prompts/                # YAML-шаблоны промптов (seed → DB prompt_versions)
+│   │       ├── article_v6.yaml          # v6: cluster-aware, dynamic length, image SEO
 │   │       ├── social.yaml
-│   │       ├── keywords.yaml
+│   │       ├── keywords_cluster.yaml    # v3: data-first clustering
+│   │       ├── keywords.yaml            # v2: legacy AI-only (fallback при E03)
 │   │       ├── image.yaml
 │   │       ├── review.yaml
-│   │       └── description.yaml
+│   │       ├── description.yaml
+│   │       └── competitor_analysis.yaml
 │   ├── publishers/
 │   │   ├── base.py                 # BasePublisher (валидация -> публикация -> отчет)
 │   │   ├── wordpress.py            # WP REST API
@@ -116,7 +118,7 @@ seo-master-bot-v2/
 │   │   ├── categories.py
 │   │   ├── connections.py          # Fernet encrypt/decrypt через CredentialManager
 │   │   ├── schedules.py
-│   │   ├── publications.py         # + keyword rotation (round-robin, LRU)
+│   │   ├── publications.py         # + cluster rotation (round-robin, LRU, cluster_type filter)
 │   │   ├── payments.py             # payments + token_expenses
 │   │   ├── audits.py               # site_audits + site_brandings
 │   │   ├── previews.py             # article_previews
@@ -204,6 +206,39 @@ def create_app() -> web.Application:
 **Доступ к зависимостям:** API-хендлеры получают клиенты через `request.app["db"]`, `request.app["redis"]`, `request.app["http_client"]` (инициализируются в `on_startup`, НЕ через Aiogram middleware).
 
 **Отличие от роутеров Aiogram:** API-хендлеры — thin wrappers (JSON in → Pydantic validate → Service Layer → JSON out). Бизнес-логика — только в `services/`.
+
+**Верификация подписи QStash** — декоратор `@require_qstash_signature` (реализация в `api/auth.py`):
+
+```python
+from upstash_qstash import Receiver
+
+receiver = Receiver(
+    current_signing_key=os.environ["QSTASH_CURRENT_SIGNING_KEY"],
+    next_signing_key=os.environ["QSTASH_NEXT_SIGNING_KEY"],
+)
+
+def require_qstash_signature(handler):
+    """Decorator: verify QStash HMAC signature. Returns 401 if invalid."""
+    async def wrapper(request: web.Request) -> web.Response:
+        body = await request.read()
+        signature = request.headers.get("Upstash-Signature", "")
+        url = f"{os.environ['RAILWAY_PUBLIC_URL']}{request.path}"
+        if not receiver.verify(body=body, signature=signature, url=url):
+            return web.Response(status=401, text="Invalid signature")
+        request["verified_body"] = json.loads(body)
+        return await handler(request)
+    return wrapper
+```
+
+**Scope:** Применяется ТОЛЬКО к QStash endpoints:
+- `/api/publish` — QStash
+- `/api/cleanup` — QStash
+- `/api/notify` — QStash
+
+НЕ применяется:
+- `/api/yookassa/webhook` — своя верификация (IP whitelist + SHA-256, см. API_CONTRACTS §2)
+- `/api/auth/pinterest/callback` — OAuth redirect (HMAC state, см. E30)
+- `/api/health` — публичный (без токена — только `{"status": "ok"}`)
 
 ---
 
@@ -331,7 +366,8 @@ CREATE TABLE categories (
     project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name            VARCHAR(255) NOT NULL,
     description     TEXT,                      -- Описание (промпт для AI)
-    keywords        JSONB DEFAULT '[]',        -- [{phrase, volume, difficulty, intent, cpc}]
+    keywords        JSONB DEFAULT '[]',        -- Cluster format: [{cluster_name, cluster_type, main_phrase, total_volume, avg_difficulty, phrases: [{phrase, volume, difficulty, cpc, intent, ai_suggested}]}]
+                                               -- Legacy format (v1, без cluster_name): [{phrase, volume, difficulty, cpc}]. Detect: if keywords[0] has no "cluster_name" → flat list. Repository converts at read-time
     media           JSONB DEFAULT '[]',        -- [{file_id, type, file_size, uploaded_at}]
     prices          TEXT,                      -- Текстовый прайс-лист ("Товар — Цена" per line)
     reviews         JSONB DEFAULT '[]',        -- [{author, date, rating(1-5), text, pros, cons}]
@@ -429,14 +465,18 @@ CREATE TABLE publication_logs (
     ai_model        VARCHAR(100),              -- anthropic/claude-sonnet-4.5, deepseek/deepseek-v3.2
     generation_time_ms INTEGER,
     prompt_version  VARCHAR(20),               -- v1, v2, v3...
+    content_hash    BIGINT,                    -- simhash for anti-cannibalization (P2, Phase 11+). NULL до реализации. Заполняется при генерации
     status          VARCHAR(20) DEFAULT 'success', -- success, failed, cancelled
     error_message   TEXT,
+    -- P2 columns (Phase 11+): колонки добавлены в схему заранее, заполняются NULL до реализации
+    rank_position   INTEGER,                   -- Позиция в Google SERP (DataForSEO SERP API, $0.002/check)
+    rank_checked_at TIMESTAMPTZ,               -- Когда последний раз проверяли (QStash cron раз в неделю)
     created_at      TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX idx_pub_logs_user ON publication_logs(user_id, created_at DESC);
 CREATE INDEX idx_pub_logs_project ON publication_logs(project_id);
 CREATE INDEX idx_pub_logs_category ON publication_logs(category_id, created_at DESC);
--- Covering index для ротации ключевых фраз (API_CONTRACTS §6):
+-- Covering index для ротации кластеров (API_CONTRACTS §6). keyword = cluster.main_phrase:
 CREATE INDEX idx_pub_logs_rotation ON publication_logs(category_id, created_at DESC) INCLUDE (keyword);
 ```
 
@@ -560,7 +600,7 @@ CREATE INDEX idx_previews_expires ON article_previews(expires_at) WHERE status =
 ```sql
 CREATE TABLE prompt_versions (
     id              SERIAL PRIMARY KEY,
-    task_type       VARCHAR(50) NOT NULL,      -- article, social_post, keywords, review, image, description, competitor_analysis
+    task_type       VARCHAR(50) NOT NULL,      -- article, social_post, keywords, review, image, description, competitor_analysis. keywords = clustering prompt (v3 data-first), NOT data fetching
     version         VARCHAR(20) NOT NULL,      -- v1, v2, v3...
     prompt_yaml     TEXT NOT NULL,             -- YAML-содержимое промпта
     is_active       BOOLEAN DEFAULT FALSE,
@@ -860,16 +900,25 @@ QStash может отправить несколько вебхуков одн�
 ```python
 # api/publish.py
 PUBLISH_SEMAPHORE = asyncio.Semaphore(10)  # Максимум 10 параллельных генераций
+SEMAPHORE_WAIT_TIMEOUT = 300               # Макс. ожидание в очереди семафора (5 мин)
 
+@require_qstash_signature
 async def publish_handler(request: web.Request) -> web.Response:
-    async with PUBLISH_SEMAPHORE:
-        result = await execute_publish(...)
+    try:
+        async with asyncio.timeout(SEMAPHORE_WAIT_TIMEOUT):
+            async with PUBLISH_SEMAPHORE:
+                result = await execute_publish(request["verified_body"], request.app)
+    except TimeoutError:
+        # Не попали в семафор за 5 мин → 503 → QStash retry с backoff
+        return web.Response(status=503, headers={"Retry-After": "120"})
     return web.json_response(result)
 ```
 
 **Параметры:** 10 параллельных генераций — компромисс между пропускной способностью и нагрузкой на OpenRouter. При 10 генерациях по 45с каждая — максимум 10 * 45с = 450с wall time, но OpenRouter обрабатывает параллельно.
 
-**Таймаут:** QStash имеет дефолтный таймаут 30 мин — достаточно для ожидания в очереди семафора.
+**Таймаут очереди (300с):** Если за 5 мин не попали в семафор → 503 → QStash retry через exponential backoff. Предотвращает накопление зависших соединений. QStash default timeout = 30 мин, наш 503 приходит раньше.
+
+**Эскалация (если в продакшне увидим retry storms):** заменить asyncio.Semaphore на Redis-backed queue с явным приоритетом и dead-letter.
 
 ### 5.7 Graceful Shutdown (SIGTERM)
 
@@ -932,3 +981,26 @@ def sanitize_html(html: str) -> str:
 ```
 
 **Применяется:** в `services/ai/articles.py` и `services/ai/social_posts.py` ПОСЛЕ генерации, ДО передачи в Publisher. Для `<script type="application/ld+json">` (Schema.org) — дополнительная валидация JSON перед включением.
+
+### 5.9 Хранение изображений
+
+**Стратегия:** Supabase Storage bucket `content-images` для промежуточного хранения.
+Реализовано в `services/storage.py` (ImageStorage class).
+
+| Этап | Хранение | Срок |
+|------|----------|------|
+| Генерация (base64 из OpenRouter) | In-memory (bytes) | Время обработки (~10с) |
+| WebP-конвертация | In-memory (PIL → BytesIO) | Время обработки |
+| Upload | Supabase Storage `content-images` | 24ч (cleanup cron) |
+| Превью (Telegraph) | Telegraph CDN + Supabase URL | 24ч (cleanup удаляет article_preview) |
+| Публикация (WordPress) | WP Media Library (на сайте клиента) | Навсегда |
+| Публикация (Telegram) | Telegram CDN | Навсегда |
+| Публикация (VK) | VK CDN | Навсегда |
+| Публикация (Pinterest) | Pinterest CDN | Навсегда |
+| `article_previews.images` | JSONB [{url, storage_path, width, height}] | 24ч (cleanup) |
+
+**Зачем Supabase Storage:** промежуточное хранение нужно для превью (Telegraph embed),
+перегенерации (можно заново опубликовать без повторной генерации) и параллельного
+pipeline (текст + изображения генерируются одновременно, изображения ждут публикации).
+Path: `{user_id}/{project_id}/{timestamp}.webp`. Cleanup cron (api/cleanup.py) удаляет
+файлы вместе с expired article_previews.

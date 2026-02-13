@@ -66,7 +66,7 @@ def _make_generation_result(**overrides: Any) -> GenerationResult:
         "output_tokens": 200,
         "cost_usd": 0.01,
         "generation_time_ms": 500,
-        "prompt_version": "v5",
+        "prompt_version": "v6",
         "fallback_used": False,
     }
     defaults.update(overrides)

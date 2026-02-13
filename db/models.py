@@ -163,7 +163,9 @@ class Category(BaseModel):
     project_id: int
     name: str
     description: str | None = None
-    keywords: list[dict[str, Any]] = Field(default_factory=list)  # [{phrase, volume, difficulty, intent, cpc}]
+    # Cluster: [{cluster_name, cluster_type, main_phrase, total_volume, avg_difficulty, phrases: [...]}]
+    # Legacy flat: [{phrase, volume, difficulty, intent, cpc}] — both supported
+    keywords: list[dict[str, Any]] = Field(default_factory=list)
     media: list[dict[str, Any]] = Field(default_factory=list)  # [{file_id, type, file_size, uploaded_at}]
     prices: str | None = None
     reviews: list[dict[str, Any]] = Field(default_factory=list)  # [{author, date, rating, text, pros, cons}]
@@ -277,8 +279,11 @@ class PublicationLog(BaseModel):
     ai_model: str | None = None
     generation_time_ms: int | None = None
     prompt_version: str | None = None
+    content_hash: int | None = None  # simhash for anti-cannibalization (P2)
     status: str = "success"
     error_message: str | None = None
+    rank_position: int | None = None  # Google SERP position (P2, Phase 11+)
+    rank_checked_at: datetime | None = None
     created_at: datetime | None = None
 
 
@@ -297,6 +302,7 @@ class PublicationLogCreate(BaseModel):
     ai_model: str | None = None
     generation_time_ms: int | None = None
     prompt_version: str | None = None
+    content_hash: int | None = None
     status: str = "success"
     error_message: str | None = None
 
@@ -507,7 +513,7 @@ class PromptVersion(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    task_type: str
+    task_type: str  # "article", "social_post", "keywords", "review", "image", "description", "competitor_analysis"
     version: str
     prompt_yaml: str
     is_active: bool = False

@@ -37,9 +37,11 @@ def get_content_settings(category_id, platform_type):
     return categories.get(category_id)  # fallback
 ```
 
-### Ротация ключевых фраз (docs/API_CONTRACTS.md §6)
-1. Все фразы категории, отсортированные volume DESC, difficulty ASC
-2. Исключить использованные за 7 дней (publication_logs)
-3. Первая доступная (round-robin с приоритетом)
-4. Все на cooldown → LRU (самая давняя)
-5. < 5 фраз → предупреждение (E22, E23)
+### Ротация кластеров ключевых фраз (docs/API_CONTRACTS.md §6)
+1. Все кластеры категории, filter cluster_type="article"
+2. Сортировка: total_volume DESC, avg_difficulty ASC
+3. Исключить кластеры, использованные за 7 дней (publication_logs.keyword = main_phrase)
+4. Первый доступный кластер (round-robin с приоритетом)
+5. Все на cooldown → LRU (самый давний main_phrase)
+6. < 3 кластеров → предупреждение (E22, E23)
+- **NOTE**: текущий код (Phase 2) работает с flat-форматом. Рефакторинг на кластеры — Phase 10

@@ -26,6 +26,7 @@ class ArticleService:
 - response_format: json_schema + strict: true для structured outputs
 - Streaming через SSE
 - prompts/ — YAML-файлы с Jinja2 (разделители <<>>, <%%>)
+- **Phase 10 rework**: article_v5→v6 (clusters, images_meta), keywords_v2→v3 (data-first), WebP, parallel pipeline
 
 ## services/publishers/
 - BasePublisher(ABC): validate_connection(), publish(), delete_post()
@@ -35,11 +36,11 @@ class ArticleService:
 - PinterestPublisher: API v5, refresh_token при expires_at < now() + 1 day
 
 ## services/external/
-- FirecrawlClient: scrape_branding(), crawl_site(limit=100), extract()
-- DataForSEOClient: enrich_keywords(phrases, location, language)
-- SerperClient: search() с кешем 24ч в Redis
-- PageSpeedClient: audit(url)
-- TelegraphClient: create_page(), delete_page()
+- TelegraphClient: create_page(), delete_page() — РЕАЛИЗОВАН (Phase 7)
+- FirecrawlClient: /scrape (markdown), crawl_site, branding — Phase 10
+- DataForSEOClient: keyword_suggestions, related_keywords, enrich — Phase 10
+- SerperClient: search() с кешем 24ч в Redis — Phase 10
+- PageSpeedClient: audit(url) — Phase 10
 
 ## services/tokens.py
 - check_balance(user_id, required) → bool

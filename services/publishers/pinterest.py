@@ -14,7 +14,6 @@ from typing import Any
 import httpx
 import structlog
 
-from bot.config import get_settings
 from db.models import PlatformConnection
 
 from .base import BasePublisher, PublishRequest, PublishResult
@@ -39,9 +38,13 @@ class PinterestPublisher(BasePublisher):
     def __init__(
         self,
         http_client: httpx.AsyncClient,
+        client_id: str = "",
+        client_secret: str = "",
         on_token_refresh: TokenRefreshCallback | None = None,
     ) -> None:
         self._client = http_client
+        self._client_id = client_id
+        self._client_secret = client_secret
         self._on_token_refresh = on_token_refresh
 
     # ------------------------------------------------------------------
@@ -71,14 +74,13 @@ class PinterestPublisher(BasePublisher):
         return await self._refresh_token(creds)
 
     async def _refresh_token(self, creds: dict[str, Any]) -> str:
-        settings = get_settings()
         resp = await self._client.post(
             f"{_BASE_URL}/oauth/token",
             data={
                 "grant_type": "refresh_token",
                 "refresh_token": creds["refresh_token"],
-                "client_id": settings.pinterest_app_id,
-                "client_secret": settings.pinterest_app_secret.get_secret_value(),
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
             },
             timeout=15,
         )

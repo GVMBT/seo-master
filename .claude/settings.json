@@ -63,26 +63,5 @@
       }
     ]
   },
-  "mcpServers": {
-    "supabase": {
-      "command": "npx",
-      "args": ["-y", "@supabase/mcp-server-supabase"],
-      "env": {
-        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}",
-        "SUPABASE_PROJECT_ID": "${SUPABASE_PROJECT_ID}"
-      }
-    },
-    "upstash": {
-      "command": "npx",
-      "args": ["-y", "@upstash/mcp-server"],
-      "env": {
-        "UPSTASH_EMAIL": "${UPSTASH_EMAIL}",
-        "UPSTASH_API_KEY": "${UPSTASH_API_KEY}"
-      }
-    },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
-    }
-  }
+  "mcpServers": {}
 }

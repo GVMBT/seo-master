@@ -16,6 +16,8 @@ from bot.exceptions import AIGenerationError, RateLimitError
 from services.ai.orchestrator import (
     MODEL_CHAINS,
     AIOrchestrator,
+    ClusterContext,
+    GenerationContext,
     GenerationRequest,
     GenerationResult,
 )
@@ -820,3 +822,67 @@ class TestRateActionMapping:
         await orchestrator.generate(request)
 
         mock_rate_limiter.check.assert_awaited_once_with(123, "keyword_generation")
+
+
+# ---------------------------------------------------------------------------
+# GenerationContext — to_dict() (skips None, flattens nested)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerationContext:
+    def test_to_dict_basic_fields_always_present(self) -> None:
+        """Required scalar fields are always in the output dict."""
+        ctx = GenerationContext(
+            company_name="TestCo",
+            specialization="SEO",
+            keyword="seo services",
+        )
+        d = ctx.to_dict()
+        assert d["company_name"] == "TestCo"
+        assert d["specialization"] == "SEO"
+        assert d["keyword"] == "seo services"
+        assert d["language"] == "ru"
+        # Optional fields not set -> not in dict
+        assert "city" not in d
+        assert "main_phrase" not in d
+        assert "competitor_analysis" not in d
+
+    def test_to_dict_cluster_fields_flattened(self) -> None:
+        """ClusterContext fields are flattened into the output dict."""
+        ctx = GenerationContext(
+            company_name="TestCo",
+            specialization="SEO",
+            keyword="seo services",
+            cluster=ClusterContext(
+                main_phrase="seo services moscow",
+                secondary_phrases="seo agency (1000/мес), seo firm (500/мес)",
+                cluster_volume=26500,
+                main_volume=12400,
+                main_difficulty=52,
+                cluster_type="article",
+            ),
+        )
+        d = ctx.to_dict()
+        assert d["main_phrase"] == "seo services moscow"
+        assert d["secondary_phrases"] == "seo agency (1000/мес), seo firm (500/мес)"
+        assert d["cluster_volume"] == "26500"
+        assert d["main_volume"] == "12400"
+        assert d["main_difficulty"] == "52"
+        assert d["cluster_type"] == "article"
+
+    def test_to_dict_skips_none_optional_fields(self) -> None:
+        """None optional fields are omitted to avoid Jinja2 rendering 'None' string."""
+        ctx = GenerationContext(
+            company_name="TestCo",
+            specialization="SEO",
+            keyword="seo",
+            city=None,
+            advantages="Fast",
+            words_min=None,
+            images_count=4,
+        )
+        d = ctx.to_dict()
+        assert "city" not in d
+        assert d["advantages"] == "Fast"
+        assert "words_min" not in d
+        assert d["images_count"] == "4"

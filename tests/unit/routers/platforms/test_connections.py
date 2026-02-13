@@ -453,12 +453,14 @@ class TestCbConnectionDeleteConfirm:
             patch("routers.platforms.connections.guard_callback_message", return_value=mock_callback.message),
             patch("routers.platforms.connections._get_connections_repo") as mock_repo_fn,
             patch("routers.platforms.connections.ProjectsRepository") as mock_proj_cls,
+            patch("db.repositories.schedules.SchedulesRepository") as mock_sched_cls,
         ):
             repo = mock_repo_fn.return_value
             repo.get_by_id = AsyncMock(return_value=connection)
             repo.delete = AsyncMock()
             repo.get_by_project = AsyncMock(return_value=[])
             mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=mock_project)
+            mock_sched_cls.return_value.get_by_connection = AsyncMock(return_value=[])
 
             await cb_connection_delete_confirm(mock_callback, user, mock_db)
 

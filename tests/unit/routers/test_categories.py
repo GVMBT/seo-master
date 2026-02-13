@@ -225,10 +225,12 @@ class TestCategoryDelete:
         with (
             patch("routers.categories.manage.CategoriesRepository") as cat_cls,
             patch("routers.categories.manage.ProjectsRepository") as proj_cls,
+            patch("db.repositories.schedules.SchedulesRepository") as sched_cls,
         ):
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             proj_cls.return_value.get_by_id = AsyncMock(return_value=project)
             cat_cls.return_value.delete = AsyncMock(return_value=True)
             cat_cls.return_value.get_by_project = AsyncMock(return_value=[])
+            sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
             await cb_category_delete_confirm(mock_callback, user, mock_db)
             cat_cls.return_value.delete.assert_awaited_once_with(category.id)

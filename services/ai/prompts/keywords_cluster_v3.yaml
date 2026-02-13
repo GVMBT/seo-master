@@ -1,0 +1,73 @@
+meta:
+  task_type: keywords
+  version: v3
+  model_tier: budget
+  max_tokens: 6000
+  temperature: 0.3
+
+system: |
+  Ты — SEO-специалист. Работай на <<language>>.
+  Задача: кластеризовать реальные поисковые фразы по интенту и дополнить семантику.
+
+user: |
+  Вот <<raw_count>> реальных поисковых фраз из DataForSEO для бизнеса:
+  - Компания: <<company_name>> (<<specialization>>)
+  - Товары/услуги: <<products>>
+  - География: <<geography>>
+
+  Реальные фразы (с объёмами):
+  <<raw_keywords_json>>
+
+  Задачи:
+  1. Сгруппируй фразы по поисковому интенту (фразы с одинаковым интентом = один кластер).
+     Критерий: если Google показал бы одинаковые результаты — это один кластер.
+  2. Для каждого кластера определи главную фразу (максимальный volume).
+  3. Добавь до <<extra_count>> узкоспециальных фраз, которых нет в списке DataForSEO,
+     но которые релевантны бизнесу. Пометь их как "ai_suggested": true.
+  4. Определи тип кластера: "article" (информационный, подходит для статьи) или
+     "product_page" (транзакционный, не подходит для статьи — только landing/каталог).
+
+  Формат ответа — JSON:
+  {
+    "clusters": [
+      {
+        "cluster_name": "Кухни на заказ Москва",
+        "cluster_type": "article",
+        "main_phrase": "кухни на заказ москва",
+        "phrases": [
+          {"phrase": "кухни на заказ москва", "ai_suggested": false},
+          {"phrase": "заказать кухню в москве", "ai_suggested": false},
+          {"phrase": "кухни под заказ москва цены", "ai_suggested": false},
+          {"phrase": "кухни на заказ от производителя москва", "ai_suggested": true}
+        ]
+      }
+    ]
+  }
+
+variables:
+  - name: raw_count
+    source: len(DataForSEO results)
+    required: true
+  - name: raw_keywords_json
+    source: DataForSEO keyword_suggestions + related_keywords (JSON)
+    required: true
+  - name: extra_count
+    source: ceil(quantity * 0.15)
+    required: true
+    default: 30
+  - name: products
+    source: FSM input (goods/services)
+    required: true
+  - name: geography
+    source: FSM input (geography)
+    required: true
+  - name: company_name
+    source: projects.company_name
+    required: true
+  - name: specialization
+    source: projects.specialization
+    required: true
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"

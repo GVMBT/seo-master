@@ -1,7 +1,7 @@
 ---
 name: enrich-specs
 description: Обновить rules/skills/specs актуальной информацией из документации
-argument-hint: "<target> (aiogram | pydantic | httpx | edge-cases | audit | skills | sync | <library-name>)"
+argument-hint: "<target> (aiogram | pydantic | httpx | edge-cases | audit | skills | sync | review | review <doc> | <library-name>)"
 context: fork
 agent: spec-enricher
 allowed-tools:
@@ -52,6 +52,24 @@ allowed-tools:
 2. Прочитай `audit.md` (известные расхождения)
 3. Найди новые противоречия между документами
 4. Предложи исправления (НЕ правь docs/ напрямую — только отчёт)
+
+### Если $ARGUMENTS начинается с "review"
+Цель: найти пробелы, плохой UX, недоспецифицированные сценарии в источниках истины.
+
+Если указан конкретный документ (`review prd`, `review fsm`, `review ui`):
+1. Прочитай указанный документ целиком
+2. Пройди по чеклисту из агента (секция "Spec Review") для этого типа документа
+3. Прочитай смежные документы для поиска противоречий
+4. Сформируй отчёт в табличном формате review
+
+Если просто "review" (без указания документа):
+1. Прочитай ВСЕ 6 документов `docs/*.md`
+2. Пройди чеклисты для каждого типа документа
+3. Ищи: GAP, UX-ISSUE, UNDERSPEC, INCONSISTENCY, DEAD-END
+4. Особое внимание: тупиковые UX-состояния, отсутствие кнопки "Назад", empty states, loading states, error states
+5. Сформируй сводный отчёт
+
+НЕ редактируй docs/ — только отчёт с конкретными предложениями и номерами строк.
 
 ## Ограничения
 - `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/API_CONTRACTS.md`, `docs/FSM_SPEC.md` — НЕ редактировать (только отчёт о проблемах)

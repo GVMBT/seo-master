@@ -13,7 +13,7 @@ from bot.exceptions import AppError
 
 log = structlog.get_logger()
 
-BUCKET = "article-previews"
+BUCKET = "content-images"
 SIGNED_URL_TTL = 90000  # 25 hours in seconds
 
 

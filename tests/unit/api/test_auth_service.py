@@ -49,7 +49,7 @@ def _make_service(handler: object, redis: AsyncMock | None = None) -> PinterestO
 class TestBuildState:
     def test_format_user_nonce_hmac(self) -> None:
         state = build_state(12345, "abc123", _ENCRYPTION_KEY)
-        parts = state.split("_", maxsplit=2)
+        parts = state.split("|", maxsplit=2)
         assert len(parts) == 3
         assert parts[0] == "12345"
         assert parts[1] == "abc123"
@@ -91,7 +91,7 @@ class TestParseAndVerifyState:
 
     def test_invalid_format_too_few_parts(self) -> None:
         with pytest.raises(PinterestOAuthError, match="Invalid state format"):
-            parse_and_verify_state("12345_nonce", _ENCRYPTION_KEY)
+            parse_and_verify_state("12345|nonce", _ENCRYPTION_KEY)
 
     def test_invalid_format_no_separator(self) -> None:
         with pytest.raises(PinterestOAuthError, match="Invalid state format"):
@@ -100,7 +100,7 @@ class TestParseAndVerifyState:
     def test_invalid_user_id_not_integer(self) -> None:
         """E30: tampered user_id."""
         with pytest.raises(PinterestOAuthError, match="Invalid user_id"):
-            parse_and_verify_state("abc_nonce_" + "0" * 64, _ENCRYPTION_KEY)
+            parse_and_verify_state("abc|nonce|" + "0" * 64, _ENCRYPTION_KEY)
 
     def test_tampered_hmac(self) -> None:
         """E30: CSRF protection via HMAC verification."""
@@ -118,8 +118,8 @@ class TestParseAndVerifyState:
     def test_tampered_user_id_hmac_mismatch(self) -> None:
         """E30: attacker changes user_id but keeps old HMAC."""
         state = build_state(12345, "nonce", _ENCRYPTION_KEY)
-        parts = state.split("_", maxsplit=2)
-        tampered = f"99999_{parts[1]}_{parts[2]}"
+        parts = state.split("|", maxsplit=2)
+        tampered = f"99999|{parts[1]}|{parts[2]}"
         with pytest.raises(PinterestOAuthError, match="HMAC"):
             parse_and_verify_state(tampered, _ENCRYPTION_KEY)
 

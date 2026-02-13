@@ -206,7 +206,7 @@ class TestArticlePreviewModel:
 
 class TestPromptVersionModel:
     def test_defaults(self) -> None:
-        pv = PromptVersion(id=1, task_type="seo_article", version="v5", prompt_yaml="test: true")
+        pv = PromptVersion(id=1, task_type="article", version="v6", prompt_yaml="test: true")
         assert pv.is_active is False
         assert pv.success_rate is None
 

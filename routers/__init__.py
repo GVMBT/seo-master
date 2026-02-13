@@ -3,11 +3,13 @@
 from aiogram import Router
 
 from routers.categories import router as categories_router
+from routers.payments import router as payments_router
 from routers.platforms import router as platforms_router
 from routers.profile import router as profile_router
 from routers.projects import router as projects_router
 from routers.settings import router as settings_router
 from routers.start import router as start_router
+from routers.tariffs import router as tariffs_router
 
 
 def setup_routers() -> Router:
@@ -19,4 +21,6 @@ def setup_routers() -> Router:
     root.include_router(platforms_router)
     root.include_router(profile_router)
     root.include_router(settings_router)
+    root.include_router(tariffs_router)
+    root.include_router(payments_router)
     return root

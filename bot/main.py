@@ -121,7 +121,12 @@ async def on_startup(bot: Bot, settings: Settings) -> None:
         await bot.set_webhook(
             url=f"{url}/webhook",
             secret_token=settings.telegram_webhook_secret.get_secret_value(),
-            allowed_updates=["message", "callback_query", "pre_checkout_query"],
+            allowed_updates=[
+                "message",
+                "callback_query",
+                "pre_checkout_query",
+                "my_chat_member",
+            ],
         )
         log.info("webhook_set", url=url)
     else:
@@ -210,6 +215,9 @@ def create_app() -> web.Application:
     # Register lifecycle hooks (async closures, not sync lambdas)
     async def _startup() -> None:
         await on_startup(bot, settings)
+        # Store bot username for Pinterest OAuth deep links (api/auth.py)
+        bot_info = await bot.get_me()
+        app["bot_username"] = bot_info.username or ""
 
     async def _shutdown() -> None:
         await on_shutdown(bot, db, http_client, redis, timeout=settings.railway_graceful_shutdown_timeout)
@@ -249,23 +257,47 @@ def create_app() -> web.Application:
     app["http_client"] = http_client
     app["ai_orchestrator"] = ai_orchestrator
     app["image_storage"] = image_storage
+    app["bot"] = bot
 
-    # Inject AI services into dp.workflow_data for Aiogram routers (Phase 8+)
+    # Payment services (Phase 8)
+    from services.payments.stars import StarsPaymentService
+    from services.payments.yookassa import YooKassaPaymentService
+
+    stars_service = StarsPaymentService(db=db, admin_id=settings.admin_id)
+    yookassa_service = YooKassaPaymentService(
+        db=db,
+        http_client=http_client,
+        shop_id=settings.yookassa_shop_id,
+        secret_key=settings.yookassa_secret_key.get_secret_value(),
+        return_url=settings.yookassa_return_url,
+        admin_id=settings.admin_id,
+    )
+
+    # Inject services into dp.workflow_data for Aiogram routers (Phase 8+)
     dp.workflow_data["ai_orchestrator"] = ai_orchestrator
     dp.workflow_data["prompt_engine"] = prompt_engine
     dp.workflow_data["rate_limiter"] = rate_limiter
     dp.workflow_data["image_storage"] = image_storage
+    dp.workflow_data["stars_service"] = stars_service
+    dp.workflow_data["yookassa_service"] = yookassa_service
+
+    # Store payment services on app for webhook handlers
+    app["yookassa_service"] = yookassa_service
 
     # Pinterest OAuth callback (needed for ConnectPinterestFSM)
     from api.auth import pinterest_callback
 
     app.router.add_get("/api/auth/pinterest/callback", pinterest_callback)
 
+    # YooKassa webhook (Phase 8)
+    from api.yookassa import yookassa_webhook
+
+    app.router.add_post("/api/yookassa/webhook", yookassa_webhook)
+
     # API routes (Phase 9: QStash webhooks, health)
     # app.router.add_post("/api/publish", publish_handler)
     # app.router.add_post("/api/cleanup", cleanup_handler)
     # app.router.add_post("/api/notify", notify_handler)
-    # app.router.add_post("/api/yookassa/webhook", yookassa_handler)
     # app.router.add_get("/api/health", health_handler)
 
     return app

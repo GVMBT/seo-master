@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     qstash_current_signing_key: SecretStr
     qstash_next_signing_key: SecretStr
     openrouter_api_key: SecretStr
-    firecrawl_api_key: SecretStr
+    firecrawl_api_key: SecretStr = SecretStr("")
     encryption_key: SecretStr
     telegram_webhook_secret: SecretStr
 
@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     serper_api_key: SecretStr = SecretStr("")
     yookassa_shop_id: str = ""
     yookassa_secret_key: SecretStr = SecretStr("")
+    yookassa_return_url: str = ""
     sentry_dsn: str = ""
     railway_public_url: str = ""
     pinterest_app_id: str = ""

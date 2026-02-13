@@ -157,12 +157,20 @@ class MockSupabaseClient:
         resp = self._responses.get(name, MockResponse())
         return MockRequestBuilder(resp)
 
+    _rpc_errors: dict[str, str] = field(default_factory=dict)
+
     def set_rpc_response(self, fn_name: str, data: list[dict[str, Any]]) -> None:
         """Set response data for an RPC call."""
         self._rpc_responses[fn_name] = data
 
+    def set_rpc_error(self, fn_name: str, error_message: str) -> None:
+        """Configure an RPC call to raise an error with the given message."""
+        self._rpc_errors[fn_name] = error_message
+
     async def rpc(self, fn_name: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Mock RPC call. Raises RuntimeError if no response configured (simulates missing function)."""
+        if fn_name in self._rpc_errors:
+            raise RuntimeError(self._rpc_errors[fn_name])
         if fn_name not in self._rpc_responses:
             msg = f"RPC function {fn_name} not found"
             raise RuntimeError(msg)

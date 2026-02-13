@@ -376,3 +376,53 @@ class TestMultipleErrors:
         assert result.is_valid is False  # has error
         assert len(result.errors) >= 1
         assert any("FAQ" in w for w in result.warnings)  # also has warning
+
+
+# ---------------------------------------------------------------------------
+# validate_images_meta (API_CONTRACTS.md §3.7)
+# ---------------------------------------------------------------------------
+
+
+class TestValidateImagesMeta:
+    def test_valid_images_meta_all_correct(self) -> None:
+        """All fields valid, main_phrase in alt -> is_valid=True, no errors."""
+        v = _validator()
+        meta = [
+            {"alt": "SEO guide for beginners", "filename": "seo-guide-for-beginners", "figcaption": "Caption"},
+            {"alt": "SEO tips and tricks", "filename": "seo-tips-and-tricks", "figcaption": "Caption 2"},
+        ]
+        result = v.validate_images_meta(meta, expected_count=2, main_phrase="SEO")
+        assert result.is_valid is True
+        assert result.errors == []
+
+    def test_empty_alt_is_error(self) -> None:
+        """Empty alt text produces an error."""
+        v = _validator()
+        meta = [{"alt": "", "filename": "valid-slug", "figcaption": "Cap"}]
+        result = v.validate_images_meta(meta, expected_count=1, main_phrase="keyword")
+        assert result.is_valid is False
+        assert any("alt is empty" in e for e in result.errors)
+
+    def test_invalid_filename_slug_is_error(self) -> None:
+        """Filename with uppercase / spaces / special chars is invalid slug."""
+        v = _validator()
+        meta = [{"alt": "Good keyword alt", "filename": "Bad Slug!", "figcaption": "Cap"}]
+        result = v.validate_images_meta(meta, expected_count=1, main_phrase="keyword")
+        assert result.is_valid is False
+        assert any("valid slug" in e for e in result.errors)
+
+    def test_count_mismatch_is_warning(self) -> None:
+        """images_meta count != expected_count -> warning (not error)."""
+        v = _validator()
+        meta = [{"alt": "Good keyword alt", "filename": "good-keyword-slug", "figcaption": "Cap"}]
+        result = v.validate_images_meta(meta, expected_count=3, main_phrase="keyword")
+        assert result.is_valid is True
+        assert any("count" in w for w in result.warnings)
+
+    def test_alt_missing_main_phrase_is_warning(self) -> None:
+        """Alt text without main_phrase -> warning (not error)."""
+        v = _validator()
+        meta = [{"alt": "Beautiful image of nature", "filename": "nature-photo", "figcaption": "Cap"}]
+        result = v.validate_images_meta(meta, expected_count=1, main_phrase="SEO guide")
+        assert result.is_valid is True
+        assert any("main_phrase" in w for w in result.warnings)

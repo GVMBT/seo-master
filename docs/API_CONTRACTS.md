@@ -24,7 +24,7 @@
   "platform_type": "wordpress",
   "user_id": 12345678,
   "project_id": 3,
-  "idempotency_key": "pub_42_2026-02-11T10:00:00Z"
+  "idempotency_key": "pub_42_09:00"
 }
 ```
 
@@ -52,19 +52,26 @@ if not is_valid:
 
 ```python
 # Redis-блокировка перед обработкой:
-lock_key = f"publish_lock:{idempotency_key}"
+# idempotency_key = "pub_{schedule_id}_{time_slot}" (статичный, из body QStash)
+# Добавляем дату для дедупликации в пределах дня:
+today = datetime.now(UTC).strftime("%Y-%m-%d")
+lock_key = f"publish_lock:{idempotency_key}:{today}"
 acquired = await redis.set(lock_key, "1", nx=True, ex=300)  # 5 мин TTL
 
 if not acquired:
-    return Response(status_code=200, body="Already processing")  # QStash не повторит
+    return web.Response(status=200, text="Already processing")  # QStash НЕ повторит (2xx)
 
 try:
     result = await execute_publish(...)
-    await redis.set(lock_key, "done", ex=300)  # Сохранить результат до истечения TTL
+    await redis.set(lock_key, "done", ex=300)  # Перезаписать значение, TTL тот же
 except Exception:
-    await redis.delete(lock_key)  # Удалить только при ошибке (разрешить повтор)
+    await redis.delete(lock_key)  # Удалить → разрешить QStash retry (5xx)
     raise
 ```
+
+> **Формат idempotency_key:** `pub_{schedule_id}_{time_slot}` — статичная строка в body QStash.
+> QStash НЕ поддерживает шаблоны/переменные в body. Дата добавляется на стороне handler
+> для дедупликации (один schedule может срабатывать ежедневно с тем же body).
 
 ### 1.5 Retry-политика QStash
 
@@ -87,13 +94,18 @@ except Exception:
 
 **Действия:**
 1. `article_previews` WHERE `status = 'draft' AND expires_at < now()` → для каждой записи:
-   - Установить `status = 'expired'`
+   - **Атомарный захват:** `UPDATE article_previews SET status = 'expired' WHERE id = $1 AND status = 'draft' RETURNING *`
+     Если 0 строк → превью уже опубликовано/expired (race condition с пользователем), пропустить
    - Удалить Telegraph-страницу (Telegraph API `editPage` → пустой контент, или игнорировать ошибку)
-   - Вернуть токены: `UPDATE users SET balance = balance + ap.tokens_charged WHERE id = ap.user_id`
-   - Записать возврат: `INSERT INTO token_expenses (user_id, amount, operation_type) VALUES (ap.user_id, +ap.tokens_charged, 'refund')`
+   - Вернуть токены: `await users_repo.refund_balance(ap.user_id, ap.tokens_charged)` (ARCHITECTURE.md §5.5, атомарный RPC)
+   - Записать возврат: `await payments_repo.create_expense(user_id=ap.user_id, amount=ap.tokens_charged, operation_type='refund')`
    - Отправить уведомление (если `notify_publications = TRUE`): "Превью статьи «{keyword}» истекло. Токены возвращены: +{tokens_charged}. [Сгенерировать заново]"
 2. `publication_logs` WHERE `created_at < now() - INTERVAL '90 days'` → архивировать/удалить (настраиваемый период)
 3. Логировать количество очищенных записей
+
+> **Race condition cleanup vs publish:** Обе операции используют атомарный `UPDATE ... WHERE status = 'draft' RETURNING *`.
+> Кто первый обновит status — тот выиграл. Проигравший получит 0 строк и корректно прервётся.
+> Redis lock для preview НЕ нужен — DB-level sufficient (PostgreSQL row-level locking).
 
 ### 1.7 Контракт `/api/notify`
 
@@ -147,7 +159,7 @@ def create_schedules_for_platform(schedule: PlatformSchedule) -> list[str]:
                 "platform_type": schedule.platform_type,
                 "user_id": schedule.user_id,
                 "project_id": schedule.project_id,
-                "idempotency_key": f"pub_{schedule.id}_{time_slot}_{{timestamp}}"
+                "idempotency_key": f"pub_{schedule.id}_{time_slot}"
             }),
             headers={"Content-Type": "application/json"},
         )
@@ -192,7 +204,7 @@ def create_schedules_for_platform(schedule: PlatformSchedule) -> list[str]:
 
 4. Бот получает successful_payment:
    → Создать запись в payments (status: completed)
-   → Начислить токены: UPDATE users SET balance = balance + 3500
+   → Начислить токены: await users_repo.credit_balance(user_id, 3500) (ARCHITECTURE.md §5.5, атомарный RPC)
    → Создать запись в token_expenses (operation: purchase)
    → Начислить реферальный бонус (если есть referrer_id): 10% от 3000 руб = 300 токенов
    → Отправить подтверждение: "Зачислено 3500 токенов! Баланс: {new_balance}"
@@ -428,7 +440,7 @@ openai_client = AsyncOpenAI(
 @dataclass
 class GenerationRequest:
     task: Literal["article", "social_post", "keywords", "review", "image", "description", "competitor_analysis"]
-    prompt_version: str          # "v5", "v3" — ссылка на prompt_versions
+    prompt_version: str          # "v6", "v3" — ссылка на prompt_versions
     context: GenerationContext   # Типизированный контекст (см. ниже)
     user_id: int                 # Для rate limiting и логирования
     max_retries: int = 2         # Количество попыток с fallback-моделью
@@ -450,19 +462,35 @@ class GenerationContext:
     company_name: str
     specialization: str
     category_name: str
-    keyword: str
+    keyword: str                                # ALWAYS populated. For clusters: = main_phrase. For legacy: = selected phrase
     language: str = "ru"
-    # Опциональные (заполняются при наличии данных)
+    # === Cluster-aware fields (article_v6, keywords_cluster_v3) ===
+    main_phrase: str | None = None              # cluster.main_phrase. If None → use keyword (legacy). New code should prefer main_phrase when not None
+    secondary_phrases: str | None = None        # "phrase1 (N/мес), phrase2 (M/мес)"
+    cluster_volume: int | None = None           # cluster.total_volume
+    main_volume: int | None = None              # cluster.phrases[main].volume
+    main_difficulty: int | None = None          # cluster.phrases[main].difficulty
+    cluster_type: str | None = None             # "article" | "product_page"
+    # === Competitor analysis (Firecrawl /scrape) ===
+    competitor_analysis: str | None = None       # AI summary of competitor content
+    competitor_gaps: str | None = None           # Topics missing from all competitors
+    # === Dynamic sizing ===
+    words_min: int | None = None                 # From competitor analysis or text_settings
+    words_max: int | None = None
+    # === Image SEO ===
+    images_count: int | None = None              # image_settings.count (for images_meta)
+    # === Existing optional fields ===
     prices_excerpt: str | None = None
     advantages: str | None = None
     city: str | None = None
     internal_links: list[str] | None = None
     branding_colors: dict | None = None
     serper_data: dict | None = None
-    competitor_summary: str | None = None
+    serper_questions: str | None = None          # "People Also Ask" — random 3 of N
+    lsi_keywords: str | None = None              # DataForSEO related keywords
     image_settings: dict | None = None
     text_settings: dict | None = None
-    user_media_urls: list[str] | None = None   # URLs из categories.media (F43: медиа как контекст для AI)
+    user_media_urls: list[str] | None = None     # URLs из categories.media (F43: медиа как контекст для AI)
 
 class AIOrchestrator:
     async def generate(self, request: GenerationRequest) -> GenerationResult: ...
@@ -479,7 +507,7 @@ OpenRouter поддерживает нативные fallbacks через пар
 MODEL_CHAINS = {
     "article":            ["anthropic/claude-sonnet-4.5", "openai/gpt-5.2", "deepseek/deepseek-v3.2"],
     "social_post":        ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
-    "keywords":           ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],
+    "keywords":           ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],       # AI clustering (keywords_cluster.yaml v3), NOT data fetching
     "review":             ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "description":        ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "competitor_analysis": ["openai/gpt-5.2", "anthropic/claude-sonnet-4.5"],
@@ -754,7 +782,7 @@ class WordPressPublisher(BasePublisher):
             return resp.status_code == 200
 ```
 
-**Schema.org:** Инъекция через `<script type="application/ld+json">` в начало `content` (Article, FAQPage). Генерируется AI в промпте article_v5.yaml.
+**Schema.org:** Инъекция через `<script type="application/ld+json">` в начало `content` (Article, FAQPage). Генерируется AI в промпте article_v6.yaml.
 
 ### 3.4 TelegramPublisher — Bot API
 
@@ -948,9 +976,42 @@ class ContentValidator:
                 errors.append("Нет абзацев связного текста (мин. 50 символов)")
         
         return ValidationResult(is_valid=len(errors) == 0, errors=errors, warnings=[])
+
+    def validate_images_meta(
+        self, images_meta: list[dict], expected_count: int, main_phrase: str,
+    ) -> ValidationResult:
+        """Validate AI-generated images_meta before reconciliation."""
+        errors, warnings = [], []
+
+        if len(images_meta) != expected_count:
+            warnings.append(
+                f"images_meta count ({len(images_meta)}) != expected ({expected_count})"
+            )
+
+        for i, meta in enumerate(images_meta):
+            # alt must not be empty
+            if not meta.get("alt", "").strip():
+                errors.append(f"images_meta[{i}].alt is empty")
+            # alt should contain keyword (warning, not error)
+            elif main_phrase.lower() not in meta["alt"].lower():
+                warnings.append(f"images_meta[{i}].alt does not contain main_phrase")
+            # filename must be valid slug (latin, hyphens, digits)
+            fn = meta.get("filename", "")
+            if not fn or not re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$", fn):
+                errors.append(f"images_meta[{i}].filename is not a valid slug: '{fn}'")
+            # filename too long (WP limit ~200 chars)
+            if len(fn) > 180:
+                errors.append(f"images_meta[{i}].filename too long ({len(fn)} chars)")
+
+        return ValidationResult(
+            is_valid=len(errors) == 0, errors=errors, warnings=warnings
+        )
 ```
 
 При частичном провале (например, H1 есть, но длина 490) — все ошибки собираются в список, валидация не проходит.
+
+**validate_images_meta** вызывается в Stage 5 (reconciliation) ПЕРЕД сопоставлением с изображениями.
+При ошибках валидации — заменяем невалидные meta на generic (из title).
 
 ### 3.8 Быстрая публикация (F42) — callback-based flow
 
@@ -1048,7 +1109,7 @@ MAX_REGENERATIONS_FREE=2       # Бесплатных перегенераций
   await bot.set_webhook(
       url=f"{os.environ['RAILWAY_PUBLIC_URL']}/webhook",
       secret_token=os.environ["TELEGRAM_WEBHOOK_SECRET"],
-      allowed_updates=["message", "callback_query", "pre_checkout_query"],
+      allowed_updates=["message", "callback_query", "pre_checkout_query", "my_chat_member"],
   )
   # Aiogram верифицирует X-Telegram-Bot-Api-Secret-Token автоматически
   ```
@@ -1099,14 +1160,35 @@ def sanitize_variables(context: dict) -> dict:
 
 **Обработка отсутствующих переменных:** Если переменная `required: false` и отсутствует → используется `default`. Если `required: true` и отсутствует → ошибка генерации, возврат токенов.
 
-### Пример: article_v5.yaml
+### Пример: article_v6.yaml
+
+> **Ключевые изменения v5→v6:**
+> 1. Вместо одной фразы — **кластер** фраз (main + secondary). H1 = main, H2 содержат secondary.
+> 2. **Динамическая длина**: определяется на основе анализа конкурентов (median × 1.1), а не захардкожена.
+> 3. **Глубокий competitor_analysis**: из Firecrawl `/scrape` (markdown контента), а не `/extract` (только мета-теги).
+> 4. **competitor_gaps**: конкретные темы, которых нет у конкурентов — уникальная ценность статьи.
+> 5. **Anti-cannibalization**: промпт явно требует уникальность через данные компании (цены, кейсы, преимущества).
+> 6. **Image SEO**: `images_meta` в JSON-ответе (alt, filename, figcaption) для Google Images трафика.
+
+#### Пайплайн генерации статьи (7 шагов)
+
+```
+Шаг 1. Выбор кластера (не одной фразы) → rotation по кластерам (§6)
+Шаг 2. Serper search(main_phrase) → топ-5 URL + People Also Ask + Related
+Шаг 3. Firecrawl /scrape → топ-3 URL → markdown (структура, длина, темы)
+Шаг 4. AI анализирует конкурентов → определяет gaps + динамическую длину:
+        target_words = median(competitor_word_counts) × 1.1, cap [1500, 5000]
+Шаг 5. Сборка промпта: кластер фраз + конкурентный анализ + все данные бизнеса
+Шаг 6. Генерация → валидация (ContentValidator §5)
+Шаг 7. Telegraph-превью → публикация
+```
 
 ```yaml
 meta:
   task_type: article
-  version: v5
+  version: v6
   model_tier: premium
-  max_tokens: 8000
+  max_tokens: 12000
   temperature: 0.7
 
 system: |
@@ -1114,47 +1196,88 @@ system: |
   Компания: <<company_name>> (<<specialization>>).
   Город: <<city>>. Преимущества: <<advantages>>.
 
+  ВАЖНО: Пиши уникально именно под ЭТУ компанию. Упоминай конкретные преимущества,
+  цены из прайса, реальные кейсы и примеры. Статья должна быть неотличима от написанной
+  штатным копирайтером компании. НЕ пиши обобщённо — каждый абзац должен содержать
+  конкретику, привязанную к бизнесу клиента.
+
 user: |
-  Напиши SEO-статью на тему "<<keyword>>" (<<volume>> запросов/мес, сложность: <<difficulty>>).
+  Напиши SEO-статью, нацеленную на кластер поисковых фраз:
+
+  Главная фраза: "<<main_phrase>>" (<<main_volume>> запросов/мес, сложность: <<main_difficulty>>)
+  Дополнительные фразы кластера: <<secondary_phrases>>
+  Суммарный потенциал кластера: <<cluster_volume>> запросов/мес
+
+  Анализ конкурентов (топ-3 из выдачи):
+  <<competitor_analysis>>
+
+  Контентные пробелы (темы, которых НЕТ у конкурентов — покрой их для уникальной ценности):
+  <<competitor_gaps>>
 
   Требования:
   - Объём: <<words_min>>-<<words_max>> слов
-  - Структура: H1 (1), H2 (3-6), H3 (по необходимости), FAQ (3-5 вопросов)
-  - Ключевая фраза "<<keyword>>" — в H1, первом абзаце, 2-3 H2, заключении
+  - Структура: H1 (содержит "<<main_phrase>>"), H2 (3-6, включают дополнительные фразы кластера), H3 (по необходимости), FAQ (3-5 вопросов)
+  - Главная фраза "<<main_phrase>>" — в H1, первом абзаце, 2-3 H2, заключении
+  - Дополнительные фразы кластера — распредели по H2 и тексту естественно
   - LSI-фразы: <<lsi_keywords>>
   - Внутренние ссылки (вставь естественно): <<internal_links>>
-  - Упомяни цены из прайса: <<prices_excerpt>>
+  - Упомяни конкретные цены из прайса (не "от X руб", а реальные позиции): <<prices_excerpt>>
+  - Упомяни конкретные преимущества компании (не общие фразы): <<advantages>>
   - FAQ на основе реальных вопросов: <<serper_questions>>
-  - Учти данные конкурентов: <<competitor_summary>>
+
+  Image SEO (для каждого изображения в статье):
+  - Придумай SEO-оптимизированный alt-текст (содержит ключевую фразу, описывает изображение)
+  - Придумай slug для имени файла (латиница, через дефис, содержит ключевую фразу)
+  - Придумай подпись под картинкой (<figcaption>)
 
   Формат ответа — JSON:
   {
     "title": "...",
     "meta_description": "... (до 160 символов)",
-    "content_html": "... (полный HTML с inline-стилями: цвет текста <<text_color>>, акцент <<accent_color>>)",
-    "faq_schema": [{"question": "...", "answer": "..."}]
+    "content_html": "... (полный HTML с inline-стилями: цвет текста <<text_color>>, акцент <<accent_color>>). Картинки вставляй как <figure><img src='{{IMAGE_N}}' alt='...'><figcaption>...</figcaption></figure>",
+    "faq_schema": [{"question": "...", "answer": "..."}],
+    "images_meta": [
+      {"alt": "Описание изображения с ключевой фразой", "filename": "slug-klyuchevaya-fraza", "figcaption": "Подпись под картинкой"},
+      ...
+    ]
   }
 
 variables:
-  - name: keyword
-    source: categories.keywords (выбранная фраза)
+  - name: main_phrase
+    source: cluster.main_phrase (выбранный кластер)
     required: true
-  - name: volume
-    source: DataForSEO
+  - name: main_volume
+    source: cluster.phrases[main].volume
     required: false
     default: "неизвестно"
-  - name: difficulty
-    source: DataForSEO
+  - name: main_difficulty
+    source: cluster.phrases[main].difficulty
+    required: false
+    default: "неизвестно"
+  - name: secondary_phrases
+    source: cluster.phrases (кроме main), format "phrase1 (N/мес), phrase2 (M/мес)"
+    required: false
+    default: ""
+  - name: cluster_volume
+    source: cluster.total_volume
     required: false
     default: "неизвестно"
   - name: words_min
-    source: text_settings
+    source: dynamic from competitor analysis OR text_settings fallback
     required: true
     default: 1500
   - name: words_max
-    source: text_settings
+    source: dynamic from competitor analysis OR text_settings fallback
     required: true
     default: 2500
+  - name: competitor_analysis
+    source: AI summary of Firecrawl /scrape results (топ-3 конкурентов)
+    required: false
+    default: ""
+  - name: competitor_gaps
+    source: AI-detected topics missing from all competitors
+    required: false
+    default: ""
   - name: company_name
     source: projects.company_name
     required: true
@@ -1186,13 +1309,13 @@ variables:
     required: false
     default: ""
   - name: serper_questions
-    source: Serper "People Also Ask"
+    source: Serper "People Also Ask" — random 3 of N (anti-cannibalization, не первые 3)
     required: false
     default: ""
-  - name: competitor_summary
-    source: Firecrawl /extract результат
-    required: false
-    default: ""
+  - name: images_count
+    source: image_settings.count (сколько изображений в статье, для images_meta)
+    required: true
+    default: 4
   - name: text_color
     source: site_brandings.colors.text
     required: false
@@ -1202,6 +1325,202 @@ variables:
     required: false
     default: "#0066cc"
 ```
+
+#### Динамическая длина статьи
+
+Если данные конкурентов доступны (шаг 3 пайплайна), длина определяется автоматически:
+
+```python
+import statistics
+
+def calculate_target_length(
+    competitor_word_counts: list[int],
+    text_settings: dict,
+) -> tuple[int, int]:
+    """Calculate target article length from competitor analysis."""
+    if not competitor_word_counts:
+        return text_settings.get("words_min", 1500), text_settings.get("words_max", 2500)
+
+    median_words = int(statistics.median(competitor_word_counts))
+    target_min = max(1500, int(median_words * 1.1))   # +10% vs median competitor
+    target_max = min(5000, target_min + 500)           # cap at 5000 words
+    return target_min, target_max
+```
+
+Без данных конкурентов — fallback на `text_settings` категории (default 1500-2500).
+
+#### Anti-cannibalization (уникальность между пользователями)
+
+Два пользователя в одной нише + городе получат одинаковые кластеры и Serper-данные.
+Без защиты — Google увидит два почти идентичных текста, оба проиграют.
+
+**Механизмы уникализации (уже в промпте):**
+1. **System prompt** явно требует: "Пиши уникально под ЭТУ компанию, упоминай конкретные преимущества, цены, кейсы"
+2. **`prices_excerpt`** — конкретные цены компании (у конкурента другие)
+3. **`advantages`** — уникальные преимущества
+4. **`company_name`** + `city` — привязка к бренду
+5. **`branding_colors`** — визуальная уникальность
+
+**Дополнительные меры:**
+- `serper_questions`: random 3 of N (не первые 3) → разные FAQ-секции у разных пользователей
+- `temperature: 0.7` (не 0) → вариативность формулировок
+- При автопубликации: timestamp-seed для random → воспроизводимость при retry
+
+**P2 (Phase 11+):** Content similarity check — контент-хеш (simhash/minhash) готовых статей
+→ при >70% совпадении с существующей публикацией того же кластера → предупреждение
+"Статья похожа на ранее опубликованную. Рекомендуем переформулировать."
+Хранение: `publication_logs.content_hash BIGINT` (simhash).
+
+#### Image SEO
+
+Google Images = 20-30% трафика для коммерческих ниш. Без alt-тегов с ключевыми фразами этот трафик теряется.
+
+**JSON-ответ AI включает `images_meta`:**
+```json
+{
+  "images_meta": [
+    {
+      "alt": "Кухня на заказ из массива дуба в современном стиле — компания МебельПро",
+      "filename": "kuhnya-na-zakaz-massiv-duba",
+      "figcaption": "Кухня из массива дуба с фурнитурой Blum — от 180 000 руб."
+    }
+  ]
+}
+```
+
+**Использование при публикации на WordPress:**
+- `filename` → имя файла при загрузке через WP REST Media API (`kuhnya-na-zakaz-massiv-duba.webp`)
+- `alt` → `alt_text` при загрузке media (WP REST API field)
+- `figcaption` → `<figcaption>` в HTML, также `caption` в WP media
+- `content_html` содержит `<figure><img src='{{IMAGE_N}}' ...>` — placeholder заменяется на WP attachment URL
+
+**Формат изображений:** Все изображения конвертируются в WebP перед загрузкой (Pillow/sharp).
+Если исходный формат PNG (Gemini) → `PIL.Image.save(format='webp', quality=85)`.
+
+#### Себестоимость одной статьи (полный пайплайн)
+
+| Операция | Сервис | Стоимость | Этап |
+|----------|--------|-----------|------|
+| Ключевые фразы (разовая на категорию) | DataForSEO suggestions + related | ~$0.003/запрос × 2 | Создание категории |
+| Обогащение volume/difficulty (разовое) | DataForSEO enrich | ~$0.02/200 фраз | Создание категории |
+| Кластеризация (разовая) | DeepSeek v3.2 | ~$0.001 | Создание категории |
+| Serper search | Serper | ~$0.001 (или бесплатно) | На статью |
+| Скрейпинг конкурентов (3 URL) | Firecrawl /scrape | $0.003 | На статью |
+| Генерация текста | OpenRouter (Claude) | ~$0.08-0.15 | На статью |
+| Генерация 4 изображений | OpenRouter (Gemini) | ~$0.12-0.20 | На статью |
+| WebP-конвертация + загрузка | CPU + Supabase Storage | ~$0 | На статью |
+| **Итого за статью** | | **~$0.21-0.36** | |
+
+При цене 200 токенов = 200 руб (~$2.20) → маржинальность **80-90%**.
+Ключевые фразы амортизируются по всем статьям категории (разовая операция).
+
+#### Параллельный пайплайн (оптимизация latency)
+
+Без оптимизации waterfall: ~75-125 секунд. С параллелизмом: ~40-70 секунд.
+
+```python
+async def generate_article_pipeline(cluster, category, project, connections):
+    """Full article generation pipeline with parallel stages."""
+
+    # Stage 1: Serper (нужен для Firecrawl URLs)
+    serper_result = await serper.search(cluster.main_phrase)       # ~2с
+
+    # Stage 2: Firecrawl scrape (параллельно 3 URL) + keyword data (уже в БД)
+    top3_urls = [r["link"] for r in serper_result.organic[:3]]
+    competitor_pages = await asyncio.gather(                       # ~5с (параллельно)
+        *[firecrawl.scrape_content(url) for url in top3_urls],
+        return_exceptions=True,
+    )
+    valid_pages = [p for p in competitor_pages if isinstance(p, ScrapeContentResult)]
+
+    # Stage 3: Анализ конкурентов + dynamic length
+    words_min, words_max = calculate_target_length(
+        [p.word_count for p in valid_pages], category.text_settings
+    )
+    competitor_analysis = summarize_competitors(valid_pages)
+    competitor_gaps = detect_gaps(valid_pages)
+
+    # Stage 4: Текст и изображения ПАРАЛЛЕЛЬНО
+    text_task = asyncio.create_task(
+        orchestrator.generate(build_article_request(cluster, competitor_analysis, ...))
+    )
+    images_task = asyncio.create_task(
+        orchestrator.generate_images(cluster.main_phrase, category.image_settings)
+    )
+    text_result, images_result = await asyncio.gather(            # ~30-60с (параллельно)
+        text_task, images_task, return_exceptions=True,
+    )
+
+    # Stage 5: Пост-обработка (WebP, upload, Telegraph)
+    # ...
+```
+
+**Ключевой инсайт:** Генерация изображений НЕ зависит от текста статьи — только от keyword + branding.
+Поэтому текст и картинки генерируются параллельно.
+
+**Timeline:**
+```
+Sequential:  Serper(2с) → Firecrawl(15с) → Analysis(1с) → Text(45с) → Images(30с) → Upload(3с) = 96с
+Parallel:    Serper(2с) → Firecrawl(5с) → Analysis(1с) → [Text(45с) || Images(30с)] → Upload(3с) = 56с
+                                                           ↑ параллельно ↑
+```
+
+С progress indicator (F34 streaming): пользователь видит "Анализирую конкурентов... Пишу статью... Генерирую изображения..." — нормальный UX.
+
+#### Image-text reconciliation (Stage 5)
+
+Текст и изображения генерируются параллельно. После завершения обоих — reconciliation:
+
+```python
+def reconcile_images(
+    text_result: ArticleResult,       # содержит images_meta[], content_html с {{IMAGE_N}}
+    images_result: list[bytes | Exception],  # base64-decoded images
+) -> tuple[str, list[ImageUpload]]:
+    """Reconcile AI text images_meta with generated images."""
+    meta = text_result.images_meta          # [{alt, filename, figcaption}, ...]
+    images = [img for img in images_result if isinstance(img, bytes)]
+
+    # Case 1: len(images) == len(meta) — perfect match
+    # Case 2: len(images) < len(meta) — trim meta to match images count
+    # Case 3: len(images) > len(meta) — use generic alt/filename for extras
+    # Case 4: len(images) == 0 — publish without images (E34)
+
+    uploads = []
+    for i, img_bytes in enumerate(images):
+        m = meta[i] if i < len(meta) else {
+            "alt": f"{text_result.title} — изображение {i+1}",
+            "filename": f"{slugify(text_result.title)}-{i+1}",
+            "figcaption": "",
+        }
+        webp_bytes = convert_to_webp(img_bytes)  # PIL → WebP quality=85
+        uploads.append(ImageUpload(
+            data=webp_bytes,
+            filename=f"{m['filename']}.webp",
+            alt_text=m["alt"],
+            caption=m["figcaption"],
+        ))
+
+    # Replace {{IMAGE_N}} placeholders in content_html
+    html = text_result.content_html
+    for i, upload in enumerate(uploads):
+        html = html.replace(f"{{{{IMAGE_{i+1}}}}}", upload.wp_url or "")
+    # Remove unreplaced placeholders (if images < expected)
+    html = re.sub(r"<figure>[^<]*<img[^>]*src=['\"]?\{\{IMAGE_\d+\}\}['\"]?[^<]*</figure>", "", html)
+
+    return html, uploads
+```
+
+**Правила reconciliation:**
+| Ситуация | Действие |
+|----------|----------|
+| images == meta | 1:1 маппинг по индексу |
+| images < meta | Лишние meta отбрасываются, unreplaced {{IMAGE_N}} удаляются из HTML |
+| images > meta | Для лишних images — generic alt/filename из title |
+| images == 0 | Публикация без изображений (E34), возврат 30×N токенов за изображения |
+| meta == 0 (AI не вернул) | Generic alt/filename для всех images |
+
+**WebP-конвертация:** `PIL.Image.open(BytesIO(png_bytes)).save(buf, format='webp', quality=85)`.
+При ошибке конвертации — fallback на PNG (E33).
 
 ### Пример: social.yaml
 
@@ -1240,7 +1559,7 @@ user: |
 
 variables:
   - name: keyword
-    source: categories.keywords (выбранная фраза)
+    source: cluster.main_phrase (из выбранного кластера, см. §6.1)
     required: true
   - name: platform
     source: telegram, vk, pinterest
@@ -1273,41 +1592,90 @@ variables:
     default: ""
 ```
 
-### Пример: keywords.yaml
+### Пример: keywords_cluster.yaml
+
+> **Data-first подход:** Сначала DataForSEO даёт реальные фразы из поисковых систем,
+> затем AI кластеризует и дополняет. Это инверсия прежнего подхода "AI генерирует →
+> DataForSEO валидирует", который давал 30-40% фраз с нулевым объёмом.
+
+#### Пайплайн генерации ключевых фраз (5 шагов)
+
+```
+Шаг 1. DataForSEO keyword_suggestions(seed=specialization+city+products)
+        → 200+ РЕАЛЬНЫХ фраз, которые люди ищут
+Шаг 2. DataForSEO related_keywords(seed=top-10 фраз из шага 1)
+        → расширение семантики (ещё ~100 фраз)
+Шаг 3. AI кластеризация (keywords_cluster.yaml):
+        → группировка фраз по поисковому интенту
+        → "главная фраза" + "дополнительные" в каждом кластере
+        → добавление узкоспециальных фраз, которых нет в DataForSEO
+Шаг 4. DataForSEO enrich_keywords(финальный список)
+        → volume, difficulty, CPC для каждой фразы
+Шаг 5. Пользователь видит кластеры (не отдельные фразы):
+        "Кухни на заказ" (4 фразы, суммарно 26,500/мес, сложность: средняя)
+```
+
+**Стоимость:** keyword_suggestions = $0.0015/запрос, related_keywords = $0.0015/запрос,
+enrich = $0.0001/фраза. Итого для 200 фраз: ~$0.025 (~2.3 руб). Бесплатно для пользователя.
 
 ```yaml
 meta:
   task_type: keywords
-  version: v2
+  version: v3
   model_tier: budget
-  max_tokens: 4000
-  temperature: 0.5
+  max_tokens: 6000
+  temperature: 0.3
 
 system: |
-  Ты — SEO-специалист. Генерируй ключевые фразы на <<language>>.
+  Ты — SEO-специалист. Работай на <<language>>.
+  Задача: кластеризовать реальные поисковые фразы по интенту и дополнить семантику.
 
 user: |
-  Сгенерируй <<quantity>> SEO-ключевых фраз для бизнеса:
+  Вот <<raw_count>> реальных поисковых фраз из DataForSEO для бизнеса:
+  - Компания: <<company_name>> (<<specialization>>)
   - Товары/услуги: <<products>>
   - География: <<geography>>
-  - Компания: <<company_name>> (<<specialization>>)
 
-  Требования:
-  - Микс: высокочастотные (20%), среднечастотные (50%), низкочастотные (30%)
-  - Включи коммерческие ("купить", "заказать", "цена") и информационные ("как выбрать", "отзывы")
-  - Учти географию в фразах где уместно
-  - НЕ дублируй фразы, НЕ используй синонимы-дубликаты
+  Реальные фразы (с объёмами):
+  <<raw_keywords_json>>
 
-  Формат ответа — JSON-массив:
-  [
-    {"phrase": "кухни на заказ москва", "intent": "commercial"},
-    {"phrase": "как выбрать кухонный гарнитур", "intent": "informational"}
-  ]
+  Задачи:
+  1. Сгруппируй фразы по поисковому интенту (фразы с одинаковым интентом = один кластер).
+     Критерий: если Google показал бы одинаковые результаты — это один кластер.
+  2. Для каждого кластера определи главную фразу (максимальный volume).
+  3. Добавь до <<extra_count>> узкоспециальных фраз, которых нет в списке DataForSEO,
+     но которые релевантны бизнесу. Пометь их как "ai_suggested": true.
+  4. Определи тип кластера: "article" (информационный, подходит для статьи) или
+     "product_page" (транзакционный, не подходит для статьи — только landing/каталог).
+
+  Формат ответа — JSON:
+  {
+    "clusters": [
+      {
+        "cluster_name": "Кухни на заказ Москва",
+        "cluster_type": "article",
+        "main_phrase": "кухни на заказ москва",
+        "phrases": [
+          {"phrase": "кухни на заказ москва", "ai_suggested": false},
+          {"phrase": "заказать кухню в москве", "ai_suggested": false},
+          {"phrase": "кухни под заказ москва цены", "ai_suggested": false},
+          {"phrase": "кухни на заказ от производителя москва", "ai_suggested": true}
+        ]
+      }
+    ]
+  }
 
 variables:
-  - name: quantity
-    source: FSM-выбор (50, 100, 150, 200)
+  - name: raw_count
+    source: len(DataForSEO results)
     required: true
+  - name: raw_keywords_json
+    source: DataForSEO keyword_suggestions + related_keywords (JSON)
+    required: true
+  - name: extra_count
+    source: ceil(quantity * 0.15)
+    required: true
+    default: 30
   - name: products
     source: FSM-ответ (товары/услуги)
     required: true
@@ -1325,6 +1693,39 @@ variables:
     required: true
     default: "ru"
 ```
+
+#### Структура кластера в categories.keywords (JSONB)
+
+После кластеризации `categories.keywords` хранит массив **кластеров**, а не отдельных фраз:
+
+```json
+[
+  {
+    "cluster_name": "Кухни на заказ Москва",
+    "cluster_type": "article",
+    "main_phrase": "кухни на заказ москва",
+    "total_volume": 26500,
+    "avg_difficulty": 45,
+    "phrases": [
+      {"phrase": "кухни на заказ москва", "volume": 12400, "difficulty": 52, "cpc": 1.2, "intent": "commercial", "ai_suggested": false},
+      {"phrase": "заказать кухню в москве", "volume": 8100, "difficulty": 44, "cpc": 1.0, "intent": "commercial", "ai_suggested": false},
+      {"phrase": "кухни под заказ москва цены", "volume": 3200, "difficulty": 38, "cpc": 0.9, "intent": "commercial", "ai_suggested": false},
+      {"phrase": "кухни на заказ от производителя москва", "volume": 2800, "difficulty": 41, "cpc": 1.1, "intent": "commercial", "ai_suggested": true}
+    ]
+  },
+  {
+    "cluster_name": "Как выбрать кухню",
+    "cluster_type": "article",
+    "main_phrase": "как выбрать кухню",
+    "total_volume": 9800,
+    "avg_difficulty": 28,
+    "phrases": [...]
+  }
+]
+```
+
+**Обратная совместимость:** Если `keywords[0]` содержит `"phrase"` без `"cluster_name"` — это
+legacy-формат (плоский список). Код должен поддерживать оба формата (Phase 10 миграция).
 
 ### Пример: review.yaml
 
@@ -1427,40 +1828,140 @@ variables:
     default: ""
 ```
 
+### Пример: competitor_analysis.yaml
+
+```yaml
+meta:
+  task_type: competitor_analysis
+  version: v1
+  model_tier: premium
+  max_tokens: 4000
+  temperature: 0.3
+
+system: |
+  Ты — SEO-аналитик. Анализируй на <<language>>.
+  Задача: сравнить сайт конкурента с бизнесом клиента и дать конкретные рекомендации.
+
+user: |
+  Проанализируй сайт конкурента на основе извлечённых данных.
+
+  Бизнес клиента: <<company_name>> (<<specialization>>).
+  Текущие ключевые фразы клиента: <<category_keywords>>.
+
+  Данные конкурента (Firecrawl /extract):
+  <<competitor_data>>
+
+  Задачи анализа:
+  1. Подсчитай количество проиндексированных страниц
+  2. Определи ключевые темы и категории контента конкурента
+  3. Найди контентные пробелы — темы, которые конкурент покрывает, а клиент нет
+  4. Сравни мета-теги, заголовки H1-H3, структуру контента
+  5. Дай 3-5 конкретных рекомендаций для клиента
+
+  Формат ответа — JSON:
+  {
+    "pages_indexed": 45,
+    "key_topics": ["тема1", "тема2", "тема3"],
+    "content_gaps": ["пробел1", "пробел2"],
+    "meta_analysis": "краткий анализ мета-тегов и структуры",
+    "recommendations": [
+      "Рекомендация 1: ...",
+      "Рекомендация 2: ..."
+    ]
+  }
+
+variables:
+  - name: company_name
+    source: projects.company_name
+    required: true
+  - name: specialization
+    source: projects.specialization
+    required: true
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"
+  - name: category_keywords
+    source: categories.keywords (все фразы проекта)
+    required: false
+    default: "не заданы"
+  - name: competitor_data
+    source: Firecrawl /extract результат (JSON)
+    required: true
+```
+
 ---
 
-## 6. Стратегия ротации ключевых фраз
+## 6. Стратегия ротации кластеров ключевых фраз
 
-При автопубликации бот должен выбирать ключевые фразы для статей/постов таким образом, чтобы не повторять одну фразу слишком часто.
+> **Single source of truth** для ротации кластеров. Edge cases: E22 (все на cooldown → LRU),
+> E23 (<3 кластеров → предупреждение), E36 (legacy формат → fallback на фразовую ротацию).
+> Social posts: см. §6.1.
+
+При автопубликации бот выбирает **кластер** для следующей статьи/поста.
+Одна статья таргетирует весь кластер (main_phrase + secondary_phrases), а не одну фразу.
 
 ### Алгоритм
 
 ```
-1. Получить все фразы категории: categories.keywords (JSON-массив)
-2. Отсортировать по перспективности: volume DESC, difficulty ASC
-3. Исключить фразы, использованные за последние 7 дней:
+1. Получить все кластеры категории: categories.keywords (JSON-массив кластеров, см. §keywords_cluster.yaml)
+2. Отфильтровать: только cluster_type = "article" (пропустить "product_page")
+3. Отсортировать по перспективности: total_volume DESC, avg_difficulty ASC
+4. Исключить кластеры, использованные за последние 7 дней:
    SELECT keyword FROM publication_logs
    WHERE category_id = ? AND created_at > now() - INTERVAL '7 days'
-4. Выбрать первую доступную фразу (round-robin с приоритетом)
-5. Если все фразы использованы за 7 дней → взять LRU (самую давно использованную)
-6. Если фраз в категории < 5 → предложить пользователю: "Добавьте ещё ключевых фраз для разнообразия контента"
+   (keyword хранит main_phrase кластера)
+5. Выбрать первый доступный кластер (round-robin с приоритетом)
+6. Если все кластеры использованы за 7 дней → взять LRU (самый давно использованный)
+7. Если кластеров в категории < 3 → предложить пользователю:
+   "Добавьте ещё ключевых фраз для разнообразия контента"
 ```
+
+**Legacy-формат:** Если `keywords[0]` не содержит `cluster_name` — fallback на старый
+алгоритм (ротация по отдельным фразам, volume DESC, difficulty ASC).
 
 ### Параметры
 
 | Параметр | Значение | Обоснование |
 |----------|----------|-------------|
-| Cooldown-период | 7 дней | При 1 посте/день и 10 фразах — каждая фраза раз в 10 дней |
-| Минимальный пул | 5 фраз | Ниже — предупреждение пользователю |
-| Приоритет | volume DESC, difficulty ASC | Сначала высокочастотные + лёгкие для продвижения |
-| Fallback | LRU (Least Recently Used) | Если все на cooldown — берём самую давнюю |
+| Cooldown-период | 7 дней | При 1 посте/день и 10 кластерах — каждый раз в 10 дней |
+| Минимальный пул | 3 кластера | Ниже — предупреждение пользователю |
+| Приоритет | total_volume DESC, avg_difficulty ASC | Сначала высокопотенциальные + лёгкие кластеры |
+| Fallback | LRU (Least Recently Used) | Если все на cooldown — берём самый давний |
+| Фильтр | cluster_type = "article" | Пропустить транзакционные кластеры (product_page) |
 
 ### Логирование
 
-Каждая публикация записывает `keyword` в `publication_logs`. Это позволяет:
-- Отслеживать частоту использования каждой фразы
-- Анализировать эффективность (CTR, позиции) по фразам
-- Автоматически исключать "выгоревшие" фразы (будущая фича)
+Каждая публикация записывает `keyword` (= main_phrase кластера) в `publication_logs`. Это позволяет:
+- Отслеживать частоту использования каждого кластера
+- Анализировать эффективность (CTR, позиции) по кластерам
+- Автоматически исключать "выгоревшие" кластеры (будущая фича)
+- `publication_logs.keyword` всегда = `cluster.main_phrase` (для обратной совместимости с индексом)
+
+### 6.1 Social post rotation (TG/VK/Pinterest)
+
+Социальные посты используют тот же пул кластеров, но с отличиями:
+
+```
+1. Фильтр: cluster_type IN ("article", "social") — НЕ только "article"
+   (кластеры типа "social" — короткие фразы, хорошо подходят для постов)
+2. Из выбранного кластера берётся ТОЛЬКО main_phrase (не весь кластер)
+   → передаётся в social.yaml как <<keyword>>
+3. Cooldown ОБЩИЙ по content_type: статья и пост по одному кластеру НЕ конфликтуют
+   → cooldown 7 дней проверяется ОТДЕЛЬНО для article и social_post:
+   SELECT keyword FROM publication_logs
+   WHERE category_id = ? AND content_type = ? AND created_at > now() - INTERVAL '7 days'
+4. Минимальный пул: 3 кластера (как для статей)
+```
+
+**Почему не весь кластер:** Пост в Telegram/VK — 100-300 слов. Невозможно органично
+вписать 15 secondary_phrases кластера. Одна main_phrase достаточна для SMM-контента.
+
+**Пример:** Кластер "Кухни из массива" (main_phrase = "кухня из массива дерева")
+→ статья использует все 18 фраз кластера
+→ пост использует только "кухня из массива дерева"
+→ обе публикации записывают `keyword = "кухня из массива дерева"` в publication_logs,
+  но с разным `content_type` → cooldown не пересекается.
 
 ---
 
@@ -1656,14 +2157,54 @@ class ExtractResult:
     data: dict         # Структурированные данные по схеме
     source_urls: list[str]
 
+@dataclass
+class ScrapeContentResult:
+    url: str
+    markdown: str          # Full page content as markdown
+    word_count: int        # Word count of content
+    headings: list[dict]   # [{level: 2, text: "..."}] -- H1-H3 structure
+    meta_title: str | None
+    meta_description: str | None
+
 class FirecrawlClient:
     async def scrape_branding(self, url: str) -> BrandingResult: ...
     async def crawl_site(self, url: str, limit: int = 100) -> CrawlResult: ...
     async def extract(self, urls: list[str], prompt: str, schema: dict) -> ExtractResult: ...
+    async def scrape_content(self, url: str) -> ScrapeContentResult: ...
+```
+
+**`scrape_content`** — новый метод для анализа конкурентов при генерации статей.
+Использует Firecrawl `/scrape` с `formats: ['markdown']`. Возвращает полный markdown
+контента страницы + структуру заголовков + word count. Стоимость: 1 кредит/страница.
+
+Используется в пайплайне генерации статей (article_v6.yaml, шаг 3):
+```python
+# Scrape top-3 competitor URLs from Serper results
+competitor_pages = await asyncio.gather(
+    *[firecrawl.scrape_content(url) for url in serper_top3_urls],
+    return_exceptions=True,
+)
+# Filter successful results, skip failures (graceful degradation)
+valid_pages = [p for p in competitor_pages if isinstance(p, ScrapeContentResult)]
 ```
 
 **Retry:** 3 попытки, exponential backoff (1s, 3s, 9s). При недоступности → E15.
-**Кеширование:** Результат `scrape_branding` кешируется в Redis на 7 дней (ключ: `branding:{project_id}`).
+**Кеширование:**
+- `scrape_branding` — Redis 7 дней (ключ: `branding:{project_id}`)
+- `scrape_content` — Redis 24 часа (ключ: `competitor:{md5(url)}`)
+- `crawl_site` — Redis 14 дней (ключ: `crawl:{project_id}`)
+
+#### Перекраулинг внутренних ссылок (P2, Phase 11+)
+
+Внутренние ссылки устаревают: через 3 месяца новые страницы не учтены, удалённые → 404.
+Решение: QStash cron раз в 14 дней вызывает `/api/recrawl` для каждого WP-подключения.
+
+```
+QStash CRON: 0 3 1,15 * * → POST /api/recrawl
+  → Для каждого active WP connection: firecrawl.crawl_site(url, limit=100)
+  → Обновить platform_connections.credentials.internal_links
+  → Стоимость: ~100 кредитов = $0.08/сайт/2 недели
+```
 
 ### 8.2 DataForSEOClient
 
@@ -1676,15 +2217,74 @@ class KeywordData:
     cpc: float           # Стоимость клика в USD
     intent: str          # commercial, informational
 
+@dataclass
+class KeywordSuggestion:
+    phrase: str
+    volume: int
+    cpc: float
+    competition: float   # 0.0-1.0
+
 class DataForSEOClient:
+    async def keyword_suggestions(
+        self, seed: str, location: str = "Russia", language: str = "ru", limit: int = 200,
+    ) -> list[KeywordSuggestion]: ...
+
+    async def related_keywords(
+        self, seed: str, location: str = "Russia", language: str = "ru", limit: int = 100,
+    ) -> list[KeywordSuggestion]: ...
+
     async def enrich_keywords(
-        self, phrases: list[str], location: str = "Russia", language: str = "ru"
+        self, phrases: list[str], location: str = "Russia", language: str = "ru",
     ) -> list[KeywordData]: ...
 ```
 
-**Batch:** До 700 фраз за 1 запрос. Для 200 фраз — 1 запрос.
-**Стоимость:** $0.0001/фраза. 200 фраз = $0.02.
-**Retry:** 2 попытки. При недоступности → E03 (показать фразы без данных).
+**Data-first пайплайн (keywords_cluster.yaml):**
+1. `keyword_suggestions(seed=specialization+city+products)` → 200+ реальных фраз
+2. `related_keywords(seed=top-10 из шага 1)` → расширение семантики
+3. AI кластеризация (см. keywords_cluster.yaml)
+4. `enrich_keywords(all_phrases)` → volume, difficulty, CPC для финального списка
+
+**API эндпоинты DataForSEO:**
+- `keyword_suggestions`: POST `/v3/dataforseo_labs/google/keyword_suggestions/live`
+- `related_keywords`: POST `/v3/dataforseo_labs/google/related_keywords/live`
+- `enrich_keywords` (bulk): POST `/v3/keywords_data/google_ads/search_volume/live`
+
+**Batch:** enrich — до 700 фраз за 1 запрос. suggestions/related — 1 seed за запрос.
+**Стоимость:** suggestions = $0.0015/запрос, related = $0.0015/запрос, enrich = $0.0001/фраза.
+Полный пайплайн для 200 фраз: ~$0.025 (~2.3 руб).
+**Retry:** 2 попытки. При недоступности → E03 (fallback: AI генерирует фразы "из головы", как в v1).
+
+#### Rank Tracking (P2, Phase 11+)
+
+```python
+@dataclass
+class RankResult:
+    keyword: str
+    position: int | None   # 1-100, None = not in top-100
+    url: str | None        # URL страницы в выдаче
+    checked_at: datetime
+
+class DataForSEOClient:
+    # ... existing methods ...
+
+    async def check_rank(
+        self, keyword: str, domain: str, location: str = "Russia", language: str = "ru",
+    ) -> RankResult: ...
+```
+
+**API эндпоинт:** POST `/v3/serp/google/organic/live/regular`
+**Стоимость:** $0.002/проверка. 100 статей/неделю = $0.80/мес.
+**Кеширование:** Redis 24ч (ключ: `rank:{md5(keyword+domain)}`).
+
+**QStash cron:** Раз в неделю проверить все publication_logs со `status='success'` и `rank_checked_at` > 7 дней назад.
+Обновить `rank_position` и `rank_checked_at`.
+
+**Отображение пользователю:**
+```
+Статья "Кухни на заказ в Москве"
+  Опубликована: 15 янв 2026
+  Позиция: 34 → 12 (↑22 за 3 недели)
+```
 
 ### 8.3 SerperClient
 

@@ -1,9 +1,10 @@
-"""Inline keyboard builders for projects, categories, settings."""
+"""Inline keyboard builders for projects, categories, settings, tariffs."""
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from db.models import Category, Project, User
 from keyboards.pagination import PAGE_SIZE, paginate
+from services.payments.packages import PACKAGES, SUBSCRIPTIONS
 
 # ---------------------------------------------------------------------------
 # Project fields (15 editable) — order matches USER_FLOWS_AND_UI_MAP.md §2
@@ -233,4 +234,81 @@ def settings_notifications_kb(user: User) -> InlineKeyboardBuilder:
     builder.button(text=f"Новости: {news_status}", callback_data="settings:notify:news")
     builder.button(text="Назад", callback_data="settings:main")
     builder.adjust(1)
+    return builder
+
+
+# ---------------------------------------------------------------------------
+# Tariffs keyboards (USER_FLOWS_AND_UI_MAP.md §1: Тарифы)
+# ---------------------------------------------------------------------------
+
+
+def tariffs_main_kb(has_subscription: bool = False) -> InlineKeyboardBuilder:
+    """Main tariffs screen: top-up button, subscriptions, manage, navigation."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Пополнить баланс", callback_data="tariffs:topup")
+    for name, sub in SUBSCRIPTIONS.items():
+        label = f"Подписка {name.capitalize()}: {sub.price_rub} руб/мес"
+        builder.button(text=label, callback_data=f"sub:{name}:select")
+    if has_subscription:
+        builder.button(text="Моя подписка", callback_data="sub:manage")
+    builder.button(text="Главное меню", callback_data="menu:main")
+    builder.adjust(1)
+    return builder
+
+
+def package_list_kb() -> InlineKeyboardBuilder:
+    """Package selection screen: 5 packages + back."""
+    builder = InlineKeyboardBuilder()
+    for name, pkg in PACKAGES.items():
+        bonus = f" + {pkg.bonus} бонус" if pkg.bonus else ""
+        label = f"{name.capitalize()}: {pkg.price_rub} руб → {pkg.tokens} токенов{bonus}"
+        builder.button(text=label, callback_data=f"tariff:{name}:select")
+    builder.button(text="Назад", callback_data="tariffs:main")
+    builder.adjust(1)
+    return builder
+
+
+def package_pay_kb(package_name: str, show_savings: bool = False) -> InlineKeyboardBuilder:
+    """Payment method choice for a package: Stars / YooKassa."""
+    builder = InlineKeyboardBuilder()
+    pkg = PACKAGES[package_name]
+    builder.button(text=f"Оплатить Stars ⭐ ({pkg.stars} Stars)", callback_data=f"tariff:{package_name}:stars")
+    yk_label = "Оплатить картой (ЮKassa)"
+    if show_savings:
+        # For Business/Enterprise, show approximate savings
+        savings = int(pkg.price_rub * 0.35)
+        yk_label = f"Оплатить картой (~{savings} руб. экономии)"
+    builder.button(text=yk_label, callback_data=f"tariff:{package_name}:yk")
+    builder.button(text="Назад", callback_data="tariffs:topup")
+    builder.adjust(1)
+    return builder
+
+
+def subscription_pay_kb(sub_name: str) -> InlineKeyboardBuilder:
+    """Payment method choice for subscription: Stars / YooKassa."""
+    builder = InlineKeyboardBuilder()
+    sub = SUBSCRIPTIONS[sub_name]
+    builder.button(text=f"Оплатить Stars ⭐ ({sub.stars} Stars)", callback_data=f"sub:{sub_name}:stars")
+    builder.button(text="Оплатить картой (ЮKassa)", callback_data=f"sub:{sub_name}:yk")
+    builder.button(text="Назад", callback_data="tariffs:main")
+    builder.adjust(1)
+    return builder
+
+
+def subscription_manage_kb() -> InlineKeyboardBuilder:
+    """Active subscription management: change plan, cancel, back."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Изменить тариф", callback_data="tariffs:main")
+    builder.button(text="Отменить подписку", callback_data="sub:cancel")
+    builder.button(text="К тарифам", callback_data="tariffs:main")
+    builder.adjust(1)
+    return builder
+
+
+def subscription_cancel_confirm_kb() -> InlineKeyboardBuilder:
+    """2-step cancel confirmation."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Да, отменить", callback_data="sub:cancel:confirm")
+    builder.button(text="Оставить", callback_data="sub:manage")
+    builder.adjust(2)
     return builder

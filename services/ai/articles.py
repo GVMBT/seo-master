@@ -1,9 +1,12 @@
 """Article generation service — SEO articles for WordPress.
 
-Source of truth: API_CONTRACTS.md section 5 (article_v5.yaml).
+Source of truth: API_CONTRACTS.md section 5 (article_v6.yaml).
+v6 changes: cluster-based prompts, images_meta, competitor_gaps, dynamic length.
+Phase 10 will wire Firecrawl/DataForSEO data into the context.
 Zero Telegram/Aiogram dependencies.
 """
 
+import random
 import re
 from typing import Any
 
@@ -41,8 +44,21 @@ ARTICLE_SCHEMA: dict[str, Any] = {
                     "additionalProperties": False,
                 },
             },
+            "images_meta": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "alt": {"type": "string"},
+                        "filename": {"type": "string"},
+                        "figcaption": {"type": "string"},
+                    },
+                    "required": ["alt", "filename", "figcaption"],
+                    "additionalProperties": False,
+                },
+            },
         },
-        "required": ["title", "meta_description", "content_html", "faq_schema"],
+        "required": ["title", "meta_description", "content_html", "faq_schema", "images_meta"],
         "additionalProperties": False,
     },
 }
@@ -135,11 +151,12 @@ class ArticleService:
             context["text_color"] = colors.get("text", "#333333")
             context["accent_color"] = colors.get("accent", "#0066cc")
 
-        # Enrich with serper data
+        # Enrich with serper data — random 3 of N for anti-cannibalization (API_CONTRACTS.md §5)
         if serper_data:
             paa = serper_data.get("people_also_ask", [])
             if paa:
-                context["serper_questions"] = "\n".join(f"- {q}" for q in paa[:5])
+                sample = random.sample(paa, min(3, len(paa)))
+                context["serper_questions"] = "\n".join(f"- {q}" for q in sample)
 
         # Keyword volume/difficulty from category keywords
         for kw in category.keywords:
@@ -170,7 +187,20 @@ class ArticleService:
                 link_rel="noopener noreferrer",
             )
             if jsonld_blocks:
-                sanitized += "\n".join(jsonld_blocks)
+                import json as _json
+                import re as _re
+
+                safe_blocks: list[str] = []
+                for block in jsonld_blocks:
+                    content_match = _re.search(r">(.+?)</script>", block, _re.DOTALL)
+                    if content_match:
+                        try:
+                            _json.loads(content_match.group(1))
+                            safe_blocks.append(block)
+                        except (ValueError, _json.JSONDecodeError):
+                            log.warning("invalid_jsonld_block_stripped")
+                if safe_blocks:
+                    sanitized += "\n".join(safe_blocks)
             result.content["content_html"] = sanitized
 
         # Validate — block on invalid content (H10)

@@ -15,7 +15,7 @@ user: |
   Бизнес клиента: <<company_name>> (<<specialization>>).
   Текущие ключевые фразы клиента: <<category_keywords>>.
 
-  Данные конкурента (Firecrawl /extract):
+  Данные конкурента (Firecrawl /scrape — markdown контента):
   <<competitor_data>>
 
   Задачи анализа:
@@ -50,5 +50,5 @@ variables:
     required: false
     default: "не заданы"
   - name: competitor_data
-    source: Firecrawl /extract result (JSON)
+    source: Firecrawl /scrape result (markdown content)
     required: true

@@ -123,6 +123,33 @@ class UsersRepository(BaseRepository):
         """
         return await self._add_balance("credit_balance", user_id, amount)
 
+    async def force_debit_balance(self, user_id: int, amount: int) -> int:
+        """Deduct tokens, allowing negative balance (refund scenario).
+
+        First tries charge_balance. On InsufficientBalanceError,
+        forces the deduction anyway (balance may go negative).
+        Per API_CONTRACTS.md §2.3: refund can produce negative balance.
+        """
+        try:
+            return await self.charge_balance(user_id, amount)
+        except InsufficientBalanceError:
+            pass
+
+        # Insufficient balance — force negative via CAS retry
+        _MAX_RETRIES = 3
+        for attempt in range(_MAX_RETRIES):
+            user = await self.get_by_id(user_id)
+            if not user:
+                raise AppError(f"User {user_id} not found")
+            new_balance = user.balance - amount
+            rows = self._rows(
+                await self._force_update_balance(user_id, user.balance, new_balance)
+            )
+            if rows:
+                return int(rows[0]["balance"])
+            log.info("force_debit_retry", user_id=user_id, attempt=attempt + 1)
+        raise AppError(f"Force debit conflict after {_MAX_RETRIES} retries")
+
     async def _add_balance(self, fn_name: str, user_id: int, amount: int) -> int:
         """Shared implementation for refund_balance and credit_balance.
 

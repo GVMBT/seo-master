@@ -96,3 +96,39 @@ class ContentValidator:
             errors=errors,
             warnings=warnings,
         )
+
+    def validate_images_meta(
+        self,
+        images_meta: list[dict[str, str]],
+        expected_count: int,
+        main_phrase: str,
+    ) -> ValidationResult:
+        """Validate AI-generated images_meta before reconciliation (API_CONTRACTS.md §3.7)."""
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        if len(images_meta) != expected_count:
+            warnings.append(
+                f"images_meta count ({len(images_meta)}) != expected ({expected_count})"
+            )
+
+        for i, meta in enumerate(images_meta):
+            # alt must not be empty
+            alt = meta.get("alt", "").strip()
+            if not alt:
+                errors.append(f"images_meta[{i}].alt is empty")
+            elif main_phrase.lower() not in alt.lower():
+                warnings.append(f"images_meta[{i}].alt does not contain main_phrase")
+
+            # filename must be valid slug (latin lowercase, hyphens, digits)
+            fn = meta.get("filename", "")
+            if not fn or not re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$", fn):
+                errors.append(f"images_meta[{i}].filename is not a valid slug: '{fn}'")
+            if len(fn) > 180:
+                errors.append(f"images_meta[{i}].filename too long ({len(fn)} chars)")
+
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+        )

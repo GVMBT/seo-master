@@ -86,12 +86,11 @@ class RateLimiter:
         max_requests, window_seconds = limit_config
         key = CacheKeys.rate_limit(user_id, action)
 
-        # Read current value before incrementing to detect first-use
-        current_before = await self._redis.get(key)
+        # Atomic increment-first pattern: INCRBY returns new value.
+        # If new_value == count, the key was just created → set TTL.
         new_value = await self._redis.incrby(key, count)
 
-        # Set TTL if key was just created (didn't exist before)
-        if current_before is None:
+        if new_value == count:
             await self._redis.expire(key, window_seconds)
 
         if new_value > max_requests:

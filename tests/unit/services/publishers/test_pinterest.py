@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import json
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import httpx
 
@@ -57,19 +57,10 @@ def _make_publisher(
     client = httpx.AsyncClient(transport=transport)
     return PinterestPublisher(
         http_client=client,
+        client_id="test_app_id",
+        client_secret="test_app_secret",
         on_token_refresh=on_token_refresh,  # type: ignore[arg-type]
     )
-
-
-def _mock_settings() -> object:
-    """Create a mock Settings object for Pinterest OAuth."""
-    from unittest.mock import MagicMock
-
-    settings = MagicMock()
-    settings.pinterest_app_id = "test_app_id"
-    settings.pinterest_app_secret = MagicMock()
-    settings.pinterest_app_secret.get_secret_value.return_value = "test_app_secret"
-    return settings
 
 
 # ---------------------------------------------------------------------------
@@ -101,10 +92,9 @@ class TestMaybeRefreshToken:
                 })
             return httpx.Response(404)
 
-        with patch("services.publishers.pinterest.get_settings", return_value=_mock_settings()):
-            pub = _make_publisher(handler)
-            conn = _make_connection(expires_at=_EXPIRING_SOON)
-            token = await pub._maybe_refresh_token(conn.credentials)
+        pub = _make_publisher(handler)
+        conn = _make_connection(expires_at=_EXPIRING_SOON)
+        token = await pub._maybe_refresh_token(conn.credentials)
         assert token == "new_access_token"
 
     async def test_expired_token_triggers_refresh(self) -> None:
@@ -116,10 +106,9 @@ class TestMaybeRefreshToken:
                 })
             return httpx.Response(404)
 
-        with patch("services.publishers.pinterest.get_settings", return_value=_mock_settings()):
-            pub = _make_publisher(handler)
-            conn = _make_connection(expires_at=_EXPIRED)
-            token = await pub._maybe_refresh_token(conn.credentials)
+        pub = _make_publisher(handler)
+        conn = _make_connection(expires_at=_EXPIRED)
+        token = await pub._maybe_refresh_token(conn.credentials)
         assert token == "refreshed_token"
 
     async def test_no_expires_at_triggers_refresh(self) -> None:
@@ -133,13 +122,12 @@ class TestMaybeRefreshToken:
                 })
             return httpx.Response(404)
 
-        with patch("services.publishers.pinterest.get_settings", return_value=_mock_settings()):
-            pub = _make_publisher(handler)
-            creds = {
-                "access_token": "old",
-                "refresh_token": "refresh_tok",
-            }
-            token = await pub._maybe_refresh_token(creds)
+        pub = _make_publisher(handler)
+        creds = {
+            "access_token": "old",
+            "refresh_token": "refresh_tok",
+        }
+        token = await pub._maybe_refresh_token(creds)
         assert token == "refreshed"
 
     async def test_refresh_calls_on_token_refresh_callback(self) -> None:
@@ -154,10 +142,9 @@ class TestMaybeRefreshToken:
                 })
             return httpx.Response(404)
 
-        with patch("services.publishers.pinterest.get_settings", return_value=_mock_settings()):
-            pub = _make_publisher(handler, on_token_refresh=callback)
-            conn = _make_connection(expires_at=_EXPIRING_SOON)
-            await pub._maybe_refresh_token(conn.credentials)
+        pub = _make_publisher(handler, on_token_refresh=callback)
+        conn = _make_connection(expires_at=_EXPIRING_SOON)
+        await pub._maybe_refresh_token(conn.credentials)
 
         callback.assert_awaited_once()
         _old_creds, new_creds = callback.call_args.args
@@ -176,10 +163,9 @@ class TestMaybeRefreshToken:
                 })
             return httpx.Response(404)
 
-        with patch("services.publishers.pinterest.get_settings", return_value=_mock_settings()):
-            pub = _make_publisher(handler, on_token_refresh=None)
-            conn = _make_connection(expires_at=_EXPIRING_SOON)
-            token = await pub._maybe_refresh_token(conn.credentials)
+        pub = _make_publisher(handler, on_token_refresh=None)
+        conn = _make_connection(expires_at=_EXPIRING_SOON)
+        token = await pub._maybe_refresh_token(conn.credentials)
         assert token == "new_token"
 
     async def test_refresh_preserves_old_refresh_token_if_not_returned(self) -> None:
@@ -194,10 +180,9 @@ class TestMaybeRefreshToken:
                 })
             return httpx.Response(404)
 
-        with patch("services.publishers.pinterest.get_settings", return_value=_mock_settings()):
-            pub = _make_publisher(handler, on_token_refresh=callback)
-            conn = _make_connection(expires_at=_EXPIRING_SOON)
-            await pub._maybe_refresh_token(conn.credentials)
+        pub = _make_publisher(handler, on_token_refresh=callback)
+        conn = _make_connection(expires_at=_EXPIRING_SOON)
+        await pub._maybe_refresh_token(conn.credentials)
 
         _, new_creds = callback.call_args.args
         assert new_creds["refresh_token"] == "pin_refresh_token_456"

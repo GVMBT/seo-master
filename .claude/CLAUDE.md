@@ -22,7 +22,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
 - docs/FSM_SPEC.md — 15 FSM StatesGroup, валидация, переходы
-- docs/EDGE_CASES.md — E01-E30, обработка ошибок
+- docs/EDGE_CASES.md — E01-E36, обработка ошибок
 - docs/USER_FLOWS_AND_UI_MAP.md — все экраны, навигация
 
 ПЕРЕД реализацией любого модуля — ПРОЧИТАЙ соответствующие секции спеков.
@@ -88,7 +88,7 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 ## Известные расхождения в спеках (audit.md + февр. 2026)
 Спеки — source of truth. Конфликты (из аудита Part 1):
 1. **Quick publish callback_data**: FSM_SPEC (`qp:`) vs ARCHITECTURE/API_CONTRACTS (`quick:`) — использовать `quick:`
-2. **VK credentials field**: ARCHITECTURE (`"token"`) vs API_CONTRACTS (`"access_token"`) — использовать `"access_token"`
+2. ~~**VK credentials field**~~: РЕШЕНО — оба файла используют `"access_token"`
 3. **platform_schedules.status**: колонка `status` ДОБАВЛЕНА в схему (ARCHITECTURE.md §3.2), active | error
 
 Решено из аудита Part 2 (#21-#43, февр. 2026):
@@ -109,10 +109,40 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 - #42 graceful shutdown: §5.7 — SIGTERM + 120с drain
 - #43 multiple WP: шаг выбора подключения при >1 WP
 
-Нерешённые вопросы (решить до Phase 6):
-- Хранение изображений (Supabase Storage? S3?) — нужна секция в ARCHITECTURE.md
-- Стриминг (F34) — editMessage spec есть в API_CONTRACTS §3.1, но edge cases не описаны
+Решено из SEO-ревью (февр. 2026):
+- **Data-first keywords**: DataForSEO keyword_suggestions/related → AI кластеризация → enrich (не "AI фантазирует → DataForSEO валидирует")
+- **Keyword clustering**: categories.keywords хранит кластеры (cluster_name, main_phrase, phrases[]), не плоский список. Ротация по кластерам §6
+- **Competitor scraping**: Firecrawl /scrape (markdown конкурентов) вместо /extract (только мета). article_v5→v6
+- **Dynamic article length**: median(конкуренты) × 1.1, cap [1500, 5000]. Fallback на text_settings
+- **Competitor gaps**: AI определяет темы, которых нет у конкурентов → уникальная ценность статьи
+
+Решено:
+- Хранение изображений: in-memory only, upload напрямую на платформу (ARCHITECTURE.md §5.9). НЕ Supabase Storage
+- Стриминг (F34) — editMessage spec есть в API_CONTRACTS §3.1
+
+Нерешённые вопросы:
 - QStash Pro plan limits (#23) — проверить при реализации Phase 9
+- F34 streaming edge cases (mid-stream error, rate limits) — не описаны
+
+AI Pipeline Rework (Phase 10):
+- article_v5→v6: кластерные промпты, images_meta, competitor_gaps, dynamic length
+- keywords_v2→v3: data-first (DataForSEO → AI clustering), кластерный JSON
+- Image SEO: WebP конвертация (Pillow), WP publisher alt_text/filename/caption
+- Parallel pipeline: text + images через asyncio.gather
+- Rotation: кластерная ротация (cluster_type, total_volume, main_phrase cooldown, <3 warning)
+
+Решено из SEO-ревью #2 (февр. 2026):
+- **Anti-cannibalization**: system prompt требует уникальность через данные компании; serper_questions random 3 of N; temperature 0.7
+- **Image SEO**: images_meta (alt, filename, figcaption) в JSON-ответе AI; WebP конвертация; WP REST alt_text
+- **Rank tracking**: publication_logs +rank_position +rank_checked_at; DataForSEO SERP API $0.002/проверка
+- **Parallel pipeline**: text + images генерируются параллельно (asyncio.gather); 96с→56с
+- **Cost per article**: $0.21-0.36 при цене 200 руб → маржа 80-90%
+
+P2 (Phase 11+):
+- **SERP intent check**: Serper → если >70% результатов e-commerce → пометить кластер "product_page" (не для статей)
+- **Site re-crawl**: QStash cron раз в 14 дней → Firecrawl crawl → обновить internal_links ($0.08/сайт)
+- **Content similarity**: simhash в publication_logs.content_hash → предупреждение при >70% совпадении
+- **Rank tracking cron**: QStash раз в неделю → DataForSEO SERP → обновить rank_position
 
 Решено: A/B тестирование промптов deferred to v3 (колонка ab_test_group убрана из схемы).
 
@@ -130,7 +160,8 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 - `python-style.md` → `**/*.py` (ruff, mypy, type hints)
 - `security.md` → `**/*.py` (Fernet, SQL injection, rate limits)
 - `testing.md` → `tests/**/*.py` (pytest-asyncio, httpx.MockTransport, naming)
-- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E30 чеклист)
+- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E36 чеклист)
+- `aiohttp-handlers.md` → `api/**/*.py` (thin handlers, shared http_client, Service Layer)
 
 ## MCP-серверы (настроены в settings.json)
 - **supabase** — управление БД, миграции, SQL через MCP

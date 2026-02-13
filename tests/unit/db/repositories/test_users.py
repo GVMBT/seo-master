@@ -293,6 +293,31 @@ class TestCreditBalance:
         assert result == 2500
 
 
+class TestForceDebitBalance:
+    async def test_uses_charge_if_balance_sufficient(
+        self, repo: UsersRepository, mock_db: MockSupabaseClient
+    ) -> None:
+        """When balance >= amount, uses normal charge_balance."""
+        mock_db.set_rpc_response("charge_balance", [500])
+        result = await repo.force_debit_balance(123456789, 1000)
+        assert result == 500
+
+    async def test_forces_negative_on_insufficient(
+        self, repo: UsersRepository, mock_db: MockSupabaseClient, user_row: dict
+    ) -> None:
+        """When InsufficientBalanceError, forces negative balance via CAS."""
+        # RPC raises insufficient
+        mock_db.set_rpc_error("charge_balance", "insufficient_balance")
+        # Fallback: get_by_id → CAS update
+        negative_row = {**user_row, "balance": -500}
+        mock_db.set_responses("users", [
+            MockResponse(data=user_row),            # get_by_id
+            MockResponse(data=[negative_row]),       # CAS update succeeds
+        ])
+        result = await repo.force_debit_balance(123456789, 2000)
+        assert result == -500
+
+
 class TestExtractBalance:
     def test_scalar_int(self) -> None:
         assert UsersRepository._extract_balance(1500) == 1500

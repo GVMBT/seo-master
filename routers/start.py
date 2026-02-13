@@ -17,6 +17,7 @@ from db.models import User, UserUpdate
 from db.repositories.users import UsersRepository
 from keyboards.reply import main_menu
 from routers._helpers import guard_callback_message
+from services.payments.stars import StarsPaymentService
 
 log = structlog.get_logger()
 
@@ -317,13 +318,23 @@ async def btn_profile(message: Message, user: User, db: SupabaseClient) -> None:
     await _show_profile(message, user, db, edit=False)
 
 
-@router.message(F.text.in_({"Быстрая публикация", "Тарифы", "АДМИНКА"}))
+@router.message(F.text == "Тарифы")
+async def btn_tariffs(message: Message, user: User, stars_service: StarsPaymentService) -> None:
+    """Reply button [Тарифы] → tariffs screen."""
+    from keyboards.inline import tariffs_main_kb
+
+    sub_info = await stars_service.get_active_subscription(user.id)
+    text = stars_service.format_tariffs_text(user.balance)
+    await message.answer(text, reply_markup=tariffs_main_kb(has_subscription=sub_info is not None).as_markup())
+
+
+@router.message(F.text.in_({"Быстрая публикация", "АДМИНКА"}))
 async def btn_stub(message: Message) -> None:
     """Stub handlers for not-yet-implemented menu buttons."""
     await message.answer("В разработке.")
 
 
-@router.callback_query(F.data.in_({"stats:all", "help:main", "tariffs:main"}))
+@router.callback_query(F.data.in_({"stats:all", "help:main"}))
 async def cb_stub(callback: CallbackQuery) -> None:
     """Stub for not-yet-implemented inline button features."""
     await callback.answer("В разработке.", show_alert=True)

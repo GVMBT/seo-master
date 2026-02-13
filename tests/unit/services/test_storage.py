@@ -45,7 +45,7 @@ def storage(mock_http: AsyncMock) -> ImageStorage:
 
 class TestConstants:
     def test_bucket_name(self) -> None:
-        assert BUCKET == "article-previews"
+        assert BUCKET == "content-images"
 
     def test_signed_url_ttl(self) -> None:
         assert SIGNED_URL_TTL == 90000
@@ -79,7 +79,7 @@ class TestUpload:
         preview_id = 42
         index = 0
         expected_path = f"previews/{preview_id}/{index}.png"
-        signed_suffix = "/object/sign/article-previews/token123"
+        signed_suffix = "/object/sign/content-images/token123"
 
         # Upload response (200)
         upload_resp = httpx.Response(200, json={"Key": expected_path})

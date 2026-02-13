@@ -2,11 +2,12 @@
 
 import html
 
+import structlog
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from db.client import SupabaseClient
-from db.models import Project, User
+from db.models import PlatformScheduleUpdate, Project, User
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
     project_card_kb,
@@ -14,6 +15,8 @@ from keyboards.inline import (
     project_list_kb,
 )
 from routers._helpers import guard_callback_message
+
+log = structlog.get_logger()
 
 router = Router(name="projects_card")
 
@@ -155,7 +158,28 @@ async def cb_project_delete_confirm(callback: CallbackQuery, user: User, db: Sup
     if not project:
         return
 
-    # TODO Phase 9: cancel QStash schedules before CASCADE delete (E11)
+    # E11: cancel QStash schedules before CASCADE delete
+    from db.repositories.categories import CategoriesRepository
+    from db.repositories.schedules import SchedulesRepository
+
+    categories = await CategoriesRepository(db).get_by_project(project_id)
+    if categories:
+        cat_ids = [c.id for c in categories]
+        sched_repo = SchedulesRepository(db)
+        schedules = await sched_repo.get_by_project(cat_ids)
+        for s in schedules:
+            if s.qstash_schedule_ids:
+                # Phase 9: add actual QStash API call here
+                log.warning(
+                    "orphan_qstash_schedules_on_delete",
+                    schedule_id=s.id,
+                    qstash_ids=s.qstash_schedule_ids,
+                )
+                await sched_repo.update(
+                    s.id,
+                    PlatformScheduleUpdate(qstash_schedule_ids=[], enabled=False),
+                )
+
     repo = ProjectsRepository(db)
     await repo.delete(project_id)
 

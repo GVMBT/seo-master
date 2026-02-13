@@ -8,7 +8,7 @@ from db.repositories.base import BaseRepository
 
 _TABLE = "publication_logs"
 _COOLDOWN_DAYS = 7
-_MIN_POOL_SIZE = 5
+_MIN_POOL_SIZE = 3
 
 
 class PublicationsRepository(BaseRepository):
@@ -78,22 +78,84 @@ class PublicationsRepository(BaseRepository):
         return rows[0]["keyword"] if rows else None
 
     async def get_rotation_keyword(
-        self, category_id: int, keywords: list[dict[str, Any]]
+        self,
+        category_id: int,
+        keywords: list[dict[str, Any]],
+        content_type: str = "article",
     ) -> tuple[str | None, bool]:
         """Select next keyword using rotation algorithm.
 
-        Algorithm (API_CONTRACTS.md section 6):
-        1. Sort keywords by volume DESC, difficulty ASC
-        2. Exclude keywords used in last 7 days
-        3. Pick first available
-        4. All on cooldown -> LRU (oldest created_at)
-        5. <5 keywords -> return warning flag
+        Supports both cluster format and legacy flat format (API_CONTRACTS.md §6).
+
+        Cluster format: [{cluster_name, cluster_type, main_phrase, total_volume, avg_difficulty, phrases}]
+          - Filter cluster_type: "article" for articles, ("article","social") for social posts (§6.1)
+          - Sort: total_volume DESC, avg_difficulty ASC
+          - Pick: main_phrase
+          - Cooldown: 7 days on main_phrase (stored as publication_logs.keyword)
+
+        Legacy format: [{phrase, volume, difficulty, intent, cpc}]
+          - Sort: volume DESC, difficulty ASC
+          - Pick: phrase
 
         Returns: (keyword_phrase, low_pool_warning). None if empty pool.
         """
         if not keywords:
             return None, True
 
+        is_cluster = bool(keywords[0].get("cluster_name"))
+
+        if is_cluster:
+            return await self._rotate_clusters(category_id, keywords, content_type)
+        return await self._rotate_legacy(category_id, keywords)
+
+    async def _rotate_clusters(
+        self,
+        category_id: int,
+        clusters: list[dict[str, Any]],
+        content_type: str,
+    ) -> tuple[str | None, bool]:
+        """Cluster-based rotation (API_CONTRACTS.md §6)."""
+        # Filter by cluster_type
+        if content_type == "article":
+            pool = [c for c in clusters if c.get("cluster_type") == "article"]
+        else:
+            # Social posts: article + social (§6.1)
+            pool = [c for c in clusters if c.get("cluster_type") in ("article", "social")]
+
+        if not pool:
+            return None, True
+
+        low_pool_warning = len(pool) < _MIN_POOL_SIZE
+
+        # Sort by total_volume DESC, avg_difficulty ASC
+        sorted_clusters = sorted(
+            pool,
+            key=lambda c: (-c.get("total_volume", 0), c.get("avg_difficulty", 0)),
+        )
+
+        used = set(await self.get_recently_used_keywords(category_id))
+
+        # Pick first available cluster (main_phrase not on cooldown)
+        for cluster in sorted_clusters:
+            main = cluster.get("main_phrase", "")
+            if main and main not in used:
+                return main, low_pool_warning
+
+        # All on cooldown -> LRU fallback (E22)
+        lru = await self.get_lru_keyword(category_id)
+        if lru:
+            return lru, low_pool_warning
+
+        # Fallback: first cluster's main_phrase
+        first = sorted_clusters[0].get("main_phrase", "") if sorted_clusters else None
+        return first or None, low_pool_warning
+
+    async def _rotate_legacy(
+        self,
+        category_id: int,
+        keywords: list[dict[str, Any]],
+    ) -> tuple[str | None, bool]:
+        """Legacy flat-keyword rotation (E36 fallback)."""
         low_pool_warning = len(keywords) < _MIN_POOL_SIZE
 
         # Sort by volume DESC, difficulty ASC
@@ -102,10 +164,8 @@ class PublicationsRepository(BaseRepository):
             key=lambda k: (-k.get("volume", 0), k.get("difficulty", 0)),
         )
 
-        # Get recently used keywords
         used = set(await self.get_recently_used_keywords(category_id))
 
-        # Pick first available (not on cooldown)
         for kw in sorted_kw:
             phrase = kw.get("phrase", "")
             if phrase and phrase not in used:

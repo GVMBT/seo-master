@@ -75,6 +75,93 @@ HEAL_MODEL = "deepseek/deepseek-v3.2"
 
 
 @dataclass
+class ClusterContext:
+    """Cluster-aware fields for article_v6 / keywords_cluster_v3."""
+
+    main_phrase: str
+    secondary_phrases: str = ""
+    cluster_volume: int = 0
+    main_volume: int = 0
+    main_difficulty: int = 0
+    cluster_type: str = "article"
+
+
+@dataclass
+class CompetitorContext:
+    """Competitor analysis fields from Firecrawl /scrape (Phase 10)."""
+
+    competitor_analysis: str = ""
+    competitor_gaps: str = ""
+
+
+@dataclass
+class GenerationContext:
+    """Typed context for AI generation (API_CONTRACTS.md §3.1).
+
+    to_dict() skips None values entirely — PromptEngine uses Jinja2 <<var>>
+    which renders None as the string "None" in the prompt. YAML variables
+    have default: values that PromptEngine uses when a key is missing.
+    """
+
+    company_name: str
+    specialization: str
+    keyword: str
+    language: str = "ru"
+    category_name: str = ""
+    cluster: ClusterContext | None = None
+    competitor: CompetitorContext | None = None
+    words_min: int | None = None
+    words_max: int | None = None
+    images_count: int | None = None
+    city: str | None = None
+    advantages: str | None = None
+    prices_excerpt: str | None = None
+    serper_questions: str | None = None
+    lsi_keywords: str | None = None
+    internal_links: str | None = None
+    text_color: str | None = None
+    accent_color: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Flatten to dict for PromptEngine, skipping None values."""
+        result: dict[str, Any] = {}
+
+        # Always-present scalar fields
+        result["company_name"] = self.company_name
+        result["specialization"] = self.specialization
+        result["keyword"] = self.keyword
+        result["language"] = self.language
+        if self.category_name:
+            result["category_name"] = self.category_name
+
+        # Cluster fields — flatten when present
+        if self.cluster is not None:
+            result["main_phrase"] = self.cluster.main_phrase
+            result["secondary_phrases"] = self.cluster.secondary_phrases
+            result["cluster_volume"] = str(self.cluster.cluster_volume)
+            result["main_volume"] = str(self.cluster.main_volume)
+            result["main_difficulty"] = str(self.cluster.main_difficulty)
+            result["cluster_type"] = self.cluster.cluster_type
+
+        # Competitor fields — flatten when present
+        if self.competitor is not None:
+            result["competitor_analysis"] = self.competitor.competitor_analysis
+            result["competitor_gaps"] = self.competitor.competitor_gaps
+
+        # Optional scalar fields — skip if None
+        for field_name in (
+            "words_min", "words_max", "images_count", "city", "advantages",
+            "prices_excerpt", "serper_questions", "lsi_keywords",
+            "internal_links", "text_color", "accent_color",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                result[field_name] = str(value) if isinstance(value, int) else value
+
+        return result
+
+
+@dataclass
 class GenerationRequest:
     """Request to generate AI content."""
 
