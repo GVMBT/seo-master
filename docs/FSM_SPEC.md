@@ -150,7 +150,15 @@ class KeywordUploadFSM(StatesGroup):
 **ArticlePublishFSM:** Контент НЕ хранится в FSM. Вместо этого:
 - `article_previews.id` сохраняется в `state.data["preview_id"]`
 - Сам контент — в PostgreSQL (`article_previews.content_html`, `article_previews.images`)
-- При таймауте/перезапуске → превью остаётся в БД, cleanup-задача вернёт токены через 24ч
+- Изображения: генерация → in-memory → WebP-конвертация → Supabase Storage `content-images` (24ч TTL) → публикация на платформу. `article_previews.images` хранит `[{url, storage_path, width, height}]`
+- При таймауте/перезапуске → превью остаётся в БД, cleanup-задача удаляет из Supabase Storage и вернёт токены через 24ч
+
+### 2.1.1 Фичи без FSM (callback-based)
+
+Следующие фичи реализуются через inline-кнопки (callback_data), НЕ через FSM StatesGroup:
+- **F16/F41 (Настройки текста/изображений):** toggle-кнопки на экране категории. Нет пользовательского ввода — только выбор из предложенных опций
+- **F23 (Медиа-галерея):** загрузка медиа реализуется в рамках существующих FSM (ProjectCreateFSM, CategoryCreateFSM) как опциональный шаг, не отдельный StatesGroup
+- **Quick Publish:** callback-based выбор (категория → платформа → SocialPostPublishFSM). Первые шаги — кнопки, FSM начинается при подтверждении генерации
 
 ### 2.2 Лимиты перегенерации
 

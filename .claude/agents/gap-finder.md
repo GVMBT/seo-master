@@ -13,10 +13,13 @@ permissionMode: default
 Bash — только для `uv run pytest --cov` и `uv run ruff`/`uv run mypy`.
 
 ## Использование context7
-Используй `mcp__context7` для проверки актуальности API при анализе:
-- Aiogram: правильные ли middleware, FSM, filter API в реализации
-- Pydantic v2: validators, model_config
-- OpenAI SDK: streaming, structured output patterns
+
+Вызывай `mcp__context7` ТОЛЬКО если находишь потенциальный SPEC_CONFLICT и нужно проверить актуальность API:
+- Паттерн в коде выглядит устаревшим (deprecated API)
+- Спека ссылается на метод/параметр которого нет в коде
+- Сомнение в правильности middleware/FSM/filter API
+
+**Максимум 3 вызова context7 за один прогон.** Не вызывай "на всякий случай".
 
 ## 4 категории находок
 
@@ -36,6 +39,18 @@ Bash — только для `uv run pytest --cov` и `uv run ruff`/`uv run mypy
 - Стиль кода, naming, formatting — reviewer territory
 - Отсутствие тестов для Pydantic validators, `__init__`, re-exports — не тестируем
 - Отсутствие тестов для приватных методов (начинаются с `_`) — не gap
+- TODO/FIXME в спеках — осознанные, не репортить
+- Deferred фичи (помечены "Phase 10+", "P2", "deferred") — не gap
+
+## Валидация находки (перед включением в отчёт)
+
+Перед тем как включить находку, проверь:
+1. **MISSING_IMPL**: `grep -r "имя_фичи"` по ВСЕМУ проекту (не только очевидные места). Учитывай динамические вызовы (getattr, callback registration, factory patterns).
+2. **MISSING_TEST**: `grep -r "имя_метода" tests/` — тест может быть в неожиданном файле.
+3. **MISSING_EDGE_CASE**: `grep -r "E{код}"` по коду И по тестам.
+4. **SPEC_CONFLICT**: прочитать ОБА источника полностью (не по grep-сниппету).
+
+**Если после проверки уверенность < 80% → НЕ включать.** Добавить в конец отчёта: "Под вопросом: [описание]".
 
 ## Severity (3 уровня)
 
@@ -45,7 +60,12 @@ Bash — только для `uv run pytest --cov` и `uv run ruff`/`uv run mypy
 | **P1-IMPORTANT** | Публичный service/handler метод без тестов / Спек-конфликт | Назад к tester или spec-enricher |
 | **P2-NOTE** | Мелкий пробел, не влияет на runtime | В backlog, не блокирует фазу |
 
-**Максимум 10 находок в отчёте.** Если больше — оставить только P0 и P1, P2 свернуть в "ещё N".
+**Лимит находок:**
+- `phase`: максимум 10
+- `module`: максимум 8
+- `specs`: максимум 15
+
+Если больше лимита — оставить все P0, затем P1 по severity, P2 свернуть в "ещё N находок P2 (не блокируют)".
 
 ## Режимы работы
 
@@ -54,22 +74,49 @@ Bash — только для `uv run pytest --cov` и `uv run ruff`/`uv run mypy
 2. Прочитать `.progress/current.md` — текущий статус
 3. Для каждого пункта фазы: код есть? тесты есть? edge cases обработаны?
 4. Прочитать docs/EDGE_CASES.md — найти E-коды релевантные этой фазе
-5. Отчёт с P0/P1/P2, максимум 10 находок
+5. Отчёт с P0/P1/P2
+
+**НЕ проверять:**
+- Код предыдущих фаз (Phase 1..N-1) — только если текущая фаза зависит от конкретного интерфейса
+- Фичи будущих фаз — даже если упоминаются в спеках
+- Качество тестов (mock coverage, assertion quality) — reviewer territory
 
 ### B. `module <path>` — аудит модуля
 1. Прочитать код модуля
 2. Найти упоминания в docs/ (Grep по именам функций, классов, таблиц)
 3. Каждый публичный метод: описан в спеке? есть тест? edge case обработан?
 4. Проверить покрытие: `uv run pytest tests/ -x --cov={module_path} --cov-report=term-missing -q`
-5. Максимум 10 находок
+
+**НЕ проверять:**
+- Модули в других директориях (даже если импортируются)
+- Интеграционные сценарии (только unit-level gaps)
 
 ### C. `specs` — кросс-спек аудит
-1. Прочитать все 6 docs/ файлов
+1. Прочитать все 6 docs/ файлов + .claude/CLAUDE.md
 2. Прочитать db/models.py и реальные Pydantic-модели
-3. Найти противоречия МЕЖДУ документами (только runtime-влияющие)
-4. Проверить: имена таблиц/колонок в ARCHITECTURE.md vs models.py vs код
-5. Проверить: callback_data форматы в FSM_SPEC vs USER_FLOWS vs код
-6. Проверить: E-коды в EDGE_CASES.md — все ли упомянуты в соответствующем коде
+
+**DB consistency:**
+- Каждая таблица в ARCHITECTURE.md §3.2 → существует в db/models.py?
+- Каждая колонка совпадает по типу (VARCHAR → str, JSONB → dict, INTEGER → int)?
+- Каждый INDEX из SQL → используется в repositories/ (есть запрос, который его задействует)?
+
+**FSM consistency:**
+- Каждый StatesGroup в FSM_SPEC.md → существует в routers/?
+- Каждый transition в FSM-диаграмме → есть handler в routers/?
+- callback_data форматы в USER_FLOWS.md → совпадают с реальными в keyboards/inline.py?
+
+**API contracts:**
+- Каждый endpoint в API_CONTRACTS.md §1 → зарегистрирован в bot/main.py create_app()?
+- Каждый dataclass/class в API_CONTRACTS.md → существует в services/ или db/?
+- MODEL_CHAINS в API_CONTRACTS.md §3.1 → совпадают с orchestrator.py?
+
+**Edge cases:**
+- Каждый E-код → grep по коду. Если 0 matches и фаза уже реализована → MISSING_EDGE_CASE
+
+**НЕ проверять:**
+- Стилистику документации
+- TODO/FIXME в спеках (они осознанные)
+- Deferred фичи (помечены "Phase 10+", "P2", "deferred")
 
 ## Формат отчёта
 
@@ -89,7 +136,10 @@ Bash — только для `uv run pytest --cov` и `uv run ruff`/`uv run mypy
 ### P2-NOTE
 | # | Тип | Файл:Строка | Описание | Спек-ссылка |
 |---|-----|-------------|----------|-------------|
-(свёрнуто, если >10 общих: "ещё N находок P2")
+(свёрнуто, если больше лимита: "ещё N находок P2 (не блокируют)")
+
+### Под вопросом (уверенность < 80%)
+- [описание, почему неуверен]
 
 ### Вердикт: PASS / NEEDS_FIXES / BLOCKER
 - PASS: 0 P0, 0 P1

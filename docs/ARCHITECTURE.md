@@ -85,12 +85,12 @@ seo-master-bot-v2/
 │   │   └── prompts/                # YAML-шаблоны промптов (seed → DB prompt_versions)
 │   │       ├── article_v6.yaml          # v6: cluster-aware, dynamic length, image SEO
 │   │       ├── social.yaml
-│   │       ├── keywords_cluster.yaml    # v3: data-first clustering
+│   │       ├── keywords_cluster_v3.yaml  # v3: data-first clustering
 │   │       ├── keywords.yaml            # v2: legacy AI-only (fallback при E03)
 │   │       ├── image.yaml
 │   │       ├── review.yaml
 │   │       ├── description.yaml
-│   │       └── competitor_analysis.yaml
+│   │       └── competitor_analysis_v1.yaml
 │   ├── publishers/
 │   │   ├── base.py                 # BasePublisher (валидация -> публикация -> отчет)
 │   │   ├── wordpress.py            # WP REST API
@@ -197,6 +197,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/cleanup", cleanup_handler)
     app.router.add_post("/api/notify", notify_handler)
     app.router.add_post("/api/yookassa/webhook", yookassa_handler)
+    app.router.add_post("/api/yookassa/renew", yookassa_renew_handler)
     app.router.add_get("/api/auth/pinterest/callback", pinterest_callback)
     app.router.add_get("/api/health", health_handler)
 
@@ -236,7 +237,8 @@ def require_qstash_signature(handler):
 - `/api/notify` — QStash
 
 НЕ применяется:
-- `/api/yookassa/webhook` — своя верификация (IP whitelist + SHA-256, см. API_CONTRACTS §2)
+- `/api/yookassa/webhook` — своя верификация (IP whitelist, см. API_CONTRACTS §2)
+- `/api/yookassa/renew` — вызывается QStash cron (верификация QStash подписью)
 - `/api/auth/pinterest/callback` — OAuth redirect (HMAC state, см. E30)
 - `/api/health` — публичный (без токена — только `{"status": "ok"}`)
 
@@ -487,7 +489,7 @@ CREATE TABLE token_expenses (
     id              SERIAL PRIMARY KEY,
     user_id         BIGINT NOT NULL REFERENCES users(id),
     amount          INTEGER NOT NULL,          -- Отрицательное = списание, положительное = пополнение/возврат
-    operation_type  VARCHAR(50) NOT NULL,      -- text_generation, image_generation, keyword_generation, audit, review, description, competitor_analysis, purchase, refund, referral_bonus, api_openrouter, api_dataforseo, api_firecrawl, api_pagespeed
+    operation_type  VARCHAR(50) NOT NULL,      -- text_generation (статьи И соц. посты), image_generation, keyword_generation, audit, review, description, competitor_analysis, purchase, refund, referral_bonus, api_openrouter, api_dataforseo, api_firecrawl, api_pagespeed
     description     TEXT,
     ai_model        VARCHAR(100),
     input_tokens    INTEGER,                   -- Токены LLM (входящие)

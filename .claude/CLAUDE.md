@@ -21,7 +21,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/PRD.md — фичи F01-F46, токеномика, роадмап
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
-- docs/FSM_SPEC.md — 15 FSM StatesGroup, валидация, переходы
+- docs/FSM_SPEC.md — 16 FSM StatesGroup, валидация, переходы
 - docs/EDGE_CASES.md — E01-E36, обработка ошибок
 - docs/USER_FLOWS_AND_UI_MAP.md — все экраны, навигация
 
@@ -117,7 +117,7 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 - **Competitor gaps**: AI определяет темы, которых нет у конкурентов → уникальная ценность статьи
 
 Решено:
-- Хранение изображений: in-memory only, upload напрямую на платформу (ARCHITECTURE.md §5.9). НЕ Supabase Storage
+- Хранение изображений: Supabase Storage bucket `content-images` для промежуточного хранения (ARCHITECTURE.md §5.9). Генерация → in-memory → WebP → Supabase Storage (24ч) → publish на платформу
 - Стриминг (F34) — editMessage spec есть в API_CONTRACTS §3.1
 
 Нерешённые вопросы:
@@ -151,8 +151,23 @@ P2 (Phase 11+):
 /implement-module <path>  — реализация модуля (implementer agent)
 /review-module <path>     — code review (reviewer agent, read-only)
 /test-module <name>       — тесты до зелёного (tester agent)
+/find-gaps <target>       — поиск дыр в спеках/коде/тестах (gap-finder agent)
 /verify-spec              — сквозная проверка vs спецификации (integrator agent)
 /enrich-specs <target>    — обновление rules/skills/specs (spec-enricher agent)
+```
+
+## Циклический пайплайн реализации фазы
+```
+Phase N:
+  1. /implement-module   → implementer
+  2. /review-module      → reviewer
+  3. /test-module        → tester
+  4. /find-gaps phase N  → gap-finder
+     P0/P1 → назад к шагу 1
+     Только P2 или PASS → шаг 5
+  5. /verify-spec        → integrator
+     Issues → назад к шагу 1
+     PASS → Phase N DONE
 ```
 
 ## Контекстные правила (.claude/rules/)

@@ -138,7 +138,12 @@ qstash = QStash(token=os.environ["QSTASH_TOKEN"])
 
 def create_schedules_for_platform(schedule: PlatformSchedule) -> list[str]:
     """Создаёт N QStash-расписаний (по одному на каждое время).
-    Возвращает список ID для сохранения в qstash_schedule_ids."""
+    Возвращает список ID для сохранения в qstash_schedule_ids.
+
+    Примечание: platform_schedules не содержит user_id/project_id напрямую.
+    Вызывающий код (service layer) делает JOIN:
+    platform_schedules → categories.project_id → projects.user_id
+    и передаёт обогащённый объект PlatformSchedule с user_id и project_id."""
     
     schedule_ids = []
     day_map = {"mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6, "sun": 0}
@@ -1088,6 +1093,7 @@ PINTEREST_APP_ID=              # Pinterest App ID (OAuth)
 PINTEREST_APP_SECRET=          # Pinterest App Secret
 USD_RUB_RATE=92.5              # Курс USD→RUB для отображения API-расходов в админке
 HEALTH_CHECK_TOKEN=            # Bearer-токен для детального health check (generate: python -c "import secrets; print(secrets.token_hex(32))")
+SUPABASE_STORAGE_BUCKET=content-images  # Bucket для промежуточного хранения изображений (cleanup 24ч)
 RAILWAY_GRACEFUL_SHUTDOWN_TIMEOUT=120  # Секунд между SIGTERM и SIGKILL
 
 # === Дефолты (можно не указывать) ===
@@ -1828,13 +1834,17 @@ variables:
     default: ""
 ```
 
-### Пример: competitor_analysis.yaml
+### Пример: competitor_analysis_v1.yaml
+
+> **Важно:** F39 (standalone-анализ конкурентов) использует Firecrawl `/extract` (структурированные SEO-данные: мета-теги, заголовки, количество страниц).
+> Пайплайн статей v6 использует Firecrawl `/scrape` (полный markdown для контентного gap-анализа).
+> Это **два разных сценария** с разными эндпоинтами — не путать.
 
 ```yaml
 meta:
   task_type: competitor_analysis
   version: v1
-  model_tier: premium
+  model_tier: analytical
   max_tokens: 4000
   temperature: 0.3
 
@@ -1848,7 +1858,7 @@ user: |
   Бизнес клиента: <<company_name>> (<<specialization>>).
   Текущие ключевые фразы клиента: <<category_keywords>>.
 
-  Данные конкурента (Firecrawl /extract):
+  Данные конкурента (Firecrawl /extract — структурированный JSON):
   <<competitor_data>>
 
   Задачи анализа:
@@ -1886,7 +1896,7 @@ variables:
     required: false
     default: "не заданы"
   - name: competitor_data
-    source: Firecrawl /extract результат (JSON)
+    source: Firecrawl /extract результат (структурированный JSON для F39 standalone-анализа)
     required: true
 ```
 
