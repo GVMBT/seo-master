@@ -91,9 +91,7 @@ def _get_connections_repo(db: SupabaseClient) -> ConnectionsRepository:
     return ConnectionsRepository(db, cm)
 
 
-async def _get_project_or_alert(
-    project_id: int, user_id: int, db: SupabaseClient, callback: CallbackQuery
-) -> bool:
+async def _get_project_or_alert(project_id: int, user_id: int, db: SupabaseClient, callback: CallbackQuery) -> bool:
     """Verify project exists and user owns it. Sends alert on failure."""
     project = await ProjectsRepository(db).get_by_id(project_id)
     if not project or project.user_id != user_id:
@@ -102,9 +100,7 @@ async def _get_project_or_alert(
     return True
 
 
-def _connection_list_kb(
-    connections: list[PlatformConnection], project_id: int
-) -> InlineKeyboardBuilder:
+def _connection_list_kb(connections: list[PlatformConnection], project_id: int) -> InlineKeyboardBuilder:
     """Build keyboard: connections grouped by platform + add buttons + back."""
     builder = InlineKeyboardBuilder()
 
@@ -128,7 +124,7 @@ def _connection_list_kb(
 def _connection_card_kb(conn: PlatformConnection, project_id: int) -> InlineKeyboardBuilder:
     """Build keyboard for a single connection card."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="Удалить", callback_data=f"conn:{conn.id}:delete")
+    builder.button(text="Удалить", callback_data=f"conn:{conn.id}:delete", style="danger")
     builder.button(text="К подключениям", callback_data=f"project:{project_id}:connections")
     builder.adjust(1)
     return builder
@@ -137,7 +133,7 @@ def _connection_card_kb(conn: PlatformConnection, project_id: int) -> InlineKeyb
 def _connection_delete_confirm_kb(conn_id: int, project_id: int) -> InlineKeyboardBuilder:
     """Delete confirmation: [Да, удалить] + [Отмена]."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="Да, удалить", callback_data=f"conn:{conn_id}:delete:confirm")
+    builder.button(text="Да, удалить", callback_data=f"conn:{conn_id}:delete:confirm", style="danger")
     builder.button(text="Отмена", callback_data=f"project:{project_id}:connections")
     builder.adjust(2)
     return builder
@@ -148,11 +144,7 @@ def _format_connection_card(conn: PlatformConnection) -> str:
     platform_name = _PLATFORM_NAMES.get(conn.platform_type, conn.platform_type)
     status_map = {"active": "Активно", "error": "Ошибка", "disconnected": "Отключено"}
     status_text = status_map.get(conn.status, conn.status)
-    return (
-        f"<b>{platform_name}</b>\n"
-        f"Идентификатор: {html.escape(conn.identifier)}\n"
-        f"Статус: {status_text}"
-    )
+    return f"<b>{platform_name}</b>\nИдентификатор: {html.escape(conn.identifier)}\nСтатус: {status_text}"
 
 
 # ---------------------------------------------------------------------------
@@ -322,8 +314,7 @@ async def cb_wordpress_add(callback: CallbackQuery, state: FSMContext, user: Use
     await state.set_state(ConnectWordPressFSM.url)
     await state.update_data(project_id=project_id)
     await msg.answer(
-        "Шаг 1/3. Введите URL сайта WordPress:\n"
-        "Пример: https://comfort-mebel.ru",
+        "Шаг 1/3. Введите URL сайта WordPress:\nПример: https://comfort-mebel.ru",
         reply_markup=cancel_kb(),
     )
     await callback.answer()
@@ -361,15 +352,11 @@ async def fsm_wp_login(message: Message, state: FSMContext) -> None:
 
 
 @router.message(ConnectWordPressFSM.password, F.text)
-async def fsm_wp_password(
-    message: Message, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def fsm_wp_password(message: Message, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """FSM step 3: WordPress Application Password. Auto-delete sensitive message."""
     password = message.text.strip()  # type: ignore[union-attr]
     if not _WP_APP_PASSWORD_RE.match(password):
-        await message.answer(
-            "Введите Application Password в формате: xxxx xxxx xxxx xxxx xxxx xxxx"
-        )
+        await message.answer("Введите Application Password в формате: xxxx xxxx xxxx xxxx xxxx xxxx")
         return
 
     # Auto-delete message containing password
@@ -467,28 +454,19 @@ async def fsm_telegram_channel(message: Message, state: FSMContext) -> None:
     """FSM step 1: Telegram channel link/ID."""
     channel = message.text.strip()  # type: ignore[union-attr]
     if not _TG_CHANNEL_RE.match(channel):
-        await message.answer(
-            "Введите @channel, t.me/channel или числовой ID (-100XXXXXXXXXX)."
-        )
+        await message.answer("Введите @channel, t.me/channel или числовой ID (-100XXXXXXXXXX).")
         return
     await state.update_data(channel_raw=channel)
     await state.set_state(ConnectTelegramFSM.token)
-    await message.answer(
-        "Шаг 2/2. Введите токен бота от @BotFather:\n"
-        "Формат: 1234567890:ABCdefGHI..."
-    )
+    await message.answer("Шаг 2/2. Введите токен бота от @BotFather:\nФормат: 1234567890:ABCdefGHI...")
 
 
 @router.message(ConnectTelegramFSM.token, F.text)
-async def fsm_telegram_token(
-    message: Message, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def fsm_telegram_token(message: Message, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """FSM step 2: Bot token. Validate via getMe + check admin rights."""
     token = message.text.strip()  # type: ignore[union-attr]
     if not _BOT_TOKEN_RE.match(token):
-        await message.answer(
-            "Токен невалиден. Получите токен у @BotFather."
-        )
+        await message.answer("Токен невалиден. Получите токен у @BotFather.")
         return
 
     # Auto-delete message containing token
@@ -519,14 +497,11 @@ async def fsm_telegram_token(
             bot_info = await pub_bot.get_me()
             # Check if bot is admin in the channel
             admins = await pub_bot.get_chat_administrators(channel_id)
-            is_admin = any(
-                admin.user.id == bot_info.id for admin in admins
-            )
+            is_admin = any(admin.user.id == bot_info.id for admin in admins)
             if not is_admin:
                 await state.clear()
                 await message.answer(
-                    "Бот не является администратором канала. "
-                    "Добавьте бота как администратора с правом публикации.",
+                    "Бот не является администратором канала. Добавьте бота как администратора с правом публикации.",
                     reply_markup=main_menu(is_admin=user.role == "admin"),
                 )
                 return
@@ -616,9 +591,7 @@ async def fsm_vk_token(
     """FSM step 1: VK token. Validate and fetch groups."""
     token = message.text.strip()  # type: ignore[union-attr]
     if not _VK_TOKEN_RE.match(token):
-        await message.answer(
-            "Токен должен начинаться с vk1.a. Проверьте токен."
-        )
+        await message.answer("Токен должен начинаться с vk1.a. Проверьте токен.")
         return
 
     # Auto-delete message containing token
@@ -646,8 +619,7 @@ async def fsm_vk_token(
             log.warning("vk_groups_fetch_error", error=error_msg, user_id=user.id)
             await state.clear()
             await message.answer(
-                f"Ошибка VK API: {error_msg}\n"
-                "Проверьте токен и попробуйте снова.",
+                f"Ошибка VK API: {error_msg}\nПроверьте токен и попробуйте снова.",
                 reply_markup=main_menu(is_admin=user.role == "admin"),
             )
             return
@@ -674,10 +646,7 @@ async def fsm_vk_token(
     # Save token and groups in state, show group selection
     await state.update_data(
         vk_token=token,
-        vk_groups=[
-            {"id": str(g["id"]), "name": g.get("name", f"Group {g['id']}")}
-            for g in groups
-        ],
+        vk_groups=[{"id": str(g["id"]), "name": g.get("name", f"Group {g['id']}")} for g in groups],
     )
     await state.set_state(ConnectVKFSM.select_group)
 
@@ -698,9 +667,7 @@ async def fsm_vk_token(
 
 
 @router.callback_query(ConnectVKFSM.select_group, F.data.startswith("vk_group:"))
-async def cb_vk_select_group(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_vk_select_group(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """FSM step 2: select VK group from list."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -742,9 +709,7 @@ async def cb_vk_select_group(
         await msg.edit_text(
             "Не удалось сохранить подключение. Возможно, группа уже подключена.",
         )
-        await msg.answer(
-            "Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin")
-        )
+        await msg.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
         await callback.answer()
         return
 
@@ -801,9 +766,11 @@ async def cb_pinterest_add(callback: CallbackQuery, state: FSMContext, user: Use
     await state.update_data(project_id=project_id, nonce=nonce)
 
     # Send inline button with OAuth URL
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Авторизоваться в Pinterest", url=auth_url)],
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Авторизоваться в Pinterest", url=auth_url)],
+        ]
+    )
     await msg.answer(
         "Шаг 1/2. Нажмите кнопку ниже для авторизации в Pinterest.\n"
         "После авторизации вы будете перенаправлены обратно в бота.",
@@ -813,9 +780,7 @@ async def cb_pinterest_add(callback: CallbackQuery, state: FSMContext, user: Use
 
 
 @router.callback_query(ConnectPinterestFSM.select_board, F.data.startswith("pin_board:"))
-async def cb_pinterest_select_board(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_pinterest_select_board(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """FSM step 2: select Pinterest board from list."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -859,9 +824,7 @@ async def cb_pinterest_select_board(
     except Exception:
         log.exception("pinterest_connection_create_error", project_id=project_id)
         await msg.edit_text("Не удалось сохранить подключение Pinterest.")
-        await msg.answer(
-            "Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin")
-        )
+        await msg.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
         await callback.answer()
         return
 

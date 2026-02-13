@@ -127,7 +127,7 @@ async def cb_pay_yookassa(
         await callback.answer("Ошибка создания платежа.", show_alert=True)
         return
     builder = InlineKeyboardBuilder()
-    builder.button(text="Перейти к оплате", url=url)
+    builder.button(text="Перейти к оплате", url=url, style="primary")
     builder.button(text="Назад", callback_data=f"tariff:{name}:select")
     builder.adjust(1)
     await msg.edit_text(stars_service.format_payment_link_text(name), reply_markup=builder.as_markup())
@@ -183,7 +183,7 @@ async def cb_subscribe_stars(
         subscription_period=p["subscription_period"],
     )
     builder = InlineKeyboardBuilder()
-    builder.button(text="Оформить подписку ⭐", url=link)
+    builder.button(text="Оформить подписку ⭐", url=link, style="primary")
     builder.button(text="Назад", callback_data=f"sub:{name}:select")
     builder.adjust(1)
     await msg.edit_text(stars_service.format_subscription_link_text(name), reply_markup=builder.as_markup())
@@ -210,7 +210,7 @@ async def cb_subscribe_yookassa(
         await callback.answer("Ошибка создания платежа.", show_alert=True)
         return
     builder = InlineKeyboardBuilder()
-    builder.button(text="Перейти к оплате", url=url)
+    builder.button(text="Перейти к оплате", url=url, style="primary")
     builder.button(text="Назад", callback_data=f"sub:{name}:select")
     builder.adjust(1)
     await msg.edit_text(
