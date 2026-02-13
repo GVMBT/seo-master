@@ -17,6 +17,7 @@ from keyboards.inline import (
     project_edit_fields_kb,
 )
 from keyboards.reply import cancel_kb, main_menu, skip_cancel_kb
+from routers._helpers import guard_callback_message
 from routers.projects.card import _format_project_card, _get_project_or_notify
 
 router = Router(name="projects_create")
@@ -97,17 +98,17 @@ async def cb_project_new(callback: CallbackQuery, state: FSMContext) -> None:
     TODO P4.11: [Прервать] (save progress) button requires a draft mechanism
     not yet in the DB schema. Deferred to a later phase.
     """
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
 
     # Auto-clear any active FSM (P4.11, FSM conflict resolution)
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(ProjectCreateFSM.name)
-    await callback.message.answer(
+    await msg.answer(
         "Шаг 1/4. Введите название проекта (2-100 символов):",
         reply_markup=cancel_kb(),
     )
@@ -182,6 +183,8 @@ async def fsm_project_url(message: Message, state: FSMContext, user: User, db: S
         " в разделе «Редактировать данные» для лучшего качества контента.",
         reply_markup=project_card_kb(project).as_markup(),
     )
+    # Restore reply keyboard after FSM completion (I3)
+    await message.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
 
 
 # ---------------------------------------------------------------------------
@@ -192,14 +195,14 @@ async def fsm_project_url(message: Message, state: FSMContext, user: User, db: S
 @router.callback_query(F.data.regexp(r"^project:(\d+):edit$"))
 async def cb_project_edit(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show editable fields list."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await _get_project_or_notify(project_id, user.id, db, callback)
     if not project:
         return
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Выберите поле для редактирования:",
         reply_markup=project_edit_fields_kb(project).as_markup(),
     )
@@ -209,8 +212,8 @@ async def cb_project_edit(callback: CallbackQuery, user: User, db: SupabaseClien
 @router.callback_query(F.data.regexp(r"^project:(\d+):field:(\w+)$"))
 async def cb_project_field(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Start edit FSM for a specific field."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     parts = callback.data.split(":")  # type: ignore[union-attr]
     project_id = int(parts[1])
@@ -229,11 +232,11 @@ async def cb_project_field(callback: CallbackQuery, state: FSMContext, user: Use
     # Auto-clear any active FSM (P4.11, FSM conflict resolution)
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(ProjectEditFSM.field_value)
     await state.update_data(project_id=project_id, field_name=field_name)
-    await callback.message.answer(
+    await msg.answer(
         f"Введите новое значение для поля «{label}»:",
         reply_markup=cancel_kb(),
     )
@@ -268,3 +271,5 @@ async def fsm_project_field_value(
         _format_project_card(updated),
         reply_markup=project_card_kb(updated).as_markup(),
     )
+    # Restore reply keyboard after FSM completion (I3)
+    await message.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))

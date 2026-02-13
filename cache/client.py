@@ -34,6 +34,15 @@ class RedisClient:
     async def incr(self, key: str) -> int:
         return await self._redis.incr(key)
 
+    async def decr(self, key: str) -> int:
+        return await self._redis.decr(key)
+
+    async def incrby(self, key: str, amount: int) -> int:
+        return await self._redis.incrby(key, amount)
+
+    async def decrby(self, key: str, amount: int) -> int:
+        return await self._redis.decrby(key, amount)
+
     async def expire(self, key: str, seconds: int) -> bool:
         return await self._redis.expire(key, seconds)
 

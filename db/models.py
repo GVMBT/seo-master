@@ -40,10 +40,16 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    """Partial update model for users table.
+
+    NOTE: `balance` is intentionally excluded. All balance mutations MUST go through
+    atomic RPC functions (charge_balance, refund_balance, credit_balance) in
+    UsersRepository to prevent race conditions. See ARCHITECTURE.md section 5.5.
+    """
+
     username: str | None = None
     first_name: str | None = None
     last_name: str | None = None
-    balance: int | None = None
     language: str | None = None
     role: str | None = None
     referrer_id: int | None = None
@@ -113,13 +119,22 @@ class ProjectUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PlatformConnection(BaseModel):
+    """Read model for platform_connections table.
+
+    WARNING: `credentials` here is the DECRYPTED dict, not the raw DB value.
+    In the database, credentials is stored as Fernet-encrypted TEXT.
+    The repository layer (ConnectionsRepository) decrypts it via CredentialManager
+    before constructing this model. NEVER write `credentials` back to the DB
+    without re-encrypting through CredentialManager.
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     project_id: int
     platform_type: str
     status: str = "active"
-    credentials: dict[str, Any]  # Decrypted by repository layer, dict for consumers
+    credentials: dict[str, Any]  # Decrypted read model — raw DB value is Fernet TEXT
     metadata: dict[str, Any] = Field(default_factory=dict)
     identifier: str
     created_at: datetime | None = None

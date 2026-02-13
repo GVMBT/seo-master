@@ -4,22 +4,22 @@ from aiogram.fsm.context import FSMContext
 
 # Human-readable names for FSM states (Russian UI)
 _FSM_NAMES: dict[str, str] = {
-    "ProjectCreate": "создание проекта",
-    "ProjectEdit": "редактирование проекта",
-    "CategoryCreate": "создание категории",
-    "KeywordGeneration": "подбор ключевых фраз",
-    "KeywordUpload": "загрузка ключевых фраз",
-    "ArticlePublish": "публикация статьи",
-    "SocialPostPublish": "публикация поста",
-    "ScheduleSetup": "настройка расписания",
-    "ConnectWordPress": "подключение WordPress",
-    "ConnectTelegram": "подключение Telegram",
-    "ConnectVK": "подключение VK",
-    "ConnectPinterest": "подключение Pinterest",
-    "PriceInput": "ввод цен",
-    "ReviewGeneration": "генерация отзывов",
-    "DescriptionGenerate": "генерация описания",
-    "CompetitorAnalysis": "анализ конкурентов",
+    "ProjectCreateFSM": "создание проекта",
+    "ProjectEditFSM": "редактирование проекта",
+    "CategoryCreateFSM": "создание категории",
+    "KeywordGenerationFSM": "подбор ключевых фраз",
+    "KeywordUploadFSM": "загрузка ключевых фраз",
+    "ArticlePublishFSM": "публикация статьи",
+    "SocialPostPublishFSM": "публикация поста",
+    "ScheduleSetupFSM": "настройка расписания",
+    "ConnectWordPressFSM": "подключение WordPress",
+    "ConnectTelegramFSM": "подключение Telegram",
+    "ConnectVKFSM": "подключение VK",
+    "ConnectPinterestFSM": "подключение Pinterest",
+    "PriceInputFSM": "ввод цен",
+    "ReviewGenerationFSM": "генерация отзывов",
+    "DescriptionGenerateFSM": "генерация описания",
+    "CompetitorAnalysisFSM": "анализ конкурентов",
 }
 
 
@@ -43,7 +43,7 @@ async def ensure_no_active_fsm(state: FSMContext) -> str | None:
     if current is None:
         return None
 
-    # State string format: "ClassName:state_name" (e.g. "ProjectCreate:name")
+    # State string format: "ClassName:state_name" (e.g. "ProjectCreateFSM:name")
     fsm_class = current.split(":")[0]
     await state.clear()
     return _FSM_NAMES.get(fsm_class, fsm_class)

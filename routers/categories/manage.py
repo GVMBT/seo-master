@@ -13,7 +13,8 @@ from db.models import Category, CategoryCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import category_card_kb, category_delete_confirm_kb, category_list_kb
-from keyboards.reply import cancel_kb
+from keyboards.reply import cancel_kb, main_menu
+from routers._helpers import guard_callback_message
 
 router = Router(name="categories_manage")
 
@@ -99,8 +100,8 @@ def _format_category_card(category: Category) -> str:
 @router.callback_query(F.data.regexp(r"^project:(\d+):categories$"))
 async def cb_category_list(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show paginated category list for a project."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     if not await _verify_project_owner(project_id, user.id, db, callback):
@@ -114,17 +115,15 @@ async def cb_category_list(callback: CallbackQuery, user: User, db: SupabaseClie
         )
     else:
         text = f"Категории ({len(categories)}):"
-    await callback.message.edit_text(
-        text, reply_markup=category_list_kb(categories, project_id).as_markup()
-    )
+    await msg.edit_text(text, reply_markup=category_list_kb(categories, project_id).as_markup())
     await callback.answer()
 
 
 @router.callback_query(F.data.regexp(r"^page:categories:(\d+):(\d+)$"))
 async def cb_category_page(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Handle category list pagination."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     parts = callback.data.split(":")  # type: ignore[union-attr]
     project_id = int(parts[2])
@@ -133,9 +132,7 @@ async def cb_category_page(callback: CallbackQuery, user: User, db: SupabaseClie
         return
     categories = await CategoriesRepository(db).get_by_project(project_id)
     text = f"Категории ({len(categories)}):"
-    await callback.message.edit_text(
-        text, reply_markup=category_list_kb(categories, project_id, page=page).as_markup()
-    )
+    await msg.edit_text(text, reply_markup=category_list_kb(categories, project_id, page=page).as_markup())
     await callback.answer()
 
 
@@ -147,15 +144,15 @@ async def cb_category_page(callback: CallbackQuery, user: User, db: SupabaseClie
 @router.callback_query(F.data.regexp(r"^category:(\d+):card$"))
 async def cb_category_card(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show category card."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     result = await _get_category_or_notify(category_id, user.id, db, callback)
     if not result:
         return
     category, _ = result
-    await callback.message.edit_text(
+    await msg.edit_text(
         _format_category_card(category),
         reply_markup=category_card_kb(category).as_markup(),
     )
@@ -168,7 +165,7 @@ async def cb_category_card(callback: CallbackQuery, user: User, db: SupabaseClie
 
 
 @router.callback_query(
-    F.data.regexp(r"^category:(\d+):(keywords|description|prices|reviews|media)$")
+    F.data.regexp(r"^category:(\d+):(keywords|description|prices|reviews|media|img_settings|text_settings)$")
 )
 async def cb_category_feature_stub(callback: CallbackQuery) -> None:
     """Stub for not-yet-implemented category features."""
@@ -185,8 +182,8 @@ async def cb_category_new(
     callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
 ) -> None:
     """Start category creation FSM."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     if not await _verify_project_owner(project_id, user.id, db, callback):
@@ -195,11 +192,11 @@ async def cb_category_new(
     # Auto-clear any active FSM (P4.11, FSM conflict resolution)
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(CategoryCreateFSM.name)
     await state.update_data(project_id=project_id)
-    await callback.message.answer(
+    await msg.answer(
         "Введите название категории (2-100 символов):",
         reply_markup=cancel_kb(),
     )
@@ -225,6 +222,8 @@ async def fsm_category_name(message: Message, state: FSMContext, user: User, db:
         _format_category_card(category),
         reply_markup=category_card_kb(category).as_markup(),
     )
+    # Restore reply keyboard after FSM completion (I3)
+    await message.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
 
 
 # ---------------------------------------------------------------------------
@@ -235,15 +234,15 @@ async def fsm_category_name(message: Message, state: FSMContext, user: User, db:
 @router.callback_query(F.data.regexp(r"^category:(\d+):delete$"))
 async def cb_category_delete(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show delete confirmation."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     result = await _get_category_or_notify(category_id, user.id, db, callback)
     if not result:
         return
     category, _ = result
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Удалить категорию «{category.name}»? Все данные категории будут удалены.",
         reply_markup=category_delete_confirm_kb(category).as_markup(),
     )
@@ -253,8 +252,8 @@ async def cb_category_delete(callback: CallbackQuery, user: User, db: SupabaseCl
 @router.callback_query(F.data.regexp(r"^category:(\d+):delete:confirm$"))
 async def cb_category_delete_confirm(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Confirm deletion and show updated category list."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     result = await _get_category_or_notify(category_id, user.id, db, callback)
@@ -272,7 +271,5 @@ async def cb_category_delete_confirm(callback: CallbackQuery, user: User, db: Su
         if categories
         else "Категория удалена. Нет категорий."
     )
-    await callback.message.edit_text(
-        text, reply_markup=category_list_kb(categories, project_id).as_markup()
-    )
+    await msg.edit_text(text, reply_markup=category_list_kb(categories, project_id).as_markup())
     await callback.answer("Категория удалена.")

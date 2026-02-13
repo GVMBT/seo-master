@@ -1,12 +1,13 @@
 """Router: user settings (notification toggles)."""
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery
 
 from db.client import SupabaseClient
 from db.models import User, UserUpdate
 from db.repositories.users import UsersRepository
 from keyboards.inline import settings_main_kb, settings_notifications_kb
+from routers._helpers import guard_callback_message
 
 router = Router(name="settings")
 
@@ -18,12 +19,10 @@ router = Router(name="settings")
 @router.callback_query(F.data == "settings:main")
 async def cb_settings_main(callback: CallbackQuery) -> None:
     """Show settings menu."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
-    await callback.message.edit_text(
-        "Настройки:", reply_markup=settings_main_kb().as_markup()
-    )
+    await msg.edit_text("Настройки:", reply_markup=settings_main_kb().as_markup())
     await callback.answer()
 
 
@@ -36,12 +35,10 @@ async def cb_settings_stub(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "settings:notifications")
 async def cb_notifications(callback: CallbackQuery, user: User) -> None:
     """Show notification toggles."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
-    await callback.message.edit_text(
-        "Уведомления:", reply_markup=settings_notifications_kb(user).as_markup()
-    )
+    await msg.edit_text("Уведомления:", reply_markup=settings_notifications_kb(user).as_markup())
     await callback.answer()
 
 
@@ -74,10 +71,10 @@ async def cb_toggle_notify(callback: CallbackQuery, user: User, db: SupabaseClie
         await callback.answer("Ошибка обновления.", show_alert=True)
         return
 
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
-    await callback.message.edit_reply_markup(
+    await msg.edit_reply_markup(
         reply_markup=settings_notifications_kb(updated_user).as_markup()
     )
     status = "включены" if new_value else "выключены"

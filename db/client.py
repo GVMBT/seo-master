@@ -24,7 +24,8 @@ class SupabaseClient:
         Raises exception if function doesn't exist.
         """
         resp = await self._client.rpc(fn_name, params or {}).execute()
-        return resp.data or []  # type: ignore[return-value]
+        # NOTE: `or` would coerce falsy scalars (0, False) to []. Use explicit None check.
+        return resp.data if resp.data is not None else []  # type: ignore[return-value]
 
     async def close(self) -> None:
         """Close the underlying HTTP connections."""

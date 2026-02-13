@@ -1,5 +1,7 @@
 """Repository for categories and platform_content_overrides tables."""
 
+from typing import Any
+
 from db.models import (
     Category,
     CategoryCreate,
@@ -56,19 +58,19 @@ class CategoriesRepository(BaseRepository):
         resp = await self._table(_TABLE).delete().eq("id", category_id).execute()
         return len(self._rows(resp)) > 0
 
-    async def update_keywords(self, category_id: int, keywords: list) -> Category | None:
+    async def update_keywords(self, category_id: int, keywords: list[dict[str, Any]]) -> Category | None:
         """Replace keywords JSONB array."""
         resp = await self._table(_TABLE).update({"keywords": keywords}).eq("id", category_id).execute()
         row = self._first(resp)
         return Category(**row) if row else None
 
-    async def update_media(self, category_id: int, media: list) -> Category | None:
+    async def update_media(self, category_id: int, media: list[dict[str, Any]]) -> Category | None:
         """Replace media JSONB array."""
         resp = await self._table(_TABLE).update({"media": media}).eq("id", category_id).execute()
         row = self._first(resp)
         return Category(**row) if row else None
 
-    async def update_reviews(self, category_id: int, reviews: list) -> Category | None:
+    async def update_reviews(self, category_id: int, reviews: list[dict[str, Any]]) -> Category | None:
         """Replace reviews JSONB array."""
         resp = await self._table(_TABLE).update({"reviews": reviews}).eq("id", category_id).execute()
         row = self._first(resp)
@@ -119,7 +121,7 @@ class CategoriesRepository(BaseRepository):
 
     async def get_content_settings(
         self, category_id: int, platform_type: str
-    ) -> tuple[dict, dict]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Get merged content settings (image_settings, text_settings).
 
         Override field None -> inherit from category. Category field {} -> service applies defaults.

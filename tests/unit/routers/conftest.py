@@ -94,3 +94,22 @@ def mock_state() -> AsyncMock:
 def mock_db() -> MagicMock:
     """Mock database client."""
     return MagicMock()
+
+
+@pytest.fixture
+def mock_redis() -> MagicMock:
+    """Mock RedisClient."""
+    redis = MagicMock()
+    redis.get = AsyncMock(return_value=None)
+    redis.set = AsyncMock()
+    redis.delete = AsyncMock()
+    return redis
+
+
+@pytest.fixture
+def mock_http_client() -> MagicMock:
+    """Mock httpx.AsyncClient."""
+    client = MagicMock()
+    client.get = AsyncMock()
+    client.post = AsyncMock()
+    return client

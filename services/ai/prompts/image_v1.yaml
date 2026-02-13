@@ -1,0 +1,85 @@
+meta:
+  task_type: image
+  version: v1
+  model_tier: premium
+  max_tokens: 4000
+
+user: |
+  Сгенерируй изображение для <<content_type>> на тему "<<keyword>>".
+
+  Компания: <<company_name>> (<<specialization>>).
+  Стиль: <<style>>. Тональность: <<tone>>.
+  <<camera_instruction>>
+  <<angle_instruction>>
+  <<text_on_image_instruction>>
+
+  Цветовая палитра сайта:
+  - Основной: <<primary_color>>
+  - Акцентный: <<accent_color>>
+  - Фон: <<background_color>>
+
+  Изображение должно соответствовать теме и визуальному стилю бренда.
+  НЕ добавляй текст на изображение, если не указано иное.
+
+  <% if image_number %>
+  Это изображение <<image_number>> из <<total_images>>.
+  Вариация: <<variation_hint>>.
+  <% endif %>
+
+variables:
+  - name: keyword
+    source: categories.keywords (selected phrase)
+    required: true
+  - name: content_type
+    source: article | social_post
+    required: true
+  - name: company_name
+    source: projects.company_name
+    required: true
+  - name: specialization
+    source: projects.specialization
+    required: true
+  - name: style
+    source: image_settings.styles[0]
+    required: true
+    default: "Фотореализм"
+  - name: tone
+    source: image_settings.tones[0]
+    required: true
+    default: "Нейтральный"
+  - name: camera_instruction
+    source: image_settings.cameras
+    required: false
+    default: ""
+  - name: angle_instruction
+    source: image_settings.angles
+    required: false
+    default: ""
+  - name: text_on_image_instruction
+    source: image_settings.text_on_image
+    required: false
+    default: ""
+  - name: primary_color
+    source: site_brandings.colors.primary
+    required: false
+    default: "#333333"
+  - name: accent_color
+    source: site_brandings.colors.accent
+    required: false
+    default: "#0066cc"
+  - name: background_color
+    source: site_brandings.colors.background
+    required: false
+    default: "#ffffff"
+  - name: image_number
+    source: index (1-based) when count > 1
+    required: false
+    default: ""
+  - name: total_images
+    source: image_settings.count
+    required: false
+    default: ""
+  - name: variation_hint
+    source: round-robin from angles or defaults
+    required: false
+    default: ""

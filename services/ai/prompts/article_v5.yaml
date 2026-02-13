@@ -1,0 +1,99 @@
+meta:
+  task_type: article
+  version: v5
+  model_tier: premium
+  max_tokens: 8000
+  temperature: 0.7
+
+system: |
+  Ты — SEO-копирайтер. Пиши на <<language>>.
+  Компания: <<company_name>> (<<specialization>>).
+  Город: <<city>>. Преимущества: <<advantages>>.
+
+user: |
+  Напиши SEO-статью на тему "<<keyword>>" (<<volume>> запросов/мес, сложность: <<difficulty>>).
+
+  Требования:
+  - Объём: <<words_min>>-<<words_max>> слов
+  - Структура: H1 (1), H2 (3-6), H3 (по необходимости), FAQ (3-5 вопросов)
+  - Ключевая фраза "<<keyword>>" — в H1, первом абзаце, 2-3 H2, заключении
+  - LSI-фразы: <<lsi_keywords>>
+  - Внутренние ссылки (вставь естественно): <<internal_links>>
+  - Упомяни цены из прайса: <<prices_excerpt>>
+  - FAQ на основе реальных вопросов: <<serper_questions>>
+  - Учти данные конкурентов: <<competitor_summary>>
+
+  Формат ответа — JSON:
+  {
+    "title": "...",
+    "meta_description": "... (до 160 символов)",
+    "content_html": "... (полный HTML с inline-стилями: цвет текста <<text_color>>, акцент <<accent_color>>)",
+    "faq_schema": [{"question": "...", "answer": "..."}]
+  }
+
+variables:
+  - name: keyword
+    source: categories.keywords (selected phrase)
+    required: true
+  - name: volume
+    source: DataForSEO
+    required: false
+    default: "неизвестно"
+  - name: difficulty
+    source: DataForSEO
+    required: false
+    default: "неизвестно"
+  - name: words_min
+    source: text_settings
+    required: true
+    default: 1500
+  - name: words_max
+    source: text_settings
+    required: true
+    default: 2500
+  - name: company_name
+    source: projects.company_name
+    required: true
+  - name: specialization
+    source: projects.specialization
+    required: true
+  - name: city
+    source: projects.company_city
+    required: false
+    default: ""
+  - name: advantages
+    source: projects.advantages
+    required: false
+    default: ""
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"
+  - name: lsi_keywords
+    source: DataForSEO related keywords
+    required: false
+    default: ""
+  - name: internal_links
+    source: Firecrawl crawl
+    required: false
+    default: ""
+  - name: prices_excerpt
+    source: categories.prices
+    required: false
+    default: ""
+  - name: serper_questions
+    source: Serper People Also Ask
+    required: false
+    default: ""
+  - name: competitor_summary
+    source: Firecrawl /extract
+    required: false
+    default: ""
+  - name: text_color
+    source: site_brandings.colors.text
+    required: false
+    default: "#333333"
+  - name: accent_color
+    source: site_brandings.colors.accent
+    required: false
+    default: "#0066cc"

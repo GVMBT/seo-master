@@ -32,7 +32,7 @@ class BaseRepository:
     @staticmethod
     def _rows(resp: Any) -> list[dict[str, Any]]:
         """Extract list of row dicts from response."""
-        return resp.data or []  # type: ignore[no-any-return]
+        return resp.data if resp.data is not None else []  # type: ignore[no-any-return]
 
     @staticmethod
     def _first(resp: Any) -> dict[str, Any] | None:

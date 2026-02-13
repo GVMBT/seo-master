@@ -24,6 +24,10 @@ from bot.middlewares import (
 from cache.client import RedisClient
 from cache.fsm_storage import UpstashFSMStorage
 from db.client import SupabaseClient
+from services.ai.orchestrator import AIOrchestrator
+from services.ai.prompt_engine import PromptEngine
+from services.ai.rate_limiter import RateLimiter
+from services.storage import ImageStorage
 
 log = structlog.get_logger()
 
@@ -223,17 +227,45 @@ def create_app() -> web.Application:
     webhook_handler.register(app, path="/webhook")
     setup_application(app, dp, bot=bot)
 
+    # AI services (Phase 6)
+    prompt_engine = PromptEngine(db, redis)
+    rate_limiter = RateLimiter(redis)
+    ai_orchestrator = AIOrchestrator(
+        http_client=http_client,
+        api_key=settings.openrouter_api_key.get_secret_value(),
+        prompt_engine=prompt_engine,
+        rate_limiter=rate_limiter,
+        site_url=settings.railway_public_url,
+    )
+    image_storage = ImageStorage(
+        supabase_url=settings.supabase_url,
+        supabase_key=settings.supabase_key.get_secret_value(),
+        http_client=http_client,
+    )
+
     # Store shared clients on app for API handlers (ARCHITECTURE.md §2.3)
     app["db"] = db
     app["redis"] = redis
     app["http_client"] = http_client
+    app["ai_orchestrator"] = ai_orchestrator
+    app["image_storage"] = image_storage
+
+    # Inject AI services into dp.workflow_data for Aiogram routers (Phase 8+)
+    dp.workflow_data["ai_orchestrator"] = ai_orchestrator
+    dp.workflow_data["prompt_engine"] = prompt_engine
+    dp.workflow_data["rate_limiter"] = rate_limiter
+    dp.workflow_data["image_storage"] = image_storage
+
+    # Pinterest OAuth callback (needed for ConnectPinterestFSM)
+    from api.auth import pinterest_callback
+
+    app.router.add_get("/api/auth/pinterest/callback", pinterest_callback)
 
     # API routes (Phase 9: QStash webhooks, health)
     # app.router.add_post("/api/publish", publish_handler)
     # app.router.add_post("/api/cleanup", cleanup_handler)
     # app.router.add_post("/api/notify", notify_handler)
     # app.router.add_post("/api/yookassa/webhook", yookassa_handler)
-    # app.router.add_get("/api/auth/pinterest/callback", pinterest_callback)
     # app.router.add_get("/api/health", health_handler)
 
     return app

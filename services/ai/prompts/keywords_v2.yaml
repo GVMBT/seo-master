@@ -1,0 +1,45 @@
+meta:
+  task_type: keywords
+  version: v2
+  model_tier: budget
+  max_tokens: 4000
+  temperature: 0.5
+
+system: |
+  Ты — SEO-специалист. Генерируй ключевые фразы на <<language>>.
+
+user: |
+  Сгенерируй <<quantity>> SEO-ключевых фраз для бизнеса:
+  - Товары/услуги: <<products>>
+  - География: <<geography>>
+  - Компания: <<company_name>> (<<specialization>>)
+
+  Требования:
+  - Микс: высокочастотные (20%), среднечастотные (50%), низкочастотные (30%)
+  - Включи коммерческие ("купить", "заказать", "цена") и информационные ("как выбрать", "отзывы")
+  - Учти географию в фразах где уместно
+  - НЕ дублируй фразы, НЕ используй синонимы-дубликаты
+
+  Формат ответа — JSON:
+  {"keywords": [{"phrase": "...", "intent": "commercial|informational"}]}
+
+variables:
+  - name: quantity
+    source: FSM selection (50, 100, 150, 200)
+    required: true
+  - name: products
+    source: FSM answer (products/services)
+    required: true
+  - name: geography
+    source: FSM answer (geography)
+    required: true
+  - name: company_name
+    source: projects.company_name
+    required: true
+  - name: specialization
+    source: projects.specialization
+    required: true
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"

@@ -99,20 +99,18 @@ class TestUpdate:
 
 
 class TestGetByProject:
-    async def test_returns_schedules_for_project_categories(
+    async def test_returns_schedules_for_category_ids(
         self, repo: SchedulesRepository, mock_db: MockSupabaseClient, schedule_row: dict
     ) -> None:
-        # categories query returns category IDs, then platform_schedules query returns schedules
-        mock_db.set_response("categories", MockResponse(data=[{"id": 1}, {"id": 2}]))
+        # Caller passes category_ids directly (no cross-repo query)
         mock_db.set_response("platform_schedules", MockResponse(data=[schedule_row]))
-        scheds = await repo.get_by_project(1)
+        scheds = await repo.get_by_project([1, 2])
         assert len(scheds) == 1
 
-    async def test_returns_empty_when_no_categories(
+    async def test_returns_empty_when_no_category_ids(
         self, repo: SchedulesRepository, mock_db: MockSupabaseClient
     ) -> None:
-        mock_db.set_response("categories", MockResponse(data=[]))
-        scheds = await repo.get_by_project(999)
+        scheds = await repo.get_by_project([])
         assert scheds == []
 
 

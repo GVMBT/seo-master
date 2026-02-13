@@ -1,16 +1,24 @@
 """Router: /start, /cancel, /help, main menu, reply button dispatch."""
 
+import json
 import re
 
+import httpx
+import structlog
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User, UserUpdate
 from db.repositories.users import UsersRepository
 from keyboards.reply import main_menu
+from routers._helpers import guard_callback_message
+
+log = structlog.get_logger()
 
 router = Router(name="start")
 
@@ -39,6 +47,8 @@ async def cmd_start_deep_link(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
     is_new_user: bool = False,
 ) -> None:
     """Handle /start with deep link payload (referral, Pinterest OAuth stub)."""
@@ -56,8 +66,10 @@ async def cmd_start_deep_link(
         if referrer and user.referrer_id is None and referrer_id != user.id:
             await repo.update(user.id, UserUpdate(referrer_id=referrer_id))
 
-    # Pinterest OAuth: /start pinterest_auth_{nonce} — Phase 9 stub
-    # if payload.startswith("pinterest_auth_"): ...
+    # Pinterest OAuth: /start pinterest_auth_{nonce}
+    if payload.startswith("pinterest_auth_"):
+        await _handle_pinterest_auth(message, state, user, db, redis, http_client, payload)
+        return
 
     text = _WELCOME_NEW if is_new_user else _WELCOME_RETURNING.format(balance=user.balance)
     await message.answer(
@@ -79,6 +91,121 @@ async def cmd_start(
     await message.answer(
         text,
         reply_markup=main_menu(is_admin=user.role == "admin"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pinterest OAuth deep link handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_pinterest_auth(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    payload: str,
+) -> None:
+    """Handle /start pinterest_auth_{nonce} — retrieve tokens from Redis, fetch boards.
+
+    Flow: OAuth callback (api/auth.py) stores tokens in Redis → deep link back to bot →
+    this handler retrieves tokens → fetches boards → transitions to select_board FSM.
+    """
+    from routers.platforms.connections import ConnectPinterestFSM
+
+    nonce = payload.removeprefix("pinterest_auth_")
+    if not nonce:
+        await message.answer(
+            "Ошибка авторизации Pinterest. Попробуйте снова.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    # Get tokens from Redis (stored by api/auth.py callback)
+    redis_key = f"pinterest_auth:{nonce}"
+    raw_tokens = await redis.get(redis_key)
+    if not raw_tokens:
+        log.warning("pinterest_auth_tokens_not_found", nonce=nonce, user_id=user.id)
+        await state.clear()
+        await message.answer(
+            "Подключение Pinterest отменено. Время авторизации истекло (E20).\n"
+            "Попробуйте снова.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    tokens: dict = json.loads(raw_tokens)
+    # Clean up Redis key (one-time use)
+    await redis.delete(redis_key)
+
+    # Fetch boards from Pinterest API
+    access_token = tokens.get("access_token", "")
+    try:
+        resp = await http_client.get(
+            "https://api.pinterest.com/v5/boards",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"page_size": "25"},
+        )
+        if resp.status_code != 200:
+            log.warning("pinterest_boards_fetch_failed", status=resp.status_code, user_id=user.id)
+            await state.clear()
+            await message.answer(
+                "Не удалось получить список досок Pinterest (E21).\n"
+                "Попробуйте снова.",
+                reply_markup=main_menu(is_admin=user.role == "admin"),
+            )
+            return
+
+        boards_data = resp.json().get("items", [])
+    except Exception as exc:
+        log.warning("pinterest_boards_request_failed", error=str(exc), user_id=user.id)
+        await state.clear()
+        await message.answer(
+            "Не удалось связаться с Pinterest API. Попробуйте позже.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    if not boards_data:
+        await state.clear()
+        await message.answer(
+            "У вас нет досок в Pinterest. Создайте хотя бы одну доску и попробуйте снова.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    # Check FSM state — should be ConnectPinterestFSM.oauth_callback
+    current_state = await state.get_state()
+    fsm_data = await state.get_data()
+
+    # Verify nonce matches (user might have started a new OAuth flow)
+    if current_state != ConnectPinterestFSM.oauth_callback or fsm_data.get("nonce") != nonce:
+        log.warning("pinterest_auth_fsm_mismatch", nonce=nonce, current_state=current_state)
+        await state.clear()
+        await message.answer(
+            "Сессия подключения Pinterest не найдена. Начните подключение заново.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    # Store tokens and boards in FSM, transition to board selection
+    boards = [{"id": b["id"], "name": b.get("name", f"Board {b['id']}")} for b in boards_data]
+    await state.update_data(pinterest_tokens=tokens, pinterest_boards=boards)
+    await state.set_state(ConnectPinterestFSM.select_board)
+
+    builder = InlineKeyboardBuilder()
+    for b in boards:
+        text = b["name"]
+        if len(text) > 60:
+            text = text[:57] + "..."
+        builder.button(text=text, callback_data=f"pin_board:{b['id']}")
+    builder.adjust(1)
+
+    await message.answer(
+        "Шаг 2/2. Выберите доску для публикации:",
+        reply_markup=builder.as_markup(),
     )
 
 
@@ -136,14 +263,14 @@ async def cmd_help(message: Message) -> None:
 async def cb_main_menu(callback: CallbackQuery, state: FSMContext, user: User) -> None:
     """Return to main menu via inline button. Clears FSM if active."""
     await state.clear()
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Главное меню. Баланс: {user.balance} токенов.",
     )
     # Restore reply keyboard
-    await callback.message.answer(
+    await msg.answer(
         "Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin")
     )
     await callback.answer()
@@ -182,13 +309,21 @@ async def btn_help(message: Message) -> None:
     await cmd_help(message)
 
 
-@router.message(F.text.in_({"Быстрая публикация", "Профиль", "Тарифы", "АДМИНКА"}))
+@router.message(F.text == "Профиль")
+async def btn_profile(message: Message, user: User, db: SupabaseClient) -> None:
+    """Reply button [Профиль] → profile screen."""
+    from routers.profile import _show_profile
+
+    await _show_profile(message, user, db, edit=False)
+
+
+@router.message(F.text.in_({"Быстрая публикация", "Тарифы", "АДМИНКА"}))
 async def btn_stub(message: Message) -> None:
     """Stub handlers for not-yet-implemented menu buttons."""
     await message.answer("В разработке.")
 
 
-@router.callback_query(F.data.in_({"stats:all", "help:main"}))
+@router.callback_query(F.data.in_({"stats:all", "help:main", "tariffs:main"}))
 async def cb_stub(callback: CallbackQuery) -> None:
     """Stub for not-yet-implemented inline button features."""
     await callback.answer("В разработке.", show_alert=True)
@@ -199,7 +334,7 @@ async def cb_stub(callback: CallbackQuery) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.message(~F.text, StateFilter("*"))
+@router.message(~F.text & ~F.document, StateFilter("*"))
 async def fsm_non_text_guard(message: Message) -> None:
     """Reject non-text messages during any active FSM flow.
 

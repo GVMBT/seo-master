@@ -78,7 +78,7 @@ class PublicationsRepository(BaseRepository):
         return rows[0]["keyword"] if rows else None
 
     async def get_rotation_keyword(
-        self, category_id: int, keywords: list[dict]
+        self, category_id: int, keywords: list[dict[str, Any]]
     ) -> tuple[str | None, bool]:
         """Select next keyword using rotation algorithm.
 

@@ -185,6 +185,41 @@ def settings_main_kb() -> InlineKeyboardBuilder:
     return builder
 
 
+# ---------------------------------------------------------------------------
+# Profile keyboards (USER_FLOWS_AND_UI_MAP.md §Profile)
+# ---------------------------------------------------------------------------
+
+
+def profile_main_kb() -> InlineKeyboardBuilder:
+    """Profile action buttons."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="История расходов", callback_data="profile:history")
+    builder.button(text="Пополнить", callback_data="tariffs:main")
+    builder.button(text="Реферальная программа", callback_data="profile:referral")
+    builder.button(text="Главное меню", callback_data="menu:main")
+    builder.adjust(1)
+    return builder
+
+
+def profile_history_kb() -> InlineKeyboardBuilder:
+    """Back button for expense history."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="К профилю", callback_data="profile:main")
+    builder.adjust(1)
+    return builder
+
+
+def profile_referral_kb(user_id: int, bot_username: str) -> InlineKeyboardBuilder:
+    """Referral program with share button."""
+    builder = InlineKeyboardBuilder()
+    # Share button sends a pre-formatted invite message
+    ref_url = f"https://t.me/{bot_username}?start=ref_{user_id}"
+    builder.button(text="Поделиться", url=ref_url)
+    builder.button(text="К профилю", callback_data="profile:main")
+    builder.adjust(1)
+    return builder
+
+
 def settings_notifications_kb(user: User) -> InlineKeyboardBuilder:
     """Notification toggles for 3 types."""
     builder = InlineKeyboardBuilder()

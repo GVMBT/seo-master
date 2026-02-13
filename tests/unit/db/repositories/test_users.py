@@ -158,14 +158,28 @@ class TestChargeBalance:
         with pytest.raises(InsufficientBalanceError):
             await repo.charge_balance(123456789, 9999)
 
-    async def test_fallback_success(
+    async def test_fallback_success_first_attempt(
         self, repo: UsersRepository, mock_db: MockSupabaseClient, user_row: dict
     ) -> None:
-        # No RPC configured → fallback: balance 1500 - 500 = 1000
+        # No RPC configured -> fallback retry loop: first attempt succeeds
         charged_row = {**user_row, "balance": 1000}
         mock_db.set_responses("users", [
-            MockResponse(data=user_row),            # get_by_id
-            MockResponse(data=[charged_row]),        # update with .gte guard
+            MockResponse(data=user_row),            # get_by_id (attempt 1)
+            MockResponse(data=[charged_row]),        # CAS update succeeds
+        ])
+        result = await repo.charge_balance(123456789, 500)
+        assert result == 1000
+
+    async def test_fallback_success_second_attempt(
+        self, repo: UsersRepository, mock_db: MockSupabaseClient, user_row: dict
+    ) -> None:
+        # No RPC -> fallback: first CAS fails, second attempt succeeds
+        charged_row = {**user_row, "balance": 1000}
+        mock_db.set_responses("users", [
+            MockResponse(data=user_row),            # get_by_id (attempt 1)
+            MockResponse(data=[]),                   # CAS update fails (race)
+            MockResponse(data=user_row),            # get_by_id (attempt 2)
+            MockResponse(data=[charged_row]),        # CAS update succeeds
         ])
         result = await repo.charge_balance(123456789, 500)
         assert result == 1000
@@ -178,13 +192,17 @@ class TestChargeBalance:
         with pytest.raises(InsufficientBalanceError):
             await repo.charge_balance(123456789, 2000)
 
-    async def test_fallback_race_condition_raises(
+    async def test_fallback_race_exhausts_retries(
         self, repo: UsersRepository, mock_db: MockSupabaseClient, user_row: dict
     ) -> None:
-        # Fallback: gte guard rejects (concurrent deduction drained balance)
+        # Fallback: all 3 CAS attempts fail (persistent concurrent conflict)
         mock_db.set_responses("users", [
-            MockResponse(data=user_row),       # get_by_id returns balance 1500
-            MockResponse(data=[]),             # update with .gte returns empty (race lost)
+            MockResponse(data=user_row),       # get_by_id (attempt 1)
+            MockResponse(data=[]),             # CAS fails
+            MockResponse(data=user_row),       # get_by_id (attempt 2)
+            MockResponse(data=[]),             # CAS fails
+            MockResponse(data=user_row),       # get_by_id (attempt 3)
+            MockResponse(data=[]),             # CAS fails
         ])
         with pytest.raises(InsufficientBalanceError):
             await repo.charge_balance(123456789, 500)
@@ -208,25 +226,43 @@ class TestRefundBalance:
     async def test_fallback_success(
         self, repo: UsersRepository, mock_db: MockSupabaseClient, user_row: dict
     ) -> None:
-        # No RPC → fallback CAS: balance 1500 + 300 = 1800
+        # No RPC -> fallback CAS retry loop: first attempt succeeds
         refunded_row = {**user_row, "balance": 1800}
         mock_db.set_responses("users", [
-            MockResponse(data=user_row),           # get_by_id
-            MockResponse(data=[refunded_row]),     # update with CAS guard
+            MockResponse(data=user_row),           # get_by_id (attempt 1)
+            MockResponse(data=[refunded_row]),     # CAS update succeeds
         ])
         result = await repo.refund_balance(123456789, 300)
         assert result == 1800
 
-    async def test_fallback_conflict_raises(
+    async def test_fallback_conflict_exhausts_retries(
         self, repo: UsersRepository, mock_db: MockSupabaseClient, user_row: dict
     ) -> None:
-        # CAS conflict: concurrent balance change
+        # CAS conflict on all 3 attempts
         mock_db.set_responses("users", [
-            MockResponse(data=user_row),   # get_by_id
-            MockResponse(data=[]),         # update returns empty (CAS failed)
+            MockResponse(data=user_row),   # get_by_id (attempt 1)
+            MockResponse(data=[]),         # CAS fails
+            MockResponse(data=user_row),   # get_by_id (attempt 2)
+            MockResponse(data=[]),         # CAS fails
+            MockResponse(data=user_row),   # get_by_id (attempt 3)
+            MockResponse(data=[]),         # CAS fails
         ])
         with pytest.raises(AppError, match="conflict"):
             await repo.refund_balance(123456789, 300)
+
+    async def test_fallback_success_on_retry(
+        self, repo: UsersRepository, mock_db: MockSupabaseClient, user_row: dict
+    ) -> None:
+        # First CAS fails, second succeeds
+        refunded_row = {**user_row, "balance": 1800}
+        mock_db.set_responses("users", [
+            MockResponse(data=user_row),           # get_by_id (attempt 1)
+            MockResponse(data=[]),                  # CAS fails
+            MockResponse(data=user_row),           # get_by_id (attempt 2)
+            MockResponse(data=[refunded_row]),     # CAS succeeds
+        ])
+        result = await repo.refund_balance(123456789, 300)
+        assert result == 1800
 
     async def test_fallback_missing_user_raises(
         self, repo: UsersRepository, mock_db: MockSupabaseClient
@@ -247,11 +283,11 @@ class TestCreditBalance:
     async def test_fallback_success(
         self, repo: UsersRepository, mock_db: MockSupabaseClient, user_row: dict
     ) -> None:
-        # No RPC → fallback CAS: balance 1500 + 1000 = 2500
+        # No RPC -> fallback CAS retry loop: first attempt succeeds
         credited_row = {**user_row, "balance": 2500}
         mock_db.set_responses("users", [
-            MockResponse(data=user_row),           # get_by_id
-            MockResponse(data=[credited_row]),     # update with CAS guard
+            MockResponse(data=user_row),           # get_by_id (attempt 1)
+            MockResponse(data=[credited_row]),     # CAS update succeeds
         ])
         result = await repo.credit_balance(123456789, 1000)
         assert result == 2500

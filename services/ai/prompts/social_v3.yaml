@@ -1,0 +1,65 @@
+meta:
+  task_type: social_post
+  version: v3
+  model_tier: budget
+  max_tokens: 2000
+  temperature: 0.8
+
+system: |
+  Ты — SMM-копирайтер. Пиши на <<language>>.
+  Компания: <<company_name>> (<<specialization>>).
+
+user: |
+  Напиши пост для <<platform>> на тему "<<keyword>>".
+
+  Требования:
+  - Стиль: <<text_style>>
+  - Длина: <<words_min>>-<<words_max>> слов
+  - Платформа <<platform>>:
+    - telegram: HTML-разметка (<b>, <i>, <a>), макс. 4096 символов
+    - vk: текст + хештеги, макс. 16 384 символов
+    - pinterest: описание пина, макс. 500 символов + заголовок 100 символов
+  - Упомяни цены (если есть): <<prices_excerpt>>
+  - Ключевая фраза "<<keyword>>" — в первом предложении
+  - Призыв к действию в конце
+
+  Формат ответа — JSON:
+  {
+    "text": "...",
+    "hashtags": ["...", "..."],
+    "pin_title": "..."
+  }
+
+variables:
+  - name: keyword
+    source: categories.keywords (selected phrase)
+    required: true
+  - name: platform
+    source: telegram, vk, pinterest
+    required: true
+  - name: company_name
+    source: projects.company_name
+    required: true
+  - name: specialization
+    source: projects.specialization
+    required: true
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"
+  - name: text_style
+    source: text_settings.style
+    required: true
+    default: "Разговорный"
+  - name: words_min
+    source: text_settings
+    required: true
+    default: 100
+  - name: words_max
+    source: text_settings
+    required: true
+    default: 300
+  - name: prices_excerpt
+    source: categories.prices
+    required: false
+    default: ""

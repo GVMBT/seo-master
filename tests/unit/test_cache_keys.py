@@ -4,7 +4,9 @@ from cache.keys import (
     BRANDING_TTL,
     FSM_TTL,
     PINTEREST_AUTH_TTL,
+    PROMPT_CACHE_TTL,
     PUBLISH_LOCK_TTL,
+    RATE_LIMIT_WINDOW,
     SERPER_TTL,
     CacheKeys,
 )
@@ -26,6 +28,12 @@ class TestTTLConstants:
     def test_pinterest_auth_ttl_30min(self) -> None:
         assert PINTEREST_AUTH_TTL == 1800
 
+    def test_rate_limit_window_1h(self) -> None:
+        assert RATE_LIMIT_WINDOW == 3600
+
+    def test_prompt_cache_ttl_1h(self) -> None:
+        assert PROMPT_CACHE_TTL == 3600
+
 
 class TestCacheKeys:
     def test_fsm_key(self) -> None:
@@ -46,3 +54,9 @@ class TestCacheKeys:
 
     def test_pinterest_auth_key(self) -> None:
         assert CacheKeys.pinterest_auth("nonce123") == "pinterest_auth:nonce123"
+
+    def test_rate_limit_key(self) -> None:
+        assert CacheKeys.rate_limit(123, "text_generation") == "rate:123:text_generation"
+
+    def test_prompt_cache_key(self) -> None:
+        assert CacheKeys.prompt_cache("article") == "prompt:article"

@@ -67,7 +67,8 @@ class UsersRepository(BaseRepository):
     async def charge_balance(self, user_id: int, amount: int) -> int:
         """Atomically deduct tokens. Raises InsufficientBalanceError if balance < amount.
 
-        Uses RPC charge_balance (ARCHITECTURE.md §5.5) with read-modify-write fallback.
+        Primary path: RPC charge_balance (ARCHITECTURE.md section 5.5).
+        Fallback (RPC unavailable only): retry loop with re-read to handle concurrent updates.
         """
         try:
             result = await self._db.rpc(
@@ -81,25 +82,32 @@ class UsersRepository(BaseRepository):
                 raise InsufficientBalanceError() from exc
             log.warning("rpc_unavailable", fn="charge_balance", user_id=user_id, exc_info=True)
 
-        # Fallback: atomic update with balance guard
-        user = await self.get_by_id(user_id)
-        if user is None:
-            raise AppError(f"User {user_id} not found")
-        if user.balance < amount:
-            msg = f"Недостаточно токенов. Нужно {amount}, у вас {user.balance}."  # noqa: RUF001
-            raise InsufficientBalanceError(user_message=msg)
-        resp = await (
-            self._table(_TABLE)
-            .update({"balance": user.balance - amount})
-            .eq("id", user_id)
-            .gte("balance", amount)
-            .execute()
+        # Fallback: retry loop with fresh balance read on each attempt.
+        # Re-reading prevents writing a stale absolute value after concurrent changes.
+        _MAX_RETRIES = 3
+        for attempt in range(_MAX_RETRIES):
+            user = await self.get_by_id(user_id)
+            if user is None:
+                raise AppError(f"User {user_id} not found")
+            if user.balance < amount:
+                msg = f"Недостаточно токенов. Нужно {amount}, у вас {user.balance}."  # noqa: RUF001
+                raise InsufficientBalanceError(user_message=msg)
+            new_balance = user.balance - amount
+            rows = self._rows(
+                await self._force_update_balance(user_id, user.balance, new_balance)
+            )
+            if rows:
+                return int(rows[0]["balance"])
+            log.info(
+                "charge_balance_retry",
+                user_id=user_id,
+                attempt=attempt + 1,
+                max_retries=_MAX_RETRIES,
+            )
+        # All retries exhausted — balance may have been drained concurrently
+        raise InsufficientBalanceError(
+            user_message=f"Не удалось списать {amount} токенов. Попробуйте ещё раз."  # noqa: RUF001
         )
-        rows = self._rows(resp)
-        if not rows:
-            msg = f"Недостаточно токенов. Нужно {amount}, у вас {user.balance}."  # noqa: RUF001
-            raise InsufficientBalanceError(user_message=msg)
-        return int(rows[0]["balance"])
 
     async def refund_balance(self, user_id: int, amount: int) -> int:
         """Atomically return tokens (error recovery, cancellation).
@@ -116,29 +124,55 @@ class UsersRepository(BaseRepository):
         return await self._add_balance("credit_balance", user_id, amount)
 
     async def _add_balance(self, fn_name: str, user_id: int, amount: int) -> int:
-        """Shared implementation for refund_balance and credit_balance."""
+        """Shared implementation for refund_balance and credit_balance.
+
+        Primary path: RPC (ARCHITECTURE.md section 5.5).
+        Fallback (RPC unavailable only): CAS retry loop with fresh balance read.
+        """
         try:
             result = await self._db.rpc(fn_name, {"p_user_id": user_id, "p_amount": amount})
             return self._extract_balance(result)
         except Exception:
             log.warning("rpc_unavailable", fn=fn_name, user_id=user_id, exc_info=True)
 
-        # Fallback: optimistic CAS (compare-and-swap) on balance
-        user = await self.get_by_id(user_id)
-        if not user:
-            raise AppError(f"User {user_id} not found")
-        new_balance = user.balance + amount
-        resp = await (
+        # Fallback: CAS retry loop — re-read balance on each attempt to avoid stale writes.
+        _MAX_RETRIES = 3
+        for attempt in range(_MAX_RETRIES):
+            user = await self.get_by_id(user_id)
+            if not user:
+                raise AppError(f"User {user_id} not found")
+            new_balance = user.balance + amount
+            rows = self._rows(
+                await self._force_update_balance(user_id, user.balance, new_balance)
+            )
+            if rows:
+                return int(rows[0]["balance"])
+            log.info(
+                "add_balance_retry",
+                fn=fn_name,
+                user_id=user_id,
+                attempt=attempt + 1,
+                max_retries=_MAX_RETRIES,
+            )
+        raise AppError(f"Balance update conflict after {_MAX_RETRIES} retries")
+
+    async def _force_update_balance(
+        self, user_id: int, expected_balance: int, new_balance: int
+    ) -> Any:
+        """Low-level CAS update for balance, bypassing UserUpdate model.
+
+        This is intentionally private. All public balance mutations go through
+        RPC functions; this is ONLY used as a fallback when RPC is unavailable.
+        The `.eq("balance", expected_balance)` acts as a CAS guard.
+        Returns raw PostgREST response (caller checks _rows for empty = CAS miss).
+        """
+        return await (
             self._table(_TABLE)
             .update({"balance": new_balance})
             .eq("id", user_id)
-            .eq("balance", user.balance)
+            .eq("balance", expected_balance)
             .execute()
         )
-        rows = self._rows(resp)
-        if not rows:
-            raise AppError("Balance update conflict, retry required")
-        return int(rows[0]["balance"])
 
     @staticmethod
     def _extract_balance(rpc_result: Any) -> int:

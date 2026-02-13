@@ -7,11 +7,12 @@ from typing import Any
 import structlog
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, TelegramObject
+from aiogram.types import CallbackQuery, InaccessibleMessage, Message, TelegramObject
 
 from db.client import SupabaseClient
 from db.models import UserCreate
 from db.repositories.users import UsersRepository
+from keyboards.reply import main_menu
 
 log = structlog.get_logger()
 
@@ -92,19 +93,21 @@ class FSMInactivityMiddleware(BaseMiddleware):
             await state.clear()
             tg_user = data.get("event_from_user")
             log.info("fsm_inactivity_timeout", user_id=tg_user.id if tg_user else None)
-            await self._send_expired_message(event)
+            await self._send_expired_message(event, data)
             return None  # drop event
 
         await state.update_data(last_update_time=now)
         return await handler(event, data)
 
     @staticmethod
-    async def _send_expired_message(event: TelegramObject) -> None:
-        """Send session expired notification to the user."""
-        text = "Сессия истекла. Начните заново"
+    async def _send_expired_message(event: TelegramObject, data: dict[str, Any]) -> None:
+        """Send session expired notification and restore main menu keyboard."""
+        text = "Сессия истекла. Начните заново."
+        is_admin = data.get("is_admin", False)
+        kb = main_menu(is_admin=is_admin)
         if isinstance(event, Message):
-            await event.answer(text)
+            await event.answer(text, reply_markup=kb)
         elif isinstance(event, CallbackQuery):
-            if isinstance(event.message, Message):
-                await event.message.answer(text)
+            if event.message and not isinstance(event.message, InaccessibleMessage):
+                await event.message.answer(text, reply_markup=kb)
             await event.answer()

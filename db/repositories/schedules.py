@@ -1,7 +1,5 @@
 """Repository for platform_schedules table."""
 
-from typing import Any
-
 from db.models import PlatformSchedule, PlatformScheduleCreate, PlatformScheduleUpdate
 from db.repositories.base import BaseRepository
 
@@ -27,14 +25,12 @@ class SchedulesRepository(BaseRepository):
         resp = await self._table(_TABLE).select("*").eq("connection_id", connection_id).execute()
         return [PlatformSchedule(**row) for row in self._rows(resp)]
 
-    async def get_by_project(self, project_id: int) -> list[PlatformSchedule]:
-        """Get all schedules for all categories of a project.
+    async def get_by_project(self, category_ids: list[int]) -> list[PlatformSchedule]:
+        """Get all schedules for given category IDs.
 
         Required for E11: cancel QStash before CASCADE delete of project.
+        Caller (service layer) must obtain category_ids via CategoriesRepository.
         """
-        cat_resp = await self._db.table("categories").select("id").eq("project_id", project_id).execute()
-        rows: list[dict[str, Any]] = cat_resp.data or []  # type: ignore[assignment]
-        category_ids = [row["id"] for row in rows]
         if not category_ids:
             return []
         resp = await self._table(_TABLE).select("*").in_("category_id", category_ids).execute()

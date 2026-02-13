@@ -1,7 +1,7 @@
 """Router: project card, stubs, delete (2-step)."""
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery
 
 from db.client import SupabaseClient
 from db.models import Project, User
@@ -11,6 +11,7 @@ from keyboards.inline import (
     project_delete_confirm_kb,
     project_list_kb,
 )
+from routers._helpers import guard_callback_message
 
 router = Router(name="projects_card")
 
@@ -79,8 +80,8 @@ async def _get_project_or_notify(
 @router.callback_query(F.data.regexp(r"^project:(\d+):card$"))
 async def cb_project_card(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show project card with category count and platform connections."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await _get_project_or_notify(project_id, user.id, db, callback)
@@ -101,7 +102,7 @@ async def cb_project_card(callback: CallbackQuery, user: User, db: SupabaseClien
     platform_types = await ConnectionsRepository(db, cm).get_platform_types_by_project(project_id)
     platform_names = [_PLATFORM_NAMES.get(pt, pt) for pt in platform_types]
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         _format_project_card(project, category_count=category_count, platform_names=platform_names or None),
         reply_markup=project_card_kb(project).as_markup(),
     )
@@ -113,7 +114,7 @@ async def cb_project_card(callback: CallbackQuery, user: User, db: SupabaseClien
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data.regexp(r"^project:(\d+):(connections|scheduler|audit)$"))
+@router.callback_query(F.data.regexp(r"^project:(\d+):(scheduler|audit|timezone)$"))
 async def cb_project_feature_stub(callback: CallbackQuery) -> None:
     """Stub for not-yet-implemented project features."""
     await callback.answer("В разработке.", show_alert=True)
@@ -127,14 +128,14 @@ async def cb_project_feature_stub(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.regexp(r"^project:(\d+):delete$"))
 async def cb_project_delete(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show delete confirmation."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await _get_project_or_notify(project_id, user.id, db, callback)
     if not project:
         return
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Удалить проект «{project.name}»? Все категории и данные будут удалены.",
         reply_markup=project_delete_confirm_kb(project.id).as_markup(),
     )
@@ -144,8 +145,8 @@ async def cb_project_delete(callback: CallbackQuery, user: User, db: SupabaseCli
 @router.callback_query(F.data.regexp(r"^project:(\d+):delete:confirm$"))
 async def cb_project_delete_confirm(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Confirm deletion: delete project and show list."""
-    if not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно.", show_alert=True)
+    msg = await guard_callback_message(callback)
+    if msg is None:
         return
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await _get_project_or_notify(project_id, user.id, db, callback)
@@ -158,7 +159,5 @@ async def cb_project_delete_confirm(callback: CallbackQuery, user: User, db: Sup
 
     projects = await repo.get_by_user(user.id)
     text = f"Проект удалён. Ваши проекты ({len(projects)}):" if projects else "Проект удалён. У вас нет проектов."
-    await callback.message.edit_text(
-        text, reply_markup=project_list_kb(projects).as_markup()
-    )
+    await msg.edit_text(text, reply_markup=project_list_kb(projects).as_markup())
     await callback.answer("Проект удалён.")

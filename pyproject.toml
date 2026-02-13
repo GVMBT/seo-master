@@ -24,6 +24,8 @@ dependencies = [
     "yookassa>=3.10",
     # Security
     "cryptography>=46.0",
+    # HTML sanitization (ARCHITECTURE.md §5.8)
+    "nh3>=0.2",
     # Templates
     "jinja2>=3.1",
     "pyyaml>=6.0",
@@ -54,7 +56,7 @@ select = ["E", "F", "I", "S", "C901", "B", "UP", "SIM", "RUF"]
 max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]
+"tests/**/*.py" = ["S101", "S105", "S106"]
 "routers/**/*.py" = ["RUF001", "RUF002"]
 "keyboards/**/*.py" = ["RUF001", "RUF002"]
 

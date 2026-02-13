@@ -56,7 +56,13 @@ class TestCmdStart:
 class TestCmdStartDeepLink:
     @pytest.mark.asyncio
     async def test_referral_sets_referrer_id_when_referrer_exists(
-        self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+        mock_http_client: MagicMock,
     ) -> None:
         """Referrer must exist in DB (P4.2) before setting referrer_id."""
         user.referrer_id = None
@@ -65,7 +71,9 @@ class TestCmdStartDeepLink:
         with patch("routers.start.UsersRepository") as repo_cls:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=referrer)
             repo_cls.return_value.update = AsyncMock(return_value=user)
-            await cmd_start_deep_link(mock_message, mock_state, user, mock_db)
+            await cmd_start_deep_link(
+                mock_message, mock_state, user, mock_db, mock_redis, mock_http_client
+            )
             repo_cls.return_value.get_by_id.assert_awaited_once_with(555)
             repo_cls.return_value.update.assert_awaited_once()
             update_arg = repo_cls.return_value.update.call_args.args[1]
@@ -73,7 +81,13 @@ class TestCmdStartDeepLink:
 
     @pytest.mark.asyncio
     async def test_referral_rejected_when_referrer_not_found(
-        self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+        mock_http_client: MagicMock,
     ) -> None:
         """Referrer that doesn't exist should not be set (P4.2)."""
         user.referrer_id = None
@@ -81,24 +95,40 @@ class TestCmdStartDeepLink:
         with patch("routers.start.UsersRepository") as repo_cls:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=None)
             repo_cls.return_value.update = AsyncMock()
-            await cmd_start_deep_link(mock_message, mock_state, user, mock_db)
+            await cmd_start_deep_link(
+                mock_message, mock_state, user, mock_db, mock_redis, mock_http_client
+            )
             repo_cls.return_value.update.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_no_self_referral(
-        self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+        mock_http_client: MagicMock,
     ) -> None:
         user.referrer_id = None
         mock_message.text = f"/start ref_{user.id}"
         with patch("routers.start.UsersRepository") as repo_cls:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=user)
             repo_cls.return_value.update = AsyncMock()
-            await cmd_start_deep_link(mock_message, mock_state, user, mock_db)
+            await cmd_start_deep_link(
+                mock_message, mock_state, user, mock_db, mock_redis, mock_http_client
+            )
             repo_cls.return_value.update.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_existing_referrer_not_overwritten(
-        self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+        mock_http_client: MagicMock,
     ) -> None:
         user.referrer_id = 111  # already has referrer
         mock_message.text = "/start ref_555"
@@ -106,19 +136,30 @@ class TestCmdStartDeepLink:
         with patch("routers.start.UsersRepository") as repo_cls:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=referrer)
             repo_cls.return_value.update = AsyncMock()
-            await cmd_start_deep_link(mock_message, mock_state, user, mock_db)
+            await cmd_start_deep_link(
+                mock_message, mock_state, user, mock_db, mock_redis, mock_http_client
+            )
             repo_cls.return_value.update.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_new_user_with_deep_link_sees_welcome(
-        self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+        mock_http_client: MagicMock,
     ) -> None:
         mock_message.text = "/start ref_555"
         referrer = User(id=555, balance=1500, role="user")
         with patch("routers.start.UsersRepository") as repo_cls:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=referrer)
             repo_cls.return_value.update = AsyncMock(return_value=user)
-            await cmd_start_deep_link(mock_message, mock_state, user, mock_db, is_new_user=True)
+            await cmd_start_deep_link(
+                mock_message, mock_state, user, mock_db, mock_redis, mock_http_client,
+                is_new_user=True,
+            )
             text = mock_message.answer.call_args.args[0]
             assert "Добро пожаловать в SEO Master Bot!" in text
 

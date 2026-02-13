@@ -78,8 +78,10 @@ class RateLimitError(AppError):
         self,
         message: str = "Rate limit exceeded",
         user_message: str = _RATE_LIMIT_MSG,
+        retry_after_seconds: int = 0,
     ) -> None:
         super().__init__(message=message, user_message=user_message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 class ScheduleError(AppError):
