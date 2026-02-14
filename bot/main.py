@@ -160,7 +160,12 @@ async def on_shutdown(
         for _ in range(acquired):
             PUBLISH_SEMAPHORE.release()
 
-    await bot.delete_webhook()
+    # NOTE: do NOT call bot.delete_webhook() here.
+    # During Railway zero-downtime deploys, the old container's shutdown
+    # races with the new container's startup — delete_webhook() would
+    # clear the webhook that the new container just set. The new container's
+    # set_webhook() in on_startup() is sufficient to overwrite.
+    await bot.session.close()
     await http_client.aclose()
     await db.close()
     # Redis (Upstash HTTP) is stateless — no close needed, but param kept for consistency
