@@ -169,13 +169,42 @@ class TestProcessWebhook:
         await service_with_mocks.process_webhook("payment.succeeded", obj)
         service_with_mocks._users.credit_balance.assert_not_called()
 
-    async def test_payment_canceled(self, service_with_mocks: YooKassaPaymentService) -> None:
+    async def test_payment_canceled_returns_notification(self, service_with_mocks: YooKassaPaymentService) -> None:
         obj = {
             "id": "yk_cancel_1",
             "metadata": {"user_id": "42", "package_name": "mini"},
         }
-        await service_with_mocks.process_webhook("payment.canceled", obj)
+        result = await service_with_mocks.process_webhook("payment.canceled", obj)
         service_with_mocks._payments.create.assert_called_once()
+        assert result is not None
+        assert result["user_id"] == 42
+        assert "Платёж отклонён" in result["text"]
+
+    async def test_payment_canceled_renewal_e37(self, service_with_mocks: YooKassaPaymentService) -> None:
+        """E37: renewal failure keeps subscription active, different notification."""
+        from datetime import UTC, datetime, timedelta
+
+        expires_at = datetime.now(UTC) + timedelta(days=15)
+        sub_mock = MagicMock(subscription_expires_at=expires_at)
+        service_with_mocks._payments.get_active_subscription = AsyncMock(return_value=sub_mock)
+
+        obj = {
+            "id": "yk_renew_fail",
+            "metadata": {"user_id": "42", "package_name": "pro", "is_renewal": "true"},
+        }
+        result = await service_with_mocks.process_webhook("payment.canceled", obj)
+        assert result is not None
+        assert result["user_id"] == 42
+        assert "Автопродление" in result["text"]
+        assert expires_at.strftime("%d.%m.%Y") in result["text"]
+
+    async def test_payment_canceled_no_user_returns_none(self, service_with_mocks: YooKassaPaymentService) -> None:
+        obj = {
+            "id": "yk_cancel_anon",
+            "metadata": {},
+        }
+        result = await service_with_mocks.process_webhook("payment.canceled", obj)
+        assert result is None
 
     async def test_refund_succeeded(self, service_with_mocks: YooKassaPaymentService) -> None:
         payment = MagicMock(

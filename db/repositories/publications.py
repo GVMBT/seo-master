@@ -44,21 +44,30 @@ class PublicationsRepository(BaseRepository):
         )
         return [PublicationLog(**row) for row in self._rows(resp)]
 
-    async def get_recently_used_keywords(self, category_id: int, days: int = _COOLDOWN_DAYS) -> list[str]:
+    async def get_recently_used_keywords(
+        self,
+        category_id: int,
+        days: int = _COOLDOWN_DAYS,
+        content_type: str | None = None,
+    ) -> list[str]:
         """Get keywords used in the last N days for a category.
 
         Uses covering index idx_pub_logs_rotation.
+        When content_type is provided, cooldown is per content_type (§6.1):
+        articles and social posts have independent cooldowns.
         """
         cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
-        resp = (
-            await self._table(_TABLE)
+        query = (
+            self._table(_TABLE)
             .select("keyword")
             .eq("category_id", category_id)
             .eq("status", "success")
             .gte("created_at", cutoff)
             .not_.is_("keyword", "null")
-            .execute()
         )
+        if content_type:
+            query = query.eq("content_type", content_type)
+        resp = await query.execute()
         rows: list[dict[str, Any]] = self._rows(resp)
         return [row["keyword"] for row in rows if row.get("keyword")]
 
@@ -106,7 +115,7 @@ class PublicationsRepository(BaseRepository):
 
         if is_cluster:
             return await self._rotate_clusters(category_id, keywords, content_type)
-        return await self._rotate_legacy(category_id, keywords)
+        return await self._rotate_legacy(category_id, keywords, content_type)
 
     async def _rotate_clusters(
         self,
@@ -114,13 +123,18 @@ class PublicationsRepository(BaseRepository):
         clusters: list[dict[str, Any]],
         content_type: str,
     ) -> tuple[str | None, bool]:
-        """Cluster-based rotation (API_CONTRACTS.md §6)."""
+        """Cluster-based rotation (API_CONTRACTS.md §6).
+
+        Articles: filter cluster_type="article" only (§6 step 2).
+        Social posts: ALL cluster_types eligible (§6.1 — no filter).
+        Cooldown: per content_type (§6.1 — articles and social posts independent).
+        """
         # Filter by cluster_type
         if content_type == "article":
             pool = [c for c in clusters if c.get("cluster_type") == "article"]
         else:
-            # Social posts: article + social (§6.1)
-            pool = [c for c in clusters if c.get("cluster_type") in ("article", "social")]
+            # Social posts: ALL clusters are eligible (§6.1)
+            pool = list(clusters)
 
         if not pool:
             return None, True
@@ -133,7 +147,8 @@ class PublicationsRepository(BaseRepository):
             key=lambda c: (-c.get("total_volume", 0), c.get("avg_difficulty", 0)),
         )
 
-        used = set(await self.get_recently_used_keywords(category_id))
+        # Cooldown is per content_type (§6.1)
+        used = set(await self.get_recently_used_keywords(category_id, content_type=content_type))
 
         # Pick first available cluster (main_phrase not on cooldown)
         for cluster in sorted_clusters:
@@ -154,6 +169,7 @@ class PublicationsRepository(BaseRepository):
         self,
         category_id: int,
         keywords: list[dict[str, Any]],
+        content_type: str = "article",
     ) -> tuple[str | None, bool]:
         """Legacy flat-keyword rotation (E36 fallback)."""
         low_pool_warning = len(keywords) < _MIN_POOL_SIZE
@@ -164,7 +180,8 @@ class PublicationsRepository(BaseRepository):
             key=lambda k: (-k.get("volume", 0), k.get("difficulty", 0)),
         )
 
-        used = set(await self.get_recently_used_keywords(category_id))
+        # Cooldown is per content_type (§6.1)
+        used = set(await self.get_recently_used_keywords(category_id, content_type=content_type))
 
         for kw in sorted_kw:
             phrase = kw.get("phrase", "")

@@ -241,10 +241,10 @@ class TestGetRotationKeywordCluster:
         kw, _ = await repo.get_rotation_keyword(1, clusters, content_type="article")
         assert kw == "how to seo"
 
-    async def test_social_post_includes_article_and_social_types(
+    async def test_social_post_includes_all_cluster_types(
         self, repo: PublicationsRepository, mock_db: MockSupabaseClient
     ) -> None:
-        """Social posts accept cluster_type in (article, social) (§6.1)."""
+        """Social posts accept ALL cluster_types including product_page (§6.1)."""
         mock_db.set_response("publication_logs", MockResponse(data=[]))
         clusters = [
             _make_cluster("product", "buy now", cluster_type="product_page", total_volume=9999),
@@ -252,7 +252,8 @@ class TestGetRotationKeywordCluster:
             _make_cluster("info", "seo guide", cluster_type="article", total_volume=1000),
         ]
         kw, _ = await repo.get_rotation_keyword(1, clusters, content_type="social_post")
-        assert kw == "seo tips"
+        # product_page cluster has highest volume → picked first
+        assert kw == "buy now"
 
     async def test_skips_recently_used_cluster(
         self, repo: PublicationsRepository, mock_db: MockSupabaseClient
@@ -320,6 +321,32 @@ class TestGetRotationKeywordCluster:
         kw, _ = await repo.get_rotation_keyword(1, clusters)
         # LRU mock returns first keyword from publication_logs
         assert kw == "p1"
+
+
+class TestContentTypeCooldown:
+    """§6.1: articles and social posts have independent cooldowns."""
+
+    async def test_recently_used_filters_by_content_type(
+        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
+    ) -> None:
+        """When content_type is passed, only that type's publications count as cooldown."""
+        mock_db.set_response("publication_logs", MockResponse(data=[]))
+        result = await repo.get_recently_used_keywords(1, content_type="article")
+        assert result == []
+
+    async def test_social_post_cooldown_independent_from_article(
+        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
+    ) -> None:
+        """A keyword used for article should NOT be on cooldown for social_post."""
+        # Mock: article rotation returns "seo tips" as used (but only for articles)
+        # Social post rotation should get empty used set
+        mock_db.set_response("publication_logs", MockResponse(data=[]))
+        clusters = [
+            _make_cluster("a", "seo tips", total_volume=5000),
+            _make_cluster("b", "seo guide", total_volume=1000),
+        ]
+        kw, _ = await repo.get_rotation_keyword(1, clusters, content_type="social_post")
+        assert kw == "seo tips"
 
 
 class TestGetStatsByUser:

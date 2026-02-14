@@ -342,9 +342,17 @@ async def btn_menu(message: Message, user: User, db: SupabaseClient) -> None:
     await message.answer(text, reply_markup=dashboard_kb().as_markup())
 
 
-@router.message(F.text.in_({"Быстрая публикация", "АДМИНКА"}))
-async def btn_stub(message: Message) -> None:
-    """Stub handlers for not-yet-implemented menu buttons."""
+@router.message(F.text == "Быстрая публикация")
+async def btn_quick_publish(message: Message, user: User, db: SupabaseClient) -> None:
+    """Reply button [Быстрая публикация] → delegate to quick publish flow."""
+    from routers.publishing.quick import send_quick_publish_menu
+
+    await send_quick_publish_menu(message, user, db)
+
+
+@router.message(F.text == "АДМИНКА")
+async def btn_admin_stub(message: Message) -> None:
+    """Stub for admin panel button."""
     await message.answer("В разработке.")
 
 

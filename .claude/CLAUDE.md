@@ -10,7 +10,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 ## Стек
 - Python 3.14, uv, Aiogram 3.25+ (Bot API 9.4)
 - Supabase PostgreSQL 17, Upstash Redis (HTTP), Upstash QStash
-- OpenRouter SDK 0.1.3 (AI), Firecrawl, DataForSEO, Serper
+- OpenRouter SDK 0.1.3 (AI), Firecrawl v2 (native httpx), DataForSEO v3, Serper
 - Telegram Stars + YooKassa (платежи)
 - Fernet encryption для credentials
 - Jinja2 с разделителями (<< >>) для промптов
@@ -112,7 +112,7 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 Решено из SEO-ревью (февр. 2026):
 - **Data-first keywords**: DataForSEO keyword_suggestions/related → AI кластеризация → enrich (не "AI фантазирует → DataForSEO валидирует")
 - **Keyword clustering**: categories.keywords хранит кластеры (cluster_name, main_phrase, phrases[]), не плоский список. Ротация по кластерам §6
-- **Competitor scraping**: Firecrawl /scrape с formats: ['markdown', 'summary'] (markdown + AI-summary конкурентов). article_v5→v6
+- **Competitor scraping**: Firecrawl v2 /scrape (markdown) + /extract (LLM-structured competitor data). article_v5→v7
 - **Dynamic article length**: median(конкуренты) × 1.1, cap [1500, 5000]. Fallback на text_settings
 - **Competitor gaps**: AI определяет темы, которых нет у конкурентов → уникальная ценность статьи
 
@@ -165,15 +165,18 @@ P2 (Phase 11+):
 
 Решено: A/B тестирование промптов deferred to v3 (колонка ab_test_group убрана из схемы).
 
-Решено — Firecrawl API update (февр. 2026, SDK v4.14+):
-- **Internal links: `/map` вместо `/crawl`**: 1 кредит за 5000 URL (2-3с) vs 100 кредитов за 100 стр (30с+). crawl_site → map_site
-- **Branding v2**: улучшенная детекция лого (Wix, Framer, background-image CSS). Автоматически
-- **`summary` формат**: AI-сжатый текст (~3% от оригинала), бесплатный (входит в 1 кредит scrape). Для превью конкурентов в TG
-- **Firecrawl `/agent` (Spark)**: автономный сбор данных без URL — deferred to v3 (Research Preview, динамическая цена)
-- **Firecrawl `changeTracking`**: мониторинг изменений страниц — deferred to v3 (F45)
+Решено — Firecrawl v2 API (февр. 2026, native httpx, NOT SDK):
+- **v1→v2 migration**: base URL `/v2/`, httpx.AsyncClient (shared), NO firecrawl-py SDK
+- **`/v2/scrape`**: markdown конкурентов. 1 credit/page. Cache 24h
+- **`/v2/map`**: internal links (NOT /crawl). 1 credit per 5000 URLs. Cache 14d
+- **`/v2/extract` (NEW)**: LLM-structured data extraction via JSON Schema. ~5 credits. Used for:
+  - `scrape_branding()` → real CSS colors/fonts via `_BRANDING_SCHEMA` (NOT hardcoded fallbacks)
+  - `extract_competitor()` → structured competitor data via `_COMPETITOR_SCHEMA` (title, meta, h1-h3, content_type, word_count, internal_links_count, schema_org, images_count)
+- **`/v2/search` (NEW)**: search + scrape in one call. 2 credits/10 results. Potential Serper replacement (but no PAA)
 - **DataForSEO**: остаётся (keyword volumes/CPC/difficulty — Firecrawl этого не умеет)
 - **Serper**: остаётся (People Also Ask для антиканнибализации — Firecrawl /search не возвращает PAA)
-- **Firecrawl /search**: потенциальная замена Serper+scrape в одном вызове, но без PAA. Мониторить для v3
+- **Firecrawl `/agent` (Spark)**: deferred to v3 (Research Preview, динамическая цена)
+- **Firecrawl `changeTracking`**: deferred to v3 (F45)
 
 Решено — Аудит всех сервисов (февр. 2026):
 - **OpenRouter**: SDK через `openai` с `base_url` — по-прежнему правильный подход. Новое: расширенные provider routing параметры (`max_price`, `preferred_min_throughput`, `quantizations`, `only`/`ignore`). Prompt caching Claude: $0.30/M vs $3.00/M (90% экономии). Seedream 4.5 — потенциальный 3-й image fallback ($0.04/img)
@@ -194,18 +197,53 @@ P2 (Phase 11+):
 /enrich-specs <target>    — обновление rules/skills/specs (spec-enricher agent)
 ```
 
-## Циклический пайплайн реализации фазы
+## Регламент вызова агентов (ОБЯЗАТЕЛЬНО к исполнению)
+
+Агенты вызываются АВТОМАТИЧЕСКИ — без запроса пользователя — в следующих ситуациях:
+
+### A. Пайплайн реализации фазы
 ```
 Phase N:
-  1. /implement-module   → implementer
-  2. /review-module      → reviewer
-  3. /test-module        → tester
-  4. /find-gaps phase N  → gap-finder
-     P0/P1 → назад к шагу 1
-     Только P2 или PASS → шаг 5
-  5. /verify-spec        → integrator
-     Issues → назад к шагу 1
+  1. /find-gaps phase N  → gap-finder (ДО начала кода — найти дыры в спеках)
+     P0/P1 в спеках → /enrich-specs → исправить спеки → повторить find-gaps
+     PASS → шаг 2
+  2. /implement-module   → implementer
+  3. /review-module      → reviewer
+  4. /test-module        → tester
+  5. /find-gaps phase N  → gap-finder (ПОСЛЕ кода — найти дыры между спеками и кодом)
+     P0/P1 → назад к шагу 2
+     Только P2 или PASS → шаг 6
+  6. /verify-spec        → integrator
+     Issues → назад к шагу 2
      PASS → Phase N DONE
+```
+
+### B. После обновления внешних зависимостей
+Когда обновляется API библиотеки (Firecrawl, Bot API, OpenRouter, etc.):
+```
+  1. /enrich-specs <library>  → обновить спеки актуальной документацией
+  2. /find-gaps               → проверить что код и спеки синхронизированы
+  3. Исправить код/спеки если нужно
+```
+
+### C. Начало новой сессии (если прошло >2 сессий с последнего аудита)
+```
+  1. /find-gaps full          → полный аудит спеков, кода и тестов
+  2. Приоритизация: P0 → fix немедленно, P1 → в план, P2 → backlog
+```
+
+### D. После крупных изменений в спеках
+Когда обновляются docs/*.md (новые фичи, изменение схемы, новые edge cases):
+```
+  1. /find-gaps               → проверить целостность после изменений
+  2. /verify-spec             → проверить что существующий код соответствует
+```
+
+### E. Перед релизом / мержем в main
+```
+  1. /find-gaps full          → финальный аудит
+  2. /verify-spec             → сквозная проверка
+  3. pytest + ruff + mypy     → всё зелёное
 ```
 
 ## Контекстные правила (.claude/rules/)

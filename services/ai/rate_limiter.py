@@ -42,9 +42,15 @@ class RateLimiter:
 
         current = await self._redis.incr(key)
 
-        # Set TTL on first increment to start the window
+        # Set TTL on first increment to start the window.
+        # Also defensively set TTL if it's missing (race condition recovery).
         if current == 1:
             await self._redis.expire(key, window_seconds)
+        elif current == 2:
+            # Defensive: if key lost its TTL between first and second call
+            ttl = await self._redis.ttl(key)
+            if ttl is not None and ttl < 0:
+                await self._redis.expire(key, window_seconds)
 
         if current > max_requests:
             # Undo the increment — this request should not count
@@ -88,10 +94,15 @@ class RateLimiter:
 
         # Atomic increment-first pattern: INCRBY returns new value.
         # If new_value == count, the key was just created → set TTL.
+        # Defensive TTL check when new_value == count*2 (second call).
         new_value = await self._redis.incrby(key, count)
 
         if new_value == count:
             await self._redis.expire(key, window_seconds)
+        elif new_value <= count * 2:
+            ttl = await self._redis.ttl(key)
+            if ttl is not None and ttl < 0:
+                await self._redis.expire(key, window_seconds)
 
         if new_value > max_requests:
             # Undo the batch increment

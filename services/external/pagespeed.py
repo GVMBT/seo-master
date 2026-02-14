@@ -182,13 +182,16 @@ class PageSpeedClient:
 
         for attempt in range(1, attempts + 1):
             try:
-                params: dict[str, str] = {
-                    "url": url,
-                    "strategy": strategy,
-                    "category": "PERFORMANCE",
-                }
+                params: list[tuple[str, str | int | float | bool | None]] = [
+                    ("url", url),
+                    ("strategy", strategy),
+                    ("category", "PERFORMANCE"),
+                    ("category", "ACCESSIBILITY"),
+                    ("category", "BEST_PRACTICES"),
+                    ("category", "SEO"),
+                ]
                 if self._api_key:
-                    params["key"] = self._api_key
+                    params.append(("key", self._api_key))
 
                 resp = await self._http.get(
                     PSI_API_BASE,

@@ -7,9 +7,9 @@ import pytest
 from db.models import User
 from routers.start import (
     _build_dashboard_text,
+    btn_admin_stub,
     btn_cancel,
     btn_menu,
-    btn_stub,
     cb_help,
     cb_main_menu,
     cb_stub,
@@ -359,10 +359,10 @@ class TestBtnMenu:
 # ---------------------------------------------------------------------------
 
 
-class TestBtnStub:
+class TestBtnAdminStub:
     @pytest.mark.asyncio
     async def test_shows_in_development(self, mock_message: MagicMock) -> None:
-        await btn_stub(mock_message)
+        await btn_admin_stub(mock_message)
         assert "разработке" in mock_message.answer.call_args.args[0].lower()
 
 

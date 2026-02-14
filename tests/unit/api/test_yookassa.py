@@ -23,16 +23,21 @@ def _make_request(
     body: dict | None = None,
     client_ip: str = "185.71.76.1",
     x_forwarded_for: str = "",
+    webhook_result: dict | None = None,
 ) -> web.Request:
     """Create a mock aiohttp request for YooKassa webhook."""
     mock_service = MagicMock()
-    mock_service.process_webhook = AsyncMock()
+    mock_service.process_webhook = AsyncMock(return_value=webhook_result)
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
 
     app = MagicMock()
     app.__getitem__ = MagicMock(side_effect=lambda key: {
         "db": MagicMock(),
         "http_client": MagicMock(),
         "yookassa_service": mock_service,
+        "bot": mock_bot,
     }[key])
 
     headers = {}
@@ -125,3 +130,16 @@ class TestEventRouting:
         service.process_webhook = AsyncMock(side_effect=RuntimeError("boom"))
         resp = await yookassa_webhook(request)
         assert resp.status == 200
+
+    async def test_canceled_sends_notification(self) -> None:
+        """Canceled payment should trigger user notification via bot."""
+        notification = {"user_id": 42, "text": "Платёж отклонён."}
+        request = _make_request(
+            body={"event": "payment.canceled", "object": {"id": "yk_c1"}},
+            x_forwarded_for="185.71.76.1",
+            webhook_result=notification,
+        )
+        resp = await yookassa_webhook(request)
+        assert resp.status == 200
+        bot = request.app["bot"]
+        bot.send_message.assert_called_once_with(42, "Платёж отклонён.")

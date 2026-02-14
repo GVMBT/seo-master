@@ -160,9 +160,11 @@ def category_list_kb(categories: list[Category], project_id: int, page: int = 0)
 
 
 def category_card_kb(category: Category) -> InlineKeyboardBuilder:
-    """Category card action buttons (stubs for Phase 10 features)."""
+    """Category card action buttons."""
     builder = InlineKeyboardBuilder()
-    # Phase 10 stubs
+    # Primary action
+    builder.button(text="Опубликовать", callback_data=f"category:{category.id}:publish")
+    # Content management
     builder.button(text="Ключевые фразы", callback_data=f"category:{category.id}:keywords")
     builder.button(text="Описание", callback_data=f"category:{category.id}:description")
     builder.button(text="Цены", callback_data=f"category:{category.id}:prices")
@@ -170,7 +172,7 @@ def category_card_kb(category: Category) -> InlineKeyboardBuilder:
     builder.button(text="Медиа", callback_data=f"category:{category.id}:media")
     builder.button(text="Настройки изображений", callback_data=f"category:{category.id}:img_settings")
     builder.button(text="Настройки текста", callback_data=f"category:{category.id}:text_settings")
-    # Actions
+    # Destructive + navigation
     builder.button(text="Удалить категорию", callback_data=f"category:{category.id}:delete", style="danger")
     builder.button(
         text="К списку категорий",

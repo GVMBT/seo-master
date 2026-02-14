@@ -3,9 +3,11 @@
 from services.external.dataforseo import DataForSEOClient, KeywordData, KeywordSuggestion
 from services.external.firecrawl import (
     BrandingResult,
+    ExtractResult,
     FirecrawlClient,
     MapResult,
     ScrapeResult,
+    SearchResult,
 )
 from services.external.pagespeed import AuditResult, PageSpeedClient
 from services.external.serper import SerperClient, SerperResult
@@ -15,12 +17,14 @@ __all__ = [
     "AuditResult",
     "BrandingResult",
     "DataForSEOClient",
+    "ExtractResult",
     "FirecrawlClient",
     "KeywordData",
     "KeywordSuggestion",
     "MapResult",
     "PageSpeedClient",
     "ScrapeResult",
+    "SearchResult",
     "SerperClient",
     "SerperResult",
     "TelegraphClient",

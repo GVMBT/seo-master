@@ -30,3 +30,11 @@ class NotifyPayload(BaseModel):
     action: Literal["notify"] = "notify"
     type: Literal["low_balance", "weekly_digest", "reactivation"]
     idempotency_key: str = ""
+
+
+class RenewPayload(BaseModel):
+    """QStash YooKassa subscription renewal payload (API_CONTRACTS.md §2.5)."""
+
+    user_id: int
+    payment_method_id: str
+    package: str

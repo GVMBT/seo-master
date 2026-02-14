@@ -20,11 +20,12 @@ from services.external.dataforseo import (
 # ---------------------------------------------------------------------------
 
 LOGIN = "test@example.com"
-FAKE_SECRET = "fake-pwd-for-test"  # noqa: S105
+FAKE_SECRET = "fake-pwd-for-test"
 
 
 def _make_client() -> DataForSEOClient:
     """Create a DataForSEOClient with a mock transport (not used by stubs)."""
+
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={})
 

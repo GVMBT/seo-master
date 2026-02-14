@@ -18,7 +18,12 @@ from services.ai.reconciliation import ImageUpload, reconcile_images
 # Test data
 # ---------------------------------------------------------------------------
 
-_SAMPLE_IMAGE = b"\x89PNG\r\n\x1a\n"  # minimal PNG-like bytes
+# Minimal valid 1x1 PNG that PIL can open and convert to WebP (E33).
+_SAMPLE_IMAGE = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0"
+    b"\x00\x00\x03\x01\x01\x00\xc9\xfe\x92\xef\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 _SAMPLE_TITLE = "Кухни на заказ в Москве"
 
 _SAMPLE_META = [
@@ -53,7 +58,9 @@ class TestPerfectMatch:
         assert uploads[0].alt_text == "Кухня из дуба"
         assert uploads[0].filename == "kukhnya-iz-duba.webp"
         assert uploads[0].caption == "Кухня из массива дуба"
-        assert uploads[0].data == _SAMPLE_IMAGE
+        # After WebP conversion, data differs from original PNG bytes
+        assert uploads[0].data != _SAMPLE_IMAGE
+        assert len(uploads[0].data) > 0
 
     def test_case1_no_remaining_placeholders(self) -> None:
         images = [_SAMPLE_IMAGE, _SAMPLE_IMAGE, _SAMPLE_IMAGE]
@@ -194,6 +201,15 @@ class TestMixedScenarios:
         assert isinstance(upload.filename, str)
         assert isinstance(upload.alt_text, str)
         assert isinstance(upload.caption, str)
+
+    def test_webp_conversion_fallback_e33(self) -> None:
+        """E33: if PIL cannot convert, fall back to .png extension."""
+        bad_bytes = b"\x89PNG\r\n\x1a\n"  # invalid PNG — PIL can't open
+        _, uploads = reconcile_images("Text", _SAMPLE_META[:1], [bad_bytes], _SAMPLE_TITLE)
+
+        assert len(uploads) == 1
+        assert uploads[0].filename.endswith(".png")
+        assert uploads[0].data == bad_bytes  # original bytes preserved
 
     def test_empty_meta_fields_get_defaults(self) -> None:
         """Meta with empty alt/filename should get defaults."""

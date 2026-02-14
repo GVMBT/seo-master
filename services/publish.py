@@ -23,6 +23,7 @@ from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
 from db.models import PlatformScheduleUpdate, PublicationLogCreate
+from db.repositories.audits import AuditsRepository
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
@@ -105,8 +106,10 @@ class PublishService:
         if not category.keywords:
             log.warning("publish_no_keywords", category_id=payload.category_id, user_id=user_id)
             return PublishOutcome(
-                status="error", reason="no_keywords",
-                user_id=user_id, notify=user.notify_publications,
+                status="error",
+                reason="no_keywords",
+                user_id=user_id,
+                notify=user.notify_publications,
             )
 
         # 4. Load connection
@@ -116,8 +119,10 @@ class PublishService:
         connection = await conn_repo.get_by_id(payload.connection_id)
         if not connection or connection.status != "active":
             return PublishOutcome(
-                status="error", reason="connection_inactive",
-                user_id=user_id, notify=user.notify_publications,
+                status="error",
+                reason="connection_inactive",
+                user_id=user_id,
+                notify=user.notify_publications,
             )
 
         # 5. Rotate keyword (E22/E23: low pool warning)
@@ -241,7 +246,10 @@ class PublishService:
             return PublishOutcome(status="error", reason=str(exc), user_id=user_id)
 
     async def _pause_schedule_insufficient_balance(
-        self, schedule_id: int, user_id: int, required: int,
+        self,
+        schedule_id: int,
+        user_id: int,
+        required: int,
     ) -> None:
         """E01: Disable schedule + delete QStash crons on insufficient balance."""
         log.warning("publish_insufficient_balance", user_id=user_id, required=required)
@@ -271,11 +279,21 @@ class PublishService:
         """
         if content_type == "article":
             return await self._generate_article_parallel(
-                user_id, project_id, category_id, keyword, connection, category,
+                user_id,
+                project_id,
+                category_id,
+                keyword,
+                connection,
+                category,
             )
 
         result, pub = await self._generate_social_post(
-            user_id, project_id, category_id, keyword, connection, category,
+            user_id,
+            project_id,
+            category_id,
+            keyword,
+            connection,
+            category,
         )
         return result, pub, 0
 
@@ -301,8 +319,9 @@ class PublishService:
         publisher = WordPressPublisher(self._http_client)
 
         image_count = (category.image_settings or {}).get("count", 4)
-        image_context = {
+        image_context: dict[str, Any] = {
             "keyword": keyword,
+            "content_type": "article",
             "company_name": "",
             "specialization": "",
         }
@@ -368,28 +387,44 @@ class PublishService:
         # Reconcile images with text (E32-E35)
         from services.ai.reconciliation import reconcile_images
 
-        _processed_md, uploads = reconcile_images(
+        processed_md, uploads = reconcile_images(
             content_markdown=content_markdown,
             images_meta=images_meta,
             generated_images=raw_images,
             title=title,
         )
 
-        # Get content_html (already rendered in article pipeline)
-        content_html = ""
-        if isinstance(text_result.content, dict):
-            content_html = text_result.content.get("content_html", "")
+        # Re-render HTML from reconciled markdown (not pre-reconciliation content_html)
+        # to ensure {{IMAGE_N}} placeholders are removed from final HTML.
+        from services.ai.markdown_renderer import render_markdown
 
-        pub_result = await publisher.publish(PublishRequest(
-            connection=connection,
-            content=content_html,
-            content_type="html",
-            title=title,
-            images=[u.data for u in uploads],
-            images_meta=[{"alt": u.alt_text, "filename": u.filename, "figcaption": u.caption} for u in uploads],
-            category=category,
-            metadata={"seo_description": meta_desc, "focus_keyword": keyword},
-        ))
+        branding_dict: dict[str, str] = {}
+        audits_repo = AuditsRepository(self._db)
+        branding = await audits_repo.get_branding_by_project(project_id)
+        if branding and branding.colors:
+            branding_dict = {
+                "text": branding.colors.get("text", ""),
+                "accent": branding.colors.get("accent", ""),
+            }
+        content_html = render_markdown(processed_md, branding=branding_dict, insert_toc=True)
+
+        # Sanitize re-rendered HTML via nh3 (ARCHITECTURE.md §5.8)
+        from services.ai.articles import sanitize_html
+
+        content_html = sanitize_html(content_html)
+
+        pub_result = await publisher.publish(
+            PublishRequest(
+                connection=connection,
+                content=content_html,
+                content_type="html",
+                title=title,
+                images=[u.data for u in uploads],
+                images_meta=[{"alt": u.alt_text, "filename": u.filename, "figcaption": u.caption} for u in uploads],
+                category=category,
+                metadata={"seo_description": meta_desc, "focus_keyword": keyword},
+            )
+        )
 
         if not pub_result.success:
             raise RuntimeError(f"Publish failed: {pub_result.error}")
@@ -420,16 +455,18 @@ class PublishService:
         publisher = self._get_publisher(connection.platform_type)
         # Social post content is a dict {text, hashtags, pin_title} — extract text
         content = result.content.get("text", "") if isinstance(result.content, dict) else result.content
-        ct: Literal["html", "telegram_html", "plain_text", "pin_text"] = (
-            self._get_content_type(connection.platform_type)  # type: ignore[assignment]
-        )
+        ct: Literal["html", "telegram_html", "plain_text", "pin_text"] = self._get_content_type(
+            connection.platform_type
+        )  # type: ignore[assignment]
 
-        pub_result = await publisher.publish(PublishRequest(
-            connection=connection,
-            content=content,
-            content_type=ct,
-            category=category,
-        ))
+        pub_result = await publisher.publish(
+            PublishRequest(
+                connection=connection,
+                content=content,
+                content_type=ct,
+                category=category,
+            )
+        )
 
         if not pub_result.success:
             raise RuntimeError(f"Publish failed: {pub_result.error}")

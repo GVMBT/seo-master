@@ -14,8 +14,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from io import BytesIO
+
+import structlog
 
 from services.ai.markdown_renderer import slugify
+
+log = structlog.get_logger()
 
 
 @dataclass
@@ -36,6 +41,20 @@ def _make_generic_meta(title: str, index: int) -> dict[str, str]:
         "filename": f"{slug}-{index + 1}",
         "figcaption": "",
     }
+
+
+def _convert_to_webp(image_bytes: bytes) -> tuple[bytes, str]:
+    """Convert image to WebP. Falls back to original format on error (E33)."""
+    try:
+        from PIL import Image  # type: ignore[import-not-found]
+
+        img = Image.open(BytesIO(image_bytes))
+        buf = BytesIO()
+        img.save(buf, format="WEBP", quality=85)
+        return buf.getvalue(), "webp"
+    except Exception:
+        log.warning("webp_conversion_failed_in_reconciliation")
+        return image_bytes, "png"
 
 
 def reconcile_images(
@@ -76,10 +95,13 @@ def reconcile_images(
         if not filename:
             filename = f"{slugify(title)}-{i + 1}"
 
+        # Convert to WebP (E33: fallback to PNG on error)
+        converted_bytes, ext = _convert_to_webp(img_bytes)
+
         uploads.append(
             ImageUpload(
-                data=img_bytes,
-                filename=f"{filename}.webp",
+                data=converted_bytes,
+                filename=f"{filename}.{ext}",
                 alt_text=alt,
                 caption=figcaption,
             )

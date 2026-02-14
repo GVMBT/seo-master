@@ -268,7 +268,7 @@ def _extract_keyword_data(
                 main_difficulty = str(p.get("difficulty", "неизвестно"))
                 break
     else:
-        for kw in category.keywords:
+        for kw in (category.keywords or []):
             if kw.get("phrase", "").lower() == keyword.lower():
                 main_volume = str(kw.get("volume", "неизвестно"))
                 main_difficulty = str(kw.get("difficulty", "неизвестно"))

@@ -784,6 +784,32 @@ class TestGenerateExtraBody:
         assert extra_body["image_config"]["aspect_ratio"] == "16:9"
         assert extra_body["image_config"]["image_size"] == "2K"
 
+    async def test_models_array_excludes_primary(
+        self,
+        orchestrator: AIOrchestrator,
+        mock_openai_client: AsyncMock,
+    ) -> None:
+        """models in extra_body should be fallbacks only, NOT include primary."""
+        mock_openai_client.chat.completions.create.return_value = _make_openai_response(
+            content='{"title": "Test"}',
+            model="anthropic/claude-sonnet-4.5",
+        )
+
+        request = GenerationRequest(task="article", context={}, user_id=123)
+        await orchestrator.generate(request)
+
+        call_kwargs = mock_openai_client.chat.completions.create.call_args
+        primary_model = call_kwargs.kwargs["model"]
+        extra_body = call_kwargs.kwargs["extra_body"]
+        fallback_models = extra_body["models"]
+
+        # Primary should be the first in chain
+        assert primary_model == "anthropic/claude-sonnet-4.5"
+        # Fallbacks should NOT include primary
+        assert primary_model not in fallback_models
+        # Fallbacks should be the rest of the chain
+        assert fallback_models == ["openai/gpt-5.2", "deepseek/deepseek-v3.2"]
+
 
 # ---------------------------------------------------------------------------
 # generate() — rate action mapping

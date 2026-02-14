@@ -2,6 +2,7 @@
 
 from aiogram import Router
 
+from routers.analysis import router as analysis_router
 from routers.categories import router as categories_router
 from routers.payments import router as payments_router
 from routers.platforms import router as platforms_router
@@ -21,6 +22,7 @@ def setup_routers() -> Router:
     root.include_router(categories_router)
     root.include_router(platforms_router)
     root.include_router(publishing_router)
+    root.include_router(analysis_router)
     root.include_router(profile_router)
     root.include_router(settings_router)
     root.include_router(tariffs_router)

@@ -46,7 +46,15 @@ async def yookassa_webhook(request: web.Request) -> web.Response:
     service: YooKassaPaymentService = request.app["yookassa_service"]
 
     try:
-        await service.process_webhook(event, obj)
+        notification = await service.process_webhook(event, obj)
+
+        # Send user notification if service returned one (e.g. canceled payment)
+        if notification and notification.get("user_id"):
+            try:
+                bot = request.app["bot"]
+                await bot.send_message(notification["user_id"], notification["text"])
+            except Exception:
+                log.warning("yookassa_notify_failed", user_id=notification["user_id"])
     except Exception:
         log.exception("yookassa_webhook_processing_error", webhook_event=event)
 

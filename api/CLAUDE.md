@@ -5,7 +5,7 @@
   - Читает Upstash-Signature header, QStash current/next signing keys из settings
   - На успех: request["verified_body"] (parsed JSON), request["qstash_msg_id"]
   - На провал: 401 "Missing signature" / "Invalid signature" / "Malformed body"
-- api/models.py — Pydantic v2 payload models: PublishPayload, CleanupPayload, NotifyPayload
+- api/models.py — Pydantic v2 payload models: PublishPayload, CleanupPayload, NotifyPayload, RenewPayload
 
 ## QStash SDK sync calls
 The QStash Python SDK is synchronous. In api/health.py, calls are wrapped in `asyncio.to_thread()` to avoid
@@ -51,5 +51,11 @@ schedule.list() in health), always use `asyncio.to_thread()`.
 - payment.canceled → статус failed
 - refund.succeeded → списание (баланс может быть отрицательным)
 
-## /api/yookassa/renew (POST) — QStash → автопродление подписок
+## /api/yookassa/renew (POST) — QStash → автопродление подписок (Phase 10: IMPLEMENTED)
+- @require_qstash_signature decorator
+- Идемпотентность: Redis NX lock `yookassa_renew:{user_id}` (TTL 1ч)
+- RenewPayload: user_id, payment_method_id, package
+- Delegates to YooKassaPaymentService.renew_subscription()
+- On failure: notify user (E37), do NOT retry (risk of duplicate payments)
+- Always returns 200
 ## /api/auth/pinterest (GET) — Pinterest OAuth redirect + callback

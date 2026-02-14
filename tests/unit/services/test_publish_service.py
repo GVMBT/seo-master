@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.models import PublishPayload
@@ -15,8 +16,11 @@ from services.publish import PublishService
 
 def _make_user(**overrides) -> User:
     defaults = {
-        "id": 1, "balance": 1000, "notify_publications": True,
-        "notify_balance": True, "notify_news": True,
+        "id": 1,
+        "balance": 1000,
+        "notify_publications": True,
+        "notify_balance": True,
+        "notify_news": True,
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -24,7 +28,9 @@ def _make_user(**overrides) -> User:
 
 def _make_category(**overrides) -> Category:
     defaults = {
-        "id": 10, "project_id": 1, "name": "Test",
+        "id": 10,
+        "project_id": 1,
+        "name": "Test",
         "keywords": [{"cluster_name": "SEO", "cluster_type": "article", "main_phrase": "seo tips"}],
     }
     defaults.update(overrides)
@@ -33,8 +39,11 @@ def _make_category(**overrides) -> Category:
 
 def _make_connection(**overrides) -> PlatformConnection:
     defaults = {
-        "id": 5, "project_id": 1, "platform_type": "wordpress",
-        "status": "active", "credentials": {"url": "https://test.com"},
+        "id": 5,
+        "project_id": 1,
+        "platform_type": "wordpress",
+        "status": "active",
+        "credentials": {"url": "https://test.com"},
         "identifier": "test.com",
     }
     defaults.update(overrides)
@@ -43,8 +52,12 @@ def _make_connection(**overrides) -> PlatformConnection:
 
 def _make_payload(**overrides) -> PublishPayload:
     defaults = {
-        "schedule_id": 1, "category_id": 10, "connection_id": 5,
-        "platform_type": "wordpress", "user_id": 1, "project_id": 1,
+        "schedule_id": 1,
+        "category_id": 10,
+        "connection_id": 5,
+        "platform_type": "wordpress",
+        "user_id": 1,
+        "project_id": 1,
     }
     defaults.update(overrides)
     return PublishPayload(**defaults)
@@ -52,10 +65,18 @@ def _make_payload(**overrides) -> PublishPayload:
 
 def _make_schedule(**overrides) -> PlatformSchedule:
     defaults = {
-        "id": 1, "category_id": 10, "platform_type": "wordpress",
-        "connection_id": 5, "schedule_days": ["mon"], "schedule_times": ["09:00"],
-        "posts_per_day": 1, "enabled": True, "status": "active",
-        "qstash_schedule_ids": ["qs_1"], "last_post_at": None, "created_at": None,
+        "id": 1,
+        "category_id": 10,
+        "platform_type": "wordpress",
+        "connection_id": 5,
+        "schedule_days": ["mon"],
+        "schedule_times": ["09:00"],
+        "posts_per_day": 1,
+        "enabled": True,
+        "status": "active",
+        "qstash_schedule_ids": ["qs_1"],
+        "last_post_at": None,
+        "created_at": None,
     }
     defaults.update(overrides)
     return PlatformSchedule(**defaults)
@@ -91,7 +112,7 @@ def _make_service() -> PublishService:
         ai_orchestrator=MagicMock(),
         image_storage=MagicMock(),
         admin_id=999,
-        scheduler_service=mock_scheduler,
+        scheduler_service=cast(Any, mock_scheduler),
     )
     return svc
 
@@ -105,7 +126,9 @@ def _make_service() -> PublishService:
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")
 async def test_publish_happy_path(
-    mock_conn_cls: MagicMock, mock_cm_cls: MagicMock, mock_settings: MagicMock,
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
 ) -> None:
     """Full pipeline: load -> rotate -> charge -> generate -> log -> ok."""
     svc = _make_service()
@@ -188,7 +211,9 @@ async def test_no_keywords_e17_notify_off() -> None:
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")
 async def test_connection_inactive(
-    mock_conn_cls: MagicMock, mock_cm_cls: MagicMock, mock_settings: MagicMock,
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
 ) -> None:
     """Inactive connection returns error."""
     svc = _make_service()
@@ -210,7 +235,9 @@ async def test_connection_inactive(
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")
 async def test_insufficient_balance_e01_notifies(
-    mock_conn_cls: MagicMock, mock_cm_cls: MagicMock, mock_settings: MagicMock,
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
 ) -> None:
     """E01: Insufficient balance uses notify_publications (not notify_balance)."""
     svc = _make_service()
@@ -237,7 +264,9 @@ async def test_insufficient_balance_e01_notifies(
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")
 async def test_no_available_keyword(
-    mock_conn_cls: MagicMock, mock_cm_cls: MagicMock, mock_settings: MagicMock,
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
 ) -> None:
     """No available keyword after rotation returns error."""
     svc = _make_service()
@@ -259,7 +288,9 @@ async def test_no_available_keyword(
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")
 async def test_insufficient_balance_e01(
-    mock_conn_cls: MagicMock, mock_cm_cls: MagicMock, mock_settings: MagicMock,
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
 ) -> None:
     """E01: Insufficient balance disables schedule + deletes QStash."""
     svc = _make_service()
@@ -291,7 +322,9 @@ async def test_insufficient_balance_e01(
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")
 async def test_low_pool_warning_e22(
-    mock_conn_cls: MagicMock, mock_cm_cls: MagicMock, mock_settings: MagicMock,
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
 ) -> None:
     """E22/E23: Low keyword pool still proceeds but logs warning."""
     svc = _make_service()
@@ -324,7 +357,9 @@ async def test_low_pool_warning_e22(
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")
 async def test_refund_on_generation_error(
-    mock_conn_cls: MagicMock, mock_cm_cls: MagicMock, mock_settings: MagicMock,
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
 ) -> None:
     """Error after charge triggers refund + error log."""
     svc = _make_service()
@@ -358,14 +393,18 @@ async def test_refund_on_generation_error(
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")
 async def test_social_post_content_type(
-    mock_conn_cls: MagicMock, mock_cm_cls: MagicMock, mock_settings: MagicMock,
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
 ) -> None:
     """Non-wordpress platform uses social_post content_type."""
     svc = _make_service()
     svc._users.get_by_id = AsyncMock(return_value=_make_user())
-    svc._categories.get_by_id = AsyncMock(return_value=_make_category(
-        keywords=[{"cluster_name": "SEO", "cluster_type": "social", "main_phrase": "seo tips"}]
-    ))
+    svc._categories.get_by_id = AsyncMock(
+        return_value=_make_category(
+            keywords=[{"cluster_name": "SEO", "cluster_type": "social", "main_phrase": "seo tips"}]
+        )
+    )
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url=""))
     svc._schedules.update = AsyncMock(return_value=None)
@@ -396,6 +435,7 @@ async def test_get_publisher_wordpress() -> None:
     svc = _make_service()
     pub = svc._get_publisher("wordpress")
     from services.publishers.wordpress import WordPressPublisher
+
     assert isinstance(pub, WordPressPublisher)
 
 
@@ -404,6 +444,7 @@ async def test_get_publisher_telegram() -> None:
     svc = _make_service()
     pub = svc._get_publisher("telegram")
     from services.publishers.telegram import TelegramPublisher
+
     assert isinstance(pub, TelegramPublisher)
 
 

@@ -194,6 +194,21 @@ class TestAuditSuccess:
         assert "strategy=desktop" in captured_url
         assert "url=https" in captured_url
 
+    async def test_sends_all_four_categories(self) -> None:
+        captured_url: str | None = None
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal captured_url
+            captured_url = str(request.url)
+            return httpx.Response(200, json=_psi_response())
+
+        client = _make_client(handler)
+        await client.audit("https://example.com")
+
+        assert captured_url is not None
+        for cat in ("PERFORMANCE", "ACCESSIBILITY", "BEST_PRACTICES", "SEO"):
+            assert f"category={cat}" in captured_url
+
     async def test_api_key_included_when_provided(self) -> None:
         captured_url: str | None = None
 

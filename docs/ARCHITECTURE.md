@@ -231,7 +231,7 @@ def create_app() -> web.Application:
 **Верификация подписи QStash** — декоратор `@require_qstash_signature` (реализация в `api/__init__.py`):
 
 ```python
-from upstash_qstash import Receiver
+from qstash import Receiver
 
 receiver = Receiver(
     current_signing_key=os.environ["QSTASH_CURRENT_SIGNING_KEY"],

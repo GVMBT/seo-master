@@ -113,3 +113,12 @@ def mock_http_client() -> MagicMock:
     client.get = AsyncMock()
     client.post = AsyncMock()
     return client
+
+
+@pytest.fixture
+def mock_rate_limiter() -> MagicMock:
+    """Mock RateLimiter — check() passes by default."""
+    rl = MagicMock()
+    rl.check = AsyncMock()
+    rl.check_batch = AsyncMock()
+    return rl

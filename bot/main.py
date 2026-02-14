@@ -9,6 +9,7 @@ import structlog
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import ErrorEvent
 from aiohttp import web
 
@@ -90,6 +91,11 @@ async def _global_error_handler(event: ErrorEvent) -> bool:
 
     FSM is NOT cleared on error (user can retry).
     """
+    # Suppress harmless "message is not modified" errors (double-click on same button)
+    if isinstance(event.exception, TelegramBadRequest) and "is not modified" in str(event.exception):
+        log.debug("message_not_modified", exc_info=False)
+        return True
+
     sentry_sdk.capture_exception(event.exception)
 
     log.error(
@@ -336,10 +342,12 @@ def create_app() -> web.Application:
 
     app.router.add_get("/api/auth/pinterest/callback", pinterest_callback)
 
-    # YooKassa webhook (Phase 8)
+    # YooKassa webhook + renewal (Phase 8 + Phase 10)
+    from api.renew import renew_handler
     from api.yookassa import yookassa_webhook
 
     app.router.add_post("/api/yookassa/webhook", yookassa_webhook)
+    app.router.add_post("/api/yookassa/renew", renew_handler)
 
     # API routes (Phase 9: QStash webhooks, health)
     from api.cleanup import cleanup_handler

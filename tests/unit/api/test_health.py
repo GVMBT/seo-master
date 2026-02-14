@@ -79,10 +79,14 @@ async def test_health_detailed_all_ok(mock_qstash_cls: MagicMock) -> None:
 
     data = json.loads(resp.body)
     assert data["status"] == "ok"
-    assert data["checks"]["database"] == "ok"
-    assert data["checks"]["redis"] == "ok"
-    assert data["checks"]["openrouter"] == "ok"
-    assert data["checks"]["qstash"] == "ok"
+    assert data["checks"]["database"]["status"] == "ok"
+    assert "latency_ms" in data["checks"]["database"]
+    assert data["checks"]["redis"]["status"] == "ok"
+    assert "latency_ms" in data["checks"]["redis"]
+    assert data["checks"]["openrouter"]["status"] == "ok"
+    assert data["checks"]["qstash"]["status"] == "ok"
+    assert "uptime_seconds" in data
+    assert data["version"] == "2.0.0"
 
 
 @patch("qstash.QStash")
@@ -102,7 +106,8 @@ async def test_health_db_down(mock_qstash_cls: MagicMock) -> None:
 
     data = json.loads(resp.body)
     assert data["status"] == "down"
-    assert data["checks"]["database"] == "error"
+    assert data["checks"]["database"]["status"] == "error"
+    assert "latency_ms" in data["checks"]["database"]
 
 
 @patch("qstash.QStash")
@@ -119,7 +124,7 @@ async def test_health_degraded_openrouter(mock_qstash_cls: MagicMock) -> None:
 
     data = json.loads(resp.body)
     assert data["status"] == "degraded"
-    assert data["checks"]["openrouter"] == "error"
+    assert data["checks"]["openrouter"]["status"] == "error"
 
 
 @patch("qstash.QStash")
@@ -134,7 +139,7 @@ async def test_health_degraded_qstash(mock_qstash_cls: MagicMock) -> None:
 
     data = json.loads(resp.body)
     assert data["status"] == "degraded"
-    assert data["checks"]["qstash"] == "error"
+    assert data["checks"]["qstash"]["status"] == "error"
 
 
 async def test_health_empty_token_config() -> None:

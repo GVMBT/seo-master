@@ -270,7 +270,9 @@ class AIOrchestrator:
         # Build extra_body for OpenRouter
         chain = MODEL_CHAINS.get(request.task, [])
         extra_body: dict[str, Any] = {
-            "models": chain,
+            # Fallback models only — primary is in `model` param.
+            # OpenRouter docs: "model" = primary, "models" = fallbacks tried in order.
+            "models": chain[1:],
             "provider": {
                 "data_collection": "deny",
                 "allow_fallbacks": True,
@@ -278,9 +280,10 @@ class AIOrchestrator:
             },
         }
 
-        # Budget tasks use price sorting
+        # Budget tasks use price sorting + max_price guard ($0.05 per call)
         if request.task in BUDGET_TASKS:
             extra_body["provider"]["sort"] = "price"
+            extra_body["max_price"] = {"prompt": 0.03, "completion": 0.02}
 
         # Response healing plugin for structured tasks
         if request.task in HEALING_TASKS:

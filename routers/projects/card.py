@@ -122,7 +122,7 @@ async def cb_project_card(callback: CallbackQuery, user: User, db: SupabaseClien
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data.regexp(r"^project:(\d+):(audit|timezone)$"))
+@router.callback_query(F.data.regexp(r"^project:(\d+):timezone$"))
 async def cb_project_feature_stub(callback: CallbackQuery) -> None:
     """Stub for not-yet-implemented project features."""
     await callback.answer("В разработке.", show_alert=True)

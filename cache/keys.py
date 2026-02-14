@@ -5,6 +5,7 @@ FSM_TTL = 86400  # 24 hours
 PUBLISH_LOCK_TTL = 300  # 5 minutes
 CLEANUP_LOCK_TTL = 300  # 5 minutes
 NOTIFY_LOCK_TTL = 300  # 5 minutes
+RENEW_LOCK_TTL = 3600  # 1 hour (API_CONTRACTS.md §2.5)
 BRANDING_TTL = 604800  # 7 days
 SERPER_TTL = 86400  # 24 hours
 PINTEREST_AUTH_TTL = 1800  # 30 minutes
@@ -51,6 +52,10 @@ class CacheKeys:
     @staticmethod
     def notify_lock(msg_id: str) -> str:
         return f"notify_lock:{msg_id}"
+
+    @staticmethod
+    def renew_lock(user_id: int) -> str:
+        return f"yookassa_renew:{user_id}"
 
     @staticmethod
     def prompt_cache(task_type: str) -> str:

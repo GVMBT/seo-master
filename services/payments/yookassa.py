@@ -146,16 +146,23 @@ class YooKassaPaymentService:
     # Webhook processing
     # ------------------------------------------------------------------
 
-    async def process_webhook(self, event: str, obj: dict) -> None:
-        """Route webhook event to appropriate handler."""
+    async def process_webhook(self, event: str, obj: dict) -> dict[str, Any] | None:
+        """Route webhook event to appropriate handler.
+
+        Returns notification dict ``{"user_id": int, "text": str}`` when the
+        user should be notified (e.g. canceled payment).  Otherwise ``None``.
+        """
         if event == "payment.succeeded":
             await self._process_succeeded(obj)
+            return None
         elif event == "payment.canceled":
-            await self._process_canceled(obj)
+            return await self._process_canceled(obj)
         elif event == "refund.succeeded":
             await self._process_refund(obj)
+            return None
         else:
             log.warning("yookassa_unknown_event", webhook_event=event)
+            return None
 
     async def _process_succeeded(self, obj: dict) -> None:
         """Handle payment.succeeded — credit tokens, record payment."""
@@ -230,22 +237,22 @@ class YooKassaPaymentService:
             new_balance=new_balance,
         )
 
-    async def _process_canceled(self, obj: dict) -> None:
-        """Handle payment.canceled — record failed payment.
+    async def _process_canceled(self, obj: dict) -> dict[str, Any] | None:
+        """Handle payment.canceled — record failed payment, return notification.
 
-        TODO G3: send user notification via Bot (needs Phase 9 notification mechanism).
+        Service returns notification data; the thin api handler sends it.
+        E37: renewal failure keeps subscription active until expires_at.
         """
         yookassa_id = obj["id"]
         metadata = obj.get("metadata", {})
         user_id = int(metadata.get("user_id", 0))
         package_name = metadata.get("package_name", "")
+        is_renewal = metadata.get("is_renewal") == "true"
 
-        # Check if we created a pending payment for this
         existing = await self._payments.get_by_yookassa_payment_id(yookassa_id)
         if existing:
             await self._payments.update(existing.id, PaymentUpdate(status="failed"))
         elif user_id:
-            # Create failed record for tracking (skip if user_id unknown)
             payment = await self._payments.create(PaymentCreate(
                 user_id=user_id,
                 provider="yookassa",
@@ -258,8 +265,31 @@ class YooKassaPaymentService:
             ))
         else:
             log.warning("yookassa_canceled_no_user_id", yookassa_id=yookassa_id)
+            return None
 
-        log.info("yookassa_payment_canceled", user_id=user_id, yookassa_id=yookassa_id)
+        log.info("yookassa_payment_canceled", user_id=user_id, yookassa_id=yookassa_id, is_renewal=is_renewal)
+
+        if not user_id:
+            return None
+
+        if is_renewal:
+            sub = await self._payments.get_active_subscription(user_id)
+            if sub and sub.subscription_expires_at:
+                expires = sub.subscription_expires_at.strftime("%d.%m.%Y")
+                text = (
+                    f"Автопродление подписки не удалось.\n"
+                    f"Подписка действует до {expires}.\n"
+                    f"Обновите способ оплаты или оплатите Stars."
+                )
+            else:
+                text = (
+                    "Автопродление подписки не удалось.\n"
+                    "Обновите способ оплаты или оплатите Stars."
+                )
+        else:
+            text = "Платёж отклонён. Попробуйте снова или выберите другой способ оплаты."
+
+        return {"user_id": user_id, "text": text}
 
     async def _process_refund(self, obj: dict) -> None:
         """Handle refund.succeeded — debit tokens, may go negative."""

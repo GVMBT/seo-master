@@ -31,7 +31,7 @@
 ### 1.3 Верификация подписи QStash
 
 ```python
-from upstash_qstash import Receiver
+from qstash import Receiver
 
 receiver = Receiver(
     current_signing_key=os.environ["QSTASH_CURRENT_SIGNING_KEY"],
@@ -121,7 +121,7 @@ if not acquired:
 Секции 1.1-1.7 описывают что QStash отправляет боту. Эта секция — как бот создаёт расписание.
 
 ```python
-from upstash_qstash import QStash
+from qstash import QStash
 
 qstash = QStash(token=os.environ["QSTASH_TOKEN"])
 
@@ -535,7 +535,7 @@ response = await openai_client.chat.completions.create(
     model=MODEL_CHAINS[task][0],           # Основная модель
     messages=messages,
     extra_body={
-        "models": MODEL_CHAINS[task],      # Цепочка fallback (включая основную)
+        "models": MODEL_CHAINS[task][1:],  # Только fallback-модели (без основной)
     },
     timeout=45,
 )
@@ -596,8 +596,12 @@ response = await openai_client.chat.completions.create(
 | Задача | sort | max_price (prompt/compl) | min_throughput |
 |--------|------|------------------------|----------------|
 | article (streaming) | `throughput` | 5/15 | 50 tok/s |
-| social_post | `price` | 1/1 | — |
-| keywords | `price` | 1/1 | — |
+| social_post | `price` | 0.03/0.02 | — |
+| keywords | `price` | 0.03/0.02 | — |
+| review | `price` | 0.03/0.02 | — |
+| description | `price` | 0.03/0.02 | — |
+| article_outline | `price` | 0.03/0.02 | — |
+| article_critique | `price` | 0.03/0.02 | — |
 | image | — | — | — |
 
 #### Structured Outputs (JSON Schema)
@@ -1761,14 +1765,17 @@ async def generate_article_pipeline(cluster, category, project, connections):
         *[firecrawl.scrape_content(url) for url in top3_urls],
         return_exceptions=True,
     )
-    valid_pages = [p for p in competitor_pages if isinstance(p, ScrapeContentResult)]
+    valid_pages = [p for p in competitor_pages if isinstance(p, ScrapeResult)]
 
     # Stage 3: Анализ конкурентов + dynamic length
     words_min, words_max = calculate_target_length(
         [p.word_count for p in valid_pages], category.text_settings
     )
-    competitor_analysis = summarize_competitors(valid_pages)
-    competitor_gaps = detect_gaps(valid_pages)
+    # summarize_competitors / detect_gaps — программные функции в articles.py:
+    # summarize_competitors: объединяет headings + summary каждого конкурента в текст для промпта
+    # detect_gaps: сравнивает headings конкурентов, находит темы покрытые <2 из 3 конкурентов
+    competitor_analysis = summarize_competitors(valid_pages)  # -> str (для <<competitor_analysis>> в промпте)
+    competitor_gaps = detect_gaps(valid_pages)                # -> str (для <<competitor_gaps>> в промпте)
 
     # Stage 4: Текст и изображения ПАРАЛЛЕЛЬНО
     text_task = asyncio.create_task(
@@ -2161,8 +2168,8 @@ variables:
 
 ### Пример: competitor_analysis_v1.yaml
 
-> **Важно:** F39 (standalone-анализ конкурентов) использует Firecrawl `/extract` (структурированные SEO-данные: мета-теги, заголовки, количество страниц).
-> Пайплайн статей v6 использует Firecrawl `/scrape` (полный markdown для контентного gap-анализа).
+> **Важно:** F39 (standalone-анализ конкурентов) использует `FirecrawlClient.extract_competitor()` → `/v2/extract` с `_COMPETITOR_SCHEMA` (структурированные данные: темы, пробелы, ключевые слова). Стоимость: ~5 кредитов.
+> Пайплайн статей v7 использует `FirecrawlClient.scrape_content()` → `/v2/scrape` (полный markdown для контентного gap-анализа). Стоимость: 1 кредит/страница.
 > Это **два разных сценария** с разными эндпоинтами — не путать.
 
 ```yaml
@@ -2221,7 +2228,7 @@ variables:
     required: false
     default: "не заданы"
   - name: competitor_data
-    source: Firecrawl /extract результат (структурированный JSON для F39 standalone-анализа)
+    source: FirecrawlClient.extract_competitor(url).data — структурированный JSON (_COMPETITOR_SCHEMA)
     required: true
 ```
 
@@ -2527,11 +2534,24 @@ def post_process_image(img: Image.Image) -> Image.Image:
 
 ### 8.1 FirecrawlClient
 
-> **SDK:** `firecrawl-py` v4.14+ (AsyncFirecrawl). Все вызовы через shared `http_client`.
-> **Кредитная система:** 1 кредит = 1 page scrape. `/map` = 1 кредит за 5000 URL.
-> **Branding Format v2** (февр. 2026): улучшенная детекция лого (Wix, Framer, background-image CSS).
+> **API:** Firecrawl v2 (`https://api.firecrawl.dev/v2`). Вызовы через native httpx (не SDK).
+> **Кредитная система:**
+> - `/v2/scrape` = 1 кредит/page
+> - `/v2/map` = 1 кредит за 5000 URL
+> - `/v2/extract` = ~5 кредитов/URL (1 scrape + 4 JSON mode LLM)
+> - `/v2/search` = 2 кредита за 10 результатов + 1 кредит/scraped page
 
 ```python
+@dataclass
+class ScrapeResult:
+    url: str
+    markdown: str          # Full page content as markdown
+    summary: str | None    # AI-сокращённый текст (~3% от оригинала)
+    word_count: int
+    headings: list[dict]   # [{level: 2, text: "..."}] -- H1-H3
+    meta_title: str | None
+    meta_description: str | None
+
 @dataclass
 class BrandingResult:
     colors: dict       # {background, text, accent, primary, secondary}
@@ -2540,73 +2560,83 @@ class BrandingResult:
 
 @dataclass
 class MapResult:
-    """Результат /map — быстрое обнаружение URL (1 кредит за до 5000 URL)."""
     urls: list[dict]   # [{url, title?, description?}]
     total_found: int
 
 @dataclass
 class ExtractResult:
-    data: dict         # Структурированные данные по схеме
-    source_urls: list[str]
+    data: dict         # Структурированные данные по JSON schema
+    source_url: str
 
 @dataclass
-class ScrapeContentResult:
+class SearchResult:
     url: str
-    markdown: str          # Full page content as markdown
-    summary: str | None    # AI-сокращённый текст (~3% от оригинала)
-    word_count: int        # Word count of content
-    headings: list[dict]   # [{level: 2, text: "..."}] -- H1-H3 structure
-    meta_title: str | None
-    meta_description: str | None
+    title: str
+    description: str
+    markdown: str | None   # Scraped content (если запрошен)
 
 class FirecrawlClient:
-    async def scrape_branding(self, url: str) -> BrandingResult: ...
-    async def map_site(self, url: str, limit: int = 5000) -> MapResult: ...
-    async def extract(self, urls: list[str], prompt: str, schema: dict) -> ExtractResult: ...
-    async def scrape_content(self, url: str) -> ScrapeContentResult: ...
+    async def scrape_content(self, url: str) -> ScrapeResult | None: ...
+    async def scrape_branding(self, url: str) -> BrandingResult | None: ...
+    async def map_site(self, url: str, limit: int = 5000) -> MapResult | None: ...
+    async def extract(self, urls: list[str], prompt: str, schema: dict | None) -> ExtractResult | None: ...
+    async def extract_competitor(self, url: str) -> ExtractResult | None: ...
+    async def search(self, query: str, limit: int = 5) -> list[SearchResult]: ...
 ```
 
 #### Методы
 
 **`scrape_content(url)`** — анализ конкурентов при генерации статей.
-Использует Firecrawl `/scrape` с `formats: ['markdown', 'summary']`. Возвращает полный markdown
-контента страницы + AI-summary + структуру заголовков + word count. Стоимость: 1 кредит/страница.
+POST `/v2/scrape` с `formats: ['markdown', 'summary']`, `onlyMainContent: true`.
+Возвращает markdown + AI-summary + структуру заголовков + word count.
+Стоимость: 1 кредит/страница. `summary` бесплатный (входит в кредит).
 
-`summary` формат бесплатный (входит в 1 кредит), даёт сжатый текст ~3% от оригинала.
-Используется для быстрых превью конкурентных статей в Telegram-сообщениях.
-
-Используется в пайплайне генерации статей (article_v6.yaml, шаг 3):
+Используется в пайплайне генерации статей (article_v7, шаг 3):
 ```python
 # Scrape top-3 competitor URLs from Serper results
 competitor_pages = await asyncio.gather(
     *[firecrawl.scrape_content(url) for url in serper_top3_urls],
     return_exceptions=True,
 )
-# Filter successful results, skip failures (graceful degradation)
-valid_pages = [p for p in competitor_pages if isinstance(p, ScrapeContentResult)]
+valid_pages = [p for p in competitor_pages if isinstance(p, ScrapeResult)]
 ```
 
 **`scrape_branding(url)`** — извлечение брендинга при подключении WP-сайта.
-Использует Firecrawl `/scrape` с `formats: ['branding']` (Branding Format v2).
-Стоимость: 1 кредит. Результат → `site_brandings` таблица.
+Использует `/v2/extract` с LLM и JSON schema для реального извлечения CSS-цветов,
+шрифтов и логотипа (вместо hardcoded fallback). LLM анализирует HTML/CSS страницы.
+Стоимость: ~5 кредитов. Результат → `site_brandings` таблица.
+Fallback-значения при частичных данных: `#ffffff` (bg), `#333333` (text), `#0066cc` (accent).
 
 **`map_site(url, limit=5000)`** — быстрое обнаружение внутренних ссылок.
-Использует Firecrawl `/map` (НЕ `/crawl`). Возвращает до 5000 URL за 2-3 секунды.
+POST `/v2/map`. Возвращает до 5000 URL за 2-3 секунды.
 Стоимость: **1 кредит за весь вызов** (не за страницу).
 
-> **Почему `/map` вместо `/crawl`:** Для internal links нам не нужен контент каждой страницы —
-> только URL + title. `/map` в 100 раз дешевле (1 кредит vs 100) и в 10 раз быстрее (2-3с vs 30с+).
-> `/crawl` остаётся для P2 сценариев, где нужен полный контент всех страниц.
+> **Почему `/map` вместо `/crawl`:** Для internal links нужны только URL + title.
+> `/map` в 100 раз дешевле (1 кредит vs 100) и в 10 раз быстрее (2-3с vs 30с+).
 
 ```python
-# При подключении WP-сайта — получить все внутренние ссылки
 result = await firecrawl.map_site(url="https://client-site.ru", limit=5000)
 internal_links = [item["url"] for item in result.urls]
-# Сохранить в platform_connections.credentials.internal_links
 ```
 
-**`extract(urls, prompt, schema)`** — структурированное извлечение для F39 standalone-анализа.
-Стоимость: credit-based (15 tokens = 1 credit).
+**`extract(urls, prompt, schema)`** — структурированное LLM-извлечение данных.
+POST `/v2/extract` с urls, prompt и опциональной JSON schema.
+Firecrawl скрейпит страницу, пропускает через LLM, возвращает структурированный JSON.
+Стоимость: ~5 кредитов/URL. Timeout: 60 секунд.
+
+**`extract_competitor(url)`** — анализ конкурента для F39 (обёртка над `extract`).
+Использует предопределённую `_COMPETITOR_SCHEMA`: company_name, main_topics, content_types,
+unique_selling_points, content_gaps, estimated_pages, primary_keywords.
+Стоимость: ~5 кредитов. Результат для CompetitorAnalysisFSM.
+
+**`search(query, limit=5)`** — поиск + скрейп в одном вызове.
+POST `/v2/search` с `scrapeOptions: {formats: ['markdown'], onlyMainContent: true}`.
+Стоимость: 2 кредита/10 результатов + 1 кредит/scraped page.
+Возвращает `list[SearchResult]` (пустой при ошибке).
+
+> **Serper vs Firecrawl search:** Firecrawl search заменяет Serper + scrape в 1 API-вызов.
+> Но НЕ предоставляет People Also Ask (PAA) — для PAA по-прежнему нужен Serper.
+> В article pipeline используем оба: Serper для PAA + Firecrawl scrape для контента.
 
 **Retry:** 3 попытки, exponential backoff (1s, 3s, 9s). При недоступности → E15.
 
