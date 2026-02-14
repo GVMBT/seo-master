@@ -15,11 +15,14 @@
 | Кеш/Состояние | Upstash Redis | Хранение FSM, лимиты запросов, кеширование |
 | Планировщик | Upstash QStash | Бессерверный cron, гарантированная доставка |
 | AI-модели | OpenRouter (OpenAI-совместимый API) | 300+ моделей, fallbacks, structured outputs, prompt caching, streaming. Контракт: [API_CONTRACTS.md §3.1](API_CONTRACTS.md) |
-| Веб-данные | Firecrawl API | Краулинг, брендинг, извлечение данных |
+| Веб-данные | Firecrawl API | Branding v2, `/map` (URL discovery), `/scrape` (markdown + summary), `/extract` (structured SEO) |
 | Аудит сайтов | Google PageSpeed API | Бесплатный, всесторонний аудит |
 | SEO-данные | DataForSEO API | Реальные объемы поиска, сложность ключевиков |
 | Web Search | Serper API | Актуальные данные Google для промптов статей |
 | Предпросмотр статей | Telegraph API | Бесплатное превью перед публикацией |
+| Markdown → HTML | mistune 3.x + SEORenderer | Детерминистичный HTML: heading IDs, ToC, figure, lazy loading |
+| NLP (русский) | razdel + pymorphy3 | Токенизация, морфология для ContentQualityScorer |
+| Изображения | Pillow (PIL) | WebP-конвертация + post-processing (sharpen, contrast, color) |
 | Платежи | Telegram Stars + ЮKassa | Нативные + карточные платежи |
 | Мониторинг | Sentry + структурированный логгинг | Отслеживание ошибок, производительность |
 
@@ -84,14 +87,20 @@ seo-master-bot-v2/
 │   │   ├── reviews.py              # Генерация отзывов
 │   │   ├── description.py          # Генерация описаний категорий
 │   │   ├── content_validator.py    # Валидация контента перед публикацией (nh3, лимиты)
+│   │   ├── quality_scorer.py       # ContentQualityScorer: программная SEO-оценка (0-100)
+│   │   ├── markdown_renderer.py    # SEORenderer (mistune): Markdown → HTML с heading IDs, ToC
+│   │   ├── niche_detector.py       # detect_niche(): specialization → 15+1 ниш, YMYL
+│   │   ├── anti_hallucination.py   # check_fabricated_data(): regex fact-checking (цены, контакты)
 │   │   ├── rate_limiter.py         # Per-action rate limits (token-bucket в Redis)
 │   │   ├── prompt_engine.py        # Jinja2 рендеринг промптов (<< >> delimiters)
 │   │   └── prompts/                # YAML-шаблоны промптов (seed → DB prompt_versions)
-│   │       ├── article_v6.yaml          # v6: cluster-aware, dynamic length, image SEO
+│   │       ├── article_v7.yaml          # v7: multi-step, Markdown output, anti-slop, niche
+│   │       ├── article_outline_v1.yaml  # v1: outline generation (DeepSeek, multi-step stage 1)
+│   │       ├── article_critique_v1.yaml # v1: conditional critique (DeepSeek, stage 3)
 │   │       ├── social_v3.yaml           # v3: social posts for TG/VK/Pinterest
 │   │       ├── keywords_cluster_v3.yaml  # v3: data-first clustering
 │   │       ├── keywords_v2.yaml         # v2: legacy AI-only (fallback при E03)
-│   │       ├── image_v1.yaml            # v1: image generation prompts
+│   │       ├── image_v1.yaml            # v1: image generation prompts (+ niche styles, negatives)
 │   │       ├── review_v1.yaml           # v1: review generation
 │   │       ├── description_v1.yaml      # v1: category description generation
 │   │       └── competitor_analysis_v1.yaml  # v1: standalone F39 competitor analysis
@@ -102,7 +111,7 @@ seo-master-bot-v2/
 │   │   ├── vk.py                   # VK API
 │   │   └── pinterest.py            # Pinterest API v5
 │   ├── external/
-│   │   ├── firecrawl.py            # Клиент Firecrawl (краулинг, брендинг, извлечение)
+│   │   ├── firecrawl.py            # Клиент Firecrawl (/map, /scrape+summary, branding v2, /extract)
 │   │   ├── pagespeed.py            # Клиент Google PSI
 │   │   ├── dataforseo.py           # Клиент DataForSEO (объемы, сложность ключевиков)
 │   │   ├── serper.py               # Клиент Serper (поиск Google в реальном времени)
@@ -639,7 +648,7 @@ CREATE TABLE prompt_versions (
 | 8 | `token_expenses` | История расходов токенов |
 | 9 | `payments` | Транзакции Stars/ЮKassa |
 | 10 | `site_audits` | Результаты PageSpeed-аудита |
-| 11 | `site_brandings` | Цвета/шрифты сайта (Firecrawl) |
+| 11 | `site_brandings` | Цвета/шрифты/лого сайта (Firecrawl Branding v2) |
 | 12 | `article_previews` | Telegraph-превью (временные, TTL 24ч) |
 | 13 | `prompt_versions` | Версии AI-промптов |
 
@@ -1020,3 +1029,12 @@ def sanitize_html(html: str) -> str:
 pipeline (текст + изображения генерируются одновременно, изображения ждут публикации).
 Path: `{user_id}/{project_id}/{timestamp}.webp`. Cleanup cron (api/cleanup.py) удаляет
 файлы вместе с expired article_previews.
+
+**Signed URLs (рекомендация):** Supabase Storage поддерживает time-limited signed URLs
+(`create_signed_url(path, expires_in=86400)`). Для `content-images` bucket безопаснее
+использовать signed URLs вместо public bucket URLs — они автоматически истекают через 24ч,
+совпадая с TTL превью. Реализация: `ImageStorage.get_url()` возвращает signed URL.
+
+**Image Transformations (P2):** Supabase Storage поддерживает серверный ресайз через URL-параметры
+(`/render/image/sign/.../image.webp?width=400&height=300`). Для Telegram-превью можно
+генерировать thumbnail без дополнительной обработки в Python.

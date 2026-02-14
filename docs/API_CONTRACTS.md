@@ -519,13 +519,15 @@ OpenRouter поддерживает нативные fallbacks через пар
 ```python
 # Конфигурация цепочек по задачам
 MODEL_CHAINS = {
-    "article":            ["anthropic/claude-sonnet-4.5", "openai/gpt-5.2", "deepseek/deepseek-v3.2"],
-    "social_post":        ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
-    "keywords":           ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],       # AI clustering (keywords_cluster.yaml v3), NOT data fetching
-    "review":             ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
-    "description":        ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
-    "competitor_analysis": ["openai/gpt-5.2", "anthropic/claude-sonnet-4.5"],
-    "image":              ["google/gemini-3-pro-image-preview", "google/gemini-2.5-flash-image"],
+    "article":              ["anthropic/claude-sonnet-4.5", "openai/gpt-5.2", "deepseek/deepseek-v3.2"],
+    "article_outline":      ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # Stage 1: outline generation (budget)
+    "article_critique":     ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # Stage 3: conditional critique (budget, only if score < 80)
+    "social_post":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
+    "keywords":             ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # AI clustering (keywords_cluster.yaml v3), NOT data fetching
+    "review":               ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
+    "description":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
+    "competitor_analysis":  ["openai/gpt-5.2", "anthropic/claude-sonnet-4.5"],
+    "image":                ["google/gemini-3-pro-image-preview", "google/gemini-2.5-flash-image"],
 }
 
 # Использование — один запрос, OpenRouter сам делает fallback
@@ -572,6 +574,31 @@ response = await openai_client.chat.completions.create(
 | `"throughput"` | Максимальная скорость tok/sec (для стриминга статей) |
 | `"latency"` | Минимальная задержка первого токена (для UX) |
 | не указан | Балансировка по цене с учётом аптайма (default) |
+
+**Расширенные параметры routing (февр. 2026):**
+```python
+"provider": {
+    "sort": "throughput",
+    "allow_fallbacks": True,
+    "require_parameters": True,
+    "data_collection": "deny",
+    # Новые параметры:
+    "max_price": {"prompt": 5, "completion": 15},     # Потолок цены $/M tokens
+    "preferred_min_throughput": {"p90": 50},            # Мин. 50 tok/sec на P90
+    "preferred_max_latency": {"p90": 3},                # Макс. 3с TTFB на P90
+    "quantizations": ["fp16", "fp8"],                   # Фильтр по точности модели
+    "only": ["Anthropic", "Google"],                    # Whitelist провайдеров
+    "ignore": ["Together"],                             # Blacklist провайдеров
+}
+```
+
+Рекомендуемые пресеты для задач:
+| Задача | sort | max_price (prompt/compl) | min_throughput |
+|--------|------|------------------------|----------------|
+| article (streaming) | `throughput` | 5/15 | 50 tok/s |
+| social_post | `price` | 1/1 | — |
+| keywords | `price` | 1/1 | — |
+| image | — | — | — |
 
 #### Structured Outputs (JSON Schema)
 
@@ -641,12 +668,17 @@ response = await openai_client.chat.completions.create(
 
 OpenRouter пробрасывает prompt caching от провайдеров. Для задач с повторяющимися system-промптами это даёт экономию 50-75%.
 
-| Провайдер | Тип | Настройка | Экономия чтения |
-|-----------|-----|-----------|-----------------|
-| OpenAI | Автоматический | Не нужна (≥1024 tokens в prompt) | 50-75% |
-| Anthropic | Ручной | `cache_control` breakpoint в system message | 75-90% (TTL 5 мин) |
-| DeepSeek | Автоматический | Не нужна | ~50% |
-| Google Gemini | Автоматический | Не нужна (Gemini 2.5+) | ~50% |
+| Провайдер | Тип | Настройка | Цена cached read | Экономия |
+|-----------|-----|-----------|-----------------|----------|
+| Anthropic | Ручной | `cache_control` breakpoint в system message | $0.30/M (vs $3.00/M) | **90%** (TTL 5 мин) |
+| OpenAI | Автоматический | Не нужна (≥1024 tokens в prompt) | 50% от input | 50% |
+| DeepSeek | Автоматический | Не нужна | ~50% от input | ~50% |
+| Google Gemini | Автоматический | Не нужна (Gemini 2.5+) | ~50% от input | ~50% |
+
+**Расчёт экономии для статей (Claude Sonnet 4.5):**
+- System prompt article_v6: ~1500 tokens → при cached read: $0.00045 vs $0.0045 (экономия $0.004/статью)
+- При 500 статей/мес: **$2/мес экономии** на input tokens. Автопубликация одной категории
+  генерирует несколько статей подряд → cache hit гарантирован (TTL 5 мин).
 
 Для Anthropic-моделей (Claude) — добавляем `cache_control` в system message:
 ```python
@@ -709,7 +741,8 @@ class PublishRequest:
     content: str                     # HTML или текст
     content_type: Literal["html", "telegram_html", "plain_text", "pin_text"]
     title: str | None                # Для WordPress
-    images: list[bytes]              # Сгенерированные изображения
+    images: list[bytes]              # Сгенерированные изображения (WebP)
+    images_meta: list[dict]          # [{alt, filename, figcaption}] — из AI response (reconciled)
     category: Category               # Для контекста (keywords, media и т.д.)
     metadata: dict                   # platform-specific (wp_tags, pin_board и т.д.)
 
@@ -747,19 +780,32 @@ class WordPressPublisher(BasePublisher):
         auth = httpx.BasicAuth(creds["login"], creds["app_password"])
 
         async with httpx.AsyncClient(auth=auth, timeout=30) as client:
-            # 1. Загрузить изображения → получить attachment IDs
+            # 1. Загрузить изображения → получить attachment IDs (с SEO-метаданными)
             attachment_ids = []
             for i, img_bytes in enumerate(request.images):
+                meta = request.images_meta[i] if i < len(request.images_meta) else {}
+                filename = f"{meta.get('filename', f'image-{i}')}.webp"
+                alt_text = meta.get("alt", "")
                 resp = await client.post(
                     f"{base}/media",
                     content=img_bytes,
                     headers={
-                        "Content-Type": "image/png",
-                        "Content-Disposition": f'attachment; filename="image_{i}.png"',
+                        "Content-Type": "image/webp",
+                        "Content-Disposition": f'attachment; filename="{filename}"',
                     },
                 )
                 resp.raise_for_status()
-                attachment_ids.append(resp.json()["id"])
+                media_id = resp.json()["id"]
+                # Update alt_text and caption via WP REST
+                if alt_text or meta.get("figcaption"):
+                    await client.post(
+                        f"{base}/media/{media_id}",
+                        json={
+                            "alt_text": alt_text,
+                            "caption": meta.get("figcaption", ""),
+                        },
+                    )
+                attachment_ids.append(media_id)
 
             # 2. Создать пост
             post_data = {
@@ -953,7 +999,9 @@ async def refresh_pinterest_token(connection: PlatformConnection) -> str:
 
 Проверка при каждой публикации: если `expires_at < now() + 1 day` → refresh. При ошибке refresh → E08-аналог для Pinterest.
 
-### 3.7 Валидация контента перед публикацией
+### 3.7 Валидация и оценка качества контента
+
+#### ContentValidator (базовая валидация)
 
 ```python
 @dataclass
@@ -988,6 +1036,9 @@ class ContentValidator:
         if platform == "wordpress" and content_type == "article":
             if not re.search(r"<h1[^>]*>", content):
                 errors.append("Отсутствует H1-заголовок")
+            h1_count = len(re.findall(r"<h1[^>]*>", content))
+            if h1_count > 1:
+                errors.append(f"Несколько H1-заголовков ({h1_count}) — допускается только один")
             if not re.search(r"<p[^>]*>.{50,}", content):
                 errors.append("Нет абзацев связного текста (мин. 50 символов)")
         
@@ -1005,17 +1056,13 @@ class ContentValidator:
             )
 
         for i, meta in enumerate(images_meta):
-            # alt must not be empty
             if not meta.get("alt", "").strip():
                 errors.append(f"images_meta[{i}].alt is empty")
-            # alt should contain keyword (warning, not error)
             elif main_phrase.lower() not in meta["alt"].lower():
                 warnings.append(f"images_meta[{i}].alt does not contain main_phrase")
-            # filename must be valid slug (latin, hyphens, digits)
             fn = meta.get("filename", "")
             if not fn or not re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$", fn):
                 errors.append(f"images_meta[{i}].filename is not a valid slug: '{fn}'")
-            # filename too long (WP limit ~200 chars)
             if len(fn) > 180:
                 errors.append(f"images_meta[{i}].filename too long ({len(fn)} chars)")
 
@@ -1024,10 +1071,136 @@ class ContentValidator:
         )
 ```
 
-При частичном провале (например, H1 есть, но длина 490) — все ошибки собираются в список, валидация не проходит.
+При частичном провале — все ошибки собираются в список, валидация не проходит.
 
 **validate_images_meta** вызывается в Stage 5 (reconciliation) ПЕРЕД сопоставлением с изображениями.
 При ошибках валидации — заменяем невалидные meta на generic (из title).
+
+#### ContentQualityScorer (программная оценка качества)
+
+Запускается на шаге 7 multi-step pipeline (§5). Оценивает **готовый HTML** (после Markdown → HTML).
+Не вызывает AI — полностью программная (~200 строк Python).
+
+**Зависимости:** `razdel` (токенизация русского текста), `pymorphy3` (морфология).
+
+```python
+@dataclass
+class QualityScore:
+    total: int                    # 0-100, взвешенная сумма
+    breakdown: dict[str, int]     # {"seo": 28, "readability": 22, "naturalness": 18, ...}
+    issues: list[str]             # ["keyword_density too high: 4.2%", ...]
+    passed: bool                  # total >= threshold (default 40)
+
+class ContentQualityScorer:
+    """Programmatic SEO quality scorer. No AI calls."""
+
+    def score(
+        self,
+        html: str,
+        main_phrase: str,
+        secondary_phrases: list[str],
+        *,
+        threshold: int = 40,
+    ) -> QualityScore:
+        """Score article quality. Returns 0-100."""
+        scores = {}
+
+        # === SEO metrics (max 30 points) ===
+        scores["seo"] = self._score_seo(html, main_phrase, secondary_phrases)
+
+        # === Readability (max 25 points) ===
+        scores["readability"] = self._score_readability(html)
+
+        # === Structure (max 20 points) ===
+        scores["structure"] = self._score_structure(html)
+
+        # === Naturalness (max 15 points) ===
+        scores["naturalness"] = self._score_naturalness(html)
+
+        # === Content depth (max 10 points) ===
+        scores["depth"] = self._score_depth(html)
+
+        total = sum(scores.values())
+        return QualityScore(
+            total=total,
+            breakdown=scores,
+            issues=self._issues,
+            passed=total >= threshold,
+        )
+```
+
+**Метрики по категориям:**
+
+| Категория | Макс. баллов | Метрики |
+|-----------|:------------:|---------|
+| **SEO** | 30 | keyword_density (1.5-2.5%), keyword_in_h1, keyword_in_first_paragraph, keyword_in_conclusion, secondary_phrases_coverage, meta_description_length (120-160 chars) |
+| **Readability** | 25 | Flesch-Kincaid для русского (формула Оборневой 2006), avg_sentence_length (<20 слов), avg_paragraph_length (<150 слов), vocabulary_diversity (TTR > 0.4) |
+| **Structure** | 20 | h1_count (ровно 1), h2_count (3-6), faq_presence, schema_org_presence, internal_links_count, toc_presence |
+| **Naturalness** | 15 | anti_slop_check (нет запрещённых слов), burstiness (вариативность длин предложений), no_generic_phrases, factual_density (числа/даты/названия в тексте) |
+| **Content depth** | 10 | word_count (в рамках target), unique_entities (NER: бренды, города, цифры), list_presence (ul/ol), image_count |
+
+**Flesch readability для русского (Оборнева 2006):**
+```python
+def flesch_ru(text: str) -> float:
+    """Flesch Reading Ease adapted for Russian (Oborneva 2006)."""
+    import razdel
+    sentences = list(razdel.sentenize(text))
+    words = list(razdel.tokenize(text))
+    syllables = sum(count_syllables_ru(w.text) for w in words)
+    if not sentences or not words:
+        return 0.0
+    asl = len(words) / len(sentences)       # avg sentence length
+    asw = syllables / len(words)            # avg syllables per word
+    return 206.835 - 1.3 * asl - 60.1 * asw
+    # 80-100: очень легко, 60-80: легко, 40-60: средне, <40: сложно
+```
+
+**Quality gates:**
+| Score | Действие | Контекст |
+|:-----:|----------|----------|
+| **80-100** | Auto-publish OK | Высокое качество, проходит без critique |
+| **60-79** | Warning + conditional critique (шаг 8) | DeepSeek critique → Claude rewrite (1 попытка) |
+| **40-59** | Warning, publish allowed | Предупреждение пользователю |
+| **0-39** | Block publish | Ошибка генерации, возврат токенов, повторная генерация |
+
+**SimHash (content uniqueness):**
+```python
+def check_uniqueness(
+    content_hash: int,            # simhash текущей статьи
+    published_hashes: list[int],  # из publication_logs.content_hash
+    threshold: int = 3,           # Hamming distance
+) -> bool:
+    """Returns True if content is unique enough."""
+    for existing in published_hashes:
+        if bin(content_hash ^ existing).count("1") <= threshold:
+            return False  # слишком похоже
+    return True
+```
+Хранение: `publication_logs.content_hash BIGINT` (SimHash, 64 бита).
+При Hamming distance ≤ 3 (>70% совпадение) → warning "Статья похожа на ранее опубликованную."
+
+**Anti-hallucination checks (regex fact-checking):**
+```python
+def check_fabricated_data(html: str, prices_excerpt: str, advantages: str) -> list[str]:
+    """Check for hallucinated prices, contacts, statistics."""
+    issues = []
+    # Цены в тексте должны совпадать с prices_excerpt (±20%)
+    price_re = re.compile(r"(\d[\d\s]*)\s*(?:руб|₽|рублей)", re.IGNORECASE)
+    text_prices = [int(p.replace(" ", "")) for p in price_re.findall(html)]
+    known_prices = extract_prices(prices_excerpt)
+    for p in text_prices:
+        if not any(abs(p - kp) / max(kp, 1) < 0.2 for kp in known_prices):
+            issues.append(f"Возможно выдуманная цена: {p} руб. (нет в прайсе)")
+    # Проверка телефонов (не должны быть в тексте, если не в VERIFIED_DATA)
+    phone_re = re.compile(r"\+?[78]\s*[\(-]?\d{3}[\)-]?\s*\d{3}[\s-]?\d{2}[\s-]?\d{2}")
+    if phone_re.search(html) and not phone_re.search(advantages):
+        issues.append("Найден телефон, не указанный в данных компании")
+    # Фейковая статистика ("по данным исследований", "согласно опросу")
+    fake_stats_re = re.compile(r"(?:по данным|согласно|исследовани[ея]|опрос|статистик)", re.IGNORECASE)
+    if fake_stats_re.search(html):
+        issues.append("Возможна фабрикованная статистика — проверить источник")
+    return issues
+```
 
 ### 3.8 Быстрая публикация (F42) — callback-based flow
 
@@ -1180,84 +1353,207 @@ def sanitize_variables(context: dict) -> dict:
 
 **Обработка отсутствующих переменных:** Если переменная `required: false` и отсутствует → используется `default`. Если `required: true` и отсутствует → ошибка генерации, возврат токенов.
 
-### Пример: article_v6.yaml
+### Пример: article_v7.yaml
 
-> **Ключевые изменения v5→v6:**
-> 1. Вместо одной фразы — **кластер** фраз (main + secondary). H1 = main, H2 содержат secondary.
-> 2. **Динамическая длина**: определяется на основе анализа конкурентов (median × 1.1), а не захардкожена.
-> 3. **Глубокий competitor_analysis**: из Firecrawl `/scrape` (markdown контента), а не `/extract` (только мета-теги).
-> 4. **competitor_gaps**: конкретные темы, которых нет у конкурентов — уникальная ценность статьи.
-> 5. **Anti-cannibalization**: промпт явно требует уникальность через данные компании (цены, кейсы, преимущества).
-> 6. **Image SEO**: `images_meta` в JSON-ответе (alt, filename, figcaption) для Google Images трафика.
+> **Ключевые изменения v6→v7:**
+> 1. **Multi-step pipeline**: Outline (DeepSeek) → Expand (Claude) → Conditional Critique (DeepSeek, если quality_score < 80).
+> 2. **Персона**: "SEO-копирайтер" → "контент-редактор в штате компании" — более конкретная, привязана к бизнесу.
+> 3. **Temperature**: 0.7 → 0.6 для статей — точность важнее креативности.
+> 4. **Markdown вместо HTML**: AI генерирует Markdown → `mistune` 3.x + `SEORenderer` → детерминистичный HTML с auto heading IDs, ToC, figure/figcaption, lazy loading. Устраняет проблему AI-генерируемого невалидного HTML.
+> 5. **XML-теги**: структурированные секции `<SEO_CONSTITUTION>`, `<COMPANY_DATA>`, `<CONTENT_RULES>` в system prompt.
+> 6. **Anti-slop blacklist**: ~20 слов-паразитов AI, явно запрещённых в промпте.
+> 7. **Anti-contamination**: явная инструкция "НЕ копируй структуру конкурентов, используй ТОЛЬКО для gap-анализа".
+> 8. **Self-review checklist**: встроенный чеклист в конце промпта, AI проверяет перед отдачей.
+> 9. **Few-shot examples**: пример хорошего и плохого абзаца для калибровки стиля.
+> 10. **Нишевая специализация**: Jinja2 условные блоки для YMYL-дисклеймеров, тональности, профессиональных терминов.
+>
+> Изменения v5→v6 (сохранены): кластер фраз, динамическая длина, Firecrawl /scrape, competitor_gaps, anti-cannibalization, images_meta.
 
-#### Пайплайн генерации статьи (7 шагов)
+#### Пайплайн генерации статьи (10 шагов, multi-step)
 
 ```
-Шаг 1. Выбор кластера (не одной фразы) → rotation по кластерам (§6)
-Шаг 2. Serper search(main_phrase) → топ-5 URL + People Also Ask + Related
-Шаг 3. Firecrawl /scrape → топ-3 URL → markdown (структура, длина, темы)
-Шаг 4. AI анализирует конкурентов → определяет gaps + динамическую длину:
-        target_words = median(competitor_word_counts) × 1.1, cap [1500, 5000]
-Шаг 5. Сборка промпта: кластер фраз + конкурентный анализ + все данные бизнеса
-Шаг 6. Генерация → валидация (ContentValidator §5)
-Шаг 7. Telegraph-превью → публикация
+Шаг 1.  Выбор кластера (не одной фразы) → rotation по кластерам (§6)
+Шаг 2.  Serper search(main_phrase) → топ-5 URL + People Also Ask + Related
+Шаг 3.  Firecrawl /scrape → топ-3 URL → markdown (структура, длина, темы)
+Шаг 4.  AI анализирует конкурентов → определяет gaps + динамическую длину:
+         target_words = median(competitor_word_counts) × 1.1, cap [1500, 5000]
+Шаг 5.  OUTLINE: DeepSeek генерирует план статьи (article_outline_v1.yaml)
+         → H1, H2×3-6, H3 при необходимости, FAQ вопросы, ключевые тезисы
+Шаг 6.  EXPAND: Claude расширяет outline в полную статью (article_v7.yaml)
+         → Markdown-формат, images_meta, faq_schema
+Шаг 7.  ContentQualityScorer (§3.7): программная оценка качества
+         → score >= 80: pass | score 60-79: warn | score < 40: block
+Шаг 8.  CONDITIONAL CRITIQUE: если score < 80:
+         → DeepSeek анализирует слабые места → Claude переписывает (1 попытка)
+         → ~30% статей, +$0.02 avg cost
+Шаг 9.  Markdown → HTML: mistune + SEORenderer (§5.1)
+         → auto heading IDs, ToC, figure/figcaption, lazy loading, branding CSS
+Шаг 10. Telegraph-превью → публикация (текст и изображения параллельно на шаге 6)
 ```
+
+**Стоимость multi-step:**
+| Шаг | Модель | Стоимость | Примечание |
+|-----|--------|-----------|------------|
+| Outline (шаг 5) | DeepSeek V3.2 | ~$0.01 | Всегда |
+| Expand (шаг 6) | Claude 4.5 Sonnet | ~$0.12 | Всегда |
+| Critique (шаг 8) | DeepSeek V3.2 | ~$0.02 | Только ~30% статей (score < 80) |
+| **Avg total AI** | | **~$0.14** | vs $0.12 one-shot = +17% за значительный прирост качества |
+
+#### 5.1 Markdown → HTML Pipeline (SEORenderer)
+
+AI генерирует **Markdown** (не HTML). Преобразование в HTML — детерминистичное:
+
+```python
+import mistune
+
+class SEORenderer(mistune.HTMLRenderer):
+    """Custom renderer: heading IDs, ToC, figure/figcaption, lazy loading."""
+
+    def __init__(self, branding: dict | None = None) -> None:
+        super().__init__()
+        self._toc: list[dict] = []
+        self._branding = branding or {}
+
+    def heading(self, text: str, level: int, **attrs) -> str:
+        slug = slugify(text)  # кириллица → транслит → lowercase-hyphens
+        self._toc.append({"level": level, "text": text, "id": slug})
+        return f'<h{level} id="{slug}">{text}</h{level}>\n'
+
+    def image(self, alt: str, url: str, title: str | None = None) -> str:
+        # {{IMAGE_N}} placeholders → <figure> с lazy loading
+        return (
+            f'<figure><img src="{url}" alt="{alt}" loading="lazy">'
+            f'<figcaption>{title or alt}</figcaption></figure>\n'
+        )
+
+    def render_toc(self) -> str:
+        """Generate Table of Contents HTML from collected headings."""
+        # Only H2/H3 in ToC
+        items = [h for h in self._toc if h["level"] in (2, 3)]
+        if len(items) < 3:
+            return ""
+        html = '<nav class="toc"><h2>Содержание</h2><ul>'
+        for item in items:
+            indent = ' class="toc-h3"' if item["level"] == 3 else ""
+            html += f'<li{indent}><a href="#{item["id"]}">{item["text"]}</a></li>'
+        html += "</ul></nav>"
+        return html
+```
+
+**Branding CSS** вместо inline-стилей: генерируется `<style>` блок из `site_brandings.colors` (text, accent, background). AI НЕ управляет стилями — только контент.
+
+**Зависимость:** `mistune>=3.1` (PyPI). Добавить в `pyproject.toml`.
 
 ```yaml
 meta:
   task_type: article
-  version: v6
+  version: v7
   model_tier: premium
   max_tokens: 12000
-  temperature: 0.7
+  temperature: 0.6
 
 system: |
-  Ты — SEO-копирайтер. Пиши на <<language>>.
-  Компания: <<company_name>> (<<specialization>>).
-  Город: <<city>>. Преимущества: <<advantages>>.
+  Ты — контент-редактор в штате компании <<company_name>>. Пиши на <<language>>.
 
-  ВАЖНО: Пиши уникально именно под ЭТУ компанию. Упоминай конкретные преимущества,
-  цены из прайса, реальные кейсы и примеры. Статья должна быть неотличима от написанной
-  штатным копирайтером компании. НЕ пиши обобщённо — каждый абзац должен содержать
-  конкретику, привязанную к бизнесу клиента.
+  <SEO_CONSTITUTION>
+  1. Каждый абзац содержит конкретику компании (цены, кейсы, преимущества) — НЕ обобщения.
+  2. H1 содержит главную фразу кластера. H2 содержат дополнительные фразы.
+  3. Keyword density: 1.5-2.5% для главной фразы (не больше).
+  4. Структура: вступление → основные разделы (H2) → FAQ → заключение с CTA.
+  5. Каждый H2 решает конкретную проблему читателя.
+  6. Внутренние ссылки вставляются в контексте (не списком).
+  7. FAQ отвечает на реальные вопросы из поисковых систем.
+  8. Заключение содержит конкретный призыв к действию с упоминанием компании.
+  </SEO_CONSTITUTION>
+
+  <COMPANY_DATA>
+  Компания: <<company_name>> (<<specialization>>).
+  Город: <<city>>.
+  Преимущества: <<advantages>>.
+  <% if niche_type == "medical" %>Ниша YMYL (медицина). Добавь дисклеймер: "Информация носит ознакомительный характер и не заменяет консультацию специалиста."<% endif %>
+  <% if niche_type == "legal" %>Ниша YMYL (право). Добавь дисклеймер: "Статья носит информационный характер. За юридической консультацией обратитесь к специалисту."<% endif %>
+  <% if niche_type == "finance" %>Ниша YMYL (финансы). Добавь дисклеймер: "Данная информация не является инвестиционной рекомендацией."<% endif %>
+  </COMPANY_DATA>
+
+  <CONTENT_RULES>
+  Текущая дата: <<current_date>>.
+  Стиль: <<text_style>>.
+
+  ЗАПРЕЩЁННЫЕ слова (anti-slop): является, осуществлять, данный, широкий ассортимент,
+  индивидуальный подход, высококвалифицированный, в кратчайшие сроки, уникальный опыт,
+  на сегодняшний день, в рамках, комплексный подход, оптимальное решение,
+  динамично развивающийся, занимает лидирующие позиции, воплощает в себе,
+  мы рады предложить, не имеющий аналогов, передовые технологии, инновационный подход,
+  высочайшее качество.
+  Замена: используй конкретные факты вместо штампов.
+
+  Конкурентные данные использовать ТОЛЬКО для gap-анализа. НЕ копировать структуру
+  и формулировки конкурентов. Каждый раздел должен быть уникальным по содержанию.
+  </CONTENT_RULES>
+
+  <SELF_REVIEW>
+  Перед отдачей ответа проверь:
+  - [ ] Главная фраза в H1, первом абзаце и заключении
+  - [ ] Нет слов из ЗАПРЕЩЁННЫХ
+  - [ ] Каждый абзац содержит конкретику компании (не обобщения)
+  - [ ] FAQ основан на реальных вопросах, а не выдуманных
+  - [ ] Все цены и факты взяты из предоставленных данных, а не выдуманы
+  - [ ] Ровно один H1
+  </SELF_REVIEW>
 
 user: |
-  Напиши SEO-статью, нацеленную на кластер поисковых фраз:
+  Напиши SEO-статью в формате Markdown, нацеленную на кластер поисковых фраз:
 
   Главная фраза: "<<main_phrase>>" (<<main_volume>> запросов/мес, сложность: <<main_difficulty>>)
   Дополнительные фразы кластера: <<secondary_phrases>>
   Суммарный потенциал кластера: <<cluster_volume>> запросов/мес
 
-  Анализ конкурентов (топ-3 из выдачи):
+  <COMPETITOR_ANALYSIS>
   <<competitor_analysis>>
+  </COMPETITOR_ANALYSIS>
 
-  Контентные пробелы (темы, которых НЕТ у конкурентов — покрой их для уникальной ценности):
+  <COMPETITOR_GAPS>
   <<competitor_gaps>>
+  </COMPETITOR_GAPS>
+
+  <VERIFIED_DATA>
+  Цены компании (используй ТОЛЬКО эти, не выдумывай): <<prices_excerpt>>
+  Преимущества (используй ТОЛЬКО эти): <<advantages>>
+  Внутренние ссылки: <<internal_links>>
+  </VERIFIED_DATA>
 
   Требования:
   - Объём: <<words_min>>-<<words_max>> слов
-  - Структура: H1 (содержит "<<main_phrase>>"), H2 (3-6, включают дополнительные фразы кластера), H3 (по необходимости), FAQ (3-5 вопросов)
+  - Формат: **Markdown** (НЕ HTML). Заголовки через #, ##, ###. Изображения: ![alt]({{IMAGE_N}} "figcaption")
+  - Структура: # H1 (содержит "<<main_phrase>>"), ## H2 (3-6, включают дополнительные фразы кластера), ### H3 (по необходимости), ## FAQ (3-5 вопросов)
   - Главная фраза "<<main_phrase>>" — в H1, первом абзаце, 2-3 H2, заключении
   - Дополнительные фразы кластера — распредели по H2 и тексту естественно
   - LSI-фразы: <<lsi_keywords>>
-  - Внутренние ссылки (вставь естественно): <<internal_links>>
-  - Упомяни конкретные цены из прайса (не "от X руб", а реальные позиции): <<prices_excerpt>>
-  - Упомяни конкретные преимущества компании (не общие фразы): <<advantages>>
   - FAQ на основе реальных вопросов: <<serper_questions>>
 
-  Image SEO (для каждого изображения в статье):
-  - Придумай SEO-оптимизированный alt-текст (содержит ключевую фразу, описывает изображение)
-  - Придумай slug для имени файла (латиница, через дефис, содержит ключевую фразу)
-  - Придумай подпись под картинкой (<figcaption>)
+  <EXAMPLE_GOOD>
+  "В 2025 году мы установили 340 кухонь из массива дуба в Москве. Средняя стоимость проекта —
+  от 280 000 руб. с фурнитурой Blum. Срок изготовления: 21 рабочий день с момента замера."
+  </EXAMPLE_GOOD>
+
+  <EXAMPLE_BAD>
+  "Мы предлагаем широкий ассортимент кухонь высочайшего качества по оптимальным ценам.
+  Наш индивидуальный подход и высококвалифицированные специалисты гарантируют результат."
+  </EXAMPLE_BAD>
+
+  Image SEO (для каждого из <<images_count>> изображений):
+  - alt-текст (содержит ключевую фразу, описывает изображение)
+  - slug для имени файла (латиница, через дефис, содержит ключевую фразу)
+  - подпись под картинкой (figcaption)
 
   Формат ответа — JSON:
   {
     "title": "...",
     "meta_description": "... (до 160 символов)",
-    "content_html": "... (полный HTML с inline-стилями: цвет текста <<text_color>>, акцент <<accent_color>>). Картинки вставляй как <figure><img src='{{IMAGE_N}}' alt='...'><figcaption>...</figcaption></figure>",
+    "content_markdown": "... (полный Markdown. Картинки: ![alt]({{IMAGE_N}} \"figcaption\"))",
     "faq_schema": [{"question": "...", "answer": "..."}],
     "images_meta": [
-      {"alt": "Описание изображения с ключевой фразой", "filename": "slug-klyuchevaya-fraza", "figcaption": "Подпись под картинкой"},
+      {"alt": "Описание с ключевой фразой", "filename": "slug-klyuchevaya-fraza", "figcaption": "Подпись"},
       ...
     ]
   }
@@ -1316,12 +1612,23 @@ variables:
     source: users.language
     required: true
     default: "ru"
+  - name: text_style
+    source: text_settings.style (тональность текста)
+    required: false
+    default: "Информативный"
+  - name: niche_type
+    source: detect_niche(specialization) → medical|legal|finance|realestate|auto|beauty|food|education|it|travel|sport|children|pets|construction|general
+    required: false
+    default: "general"
+  - name: current_date
+    source: datetime.now().strftime("%B %Y")
+    required: true
   - name: lsi_keywords
     source: DataForSEO related keywords
     required: false
     default: ""
   - name: internal_links
-    source: Firecrawl crawl (platform_connections.credentials.internal_links)
+    source: Firecrawl /map (platform_connections.credentials.internal_links)
     required: false
     default: ""
   - name: prices_excerpt
@@ -1383,7 +1690,7 @@ def calculate_target_length(
 
 **Дополнительные меры:**
 - `serper_questions`: random 3 of N (не первые 3) → разные FAQ-секции у разных пользователей
-- `temperature: 0.7` (не 0) → вариативность формулировок
+- `temperature: 0.6` (не 0) → вариативность, но с акцентом на точность
 - При автопубликации: timestamp-seed для random → воспроизводимость при retry
 
 **P2 (Phase 11+):** Content similarity check — контент-хеш (simhash/minhash) готовых статей
@@ -1417,22 +1724,25 @@ Google Images = 20-30% трафика для коммерческих ниш. Б
 **Формат изображений:** Все изображения конвертируются в WebP перед загрузкой (Pillow/sharp).
 Если исходный формат PNG (Gemini) → `PIL.Image.save(format='webp', quality=85)`.
 
-#### Себестоимость одной статьи (полный пайплайн)
+#### Себестоимость одной статьи (полный пайплайн, multi-step v7)
 
 | Операция | Сервис | Стоимость | Этап |
 |----------|--------|-----------|------|
 | Ключевые фразы (разовая на категорию) | DataForSEO suggestions + related | ~$0.003/запрос × 2 | Создание категории |
 | Обогащение volume/difficulty (разовое) | DataForSEO enrich | ~$0.02/200 фраз | Создание категории |
 | Кластеризация (разовая) | DeepSeek v3.2 | ~$0.001 | Создание категории |
-| Serper search | Serper | ~$0.001 (или бесплатно) | На статью |
+| Serper search | Serper | ~$0.001 | На статью |
 | Скрейпинг конкурентов (3 URL) | Firecrawl /scrape | $0.003 | На статью |
-| Генерация текста | OpenRouter (Claude) | ~$0.08-0.15 | На статью |
+| Outline (шаг 5) | DeepSeek V3.2 | ~$0.01 | На статью |
+| Expand (шаг 6) | Claude 4.5 Sonnet | ~$0.12 | На статью |
+| Conditional critique (шаг 8, ~30%) | DeepSeek V3.2 | ~$0.02 × 30% = $0.006 avg | На статью |
 | Генерация 4 изображений | OpenRouter (Gemini) | ~$0.12-0.20 | На статью |
 | WebP-конвертация + загрузка | CPU + Supabase Storage | ~$0 | На статью |
-| **Итого за статью** | | **~$0.21-0.36** | |
+| **Итого за статью** | | **~$0.26-0.34** (avg ~$0.30) | |
 
-При цене 200 токенов = 200 руб (~$2.20) → маржинальность **80-90%**.
+При цене 320 токенов = 320 руб (~$3.50) → маржинальность **~91%**.
 Ключевые фразы амортизируются по всем статьям категории (разовая операция).
+Multi-step добавляет ~$0.02 к стоимости (+7%), но значительно повышает качество.
 
 #### Параллельный пайплайн (оптимизация latency)
 
@@ -1493,7 +1803,7 @@ Parallel:    Serper(2с) → Firecrawl(5с) → Analysis(1с) → [Text(45с) ||
 
 ```python
 def reconcile_images(
-    text_result: ArticleResult,       # содержит images_meta[], content_html с {{IMAGE_N}}
+    text_result: ArticleResult,       # содержит images_meta[], content_markdown с {{IMAGE_N}}
     images_result: list[bytes | Exception],  # base64-decoded images
 ) -> tuple[str, list[ImageUpload]]:
     """Reconcile AI text images_meta with generated images."""
@@ -1512,7 +1822,8 @@ def reconcile_images(
             "filename": f"{slugify(text_result.title)}-{i+1}",
             "figcaption": "",
         }
-        webp_bytes = convert_to_webp(img_bytes)  # PIL → WebP quality=85
+        processed = post_process_image(Image.open(BytesIO(img_bytes)))  # sharpen + contrast
+        webp_bytes = convert_to_webp(processed)  # PIL → WebP quality=85
         uploads.append(ImageUpload(
             data=webp_bytes,
             filename=f"{m['filename']}.webp",
@@ -1520,14 +1831,14 @@ def reconcile_images(
             caption=m["figcaption"],
         ))
 
-    # Replace {{IMAGE_N}} placeholders in content_html
-    html = text_result.content_html
+    # Replace {{IMAGE_N}} placeholders in content_markdown BEFORE Markdown→HTML
+    markdown = text_result.content_markdown
     for i, upload in enumerate(uploads):
-        html = html.replace(f"{{{{IMAGE_{i+1}}}}}", upload.wp_url or "")
-    # Remove unreplaced placeholders (if images < expected)
-    html = re.sub(r"<figure>[^<]*<img[^>]*src=['\"]?\{\{IMAGE_\d+\}\}['\"]?[^<]*</figure>", "", html)
+        markdown = markdown.replace(f"{{{{IMAGE_{i+1}}}}}", upload.wp_url or "")
+    # Remove unreplaced image placeholders (if images < expected)
+    markdown = re.sub(r"!\[[^\]]*\]\(\{\{IMAGE_\d+\}\}[^)]*\)", "", markdown)
 
-    return html, uploads
+    return markdown, uploads
 ```
 
 **Правила reconciliation:**
@@ -2093,6 +2404,10 @@ user: |
   Изображение должно соответствовать теме и визуальному стилю бренда.
   НЕ добавляй текст на изображение, если не указано иное.
 
+  Negative: watermark, logo, text overlay, blurry, low resolution, distorted faces,
+  extra fingers, deformed hands, stock photo watermark, ugly, oversaturated.
+  <% if niche_style %>Стиль ниши: <<niche_style>>.<% endif %>
+
   <% if image_number %>
   Это изображение <<image_number>> из <<total_images>>.
   Вариация: <<variation_hint>>.
@@ -2151,7 +2466,53 @@ variables:
     source: round-robin из image_settings.angles или ["крупный план", "общий план", "детали", "в контексте использования"]
     required: false
     default: ""
+  - name: niche_style
+    source: NICHE_IMAGE_STYLES[detect_niche(specialization)]
+    required: false
+    default: ""
 ```
+
+#### Niche Image Style Presets
+
+```python
+NICHE_IMAGE_STYLES: dict[str, str] = {
+    "medical":      "Clean clinical setting, soft natural lighting, professional medical environment",
+    "legal":        "Professional office, dark wood tones, formal corporate atmosphere",
+    "finance":      "Modern fintech aesthetic, clean lines, blue and white tones",
+    "realestate":   "Real estate photography, wide angle, HDR style, bright and airy",
+    "food":         "Food photography, shallow depth of field, warm lighting, appetizing presentation",
+    "beauty":       "Beauty/lifestyle photography, soft focus, pastel tones, studio lighting",
+    "construction": "Industrial photography, construction site, yellow/grey tones, wide angle",
+    "auto":         "Automotive photography, dynamic angles, studio lighting, reflective surfaces",
+}
+```
+
+#### Image Post-Processing (Pillow)
+
+После генерации, перед WebP-конвертацией — автоматическое улучшение:
+
+```python
+from PIL import Image, ImageEnhance, ImageFilter
+
+def post_process_image(img: Image.Image) -> Image.Image:
+    """Sharpen + slight contrast/color boost for AI-generated images."""
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=80, threshold=2))
+    img = ImageEnhance.Contrast(img).enhance(1.05)
+    img = ImageEnhance.Color(img).enhance(1.08)
+    return img
+```
+
+#### Smart Aspect Ratio
+
+Вместо одного формата для всех изображений — позиционная логика:
+
+| Позиция | Aspect Ratio | Назначение |
+|---------|:------------:|------------|
+| Image 1 (hero) | 16:9 | Featured image, WP thumbnail |
+| Image 2-3 (content) | 4:3 | Inline content images |
+| Image 4+ (detail) | 1:1 | Product shots, details |
+
+При `image_settings.formats` с одним значением — используется оно для всех.
 
 ### 7.6 Стоимость
 
@@ -2166,6 +2527,10 @@ variables:
 
 ### 8.1 FirecrawlClient
 
+> **SDK:** `firecrawl-py` v4.14+ (AsyncFirecrawl). Все вызовы через shared `http_client`.
+> **Кредитная система:** 1 кредит = 1 page scrape. `/map` = 1 кредит за 5000 URL.
+> **Branding Format v2** (февр. 2026): улучшенная детекция лого (Wix, Framer, background-image CSS).
+
 ```python
 @dataclass
 class BrandingResult:
@@ -2174,9 +2539,10 @@ class BrandingResult:
     logo_url: str | None
 
 @dataclass
-class CrawlResult:
-    pages: list[dict]  # [{url, title, links: [...]}]
-    total_pages: int
+class MapResult:
+    """Результат /map — быстрое обнаружение URL (1 кредит за до 5000 URL)."""
+    urls: list[dict]   # [{url, title?, description?}]
+    total_found: int
 
 @dataclass
 class ExtractResult:
@@ -2187,6 +2553,7 @@ class ExtractResult:
 class ScrapeContentResult:
     url: str
     markdown: str          # Full page content as markdown
+    summary: str | None    # AI-сокращённый текст (~3% от оригинала)
     word_count: int        # Word count of content
     headings: list[dict]   # [{level: 2, text: "..."}] -- H1-H3 structure
     meta_title: str | None
@@ -2194,14 +2561,19 @@ class ScrapeContentResult:
 
 class FirecrawlClient:
     async def scrape_branding(self, url: str) -> BrandingResult: ...
-    async def crawl_site(self, url: str, limit: int = 100) -> CrawlResult: ...
+    async def map_site(self, url: str, limit: int = 5000) -> MapResult: ...
     async def extract(self, urls: list[str], prompt: str, schema: dict) -> ExtractResult: ...
     async def scrape_content(self, url: str) -> ScrapeContentResult: ...
 ```
 
-**`scrape_content`** — новый метод для анализа конкурентов при генерации статей.
-Использует Firecrawl `/scrape` с `formats: ['markdown']`. Возвращает полный markdown
-контента страницы + структуру заголовков + word count. Стоимость: 1 кредит/страница.
+#### Методы
+
+**`scrape_content(url)`** — анализ конкурентов при генерации статей.
+Использует Firecrawl `/scrape` с `formats: ['markdown', 'summary']`. Возвращает полный markdown
+контента страницы + AI-summary + структуру заголовков + word count. Стоимость: 1 кредит/страница.
+
+`summary` формат бесплатный (входит в 1 кредит), даёт сжатый текст ~3% от оригинала.
+Используется для быстрых превью конкурентных статей в Telegram-сообщениях.
 
 Используется в пайплайне генерации статей (article_v6.yaml, шаг 3):
 ```python
@@ -2214,11 +2586,34 @@ competitor_pages = await asyncio.gather(
 valid_pages = [p for p in competitor_pages if isinstance(p, ScrapeContentResult)]
 ```
 
+**`scrape_branding(url)`** — извлечение брендинга при подключении WP-сайта.
+Использует Firecrawl `/scrape` с `formats: ['branding']` (Branding Format v2).
+Стоимость: 1 кредит. Результат → `site_brandings` таблица.
+
+**`map_site(url, limit=5000)`** — быстрое обнаружение внутренних ссылок.
+Использует Firecrawl `/map` (НЕ `/crawl`). Возвращает до 5000 URL за 2-3 секунды.
+Стоимость: **1 кредит за весь вызов** (не за страницу).
+
+> **Почему `/map` вместо `/crawl`:** Для internal links нам не нужен контент каждой страницы —
+> только URL + title. `/map` в 100 раз дешевле (1 кредит vs 100) и в 10 раз быстрее (2-3с vs 30с+).
+> `/crawl` остаётся для P2 сценариев, где нужен полный контент всех страниц.
+
+```python
+# При подключении WP-сайта — получить все внутренние ссылки
+result = await firecrawl.map_site(url="https://client-site.ru", limit=5000)
+internal_links = [item["url"] for item in result.urls]
+# Сохранить в platform_connections.credentials.internal_links
+```
+
+**`extract(urls, prompt, schema)`** — структурированное извлечение для F39 standalone-анализа.
+Стоимость: credit-based (15 tokens = 1 credit).
+
 **Retry:** 3 попытки, exponential backoff (1s, 3s, 9s). При недоступности → E15.
+
 **Кеширование:**
 - `scrape_branding` — Redis 7 дней (ключ: `branding:{project_id}`)
 - `scrape_content` — Redis 24 часа (ключ: `competitor:{md5(url)}`)
-- `crawl_site` — Redis 14 дней (ключ: `crawl:{project_id}`)
+- `map_site` — Redis 14 дней (ключ: `map:{project_id}`)
 
 #### Перекраулинг внутренних ссылок (P2, Phase 11+)
 
@@ -2227,10 +2622,22 @@ valid_pages = [p for p in competitor_pages if isinstance(p, ScrapeContentResult)
 
 ```
 QStash CRON: 0 3 1,15 * * → POST /api/recrawl
-  → Для каждого active WP connection: firecrawl.crawl_site(url, limit=100)
+  → Для каждого active WP connection: firecrawl.map_site(url, limit=5000)
   → Обновить platform_connections.credentials.internal_links
-  → Стоимость: ~100 кредитов = $0.08/сайт/2 недели
+  → Стоимость: 1 кредит = $0.001/сайт/2 недели (было: ~100 кредитов = $0.08)
 ```
+
+#### Будущее: Firecrawl `/agent` (v3+)
+
+> Firecrawl Agent (Spark 1) — автономный поиск и извлечение данных без указания URL.
+> Потенциал для F39 (конкурентный анализ): один запрос вместо ручного пайплайна.
+> Пока в Research Preview, динамическая цена, всегда списывается. Оценить при стабилизации API.
+
+#### Будущее: Firecrawl `changeTracking` (v3, F45)
+
+> Параметр `changeTracking: true` на `/scrape` отслеживает изменения страниц.
+> Готовое решение для F45 (мониторинг контента) — не нужен свой diff-движок.
+> Обходит кеш, стоимость: 1 кредит/проверку.
 
 ### 8.2 DataForSEOClient
 
@@ -2276,9 +2683,22 @@ class DataForSEOClient:
 - `enrich_keywords` (bulk): POST `/v3/keywords_data/google_ads/search_volume/live`
 
 **Batch:** enrich — до 700 фраз за 1 запрос. suggestions/related — 1 seed за запрос.
-**Стоимость:** suggestions = $0.0015/запрос, related = $0.0015/запрос, enrich = $0.0001/фраза.
-Полный пайплайн для 200 фраз: ~$0.025 (~2.3 руб).
+**Стоимость (v3 API, актуально февр. 2026):** suggestions = ~$0.01/запрос, related = ~$0.01/запрос, enrich = $0.0001/фраза.
+Полный пайплайн для 200 фраз: ~$0.04 (~3.6 руб). По-прежнему пренебрежимо.
 **Retry:** 2 попытки. При недоступности → E03 (fallback: AI генерирует фразы "из головы", как в v1).
+
+> **v2 API sunset:** 5 мая 2026. Наши эндпоинты уже на v3 — миграция не нужна.
+
+#### Дополнительные методы (P2, Phase 11+)
+
+**`search_intent(phrases)`** — классификация intent до 1000 фраз за запрос.
+POST `/v3/dataforseo_labs/google/search_intent/live`. Стоимость: $0.001 + $0.0001/фраза.
+Возвращает ground-truth intent (commercial, informational, navigational, transactional).
+Потенциальное улучшение: заменить AI-угадывание intent в keywords_cluster.yaml → данные DataForSEO.
+
+**`keyword_suggestions_for_url(url)`** — ключевики конкурента по URL.
+POST `/v3/dataforseo_labs/google/keywords_for_site/live`. Стоимость: ~$0.01/запрос.
+Полезно для F39 (standalone competitor analysis) — получить семантику конкурента без ручного ввода seed.
 
 #### Rank Tracking (P2, Phase 11+)
 
@@ -2299,7 +2719,7 @@ class DataForSEOClient:
 ```
 
 **API эндпоинт:** POST `/v3/serp/google/organic/live/regular`
-**Стоимость:** $0.002/проверка. 100 статей/неделю = $0.80/мес.
+**Стоимость:** $0.002/проверка (полный SERP). С `stop_crawl_on_match: true` — $0.0006-0.001 (остановка при нахождении домена). 100 статей/неделю = $0.24-0.40/мес.
 **Кеширование:** Redis 24ч (ключ: `rank:{md5(keyword+domain)}`).
 
 **QStash cron:** Раз в неделю проверить все publication_logs со `status='success'` и `rank_checked_at` > 7 дней назад.

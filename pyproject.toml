@@ -10,7 +10,7 @@ dependencies = [
     "pydantic>=2.12",
     "pydantic-settings>=2.12",
     # Database (PostgREST + GoTrue — lightweight, no C++ build tools needed)
-    "postgrest>=2.28",
+    "postgrest>=2.27",
     "gotrue>=2.12",
     # Cache & scheduler
     "upstash-redis>=1.6",

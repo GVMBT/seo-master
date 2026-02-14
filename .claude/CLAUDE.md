@@ -22,7 +22,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
 - docs/FSM_SPEC.md — 16 FSM StatesGroup, валидация, переходы
-- docs/EDGE_CASES.md — E01-E42, обработка ошибок
+- docs/EDGE_CASES.md — E01-E48, обработка ошибок
 - docs/USER_FLOWS_AND_UI_MAP.md — все экраны, навигация
 
 ПЕРЕД реализацией любого модуля — ПРОЧИТАЙ соответствующие секции спеков.
@@ -112,7 +112,7 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 Решено из SEO-ревью (февр. 2026):
 - **Data-first keywords**: DataForSEO keyword_suggestions/related → AI кластеризация → enrich (не "AI фантазирует → DataForSEO валидирует")
 - **Keyword clustering**: categories.keywords хранит кластеры (cluster_name, main_phrase, phrases[]), не плоский список. Ротация по кластерам §6
-- **Competitor scraping**: Firecrawl /scrape (markdown конкурентов) вместо /extract (только мета). article_v5→v6
+- **Competitor scraping**: Firecrawl /scrape с formats: ['markdown', 'summary'] (markdown + AI-summary конкурентов). article_v5→v6
 - **Dynamic article length**: median(конкуренты) × 1.1, cap [1500, 5000]. Fallback на text_settings
 - **Competitor gaps**: AI определяет темы, которых нет у конкурентов → уникальная ценность статьи
 
@@ -135,30 +135,54 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 - **Auto-publish notifications**: Russian templates per EDGE_CASES.md (_REASON_TEMPLATES in api/publish.py); no_keywords/connection_inactive/insufficient_balance all use `notify_publications` preference
 
 Нерешённые вопросы:
-- QStash Pro plan limits (#23) — проверить при росте числа расписаний
+- QStash Pro plan limits (#23) — проверить при росте числа расписаний (schedule limits не документированы публично)
 - F34 streaming edge cases (mid-stream error, rate limits) — не описаны
+- F34 альтернатива: `sendMessageDraft` (Bot API 9.3) — нативный стриминг, но требует forum topics в приватном чате
 
 AI Pipeline Rework (Phase 10):
-- article_v5→v6: кластерные промпты, images_meta, competitor_gaps, dynamic length
+- article_v6→v7: multi-step (outline→expand→critique), Markdown output, anti-slop, niche specialization
+- Multi-step: Outline (DeepSeek) → Expand (Claude) → Conditional Critique (DeepSeek, if score < 80)
+- Markdown → HTML: mistune 3.x + SEORenderer (heading IDs, ToC, figure/figcaption, lazy loading)
+- ContentQualityScorer: программная SEO-оценка (0-100), 5 категорий, quality gates
+- Anti-hallucination: <VERIFIED_DATA> блок + regex fact-checking (цены, контакты, статистика)
+- Niche specialization: detect_niche() → 15+1 ниш, YMYL disclaimers, tone modules
+- Anti-slop blacklist: ~20 запрещённых слов-штампов AI в system prompt
 - keywords_v2→v3: data-first (DataForSEO → AI clustering), кластерный JSON
-- Image SEO: WebP конвертация (Pillow), WP publisher alt_text/filename/caption
-- Parallel pipeline: text + images через asyncio.gather
+- Image improvements: negative prompts, niche style presets, post-processing (Pillow), smart aspect ratio
+- WP publisher: WebP + images_meta (alt_text, filename, caption) через WP REST
+- Parallel pipeline: text + images через asyncio.gather; 96с→56с
 - Rotation: кластерная ротация (cluster_type, total_volume, main_phrase cooldown, <3 warning)
-
-Решено из SEO-ревью #2 (февр. 2026):
-- **Anti-cannibalization**: system prompt требует уникальность через данные компании; serper_questions random 3 of N; temperature 0.7
-- **Image SEO**: images_meta (alt, filename, figcaption) в JSON-ответе AI; WebP конвертация; WP REST alt_text
-- **Rank tracking**: publication_logs +rank_position +rank_checked_at; DataForSEO SERP API $0.002/проверка
-- **Parallel pipeline**: text + images генерируются параллельно (asyncio.gather); 96с→56с
-- **Cost per article**: $0.21-0.36 при цене 200 руб → маржа 80-90%
+- SimHash: content uniqueness check в publication_logs.content_hash (warning при >70% совпадении)
+- NLP зависимости: razdel (токенизация), pymorphy3 (морфология), mistune (Markdown→HTML)
+- Персона: "контент-редактор в штате компании" (не "SEO-копирайтер")
+- Temperature: 0.6 для статей (не 0.7)
+- Cost per article: ~$0.30 avg (multi-step +$0.02), маржа ~91%
 
 P2 (Phase 11+):
 - **SERP intent check**: Serper → если >70% результатов e-commerce → пометить кластер "product_page" (не для статей)
-- **Site re-crawl**: QStash cron раз в 14 дней → Firecrawl crawl → обновить internal_links ($0.08/сайт)
-- **Content similarity**: simhash в publication_logs.content_hash → предупреждение при >70% совпадении
+- **Site re-crawl**: QStash cron раз в 14 дней → Firecrawl /map → обновить internal_links ($0.001/сайт)
 - **Rank tracking cron**: QStash раз в неделю → DataForSEO SERP → обновить rank_position
 
 Решено: A/B тестирование промптов deferred to v3 (колонка ab_test_group убрана из схемы).
+
+Решено — Firecrawl API update (февр. 2026, SDK v4.14+):
+- **Internal links: `/map` вместо `/crawl`**: 1 кредит за 5000 URL (2-3с) vs 100 кредитов за 100 стр (30с+). crawl_site → map_site
+- **Branding v2**: улучшенная детекция лого (Wix, Framer, background-image CSS). Автоматически
+- **`summary` формат**: AI-сжатый текст (~3% от оригинала), бесплатный (входит в 1 кредит scrape). Для превью конкурентов в TG
+- **Firecrawl `/agent` (Spark)**: автономный сбор данных без URL — deferred to v3 (Research Preview, динамическая цена)
+- **Firecrawl `changeTracking`**: мониторинг изменений страниц — deferred to v3 (F45)
+- **DataForSEO**: остаётся (keyword volumes/CPC/difficulty — Firecrawl этого не умеет)
+- **Serper**: остаётся (People Also Ask для антиканнибализации — Firecrawl /search не возвращает PAA)
+- **Firecrawl /search**: потенциальная замена Serper+scrape в одном вызове, но без PAA. Мониторить для v3
+
+Решено — Аудит всех сервисов (февр. 2026):
+- **OpenRouter**: SDK через `openai` с `base_url` — по-прежнему правильный подход. Новое: расширенные provider routing параметры (`max_price`, `preferred_min_throughput`, `quantizations`, `only`/`ignore`). Prompt caching Claude: $0.30/M vs $3.00/M (90% экономии). Seedream 4.5 — потенциальный 3-й image fallback ($0.04/img)
+- **DataForSEO**: v3 API, v2 sunset 5 мая 2026. Ценовая коррекция: suggestions/related ~$0.01/req (не $0.0015). Новое: `search_intent/live` (ground-truth intent), `keyword_suggestions_for_url` (ключевики конкурента), `stop_crawl_on_match` (50% экономии rank tracking)
+- **Serper**: КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ — 2500 free credits одноразово (НЕ ежемесячно). Starter $50/50K кредитов. PAA возвращает objects `{question, snippet, link}` (не plain strings). `/autocomplete` — потенциальный E03 fallback
+- **Upstash Redis**: Redis Functions (server-side Lua) — оптимизация rate limiter. QStash: free tier 1000 msg/day, local dev server, Batch API. Upstash Workflow — deferred to v3
+- **Supabase**: PostgREST v14 (20% быстрее GET). Signed URLs для content-images bucket. Image Transformations для thumbnail. **BUG: postgrest>=2.28 → >=2.27** (исправлен)
+- **Telegram Bot API 9.4 + Aiogram 3.25**: мы на последних версиях. `sendMessageDraft` (9.3) — нативный стриминг (но требует forum topics). `getMyStarBalance` (9.1) — для health check
+- **Все модели OpenRouter актуальны**: Claude Sonnet 4.5, DeepSeek V3.2, GPT-5.2, Gemini image — цены и ID без изменений
 
 ## Agent Teams (slash-команды)
 ```
