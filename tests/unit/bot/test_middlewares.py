@@ -1,5 +1,6 @@
 """Tests for bot/middlewares/ — all 5 middleware classes."""
 
+import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,6 +19,14 @@ def _make_tg_user(user_id: int = 123) -> MagicMock:
     user.first_name = "Test"
     user.last_name = "User"
     return user
+
+
+def _make_mock_redis(cached_user: str | None = None) -> MagicMock:
+    """Create mock Redis that returns cached_user on get()."""
+    redis = MagicMock()
+    redis.get = AsyncMock(return_value=cached_user)
+    redis.set = AsyncMock(return_value=None)
+    return redis
 
 
 def _make_handler() -> AsyncMock:
@@ -71,8 +80,9 @@ class TestAuthMiddleware:
         mw = AuthMiddleware(admin_id=999)
         handler = _make_handler()
         tg_user = _make_tg_user(123)
+        redis = _make_mock_redis()  # cache miss
         db = MagicMock()
-        data: dict = {"event_from_user": tg_user, "db": db}
+        data: dict = {"event_from_user": tg_user, "db": db, "redis": redis}
 
         with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
             repo_cls.return_value.get_or_create = AsyncMock(return_value=(mock_user, False))
@@ -82,10 +92,26 @@ class TestAuthMiddleware:
         assert data["is_admin"] is False
         assert data["is_new_user"] is False
         handler.assert_called_once()
+        redis.set.assert_called_once()  # cached after Supabase hit
+
+    async def test_cache_hit_skips_supabase(self, mock_user: MagicMock) -> None:
+        mw = AuthMiddleware(admin_id=999)
+        handler = _make_handler()
+        cached_json = json.dumps({"id": 123, "balance": 1500, "role": "user"})
+        redis = _make_mock_redis(cached_user=cached_json)
+        data: dict = {"event_from_user": _make_tg_user(123), "db": MagicMock(), "redis": redis}
+
+        with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
+            await mw(handler, _make_event(), data)
+            repo_cls.return_value.get_or_create.assert_not_called()
+
+        assert data["user"].id == 123
+        handler.assert_called_once()
 
     async def test_new_user_flag_set_when_created(self, mock_user: MagicMock) -> None:
         mw = AuthMiddleware(admin_id=999)
-        data: dict = {"event_from_user": _make_tg_user(123), "db": MagicMock()}
+        redis = _make_mock_redis()
+        data: dict = {"event_from_user": _make_tg_user(123), "db": MagicMock(), "redis": redis}
 
         with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
             repo_cls.return_value.get_or_create = AsyncMock(return_value=(mock_user, True))
@@ -96,7 +122,8 @@ class TestAuthMiddleware:
     async def test_get_or_create_called_with_user_data(self, mock_user: MagicMock) -> None:
         mw = AuthMiddleware(admin_id=999)
         tg_user = _make_tg_user(123)
-        data: dict = {"event_from_user": tg_user, "db": MagicMock()}
+        redis = _make_mock_redis()
+        data: dict = {"event_from_user": tg_user, "db": MagicMock(), "redis": redis}
 
         with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
             repo_cls.return_value.get_or_create = AsyncMock(return_value=(mock_user, True))
@@ -106,7 +133,8 @@ class TestAuthMiddleware:
     async def test_admin_flag_set_correctly(self, mock_user: MagicMock) -> None:
         mock_user.id = 999
         mw = AuthMiddleware(admin_id=999)
-        data: dict = {"event_from_user": _make_tg_user(999), "db": MagicMock()}
+        redis = _make_mock_redis()
+        data: dict = {"event_from_user": _make_tg_user(999), "db": MagicMock(), "redis": redis}
 
         with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
             repo_cls.return_value.get_or_create = AsyncMock(return_value=(mock_user, False))

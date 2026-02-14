@@ -1,5 +1,6 @@
 """AuthMiddleware + FSMInactivityMiddleware."""
 
+import json
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -9,8 +10,10 @@ from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message, TelegramObject
 
+from cache.client import RedisClient
+from cache.keys import USER_CACHE_TTL, CacheKeys
 from db.client import SupabaseClient
-from db.models import UserCreate
+from db.models import User, UserCreate
 from db.repositories.users import UsersRepository
 from keyboards.reply import main_menu
 
@@ -20,10 +23,9 @@ log = structlog.get_logger()
 class AuthMiddleware(BaseMiddleware):
     """Inner middleware (#2): auto-registers user, injects data["user"] and data["is_admin"].
 
-    On every incoming event with a user:
-    1. Get or create user in DB (only updates username/name if changed)
-    2. Set data["user"] = User model
-    3. Set data["is_admin"] = bool (user.id == ADMIN_ID)
+    Uses Redis cache (5 min TTL) to avoid Supabase calls on every request.
+    Cache miss → Supabase get_or_create → cache result.
+    last_activity is updated only on cache miss (every ~5 min).
     """
 
     def __init__(self, admin_id: int) -> None:
@@ -39,10 +41,23 @@ class AuthMiddleware(BaseMiddleware):
         if tg_user is None:
             return await handler(event, data)
 
+        redis: RedisClient = data["redis"]
+        cache_key = CacheKeys.user_cache(tg_user.id)
+
+        # Try Redis cache first
+        cached = await redis.get(cache_key)
+        if cached is not None:
+            user = User(**json.loads(cached))
+            data["user"] = user
+            data["is_new_user"] = False
+            data["is_admin"] = user.id == self._admin_id
+            return await handler(event, data)
+
+        # Cache miss — hit Supabase
         db: SupabaseClient = data["db"]
         repo = UsersRepository(db)
 
-        user, _is_new = await repo.get_or_create(
+        user, is_new = await repo.get_or_create(
             UserCreate(
                 id=tg_user.id,
                 username=tg_user.username,
@@ -51,8 +66,15 @@ class AuthMiddleware(BaseMiddleware):
             )
         )
 
+        # Cache user in Redis (5 min TTL)
+        await redis.set(
+            cache_key,
+            json.dumps(user.model_dump(), ensure_ascii=False, default=str),
+            ex=USER_CACHE_TTL,
+        )
+
         data["user"] = user
-        data["is_new_user"] = _is_new
+        data["is_new_user"] = is_new
         data["is_admin"] = user.id == self._admin_id
         return await handler(event, data)
 
