@@ -2,14 +2,16 @@
 
 Executes the full publish pipeline: load data, rotate keyword,
 check balance, charge, generate, validate, publish, log.
+Parallel pipeline: text + images via asyncio.gather (96s→56s).
 Zero dependencies on Telegram/Aiogram.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
 import sentry_sdk
 import structlog
@@ -23,9 +25,12 @@ from db.credential_manager import CredentialManager
 from db.models import PlatformScheduleUpdate, PublicationLogCreate
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
+from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from db.repositories.schedules import SchedulesRepository
 from db.repositories.users import UsersRepository
+from services.ai.orchestrator import AIOrchestrator
+from services.publishers.base import PublishRequest, PublishResult
 from services.storage import ImageStorage
 from services.tokens import TokenService, estimate_article_cost, estimate_social_post_cost
 
@@ -58,7 +63,7 @@ class PublishService:
         db: SupabaseClient,
         redis: RedisClient,
         http_client: httpx.AsyncClient,
-        ai_orchestrator: object,  # Phase 10: AIOrchestrator
+        ai_orchestrator: AIOrchestrator,
         image_storage: ImageStorage,
         admin_id: int,
         scheduler_service: SchedulerService | None = None,
@@ -73,6 +78,7 @@ class PublishService:
         self._tokens = TokenService(db, admin_id)
         self._users = UsersRepository(db)
         self._categories = CategoriesRepository(db)
+        self._projects = ProjectsRepository(db)
         self._publications = PublicationsRepository(db)
         self._schedules = SchedulesRepository(db)
 
@@ -131,15 +137,7 @@ class PublishService:
 
         # 7. Check balance (E01): pause schedule per EDGE_CASES.md
         if not await self._tokens.check_balance(user_id, estimated_cost):
-            log.warning("publish_insufficient_balance", user_id=user_id, required=estimated_cost)
-            # Disable schedule + delete QStash crons (spec: enabled=false)
-            schedule = await self._schedules.get_by_id(payload.schedule_id)
-            if schedule and schedule.qstash_schedule_ids and self._scheduler_service:
-                await self._scheduler_service.delete_qstash_schedules(schedule.qstash_schedule_ids)
-            await self._schedules.update(
-                payload.schedule_id,
-                PlatformScheduleUpdate(status="error", enabled=False, qstash_schedule_ids=[]),
-            )
+            await self._pause_schedule_insufficient_balance(payload.schedule_id, user_id, estimated_cost)
             return PublishOutcome(
                 status="error",
                 reason="insufficient_balance",
@@ -160,17 +158,30 @@ class PublishService:
 
         # 9. Generate + publish (with refund on error)
         try:
-            # TODO Phase 10: actual AI generation + publisher call
-            # For now, log the intent (generation pipeline not yet integrated)
-            log.info(
-                "publish_pipeline_placeholder",
+            gen_result, pub_result, failed_images = await self._generate_and_publish(
                 user_id=user_id,
+                project_id=payload.project_id,
+                category_id=payload.category_id,
                 keyword=keyword,
-                platform=payload.platform_type,
-                connection_id=payload.connection_id,
+                connection=connection,
+                content_type=content_type,
+                category=category,
             )
 
+            # E34: refund for failed images (30 tokens per image)
+            if failed_images > 0:
+                image_refund = failed_images * 30
+                try:
+                    await self._tokens.refund(user_id, image_refund, reason="failed_images")
+                    log.info("image_refund", user_id=user_id, failed=failed_images, refund=image_refund)
+                except Exception:
+                    log.warning("image_refund_failed", user_id=user_id, amount=image_refund)
+
             # Log publication
+            images_count = 0
+            if gen_result and isinstance(gen_result.content, dict):
+                images_count = len(gen_result.content.get("images_meta", []))
+
             pub_log = await self._publications.create_log(
                 PublicationLogCreate(
                     user_id=user_id,
@@ -181,7 +192,9 @@ class PublishService:
                     keyword=keyword,
                     content_type=content_type,
                     tokens_spent=estimated_cost,
+                    images_count=images_count,
                     status="success",
+                    post_url=pub_result.post_url or "",
                 )
             )
 
@@ -226,3 +239,229 @@ class PublishService:
             )
 
             return PublishOutcome(status="error", reason=str(exc), user_id=user_id)
+
+    async def _pause_schedule_insufficient_balance(
+        self, schedule_id: int, user_id: int, required: int,
+    ) -> None:
+        """E01: Disable schedule + delete QStash crons on insufficient balance."""
+        log.warning("publish_insufficient_balance", user_id=user_id, required=required)
+        schedule = await self._schedules.get_by_id(schedule_id)
+        if schedule and schedule.qstash_schedule_ids and self._scheduler_service:
+            await self._scheduler_service.delete_qstash_schedules(schedule.qstash_schedule_ids)
+        await self._schedules.update(
+            schedule_id,
+            PlatformScheduleUpdate(status="error", enabled=False, qstash_schedule_ids=[]),
+        )
+
+    async def _generate_and_publish(
+        self,
+        user_id: int,
+        project_id: int,
+        category_id: int,
+        keyword: str,
+        connection: Any,
+        content_type: str,
+        category: Any,
+    ) -> tuple[Any, PublishResult, int]:
+        """Generate content + images in parallel, then publish.
+
+        For articles: text and images are generated concurrently via asyncio.gather.
+        For social posts: text generated first, then published with optional image.
+        Returns (gen_result, pub_result, failed_image_count).
+        """
+        if content_type == "article":
+            return await self._generate_article_parallel(
+                user_id, project_id, category_id, keyword, connection, category,
+            )
+
+        result, pub = await self._generate_social_post(
+            user_id, project_id, category_id, keyword, connection, category,
+        )
+        return result, pub, 0
+
+    async def _generate_article_parallel(
+        self,
+        user_id: int,
+        project_id: int,
+        category_id: int,
+        keyword: str,
+        connection: Any,
+        category: Any,
+    ) -> tuple[Any, PublishResult, int]:
+        """Parallel article pipeline: text + images via asyncio.gather (96s→56s).
+
+        Returns (gen_result, pub_result, failed_image_count).
+        """
+        from services.ai.articles import ArticleService
+        from services.ai.images import ImageService
+        from services.publishers.wordpress import WordPressPublisher
+
+        article_service = ArticleService(self._ai_orchestrator, self._db)
+        image_service = ImageService(self._ai_orchestrator)
+        publisher = WordPressPublisher(self._http_client)
+
+        image_count = (category.image_settings or {}).get("count", 4)
+        image_context = {
+            "keyword": keyword,
+            "company_name": "",
+            "specialization": "",
+        }
+        # Load project for company info
+        project = await self._projects.get_by_id(project_id)
+        if project:
+            image_context["company_name"] = project.company_name or ""
+            image_context["specialization"] = project.specialization or ""
+
+        # Parallel: text + images
+        text_task = article_service.generate(
+            user_id=user_id,
+            project_id=project_id,
+            category_id=category_id,
+            keyword=keyword,
+        )
+        image_task = image_service.generate(
+            user_id=user_id,
+            context=image_context,
+            count=image_count,
+        )
+
+        text_result, image_result = await asyncio.gather(text_task, image_task, return_exceptions=True)
+
+        if isinstance(text_result, BaseException):
+            raise text_result
+
+        # Extract text content
+        content_markdown = ""
+        title = keyword
+        meta_desc = ""
+        images_meta: list[dict[str, str]] = []
+        if isinstance(text_result.content, dict):
+            content_markdown = text_result.content.get("content_markdown", "")
+            title = text_result.content.get("title", keyword)
+            meta_desc = text_result.content.get("meta_description", "")
+            images_meta = text_result.content.get("images_meta", [])
+
+        # Collect raw images (bytes or exceptions) for reconciliation
+        raw_images: list[bytes | BaseException] = []
+        failed_images = 0
+        if isinstance(image_result, BaseException):
+            log.warning("image_generation_failed", error=str(image_result))
+            failed_images = image_count  # all images failed
+        elif image_result:
+            raw_images = [img.data for img in image_result]
+            failed_images = image_count - len(image_result)
+        else:
+            failed_images = image_count
+
+        # Validate images_meta before reconciliation (API_CONTRACTS.md §3.7)
+        from services.ai.content_validator import ContentValidator
+
+        validator = ContentValidator()
+        meta_validation = validator.validate_images_meta(
+            images_meta=images_meta,
+            expected_count=image_count,
+            main_phrase=keyword,
+        )
+        if meta_validation.warnings:
+            log.warning("images_meta_validation_warnings", warnings=meta_validation.warnings)
+
+        # Reconcile images with text (E32-E35)
+        from services.ai.reconciliation import reconcile_images
+
+        _processed_md, uploads = reconcile_images(
+            content_markdown=content_markdown,
+            images_meta=images_meta,
+            generated_images=raw_images,
+            title=title,
+        )
+
+        # Get content_html (already rendered in article pipeline)
+        content_html = ""
+        if isinstance(text_result.content, dict):
+            content_html = text_result.content.get("content_html", "")
+
+        pub_result = await publisher.publish(PublishRequest(
+            connection=connection,
+            content=content_html,
+            content_type="html",
+            title=title,
+            images=[u.data for u in uploads],
+            images_meta=[{"alt": u.alt_text, "filename": u.filename, "figcaption": u.caption} for u in uploads],
+            category=category,
+            metadata={"seo_description": meta_desc, "focus_keyword": keyword},
+        ))
+
+        if not pub_result.success:
+            raise RuntimeError(f"Publish failed: {pub_result.error}")
+
+        return text_result, pub_result, failed_images
+
+    async def _generate_social_post(
+        self,
+        user_id: int,
+        project_id: int,
+        category_id: int,
+        keyword: str,
+        connection: Any,
+        category: Any,
+    ) -> tuple[Any, PublishResult]:
+        """Generate social post and publish."""
+        from services.ai.social_posts import SocialPostService
+
+        social_service = SocialPostService(self._ai_orchestrator, self._db)
+        result = await social_service.generate(
+            user_id=user_id,
+            project_id=project_id,
+            category_id=category_id,
+            keyword=keyword,
+            platform=connection.platform_type,
+        )
+
+        publisher = self._get_publisher(connection.platform_type)
+        # Social post content is a dict {text, hashtags, pin_title} — extract text
+        content = result.content.get("text", "") if isinstance(result.content, dict) else result.content
+        ct: Literal["html", "telegram_html", "plain_text", "pin_text"] = (
+            self._get_content_type(connection.platform_type)  # type: ignore[assignment]
+        )
+
+        pub_result = await publisher.publish(PublishRequest(
+            connection=connection,
+            content=content,
+            content_type=ct,
+            category=category,
+        ))
+
+        if not pub_result.success:
+            raise RuntimeError(f"Publish failed: {pub_result.error}")
+
+        return result, pub_result
+
+    def _get_publisher(self, platform_type: str) -> Any:
+        """Get publisher instance for platform type."""
+        from services.publishers.pinterest import PinterestPublisher
+        from services.publishers.telegram import TelegramPublisher
+        from services.publishers.vk import VKPublisher
+        from services.publishers.wordpress import WordPressPublisher
+
+        publishers = {
+            "wordpress": lambda: WordPressPublisher(self._http_client),
+            "telegram": lambda: TelegramPublisher(self._http_client),
+            "vk": lambda: VKPublisher(self._http_client),
+            "pinterest": lambda: PinterestPublisher(http_client=self._http_client),
+        }
+        factory = publishers.get(platform_type)
+        if not factory:
+            msg = f"Unknown platform: {platform_type}"
+            raise ValueError(msg)
+        return factory()
+
+    @staticmethod
+    def _get_content_type(platform_type: str) -> str:
+        """Map platform type to content type for PublishRequest."""
+        content_types = {
+            "wordpress": "html",
+            "telegram": "telegram_html",
+            "vk": "plain_text",
+            "pinterest": "pin_text",
+        }
+        return content_types.get(platform_type, "plain_text")

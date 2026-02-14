@@ -61,6 +61,26 @@ def _make_schedule(**overrides) -> PlatformSchedule:
     return PlatformSchedule(**defaults)
 
 
+def _make_gen_result():
+    """Mock GenerationResult for _generate_and_publish."""
+    result = MagicMock()
+    result.content = {
+        "title": "SEO Tips",
+        "meta_description": "Best SEO tips",
+        "content_html": "<h1>SEO Tips</h1><p>Content</p>",
+        "images_meta": [{"alt": "seo", "filename": "seo.webp", "figcaption": "SEO"}],
+    }
+    return result
+
+
+def _make_pub_result():
+    """Mock PublishResult for _generate_and_publish."""
+    result = MagicMock()
+    result.success = True
+    result.post_url = "https://test.com/seo-tips"
+    return result
+
+
 def _make_service() -> PublishService:
     mock_scheduler = MagicMock()
     mock_scheduler.delete_qstash_schedules = AsyncMock()
@@ -97,6 +117,9 @@ async def test_publish_happy_path(
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
 
+    # Mock the actual generation + publish pipeline
+    svc._generate_and_publish = AsyncMock(return_value=(_make_gen_result(), _make_pub_result(), 0))
+
     mock_conn = MagicMock()
     mock_conn.get_by_id = AsyncMock(return_value=_make_connection())
     mock_conn_cls.return_value = mock_conn
@@ -108,6 +131,7 @@ async def test_publish_happy_path(
     assert result.keyword == "seo tips"
     assert result.notify is True
     svc._tokens.charge.assert_called_once()
+    svc._generate_and_publish.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +303,9 @@ async def test_low_pool_warning_e22(
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
 
+    # Mock the actual generation + publish pipeline
+    svc._generate_and_publish = AsyncMock(return_value=(_make_gen_result(), _make_pub_result(), 0))
+
     mock_conn = MagicMock()
     mock_conn.get_by_id = AsyncMock(return_value=_make_connection())
     mock_conn_cls.return_value = mock_conn
@@ -307,8 +334,10 @@ async def test_refund_on_generation_error(
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
     svc._tokens.refund = AsyncMock(return_value=1000)
-    # Make create_log raise on first call (simulating generation failure)
-    svc._publications.create_log = AsyncMock(side_effect=[Exception("gen failed"), MagicMock()])
+    svc._publications.create_log = AsyncMock(return_value=MagicMock())
+
+    # Generation fails
+    svc._generate_and_publish = AsyncMock(side_effect=RuntimeError("AI generation failed"))
 
     mock_conn = MagicMock()
     mock_conn.get_by_id = AsyncMock(return_value=_make_connection())
@@ -343,6 +372,11 @@ async def test_social_post_content_type(
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=960)
 
+    # Mock the actual generation + publish pipeline
+    social_result = MagicMock()
+    social_result.content = "Social post text"
+    svc._generate_and_publish = AsyncMock(return_value=(social_result, _make_pub_result(), 0))
+
     mock_conn = MagicMock()
     mock_conn.get_by_id = AsyncMock(return_value=_make_connection(platform_type="telegram"))
     mock_conn_cls.return_value = mock_conn
@@ -350,3 +384,43 @@ async def test_social_post_content_type(
 
     result = await svc.execute(_make_payload(platform_type="telegram"))
     assert result.status == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Parallel pipeline unit tests
+# ---------------------------------------------------------------------------
+
+
+async def test_get_publisher_wordpress() -> None:
+    """_get_publisher returns WordPressPublisher for wordpress."""
+    svc = _make_service()
+    pub = svc._get_publisher("wordpress")
+    from services.publishers.wordpress import WordPressPublisher
+    assert isinstance(pub, WordPressPublisher)
+
+
+async def test_get_publisher_telegram() -> None:
+    """_get_publisher returns TelegramPublisher for telegram."""
+    svc = _make_service()
+    pub = svc._get_publisher("telegram")
+    from services.publishers.telegram import TelegramPublisher
+    assert isinstance(pub, TelegramPublisher)
+
+
+async def test_get_publisher_unknown_raises() -> None:
+    """_get_publisher raises ValueError for unknown platform."""
+    svc = _make_service()
+    try:
+        svc._get_publisher("unknown")
+        raise AssertionError("Should have raised ValueError")
+    except ValueError as e:
+        assert "unknown" in str(e).lower()
+
+
+async def test_get_content_type_mapping() -> None:
+    """_get_content_type returns correct mappings."""
+    assert PublishService._get_content_type("wordpress") == "html"
+    assert PublishService._get_content_type("telegram") == "telegram_html"
+    assert PublishService._get_content_type("vk") == "plain_text"
+    assert PublishService._get_content_type("pinterest") == "pin_text"
+    assert PublishService._get_content_type("unknown") == "plain_text"

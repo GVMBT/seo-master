@@ -156,7 +156,7 @@ class TestPlaceholderDetection:
 
     def test_example_text_placeholder_detected_error(self) -> None:
         v = _validator()
-        content = "Вот ПРИМЕР ТЕКСТА для публикации"  # noqa: RUF001
+        content = "Вот ПРИМЕР ТЕКСТА для публикации"
         result = v.validate(content, "social_post", "vk")
         assert result.is_valid is False
 

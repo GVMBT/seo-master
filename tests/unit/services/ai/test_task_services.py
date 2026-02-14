@@ -92,6 +92,36 @@ def _make_image_result(**overrides: Any) -> GenerationResult:
     return GenerationResult(**defaults)
 
 
+def _make_v7_article_mocks(keyword: str = "test keyword") -> list[GenerationResult]:
+    """Create outline + article + critique mock results for v7 pipeline."""
+    sentences = " ".join(
+        f"TestCo delivers {keyword} services since {yr}." for yr in range(2018, 2026)
+    )
+    md = (
+        f"# Complete guide to {keyword} for business\n\n"
+        f"TestCo helps with {keyword} for over 10 years. {sentences}\n\n"
+        f"## What is {keyword}\n\n{sentences}\n\n"
+        f"## Benefits of {keyword}\n\n{sentences}\n\n"
+        f"## How to choose {keyword}\n\n{sentences}\n\n"
+        f"## FAQ\n\n**How much?**\n\n15000 rubles.\n\n"
+        f"## Conclusion\n\nTestCo is your partner for {keyword}. {sentences}\n"
+    )
+    outline = {
+        "h1": f"Guide to {keyword}", "sections": [], "faq_questions": [],
+        "target_word_count": 2000, "suggested_images": [],
+    }
+    article = {
+        "title": f"Guide to {keyword}", "meta_description": "Desc",
+        "content_markdown": md, "faq_schema": [], "images_meta": [],
+    }
+    critique = {**article, "changes_summary": "Improved"}
+    return [
+        _make_generation_result(content=outline),
+        _make_generation_result(content=article),
+        _make_generation_result(content=critique),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -122,18 +152,56 @@ class TestArticleService:
         self, mock_orchestrator: AsyncMock, mock_db: MagicMock
     ) -> None:
         """Successful article generation returns GenerationResult with content dict."""
-        # Content must pass ContentValidator: >=500 chars, has <h1>, has <p> with 50+ chars, no placeholders
-        long_paragraph = "A" * 60
-        filler = "X" * 500
+        # v7 pipeline: orchestrator.generate called twice (outline + article)
+        outline_content = {
+            "h1": "SEO Guide for test keyword",
+            "sections": [
+                {"h2": "Section 1", "h3_list": [], "key_points": ["point"], "target_phrases": ["test"]},
+            ],
+            "faq_questions": ["What?"],
+            "target_word_count": 2000,
+            "suggested_images": ["image 1"],
+        }
+        # Build markdown that passes quality scoring (>= 80):
+        # - main phrase in H1, first para, conclusion
+        # - 1500+ words, multiple sections, FAQ, numbers for factual density
+        sentences = " ".join(
+            f"Компания TestCo предоставляет услуги по test keyword с {i} года."
+            for i in range(2018, 2026)
+        )
+        section_text = (
+            f"Наши специалисты выполнили более 500 проектов в Москве. {sentences}\n\n"
+            f"Стоимость услуг начинается от 15000 рублей. Мы работаем с 2015 года."
+        )
+        article_markdown = (
+            f"# Полное руководство по test keyword для бизнеса\n\n"
+            f"Компания TestCo помогает с test keyword уже более 10 лет. {sentences}\n\n"
+            f"## Что такое test keyword\n\n{section_text}\n\n"
+            f"## Преимущества test keyword для бизнеса\n\n{section_text}\n\n"
+            f"## Как выбрать подходящий test keyword\n\n{section_text}\n\n"
+            f"## Стоимость test keyword в 2025 году\n\n{section_text}\n\n"
+            f"## FAQ\n\n"
+            f"**Сколько стоит test keyword?**\n\nСтоимость начинается от 15000 рублей.\n\n"
+            f"**Как долго занимает test keyword?**\n\nСредний срок — 21 день.\n\n"
+            f"## Заключение\n\nКомпания TestCo — ваш надёжный партнёр по test keyword. "
+            f"Звоните нам для бесплатной консультации. {sentences}\n"
+        )
         article_content = {
             "title": "SEO Guide",
             "meta_description": "Best SEO practices",
-            "content_html": f"<h1>Guide</h1><p>{long_paragraph}</p><p>faq section</p>{filler}",
+            "content_markdown": article_markdown,
             "faq_schema": [{"question": "What?", "answer": "This."}],
+            "images_meta": [],
         }
-        mock_orchestrator.generate.return_value = _make_generation_result(
-            content=article_content,
-        )
+        # Critique returns improved version (same content for simplicity)
+        critique_content = {
+            **article_content,
+            "changes_summary": "Improved keyword density",
+        }
+        outline_result = _make_generation_result(content=outline_content)
+        article_result = _make_generation_result(content=article_content)
+        critique_result = _make_generation_result(content=critique_content)
+        mock_orchestrator.generate.side_effect = [outline_result, article_result, critique_result]
 
         with (
             patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
@@ -149,7 +217,6 @@ class TestArticleService:
             from services.ai.articles import ArticleService
 
             svc = ArticleService(orchestrator=mock_orchestrator, db=mock_db)
-            # Inject mocked repos
             svc._projects = MockProjRepo.return_value
             svc._categories = MockCatRepo.return_value
 
@@ -163,7 +230,10 @@ class TestArticleService:
         assert isinstance(result, GenerationResult)
         assert isinstance(result.content, dict)
         assert result.content["title"] == "SEO Guide"
-        mock_orchestrator.generate.assert_awaited_once()
+        assert "content_html" in result.content
+        assert "content_markdown" in result.content
+        # v7 pipeline: outline + article + optional critique
+        assert mock_orchestrator.generate.await_count >= 2
 
     async def test_article_generate_project_not_found_raises_error(
         self, mock_orchestrator: AsyncMock, mock_db: MagicMock
@@ -227,15 +297,23 @@ class TestArticleService:
         self, mock_orchestrator: AsyncMock, mock_db: MagicMock
     ) -> None:
         """Invalid content (too short, no H1) should raise ContentValidationError (H10)."""
+        outline_content = {
+            "h1": "Title", "sections": [], "faq_questions": [],
+            "target_word_count": 2000, "suggested_images": [],
+        }
         article_content = {
             "title": "Short",
             "meta_description": "Desc",
-            "content_html": "<p>Too short.</p>",
+            "content_markdown": "Too short.",
             "faq_schema": [],
+            "images_meta": [],
         }
-        mock_orchestrator.generate.return_value = _make_generation_result(
-            content=article_content,
-        )
+        # Provide 3 mocks (outline + article + critique attempt)
+        mock_orchestrator.generate.side_effect = [
+            _make_generation_result(content=outline_content),
+            _make_generation_result(content=article_content),
+            _make_generation_result(content=article_content),
+        ]
 
         with (
             patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
@@ -254,7 +332,7 @@ class TestArticleService:
             svc._projects = MockProjRepo.return_value
             svc._categories = MockCatRepo.return_value
 
-            with pytest.raises(ContentValidationError, match="validation failed"):
+            with pytest.raises(ContentValidationError, match=r"quality too low|validation failed"):
                 await svc.generate(
                     user_id=123,
                     project_id=1,
@@ -262,82 +340,36 @@ class TestArticleService:
                     keyword="test keyword",
                 )
 
-    async def test_article_generate_html_sanitized_with_nh3(
-        self, mock_orchestrator: AsyncMock, mock_db: MagicMock
-    ) -> None:
-        """HTML content_html must be sanitized via nh3 (ARCHITECTURE.md 5.8)."""
-        # Build content that passes validation: >=500 chars, has <h1>, has <p> with 50+ chars
-        filler = "B" * 500
-        malicious_html = (
-            f'<h1>Title</h1><p>{"Good content paragraph with enough text to pass validation check" }</p>'
+    def test_sanitize_html_strips_xss(self) -> None:
+        """sanitize_html must strip script tags and javascript: hrefs (ARCHITECTURE.md 5.8)."""
+        from services.ai.articles import sanitize_html
+
+        malicious = (
+            '<h1>Title</h1>'
+            '<p>Good content paragraph with enough text to pass validation check</p>'
             '<script>alert("xss")</script>'
-            f'<a href="javascript:void(0)">link</a>{filler}'
+            '<a href="javascript:void(0)">link</a>'
+            '<p>More content</p>'
         )
-        article_content = {
-            "title": "Test",
-            "meta_description": "Desc",
-            "content_html": malicious_html,
-            "faq_schema": [],
-        }
-        mock_orchestrator.generate.return_value = _make_generation_result(
-            content=article_content,
-        )
-
-        with (
-            patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
-            patch("services.ai.articles.CategoriesRepository") as MockCatRepo,
-        ):
-            MockProjRepo.return_value.get_by_id = AsyncMock(
-                return_value=_make_project(),
-            )
-            MockCatRepo.return_value.get_by_id = AsyncMock(
-                return_value=_make_category(),
-            )
-
-            from services.ai.articles import ArticleService
-
-            svc = ArticleService(orchestrator=mock_orchestrator, db=mock_db)
-            svc._projects = MockProjRepo.return_value
-            svc._categories = MockCatRepo.return_value
-
-            result = await svc.generate(
-                user_id=123,
-                project_id=1,
-                category_id=1,
-                keyword="test keyword",
-            )
-
-        html = result.content["content_html"]  # type: ignore[index]
-        # nh3 should strip dangerous attributes like javascript: hrefs
-        assert "javascript:" not in html
+        html = sanitize_html(malicious)
+        assert "<script>" not in html
+        assert 'href="javascript:' not in html
+        # Safe content preserved
+        assert "<h1>Title</h1>" in html
+        assert "Good content" in html
 
     async def test_article_generate_passes_branding_colors(
         self, mock_orchestrator: AsyncMock, mock_db: MagicMock
     ) -> None:
         """Branding colors should be included in the generation context."""
-        filler = "C" * 500
-        article_content = {
-            "title": "Test",
-            "meta_description": "Desc",
-            "content_html": (
-                f"<h1>Title</h1><p>Content paragraph with enough text here for checks.</p>{filler}"
-            ),
-            "faq_schema": [],
-        }
-        mock_orchestrator.generate.return_value = _make_generation_result(
-            content=article_content,
-        )
+        mock_orchestrator.generate.side_effect = _make_v7_article_mocks()
 
         with (
             patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
             patch("services.ai.articles.CategoriesRepository") as MockCatRepo,
         ):
-            MockProjRepo.return_value.get_by_id = AsyncMock(
-                return_value=_make_project(),
-            )
-            MockCatRepo.return_value.get_by_id = AsyncMock(
-                return_value=_make_category(),
-            )
+            MockProjRepo.return_value.get_by_id = AsyncMock(return_value=_make_project())
+            MockCatRepo.return_value.get_by_id = AsyncMock(return_value=_make_category())
 
             from services.ai.articles import ArticleService
 
@@ -346,16 +378,13 @@ class TestArticleService:
             svc._categories = MockCatRepo.return_value
 
             await svc.generate(
-                user_id=123,
-                project_id=1,
-                category_id=1,
-                keyword="test keyword",
+                user_id=123, project_id=1, category_id=1, keyword="test keyword",
                 branding={"colors": {"text": "#111111", "accent": "#FF0000"}},
             )
 
-        # Verify the context passed to orchestrator contains branding colors
-        call_args = mock_orchestrator.generate.call_args
-        request = call_args.args[0]
+        # Article is the 2nd generate call (index 1)
+        article_call = mock_orchestrator.generate.call_args_list[1]
+        request = article_call.args[0]
         assert request.context["text_color"] == "#111111"
         assert request.context["accent_color"] == "#FF0000"
 
@@ -363,29 +392,14 @@ class TestArticleService:
         self, mock_orchestrator: AsyncMock, mock_db: MagicMock
     ) -> None:
         """Keyword volume and difficulty should be extracted from category keywords."""
-        filler = "D" * 500
-        article_content = {
-            "title": "Test",
-            "meta_description": "Desc",
-            "content_html": (
-                f"<h1>Title</h1><p>Content paragraph for test long enough for validation.</p>{filler}"
-            ),
-            "faq_schema": [],
-        }
-        mock_orchestrator.generate.return_value = _make_generation_result(
-            content=article_content,
-        )
+        mock_orchestrator.generate.side_effect = _make_v7_article_mocks()
 
         with (
             patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
             patch("services.ai.articles.CategoriesRepository") as MockCatRepo,
         ):
-            MockProjRepo.return_value.get_by_id = AsyncMock(
-                return_value=_make_project(),
-            )
-            MockCatRepo.return_value.get_by_id = AsyncMock(
-                return_value=_make_category(),
-            )
+            MockProjRepo.return_value.get_by_id = AsyncMock(return_value=_make_project())
+            MockCatRepo.return_value.get_by_id = AsyncMock(return_value=_make_category())
 
             from services.ai.articles import ArticleService
 
@@ -394,16 +408,14 @@ class TestArticleService:
             svc._categories = MockCatRepo.return_value
 
             await svc.generate(
-                user_id=123,
-                project_id=1,
-                category_id=1,
-                keyword="test keyword",
+                user_id=123, project_id=1, category_id=1, keyword="test keyword",
             )
 
-        call_args = mock_orchestrator.generate.call_args
-        request = call_args.args[0]
-        assert request.context["volume"] == "100"
-        assert request.context["difficulty"] == "30"
+        # Article is the 2nd generate call (index 1)
+        article_call = mock_orchestrator.generate.call_args_list[1]
+        request = article_call.args[0]
+        assert request.context["main_volume"] == "100"
+        assert request.context["main_difficulty"] == "30"
 
 
 # ---------------------------------------------------------------------------

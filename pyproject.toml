@@ -28,6 +28,11 @@ dependencies = [
     "nh3>=0.2",
     # Image processing (WebP conversion, ARCHITECTURE.md §5.9)
     "pillow>=11.0",
+    # Markdown → HTML (article v7 pipeline)
+    "mistune>=3.1",
+    # Russian NLP (quality scorer)
+    "razdel>=0.5",
+    "pymorphy3>=2.0",
     # Templates
     "jinja2>=3.1",
     "pyyaml>=6.0",
@@ -58,9 +63,16 @@ select = ["E", "F", "I", "S", "C901", "B", "UP", "SIM", "RUF"]
 max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105", "S106"]
+"tests/**/*.py" = ["S101", "S105", "S106", "RUF001", "RUF002", "RUF003"]
 "routers/**/*.py" = ["RUF001", "RUF002"]
 "keyboards/**/*.py" = ["RUF001", "RUF002"]
+"services/ai/quality_scorer.py" = ["RUF001"]
+"services/ai/niche_detector.py" = ["RUF001"]
+"services/ai/anti_hallucination.py" = ["RUF001"]
+"services/ai/markdown_renderer.py" = ["RUF001"]
+"services/ai/reconciliation.py" = ["RUF001"]
+"services/ai/articles.py" = ["RUF001"]
+"services/ai/prompts/*.yaml" = ["RUF001"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

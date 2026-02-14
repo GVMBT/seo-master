@@ -20,6 +20,7 @@ class PublishRequest:
     content: str
     content_type: Literal["html", "telegram_html", "plain_text", "pin_text"]
     images: list[bytes] = field(default_factory=list)
+    images_meta: list[dict[str, str]] = field(default_factory=list)
     title: str | None = None
     category: Category | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

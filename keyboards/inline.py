@@ -1,10 +1,31 @@
-"""Inline keyboard builders for projects, categories, settings, tariffs."""
+"""Inline keyboard builders for dashboard, projects, categories, settings, tariffs."""
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from db.models import Category, Project, User
 from keyboards.pagination import PAGE_SIZE, paginate
 from services.payments.packages import PACKAGES, SUBSCRIPTIONS
+
+# ---------------------------------------------------------------------------
+# Dashboard keyboard (main menu inline navigation)
+# ---------------------------------------------------------------------------
+
+
+def dashboard_kb() -> InlineKeyboardBuilder:
+    """Main menu dashboard: inline navigation to all top-level sections.
+
+    Replaces the old 6-button reply keyboard for navigation.
+    Reply keyboard now only has [Меню] + [Быстрая публикация].
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Проекты", callback_data="projects:list")
+    builder.button(text="Профиль", callback_data="profile:main")
+    builder.button(text="Тарифы", callback_data="tariffs:main")
+    builder.button(text="Настройки", callback_data="settings:main")
+    builder.button(text="Помощь", callback_data="help:main")
+    builder.adjust(2, 2, 1)
+    return builder
+
 
 # ---------------------------------------------------------------------------
 # Project fields (15 editable) — order matches USER_FLOWS_AND_UI_MAP.md §2

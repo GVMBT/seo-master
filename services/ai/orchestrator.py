@@ -23,7 +23,8 @@ log = structlog.get_logger()
 
 # Task type literal
 TaskType = Literal[
-    "article", "social_post", "keywords", "review",
+    "article", "article_outline", "article_critique",
+    "social_post", "keywords", "review",
     "image", "description", "competitor_analysis",
 ]
 
@@ -33,6 +34,14 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "anthropic/claude-sonnet-4.5",
         "openai/gpt-5.2",
         "deepseek/deepseek-v3.2",
+    ],
+    "article_outline": [
+        "deepseek/deepseek-v3.2",
+        "openai/gpt-5.2",
+    ],
+    "article_critique": [
+        "deepseek/deepseek-v3.2",
+        "openai/gpt-5.2",
     ],
     "social_post": [
         "deepseek/deepseek-v3.2",
@@ -61,14 +70,19 @@ MODEL_CHAINS: dict[str, list[str]] = {
 }
 
 # Tasks that use budget provider routing (sort: price)
-BUDGET_TASKS: set[str] = {"social_post", "keywords", "review", "description"}
+BUDGET_TASKS: set[str] = {"social_post", "keywords", "review", "description", "article_outline", "article_critique"}
 
 # JSON schema responses (API_CONTRACTS.md structured outputs table)
-# TODO(Phase 10): add "competitor_analysis" when CompetitorAnalysisService is implemented
-STRUCTURED_TASKS: set[str] = {"article", "social_post", "keywords", "review"}
+STRUCTURED_TASKS: set[str] = {
+    "article", "article_outline", "article_critique",
+    "social_post", "keywords", "review", "competitor_analysis",
+}
 
 # Tasks that use response-healing plugin
-HEALING_TASKS: set[str] = {"article", "social_post", "keywords", "review"}
+HEALING_TASKS: set[str] = {
+    "article", "article_outline", "article_critique",
+    "social_post", "keywords", "review",
+}
 
 # Budget model for heal_response fallback
 HEAL_MODEL = "deepseek/deepseek-v3.2"

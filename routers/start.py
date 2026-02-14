@@ -1,4 +1,4 @@
-"""Router: /start, /cancel, /help, main menu, reply button dispatch."""
+"""Router: /start, /cancel, /help, main menu dashboard, reply button dispatch."""
 
 import json
 import re
@@ -11,35 +11,92 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.config import get_settings
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User, UserUpdate
 from db.repositories.users import UsersRepository
+from keyboards.inline import dashboard_kb
 from keyboards.reply import main_menu
 from routers._helpers import guard_callback_message
-from services.payments.stars import StarsPaymentService
+from services.tokens import TokenService
 
 log = structlog.get_logger()
 
 router = Router(name="start")
 
 # ---------------------------------------------------------------------------
-# Welcome messages (USER_FLOWS_AND_UI_MAP.md §2, scenario 1)
+# Help text (shared between /help command and help:main callback)
 # ---------------------------------------------------------------------------
 
-_WELCOME_NEW = (
-    "Добро пожаловать в SEO Master Bot!\n\n"
-    "Вам начислено 1500 токенов (~5 статей на сайт).\n\n"
-    "Начните с создания проекта — это займёт пару минут."
+_HELP_TEXT = (
+    "SEO Master Bot — AI-генерация контента.\n\n"
+    "Команды:\n"
+    "/start — главное меню\n"
+    "/cancel — отменить текущее действие\n"
+    "/help — эта справка\n\n"
+    "Используйте кнопки меню для навигации."
 )
 
-_WELCOME_RETURNING = "С возвращением! Баланс: {balance} токенов."
+
+# ---------------------------------------------------------------------------
+# Dashboard text builder
+# ---------------------------------------------------------------------------
+
+
+async def _build_dashboard_text(user: User, db: SupabaseClient, is_new_user: bool = False) -> str:
+    """Build main menu dashboard text with stats.
+
+    Three variants:
+    - New user: welcome + token grant
+    - Returning without projects: balance + CTA
+    - Returning with projects: balance + stats + forecast
+    """
+    if is_new_user:
+        return (
+            "Добро пожаловать в SEO Master Bot!\n\n"
+            "Вам начислено 1500 токенов (~5 статей на сайт).\n"
+            "Начните с создания проекта — это займёт 30 секунд."
+        )
+
+    service = TokenService(db, admin_id=get_settings().admin_id)
+    stats = await service.get_profile_stats(user)
+
+    if stats["project_count"] == 0:
+        return f"Баланс: {user.balance} токенов\n\nУ вас пока нет проектов.\nСоздайте первый — это займёт 30 секунд."
+
+    lines = [f"Баланс: {user.balance} токенов", ""]
+    lines.append(f"Проектов: {stats['project_count']} | Категорий: {stats['category_count']}")
+    if stats["schedule_count"] > 0:
+        tokens_per_week = stats["tokens_per_week"]
+        weeks_left = round(user.balance / tokens_per_week, 1) if tokens_per_week > 0 else 0
+        lines.append(f"Расписаний: {stats['schedule_count']} | Постов/нед: {stats['posts_per_week']}")
+        lines.append(f"Хватит на: ~{weeks_left} нед.")
+
+    return "\n".join(lines)
+
 
 # ---------------------------------------------------------------------------
 # /start (with optional deep link: ref_{id}, pinterest_auth_{nonce})
 # ---------------------------------------------------------------------------
 
 _REF_RE = re.compile(r"^ref_(\d+)$")
+
+
+async def _send_dashboard(message: Message, user: User, db: SupabaseClient, is_new_user: bool = False) -> None:
+    """Send dashboard: restore reply-KB + dashboard with inline navigation.
+
+    Two messages because Telegram API doesn't allow mixing
+    ReplyKeyboardMarkup and InlineKeyboardMarkup in one message.
+    """
+    # 1. Restore compact reply keyboard (Меню + Быстрая публикация)
+    await message.answer(
+        "Используйте кнопки ниже для быстрого доступа.",
+        reply_markup=main_menu(is_admin=user.role == "admin"),
+    )
+    # 2. Dashboard with inline navigation
+    text = await _build_dashboard_text(user, db, is_new_user=is_new_user)
+    await message.answer(text, reply_markup=dashboard_kb().as_markup())
 
 
 @router.message(CommandStart(deep_link=True))
@@ -72,11 +129,7 @@ async def cmd_start_deep_link(
         await _handle_pinterest_auth(message, state, user, db, redis, http_client, payload)
         return
 
-    text = _WELCOME_NEW if is_new_user else _WELCOME_RETURNING.format(balance=user.balance)
-    await message.answer(
-        text,
-        reply_markup=main_menu(is_admin=user.role == "admin"),
-    )
+    await _send_dashboard(message, user, db, is_new_user=is_new_user)
 
 
 @router.message(CommandStart())
@@ -84,15 +137,12 @@ async def cmd_start(
     message: Message,
     state: FSMContext,
     user: User,
+    db: SupabaseClient,
     is_new_user: bool = False,
 ) -> None:
-    """Handle plain /start — clear FSM, show main menu."""
+    """Handle plain /start — clear FSM, show dashboard."""
     await state.clear()
-    text = _WELCOME_NEW if is_new_user else _WELCOME_RETURNING.format(balance=user.balance)
-    await message.answer(
-        text,
-        reply_markup=main_menu(is_admin=user.role == "admin"),
-    )
+    await _send_dashboard(message, user, db, is_new_user=is_new_user)
 
 
 # ---------------------------------------------------------------------------
@@ -131,8 +181,7 @@ async def _handle_pinterest_auth(
         log.warning("pinterest_auth_tokens_not_found", nonce=nonce, user_id=user.id)
         await state.clear()
         await message.answer(
-            "Подключение Pinterest отменено. Время авторизации истекло (E20).\n"
-            "Попробуйте снова.",
+            "Подключение Pinterest отменено. Время авторизации истекло (E20).\nПопробуйте снова.",
             reply_markup=main_menu(is_admin=user.role == "admin"),
         )
         return
@@ -153,8 +202,7 @@ async def _handle_pinterest_auth(
             log.warning("pinterest_boards_fetch_failed", status=resp.status_code, user_id=user.id)
             await state.clear()
             await message.answer(
-                "Не удалось получить список досок Pinterest (E21).\n"
-                "Попробуйте снова.",
+                "Не удалось получить список досок Pinterest (E21).\nПопробуйте снова.",
                 reply_markup=main_menu(is_admin=user.role == "admin"),
             )
             return
@@ -228,13 +276,9 @@ async def btn_cancel(message: Message, state: FSMContext, user: User) -> None:
     current = await state.get_state()
     if current is not None:
         await state.clear()
-        await message.answer(
-            "Действие отменено.", reply_markup=main_menu(is_admin=user.role == "admin")
-        )
+        await message.answer("Действие отменено.", reply_markup=main_menu(is_admin=user.role == "admin"))
     else:
-        await message.answer(
-            "Нет активного действия.", reply_markup=main_menu(is_admin=user.role == "admin")
-        )
+        await message.answer("Нет активного действия.", reply_markup=main_menu(is_admin=user.role == "admin"))
 
 
 # ---------------------------------------------------------------------------
@@ -244,88 +288,58 @@ async def btn_cancel(message: Message, state: FSMContext, user: User) -> None:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    """Show help text."""
-    await message.answer(
-        "SEO Master Bot — AI-генерация контента.\n\n"
-        "Команды:\n"
-        "/start — главное меню\n"
-        "/cancel — отменить текущее действие\n"
-        "/help — эта справка\n\n"
-        "Используйте кнопки меню для навигации."
-    )
+    """Show help text via /help command."""
+    await message.answer(_HELP_TEXT)
 
 
 # ---------------------------------------------------------------------------
-# menu:main callback (inline button → main menu text)
+# menu:main callback (inline button → dashboard)
 # ---------------------------------------------------------------------------
 
 
 @router.callback_query(F.data == "menu:main")
-async def cb_main_menu(callback: CallbackQuery, state: FSMContext, user: User) -> None:
-    """Return to main menu via inline button. Clears FSM if active."""
+async def cb_main_menu(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
+    """Return to main menu via inline button. Edits message to dashboard.
+
+    Reply keyboard is already set — no need to send a second message.
+    """
     await state.clear()
     msg = await guard_callback_message(callback)
     if msg is None:
         return
-    await msg.edit_text(
-        f"Главное меню. Баланс: {user.balance} токенов.",
-    )
-    # Restore reply keyboard
-    await msg.answer(
-        "Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin")
-    )
+    text = await _build_dashboard_text(user, db)
+    await msg.edit_text(text, reply_markup=dashboard_kb().as_markup())
     await callback.answer()
 
 
 # ---------------------------------------------------------------------------
-# Reply button dispatch (bottom keyboard)
+# Inline help callback (dashboard → Помощь)
 # ---------------------------------------------------------------------------
 
 
-@router.message(F.text == "Проекты")
-async def btn_projects(message: Message, user: User, db: SupabaseClient) -> None:
-    """Reply button [Проекты] → project list."""
-    from db.repositories.projects import ProjectsRepository
-    from keyboards.inline import project_list_kb
-
-    projects = await ProjectsRepository(db).get_by_user(user.id)
-    if not projects:
-        text = "У вас пока нет проектов. Создайте первый проект, чтобы начать."
-    else:
-        text = f"Ваши проекты ({len(projects)}):"
-    await message.answer(text, reply_markup=project_list_kb(projects).as_markup())
-
-
-@router.message(F.text == "Настройки")
-async def btn_settings(message: Message) -> None:
-    """Reply button [Настройки] → settings menu."""
-    from keyboards.inline import settings_main_kb
-
-    await message.answer("Настройки:", reply_markup=settings_main_kb().as_markup())
+@router.callback_query(F.data == "help:main")
+async def cb_help(callback: CallbackQuery) -> None:
+    """Show help text via inline button with back-to-menu navigation."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    back_kb = InlineKeyboardBuilder()
+    back_kb.button(text="Главное меню", callback_data="menu:main")
+    back_kb.adjust(1)
+    await msg.edit_text(_HELP_TEXT, reply_markup=back_kb.as_markup())
+    await callback.answer()
 
 
-@router.message(F.text == "Помощь")
-async def btn_help(message: Message) -> None:
-    """Reply button [Помощь] → help text."""
-    await cmd_help(message)
+# ---------------------------------------------------------------------------
+# Reply button dispatch (bottom keyboard: Меню + Быстрая публикация)
+# ---------------------------------------------------------------------------
 
 
-@router.message(F.text == "Профиль")
-async def btn_profile(message: Message, user: User, db: SupabaseClient) -> None:
-    """Reply button [Профиль] → profile screen."""
-    from routers.profile import _show_profile
-
-    await _show_profile(message, user, db, edit=False)
-
-
-@router.message(F.text == "Тарифы")
-async def btn_tariffs(message: Message, user: User, stars_service: StarsPaymentService) -> None:
-    """Reply button [Тарифы] → tariffs screen."""
-    from keyboards.inline import tariffs_main_kb
-
-    sub_info = await stars_service.get_active_subscription(user.id)
-    text = stars_service.format_tariffs_text(user.balance)
-    await message.answer(text, reply_markup=tariffs_main_kb(has_subscription=sub_info is not None).as_markup())
+@router.message(F.text == "Меню")
+async def btn_menu(message: Message, user: User, db: SupabaseClient) -> None:
+    """Reply button [Меню] → dashboard with inline navigation."""
+    text = await _build_dashboard_text(user, db)
+    await message.answer(text, reply_markup=dashboard_kb().as_markup())
 
 
 @router.message(F.text.in_({"Быстрая публикация", "АДМИНКА"}))
@@ -334,7 +348,7 @@ async def btn_stub(message: Message) -> None:
     await message.answer("В разработке.")
 
 
-@router.callback_query(F.data.in_({"stats:all", "help:main"}))
+@router.callback_query(F.data == "stats:all")
 async def cb_stub(callback: CallbackQuery) -> None:
     """Stub for not-yet-implemented inline button features."""
     await callback.answer("В разработке.", show_alert=True)

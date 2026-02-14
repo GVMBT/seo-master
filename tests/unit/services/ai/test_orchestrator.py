@@ -674,10 +674,11 @@ class TestTryParseJson:
 
 
 class TestModelChains:
-    def test_all_seven_tasks_present(self) -> None:
+    def test_all_tasks_present(self) -> None:
         expected_tasks = {
             "article", "social_post", "keywords", "review",
             "description", "competitor_analysis", "image",
+            "article_outline", "article_critique",
         }
         assert set(MODEL_CHAINS.keys()) == expected_tasks
 

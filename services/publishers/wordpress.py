@@ -58,21 +58,39 @@ class WordPressPublisher(BasePublisher):
         auth = self._auth(creds)
 
         try:
-            # 1. Upload images -> attachment IDs
+            # 1. Upload images -> attachment IDs (with SEO metadata from images_meta)
             attachment_ids: list[int] = []
             for i, img_bytes in enumerate(request.images):
+                meta = request.images_meta[i] if i < len(request.images_meta) else {}
+                filename = f"{meta.get('filename', f'image-{i}')}.webp"
+                alt_text = meta.get("alt", "")
+                mime = "image/webp" if img_bytes[:4] == b"RIFF" else "image/png"
+
                 resp = await self._client.post(
                     f"{base}/media",
                     content=img_bytes,
                     auth=auth,
                     headers={
-                        "Content-Type": "image/png",
-                        "Content-Disposition": f'attachment; filename="image_{i}.png"',
+                        "Content-Type": mime,
+                        "Content-Disposition": f'attachment; filename="{filename}"',
                     },
                     timeout=30,
                 )
                 resp.raise_for_status()
-                attachment_ids.append(resp.json()["id"])
+                media_id = resp.json()["id"]
+
+                # Update alt_text and caption via WP REST (Image SEO)
+                if alt_text or meta.get("figcaption"):
+                    await self._client.post(
+                        f"{base}/media/{media_id}",
+                        json={
+                            "alt_text": alt_text,
+                            "caption": meta.get("figcaption", ""),
+                        },
+                        auth=auth,
+                        timeout=15,
+                    )
+                attachment_ids.append(media_id)
 
             # 2. Create post
             post_data: dict[str, object] = {

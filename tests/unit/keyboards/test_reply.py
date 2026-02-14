@@ -4,23 +4,23 @@ from keyboards.reply import cancel_kb, main_menu, skip_cancel_kb
 
 
 class TestMainMenu:
-    def test_has_6_buttons_for_regular_user(self) -> None:
+    def test_has_2_buttons_for_regular_user(self) -> None:
         kb = main_menu(is_admin=False)
         buttons = [btn.text for row in kb.keyboard for btn in row]
-        assert len(buttons) == 6
+        assert len(buttons) == 2
         assert "АДМИНКА" not in buttons
 
     def test_has_admin_button_for_admin(self) -> None:
         kb = main_menu(is_admin=True)
         buttons = [btn.text for row in kb.keyboard for btn in row]
         assert "АДМИНКА" in buttons
-        assert len(buttons) == 7
+        assert len(buttons) == 3
 
-    def test_contains_all_menu_items(self) -> None:
+    def test_contains_menu_items(self) -> None:
         kb = main_menu()
         buttons = [btn.text for row in kb.keyboard for btn in row]
-        for expected in ["Быстрая публикация", "Проекты", "Профиль", "Тарифы", "Настройки", "Помощь"]:
-            assert expected in buttons
+        assert "Меню" in buttons
+        assert "Быстрая публикация" in buttons
 
     def test_resize_keyboard_enabled(self) -> None:
         kb = main_menu()

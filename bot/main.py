@@ -256,6 +256,28 @@ def create_app() -> web.Application:
         http_client=http_client,
     )
 
+    # External service clients (Phase 10)
+    from services.external.dataforseo import DataForSEOClient
+    from services.external.firecrawl import FirecrawlClient
+    from services.external.pagespeed import PageSpeedClient
+    from services.external.serper import SerperClient
+
+    firecrawl_client = FirecrawlClient(
+        api_key=settings.firecrawl_api_key.get_secret_value(),
+        http_client=http_client,
+    )
+    serper_client = SerperClient(
+        api_key=settings.serper_api_key.get_secret_value(),
+        http_client=http_client,
+        redis=redis,
+    )
+    pagespeed_client = PageSpeedClient(http_client=http_client)
+    dataforseo_client = DataForSEOClient(
+        login=settings.dataforseo_login,
+        password=settings.dataforseo_password.get_secret_value(),
+        http_client=http_client,
+    )
+
     # Store shared clients on app for API handlers (ARCHITECTURE.md §2.3)
     app["db"] = db
     app["redis"] = redis
@@ -264,6 +286,10 @@ def create_app() -> web.Application:
     app["image_storage"] = image_storage
     app["bot"] = bot
     app["settings"] = settings
+    app["firecrawl_client"] = firecrawl_client
+    app["serper_client"] = serper_client
+    app["pagespeed_client"] = pagespeed_client
+    app["dataforseo_client"] = dataforseo_client
 
     # Payment services (Phase 8)
     from services.payments.stars import StarsPaymentService
@@ -286,6 +312,10 @@ def create_app() -> web.Application:
     dp.workflow_data["image_storage"] = image_storage
     dp.workflow_data["stars_service"] = stars_service
     dp.workflow_data["yookassa_service"] = yookassa_service
+    dp.workflow_data["firecrawl_client"] = firecrawl_client
+    dp.workflow_data["serper_client"] = serper_client
+    dp.workflow_data["pagespeed_client"] = pagespeed_client
+    dp.workflow_data["dataforseo_client"] = dataforseo_client
 
     # Scheduler service (Phase 9)
     from services.scheduler import SchedulerService

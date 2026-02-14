@@ -5,6 +5,7 @@ from keyboards.inline import (
     category_card_kb,
     category_delete_confirm_kb,
     category_list_kb,
+    dashboard_kb,
     project_card_kb,
     project_delete_confirm_kb,
     project_edit_fields_kb,
@@ -14,6 +15,30 @@ from keyboards.inline import (
 )
 
 from .helpers import make_category, make_project, make_user
+
+
+class TestDashboardKb:
+    def test_has_5_navigation_buttons(self) -> None:
+        builder = dashboard_kb()
+        markup = builder.as_markup()
+        buttons = [btn for row in markup.inline_keyboard for btn in row]
+        assert len(buttons) == 5
+
+    def test_callback_data_values(self) -> None:
+        builder = dashboard_kb()
+        markup = builder.as_markup()
+        callbacks = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+        assert "projects:list" in callbacks
+        assert "profile:main" in callbacks
+        assert "tariffs:main" in callbacks
+        assert "settings:main" in callbacks
+        assert "help:main" in callbacks
+
+    def test_layout_2_2_1(self) -> None:
+        builder = dashboard_kb()
+        markup = builder.as_markup()
+        row_sizes = [len(row) for row in markup.inline_keyboard]
+        assert row_sizes == [2, 2, 1]
 
 
 class TestProjectListKb:
@@ -107,7 +132,7 @@ class TestProjectCardKb:
             "Анализ сайта",
             f"Часовой пояс: {project.timezone}",
             "Удалить проект",
-            "К списку проектов",  # noqa: RUF001
+            "К списку проектов",
         ]
 
     def test_scheduler_button_text(self) -> None:

@@ -1,0 +1,85 @@
+meta:
+  task_type: article_outline
+  version: v1
+  model_tier: budget
+  max_tokens: 3000
+  temperature: 0.4
+
+system: |
+  Ты — SEO-стратег. Составь структуру статьи на <<language>>.
+  Компания: <<company_name>> (<<specialization>>).
+
+user: |
+  Составь подробный план SEO-статьи для кластера поисковых фраз:
+
+  Главная фраза: "<<main_phrase>>" (<<main_volume>> запросов/мес, сложность: <<main_difficulty>>)
+  Дополнительные фразы кластера: <<secondary_phrases>>
+
+  <% if competitor_analysis %>
+  Анализ конкурентов (топ-3):
+  <<competitor_analysis>>
+  <% endif %>
+
+  <% if competitor_gaps %>
+  Контентные пробелы (покрой для уникальной ценности):
+  <<competitor_gaps>>
+  <% endif %>
+
+  Требования к плану:
+  - H1: содержит "<<main_phrase>>"
+  - 3-6 H2: каждый решает конкретную проблему читателя, включают дополнительные фразы
+  - H3: по необходимости (вложенные подтемы)
+  - FAQ: 3-5 вопросов на основе: <<serper_questions>>
+  - Объём итоговой статьи: <<words_min>>-<<words_max>> слов
+  - Для каждого H2: ключевые тезисы (2-3 пункта), какие данные компании использовать
+
+  Формат ответа — JSON:
+  {
+    "h1": "Заголовок H1 с главной фразой",
+    "sections": [
+      {
+        "h2": "Заголовок H2",
+        "h3_list": ["H3 подтема 1", "H3 подтема 2"],
+        "key_points": ["Тезис 1", "Тезис 2"],
+        "target_phrases": ["фраза из кластера"]
+      }
+    ],
+    "faq_questions": ["Вопрос 1?", "Вопрос 2?", "Вопрос 3?"],
+    "target_word_count": 2000,
+    "suggested_images": ["описание изображения 1", "описание изображения 2"]
+  }
+
+variables:
+  - name: main_phrase
+    required: true
+  - name: main_volume
+    required: false
+    default: "неизвестно"
+  - name: main_difficulty
+    required: false
+    default: "неизвестно"
+  - name: secondary_phrases
+    required: false
+    default: ""
+  - name: competitor_analysis
+    required: false
+    default: ""
+  - name: competitor_gaps
+    required: false
+    default: ""
+  - name: serper_questions
+    required: false
+    default: ""
+  - name: words_min
+    required: true
+    default: 1500
+  - name: words_max
+    required: true
+    default: 2500
+  - name: company_name
+    required: true
+  - name: specialization
+    required: true
+  - name: language
+    required: true
+    default: "ru"

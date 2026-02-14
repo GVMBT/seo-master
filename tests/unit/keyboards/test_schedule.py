@@ -96,7 +96,7 @@ def test_days_kb_selected_highlighted() -> None:
     texts = [b.text for row in markup.inline_keyboard for b in row]
     assert "Пн *" in texts
     assert "Пт *" in texts
-    assert "Ср" in texts  # Not selected  # noqa: RUF001
+    assert "Ср" in texts  # Not selected
 
 
 def test_days_kb_none_selected() -> None:
