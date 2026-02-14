@@ -123,10 +123,16 @@ uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # пр
 Решено (Phase 9):
 - **QStash schedule management**: SchedulerService wraps QStash SDK; injected via dp.workflow_data["scheduler_service"] + app["scheduler_service"]
 - **Backpressure**: PUBLISH_SEMAPHORE(10) + SHUTDOWN_EVENT in bot/main.py; publish_handler acquires semaphore with 300s timeout
-- **Idempotency**: Redis NX lock by Upstash-Message-Id for /api/publish, /api/cleanup, /api/notify
+- **Idempotency**: all QStash handlers (publish/cleanup/notify) use `Upstash-Message-Id` header for Redis NX lock (unique per trigger, same on retry)
+- **Cron format**: numeric DOW via `_DAY_MAP` (API_CONTRACTS §1.8); `CRON_TZ={tz} {min} {hour} * * {numeric_days}`
 - **QStash signature**: `require_qstash_signature` decorator in api/__init__.py; Receiver.verify()
-- **Notifications delivery**: _send_notifications() in api/notify.py; TelegramRetryAfter retry, 50ms spacing
-- **Cleanup refund**: atomic_mark_expired prevents double-processing; refund + notify user + clean images + delete Telegraph
+- **QStash SDK sync calls**: wrapped in `asyncio.to_thread()` (scheduler.py, health.py)
+- **Notifications delivery**: _send_notifications() in api/notify.py; TelegramRetryAfter retry, 50ms spacing; checks `notify_publications`
+- **Cleanup refund**: atomic_mark_expired prevents double-processing; refund + notify user (if notify_publications) + clean images + delete Telegraph
+- **Insufficient balance**: schedule → `enabled=False, status="error"` + delete QStash cron jobs via SchedulerService
+- **E42 preview refund**: both project delete (card.py) and category delete (manage.py) refund active previews before CASCADE
+- **Partial QStash cleanup**: if schedule creation fails midway, already-created schedules are cleaned up
+- **Auto-publish notifications**: Russian templates per EDGE_CASES.md (_REASON_TEMPLATES in api/publish.py); no_keywords/connection_inactive/insufficient_balance all use `notify_publications` preference
 
 Нерешённые вопросы:
 - QStash Pro plan limits (#23) — проверить при росте числа расписаний

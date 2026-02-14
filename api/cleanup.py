@@ -42,17 +42,17 @@ async def cleanup_handler(request: web.Request) -> web.Response:
         )
         result = await service.execute()
 
-        # Notify users about refunded previews (respect notify_balance preference)
+        # Notify users about refunded previews (spec: respect notify_publications)
         bot = request.app["bot"]
         for entry in result.refunded:
-            if not entry.get("notify_balance", True):
+            if not entry.get("notify_publications", True):
                 continue
             try:
                 text = (
                     f"Превью «{entry['keyword']}» истекло.\n"
                     f"Возвращено {entry['tokens_refunded']} токенов."
                 )
-                await bot.send_message(entry["user_id"], text)  # type: ignore[attr-defined]
+                await bot.send_message(entry["user_id"], text)
             except Exception:
                 log.warning("cleanup_notify_failed", user_id=entry["user_id"])
 

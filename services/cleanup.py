@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+import httpx
 import structlog
 
 from db.client import SupabaseClient
@@ -28,7 +30,7 @@ class CleanupResult:
     """Result of cleanup execution."""
 
     expired_count: int = 0
-    refunded: list[dict] = field(default_factory=list)  # [{user_id, keyword, tokens_refunded}]
+    refunded: list[dict[str, Any]] = field(default_factory=list)
     logs_deleted: int = 0
     images_deleted: int = 0
 
@@ -39,7 +41,7 @@ class CleanupService:
     def __init__(
         self,
         db: SupabaseClient,
-        http_client: object,
+        http_client: httpx.AsyncClient,
         image_storage: ImageStorage,
         admin_id: int,
     ) -> None:
@@ -89,13 +91,13 @@ class CleanupService:
                         reason="preview_expired",
                         description=f"Expired preview: {preview.keyword or 'unknown'}",
                     )
-                    # Load user to check notify preference
+                    # Load user to check notify preference (spec: notify_publications)
                     user = await UsersRepository(self._db).get_by_id(preview.user_id)
                     result.refunded.append({
                         "user_id": preview.user_id,
                         "keyword": preview.keyword or "",
                         "tokens_refunded": tokens,
-                        "notify_balance": user.notify_balance if user else True,
+                        "notify_publications": user.notify_publications if user else True,
                     })
 
                 # Clean up storage images
@@ -108,7 +110,7 @@ class CleanupService:
                 # Delete Telegraph page
                 if preview.telegraph_path:
                     try:
-                        telegraph = TelegraphClient(self._http_client)  # type: ignore[arg-type]
+                        telegraph = TelegraphClient(self._http_client)
                         await telegraph.delete_page(preview.telegraph_path)
                     except Exception:
                         log.warning("telegraph_delete_failed", path=preview.telegraph_path)

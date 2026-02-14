@@ -70,7 +70,8 @@ async def test_create_qstash_cron_format() -> None:
     await svc.create_qstash_schedules(schedule, user_id=1, project_id=1, timezone="Europe/Moscow")
 
     call_args = mock_q.schedule.create.call_args
-    assert call_args.kwargs.get("cron", call_args[1].get("cron", "")) == "CRON_TZ=Europe/Moscow 30 14 * * mon,fri"
+    # P0-1: numeric DOW per API_CONTRACTS §1.8
+    assert call_args.kwargs.get("cron", call_args[1].get("cron", "")) == "CRON_TZ=Europe/Moscow 30 14 * * 1,5"
 
 
 async def test_create_qstash_schedules_failure_raises() -> None:
@@ -83,6 +84,42 @@ async def test_create_qstash_schedules_failure_raises() -> None:
     schedule = _make_schedule(schedule_times=["09:00"])
     with pytest.raises(ScheduleError):
         await svc.create_qstash_schedules(schedule, user_id=1, project_id=1, timezone="UTC")
+
+
+async def test_create_qstash_body_contains_stable_idempotency_key() -> None:
+    """QStash body idempotency_key is pub_{schedule_id}_{time_slot} (not UUID)."""
+    import json
+
+    svc, mock_q = _make_service()
+    mock_q.schedule.create.return_value = MagicMock(schedule_id="qs_1")
+
+    schedule = _make_schedule(id=42, schedule_times=["14:30"])
+    await svc.create_qstash_schedules(schedule, user_id=1, project_id=1, timezone="UTC")
+
+    body_str = mock_q.schedule.create.call_args.kwargs.get(
+        "body", mock_q.schedule.create.call_args[1].get("body", "")
+    )
+    body = json.loads(body_str)
+    assert body["idempotency_key"] == "pub_42_14:30"
+
+
+async def test_create_qstash_partial_failure_cleans_up() -> None:
+    """Partial failure cleans up already-created schedules."""
+    from bot.exceptions import ScheduleError
+
+    svc, mock_q = _make_service()
+    # First call succeeds, second fails
+    mock_q.schedule.create.side_effect = [
+        MagicMock(schedule_id="qs_1"),
+        Exception("API error"),
+    ]
+
+    schedule = _make_schedule(schedule_times=["09:00", "15:00"])
+    with pytest.raises(ScheduleError):
+        await svc.create_qstash_schedules(schedule, user_id=1, project_id=1, timezone="UTC")
+
+    # Verify cleanup of the first schedule
+    mock_q.schedule.delete.assert_called_once_with("qs_1")
 
 
 # ---------------------------------------------------------------------------
@@ -262,3 +299,39 @@ async def test_delete_schedule_not_found() -> None:
 
     result = await svc.delete_schedule(999)
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# cancel_schedules_for_connection
+# ---------------------------------------------------------------------------
+
+
+async def test_cancel_for_connection() -> None:
+    """Cancels all QStash schedules for a connection."""
+    svc, mock_q = _make_service()
+    mock_repo = MagicMock()
+    mock_repo.get_by_connection = AsyncMock(
+        return_value=[
+            _make_schedule(id=1, qstash_schedule_ids=["qs_a"]),
+            _make_schedule(id=2, qstash_schedule_ids=["qs_b", "qs_c"]),
+        ]
+    )
+    mock_repo.update = AsyncMock(return_value=None)
+    svc._schedules = mock_repo
+
+    await svc.cancel_schedules_for_connection(5)
+
+    assert mock_q.schedule.delete.call_count == 3
+    assert mock_repo.update.call_count == 2
+
+
+async def test_cancel_for_connection_empty() -> None:
+    """No schedules for connection — no QStash calls."""
+    svc, mock_q = _make_service()
+    mock_repo = MagicMock()
+    mock_repo.get_by_connection = AsyncMock(return_value=[])
+    svc._schedules = mock_repo
+
+    await svc.cancel_schedules_for_connection(999)
+
+    mock_q.schedule.delete.assert_not_called()

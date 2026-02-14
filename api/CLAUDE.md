@@ -16,7 +16,7 @@ schedule.list() in health), always use `asyncio.to_thread()`.
 ## /api/publish (POST) — QStash автопубликация (Phase 9: IMPLEMENTED)
 - @require_qstash_signature decorator
 - Shutdown check: SHUTDOWN_EVENT.is_set() -> 503 + Retry-After: 60
-- Идемпотентность: Redis NX lock by Upstash-Message-Id (publish_lock:{msg_id}, 5 мин TTL)
+- Идемпотентность: Redis NX lock by Upstash-Message-Id header (publish_lock:{msg_id}, 5 мин TTL)
 - Backpressure: PUBLISH_SEMAPHORE(10) with 300s timeout -> 503 on timeout
 - Post-semaphore shutdown check (double gate)
 - Delegates to PublishService.execute(payload) -> PublishOutcome

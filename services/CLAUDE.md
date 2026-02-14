@@ -76,7 +76,7 @@ class ArticleService:
 - __init__(db, redis, http_client, ai_orchestrator, image_storage, admin_id)
 - execute(PublishPayload) -> PublishOutcome(status, reason, post_url, keyword, tokens_spent, user_id, notify)
 - Pipeline: load user -> load category -> check keywords (E17) -> load connection -> rotate keyword (E22/E23) -> check balance (E01) -> charge -> generate+publish -> log -> return
-- Insufficient balance (E01): sets schedule status="error" via SchedulesRepository.update() to flag in UI; notifies user if user.notify_balance is True
+- Insufficient balance (E01): sets schedule enabled=False, status="error", deletes QStash crons via SchedulerService; notifies user if user.notify_publications is True
 - Refund on any error after charge (with sentry capture if refund fails)
 - TODO Phase 10: actual AI generation + publisher integration (currently logs placeholder)
 
@@ -85,8 +85,8 @@ class ArticleService:
 - __init__(db, http_client, image_storage, admin_id)
 - execute() -> CleanupResult(expired_count, refunded[], logs_deleted, images_deleted)
 - _expire_previews(): find expired draft previews, atomic_mark_expired (prevents double-processing), refund tokens, clean Supabase Storage images, delete Telegraph pages
-  - Loads user to read notify_balance preference; each refund entry includes {user_id, keyword, tokens_refunded, notify_balance}
-  - Cleanup handler in api/cleanup.py respects notify_balance before sending notification
+  - Loads user to read notify_publications preference; each refund entry includes {user_id, keyword, tokens_refunded, notify_publications}
+  - Cleanup handler in api/cleanup.py respects notify_publications before sending notification
 - _delete_old_logs(): delegates to PublicationsRepository.delete_old_logs(cutoff_iso) (not inline SQL)
 
 ## services/notifications.py (Phase 9)

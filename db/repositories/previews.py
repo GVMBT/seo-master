@@ -59,6 +59,19 @@ class PreviewsRepository(BaseRepository):
         )
         return [ArticlePreview(**row) for row in self._rows(resp)]
 
+    async def get_active_drafts_by_category(self, category_id: int) -> list[ArticlePreview]:
+        """Get non-expired draft previews for a category (E42: refund before delete)."""
+        now = datetime.now(tz=UTC).isoformat()
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .eq("category_id", category_id)
+            .eq("status", "draft")
+            .gte("expires_at", now)
+            .execute()
+        )
+        return [ArticlePreview(**row) for row in self._rows(resp)]
+
     async def get_expired_drafts(self) -> list[ArticlePreview]:
         """Get expired draft previews for cleanup.
 

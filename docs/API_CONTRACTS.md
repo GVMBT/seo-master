@@ -51,27 +51,19 @@ if not is_valid:
 ### 1.4 Идемпотентность (защита от двойного списания)
 
 ```python
-# Redis-блокировка перед обработкой:
-# idempotency_key = "pub_{schedule_id}_{time_slot}" (статичный, из body QStash)
-# Добавляем дату для дедупликации в пределах дня:
-today = datetime.now(UTC).strftime("%Y-%m-%d")
-lock_key = f"publish_lock:{idempotency_key}:{today}"
+# Redis-блокировка по Upstash-Message-Id header:
+# Уникален per trigger, одинаков при retry того же сообщения.
+msg_id = request["qstash_msg_id"]  # из require_qstash_signature декоратора
+lock_key = f"publish_lock:{msg_id}"
 acquired = await redis.set(lock_key, "1", nx=True, ex=300)  # 5 мин TTL
 
 if not acquired:
-    return web.Response(status=200, text="Already processing")  # QStash НЕ повторит (2xx)
-
-try:
-    result = await execute_publish(...)
-    await redis.set(lock_key, "done", ex=300)  # Перезаписать значение, TTL тот же
-except Exception:
-    await redis.delete(lock_key)  # Удалить → разрешить QStash retry (5xx)
-    raise
+    return web.json_response({"status": "duplicate"})  # QStash НЕ повторит (2xx)
 ```
 
-> **Формат idempotency_key:** `pub_{schedule_id}_{time_slot}` — статичная строка в body QStash.
-> QStash НЕ поддерживает шаблоны/переменные в body. Дата добавляется на стороне handler
-> для дедупликации (один schedule может срабатывать ежедневно с тем же body).
+> **Upstash-Message-Id** — заголовок QStash, уникальный для каждого trigger и стабильный при retry.
+> Все три QStash-хендлера (publish, cleanup, notify) используют один паттерн: `{prefix}_lock:{msg_id}`.
+> Body-поле `idempotency_key` (`pub_{schedule_id}_{time_slot}`) остаётся для логирования/отладки.
 
 ### 1.5 Retry-политика QStash
 

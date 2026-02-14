@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from api.publish import publish_handler
+from api.publish import _build_notification_text, publish_handler
+from services.publish import PublishOutcome
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -21,6 +22,7 @@ def _make_request(
         body = {
             "schedule_id": 1, "category_id": 10, "connection_id": 5,
             "platform_type": "wordpress", "user_id": 1, "project_id": 1,
+            "idempotency_key": "pub_1_09:00",
         }
 
     app = MagicMock()
@@ -34,7 +36,10 @@ def _make_request(
     bot_mock = MagicMock()
     bot_mock.send_message = AsyncMock()
 
-    app.__getitem__ = MagicMock(side_effect=lambda key: {
+    scheduler_mock = MagicMock()
+    scheduler_mock.delete_qstash_schedules = AsyncMock()
+
+    app_store = {
         "db": MagicMock(),
         "redis": redis_mock,
         "http_client": MagicMock(),
@@ -42,7 +47,10 @@ def _make_request(
         "image_storage": MagicMock(),
         "settings": settings_mock,
         "bot": bot_mock,
-    }[key])
+        "scheduler_service": scheduler_mock,
+    }
+    app.__getitem__ = MagicMock(side_effect=lambda key: app_store[key])
+    app.get = MagicMock(side_effect=lambda key, default=None: app_store.get(key, default))
 
     request = MagicMock()
     request.app = app
@@ -118,3 +126,46 @@ async def test_publish_invalid_payload() -> None:
         resp = await publish_handler.__wrapped__(request)
 
     assert resp.status == 200
+
+
+# ---------------------------------------------------------------------------
+# Notification text templates (EDGE_CASES.md)
+# ---------------------------------------------------------------------------
+
+
+def test_notification_text_ok() -> None:
+    """Success notification includes keyword and post_url."""
+    result = PublishOutcome(status="ok", keyword="seo tips", post_url="https://test.com/seo")
+    text = _build_notification_text(result)
+    assert "seo tips" in text
+    assert "https://test.com/seo" in text
+    assert "выполнена" in text.lower()
+
+
+def test_notification_text_insufficient_balance() -> None:
+    """Insufficient balance uses Russian template."""
+    result = PublishOutcome(status="error", reason="insufficient_balance")
+    text = _build_notification_text(result)
+    assert "токенов" in text.lower()
+    assert "приостановлено" in text.lower()
+
+
+def test_notification_text_no_keywords() -> None:
+    """No keywords uses Russian template per E17."""
+    result = PublishOutcome(status="error", reason="no_keywords")
+    text = _build_notification_text(result)
+    assert "ключевых фраз" in text.lower()
+
+
+def test_notification_text_connection_inactive() -> None:
+    """Connection inactive uses Russian template."""
+    result = PublishOutcome(status="error", reason="connection_inactive")
+    text = _build_notification_text(result)
+    assert "платформа" in text.lower()
+
+
+def test_notification_text_unknown_reason() -> None:
+    """Unknown reason falls back to generic message."""
+    result = PublishOutcome(status="error", reason="something_weird")
+    text = _build_notification_text(result)
+    assert "something_weird" in text

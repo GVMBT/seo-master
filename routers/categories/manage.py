@@ -13,6 +13,7 @@ from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
 from db.models import Category, CategoryCreate, User
 from db.repositories.categories import CategoriesRepository
+from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import category_card_kb, category_delete_confirm_kb, category_list_kb
 from keyboards.reply import cancel_kb, main_menu
@@ -283,6 +284,28 @@ async def cb_category_delete_confirm(
 
     # E24: cancel QStash schedules before CASCADE delete
     await scheduler_service.cancel_schedules_for_category(category_id)
+
+    # E42: refund active previews before CASCADE delete
+    previews_repo = PreviewsRepository(db)
+    active_previews = await previews_repo.get_active_drafts_by_category(category_id)
+    if active_previews:
+        from bot.config import get_settings
+        from services.tokens import TokenService
+
+        tokens_svc = TokenService(db, get_settings().admin_id)
+        for preview in active_previews:
+            tokens = preview.tokens_charged or 0
+            if tokens > 0:
+                try:
+                    await tokens_svc.refund(
+                        preview.user_id,
+                        tokens,
+                        reason="category_deleted",
+                        description=f"Category deleted, preview refund: {preview.keyword or 'unknown'}",
+                    )
+                except Exception:
+                    log.warning("e42_cat_refund_failed", preview_id=preview.id, user_id=preview.user_id)
+            await previews_repo.atomic_mark_expired(preview.id)
 
     repo = CategoriesRepository(db)
     await repo.delete(category_id)

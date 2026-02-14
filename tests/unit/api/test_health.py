@@ -54,7 +54,7 @@ async def test_health_public_no_token() -> None:
 
     data = json.loads(resp.body)
     assert data["status"] == "ok"
-    assert data["version"] == "2.0.0"
+    assert "version" not in data  # E29: no version in public response
     assert "checks" not in data
 
 

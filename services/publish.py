@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import sentry_sdk
 import structlog
@@ -27,6 +28,11 @@ from db.repositories.schedules import SchedulesRepository
 from db.repositories.users import UsersRepository
 from services.storage import ImageStorage
 from services.tokens import TokenService, estimate_article_cost, estimate_social_post_cost
+
+if TYPE_CHECKING:
+    import httpx
+
+    from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
 
@@ -51,10 +57,11 @@ class PublishService:
         self,
         db: SupabaseClient,
         redis: RedisClient,
-        http_client: object,
-        ai_orchestrator: object,
+        http_client: httpx.AsyncClient,
+        ai_orchestrator: object,  # Phase 10: AIOrchestrator
         image_storage: ImageStorage,
         admin_id: int,
+        scheduler_service: SchedulerService | None = None,
     ) -> None:
         self._db = db
         self._redis = redis
@@ -62,6 +69,7 @@ class PublishService:
         self._ai_orchestrator = ai_orchestrator
         self._image_storage = image_storage
         self._admin_id = admin_id
+        self._scheduler_service = scheduler_service
         self._tokens = TokenService(db, admin_id)
         self._users = UsersRepository(db)
         self._categories = CategoriesRepository(db)
@@ -90,7 +98,10 @@ class PublishService:
         # 3. Check keywords (E17: no keywords configured)
         if not category.keywords:
             log.warning("publish_no_keywords", category_id=payload.category_id, user_id=user_id)
-            return PublishOutcome(status="error", reason="no_keywords", user_id=user_id)
+            return PublishOutcome(
+                status="error", reason="no_keywords",
+                user_id=user_id, notify=user.notify_publications,
+            )
 
         # 4. Load connection
         settings = get_settings()
@@ -98,7 +109,10 @@ class PublishService:
         conn_repo = ConnectionsRepository(self._db, cm)
         connection = await conn_repo.get_by_id(payload.connection_id)
         if not connection or connection.status != "active":
-            return PublishOutcome(status="error", reason="connection_inactive", user_id=user_id)
+            return PublishOutcome(
+                status="error", reason="connection_inactive",
+                user_id=user_id, notify=user.notify_publications,
+            )
 
         # 5. Rotate keyword (E22/E23: low pool warning)
         content_type = "article" if payload.platform_type == "wordpress" else "social_post"
@@ -115,19 +129,22 @@ class PublishService:
         # 6. Estimate cost
         estimated_cost = estimate_article_cost() if content_type == "article" else estimate_social_post_cost()
 
-        # 7. Check balance (E01)
+        # 7. Check balance (E01): pause schedule per EDGE_CASES.md
         if not await self._tokens.check_balance(user_id, estimated_cost):
             log.warning("publish_insufficient_balance", user_id=user_id, required=estimated_cost)
-            # P1-13: mark schedule as error to flag in UI
+            # Disable schedule + delete QStash crons (spec: enabled=false)
+            schedule = await self._schedules.get_by_id(payload.schedule_id)
+            if schedule and schedule.qstash_schedule_ids and self._scheduler_service:
+                await self._scheduler_service.delete_qstash_schedules(schedule.qstash_schedule_ids)
             await self._schedules.update(
                 payload.schedule_id,
-                PlatformScheduleUpdate(status="error"),
+                PlatformScheduleUpdate(status="error", enabled=False, qstash_schedule_ids=[]),
             )
             return PublishOutcome(
                 status="error",
                 reason="insufficient_balance",
                 user_id=user_id,
-                notify=user.notify_balance,
+                notify=user.notify_publications,
             )
 
         # 8. Charge tokens

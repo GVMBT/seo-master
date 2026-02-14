@@ -19,9 +19,9 @@ async def health_handler(request: web.Request) -> web.Response:
     settings = request.app["settings"]
     token = settings.health_check_token.get_secret_value()
 
-    # Public response (no token or invalid token)
+    # Public response (no token or invalid token) — E29: no version/details
     if not token or not auth.startswith("Bearer ") or auth[7:] != token:
-        return web.json_response({"status": "ok", "version": _VERSION})
+        return web.json_response({"status": "ok"})
 
     # Detailed response
     checks: dict[str, str] = {}

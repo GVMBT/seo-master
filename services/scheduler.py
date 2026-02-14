@@ -6,7 +6,6 @@ Zero dependencies on Telegram/Aiogram.
 
 import asyncio
 import json
-import uuid
 
 import structlog
 from qstash import QStash
@@ -19,6 +18,9 @@ from db.repositories.schedules import SchedulesRepository
 from services.tokens import estimate_article_cost, estimate_social_post_cost
 
 log = structlog.get_logger()
+
+# Cron DOW mapping per API_CONTRACTS.md §1.8
+_DAY_MAP = {"mon": "1", "tue": "2", "wed": "3", "thu": "4", "fri": "5", "sat": "6", "sun": "0"}
 
 
 class SchedulerService:
@@ -44,7 +46,11 @@ class SchedulerService:
         On partial failure, cleans up already-created schedules before raising.
         """
         schedule_ids: list[str] = []
-        days_cron = ",".join(schedule.schedule_days) if schedule.schedule_days else "*"
+        days_cron = (
+            ",".join(_DAY_MAP.get(d, d) for d in schedule.schedule_days)
+            if schedule.schedule_days
+            else "*"
+        )
 
         for time_slot in schedule.schedule_times:
             hour, minute = time_slot.split(":")
@@ -57,7 +63,7 @@ class SchedulerService:
                 "platform_type": schedule.platform_type,
                 "user_id": user_id,
                 "project_id": project_id,
-                "idempotency_key": str(uuid.uuid4()),
+                "idempotency_key": f"pub_{schedule.id}_{time_slot}",
             }
 
             try:

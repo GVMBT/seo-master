@@ -7,6 +7,7 @@ Always returns 200.
 import asyncio
 
 import structlog
+from aiogram import Bot
 from aiohttp import web
 
 from api import require_qstash_signature
@@ -61,7 +62,7 @@ async def notify_handler(request: web.Request) -> web.Response:
         return web.json_response({"status": "error", "reason": "internal_error"})
 
 
-async def _send_notifications(bot: object, recipients: list[tuple[int, str]]) -> tuple[int, int]:
+async def _send_notifications(bot: Bot, recipients: list[tuple[int, str]]) -> tuple[int, int]:
     """Send notifications with rate limiting and error handling (D6).
 
     Returns (sent_count, failed_count).
@@ -71,13 +72,13 @@ async def _send_notifications(bot: object, recipients: list[tuple[int, str]]) ->
     sent, failed = 0, 0
     for user_id, text in recipients:
         try:
-            await bot.send_message(user_id, text, parse_mode="HTML")  # type: ignore[attr-defined]
+            await bot.send_message(user_id, text, parse_mode="HTML")
             sent += 1
         except TelegramRetryAfter as e:
             log.warning("notify_rate_limited", retry_after=e.retry_after)
             await asyncio.sleep(e.retry_after)
             try:
-                await bot.send_message(user_id, text, parse_mode="HTML")  # type: ignore[attr-defined]
+                await bot.send_message(user_id, text, parse_mode="HTML")
                 sent += 1
             except Exception:
                 failed += 1

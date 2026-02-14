@@ -346,3 +346,47 @@ class TestProjectDelete:
             await cb_project_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
             repo_cls.return_value.delete.assert_awaited_once_with(project.id)
             mock_scheduler.cancel_schedules_for_project.assert_awaited_once_with(project.id)
+
+    @pytest.mark.asyncio
+    async def test_delete_confirm_refunds_active_previews_e42(
+        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project
+    ) -> None:
+        """E42: Active previews are refunded before project delete."""
+        mock_callback.data = f"project:{project.id}:delete:confirm"
+        mock_scheduler = MagicMock()
+        mock_scheduler.cancel_schedules_for_project = AsyncMock()
+
+        mock_preview = MagicMock()
+        mock_preview.id = 99
+        mock_preview.user_id = user.id
+        mock_preview.tokens_charged = 320
+        mock_preview.keyword = "seo tips"
+
+        with (
+            patch("routers.projects.card.ProjectsRepository") as repo_cls,
+            patch("routers.projects.card.PreviewsRepository") as previews_cls,
+            patch("routers.projects.card.TokenService") as token_cls,
+            patch("bot.config.get_settings") as mock_settings,
+        ):
+            mock_settings.return_value = MagicMock(admin_id=999)
+            repo_cls.return_value.get_by_id = AsyncMock(return_value=project)
+            repo_cls.return_value.delete = AsyncMock(return_value=True)
+            repo_cls.return_value.get_by_user = AsyncMock(return_value=[])
+            previews_cls.return_value.get_active_drafts_by_project = AsyncMock(
+                return_value=[mock_preview]
+            )
+            previews_cls.return_value.atomic_mark_expired = AsyncMock(return_value=None)
+            token_cls.return_value.refund = AsyncMock(return_value=1320)
+
+            await cb_project_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
+
+            # Verify refund was called for the preview
+            token_cls.return_value.refund.assert_awaited_once_with(
+                user.id, 320,
+                reason="project_deleted",
+                description="Project deleted, preview refund: seo tips",
+            )
+            # Verify preview marked expired
+            previews_cls.return_value.atomic_mark_expired.assert_awaited_once_with(99)
+            # Verify project still deleted after refund
+            repo_cls.return_value.delete.assert_awaited_once_with(project.id)

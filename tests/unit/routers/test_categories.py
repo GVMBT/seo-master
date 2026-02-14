@@ -227,11 +227,56 @@ class TestCategoryDelete:
         with (
             patch("routers.categories.manage.CategoriesRepository") as cat_cls,
             patch("routers.categories.manage.ProjectsRepository") as proj_cls,
+            patch("routers.categories.manage.PreviewsRepository") as previews_cls,
         ):
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             proj_cls.return_value.get_by_id = AsyncMock(return_value=project)
             cat_cls.return_value.delete = AsyncMock(return_value=True)
             cat_cls.return_value.get_by_project = AsyncMock(return_value=[])
+            previews_cls.return_value.get_active_drafts_by_category = AsyncMock(return_value=[])
             await cb_category_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
             cat_cls.return_value.delete.assert_awaited_once_with(category.id)
             mock_scheduler.cancel_schedules_for_category.assert_awaited_once_with(category.id)
+
+    @pytest.mark.asyncio
+    async def test_confirm_refunds_active_previews_e42(
+        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
+        project: Project, category: Category
+    ) -> None:
+        mock_callback.data = f"category:{category.id}:delete:confirm"
+        mock_scheduler = MagicMock()
+        mock_scheduler.cancel_schedules_for_category = AsyncMock()
+
+        mock_preview = MagicMock()
+        mock_preview.id = 99
+        mock_preview.user_id = user.id
+        mock_preview.tokens_charged = 320
+        mock_preview.keyword = "seo tips"
+
+        with (
+            patch("routers.categories.manage.CategoriesRepository") as cat_cls,
+            patch("routers.categories.manage.ProjectsRepository") as proj_cls,
+            patch("routers.categories.manage.PreviewsRepository") as previews_cls,
+            patch("bot.config.get_settings") as mock_settings,
+            patch("services.tokens.TokenService") as token_cls,
+        ):
+            mock_settings.return_value = MagicMock(admin_id=999)
+            cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
+            proj_cls.return_value.get_by_id = AsyncMock(return_value=project)
+            cat_cls.return_value.delete = AsyncMock(return_value=True)
+            cat_cls.return_value.get_by_project = AsyncMock(return_value=[])
+            previews_cls.return_value.get_active_drafts_by_category = AsyncMock(
+                return_value=[mock_preview]
+            )
+            previews_cls.return_value.atomic_mark_expired = AsyncMock(return_value=None)
+            token_cls.return_value.refund = AsyncMock(return_value=1320)
+
+            await cb_category_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
+
+            token_cls.return_value.refund.assert_awaited_once_with(
+                user.id, 320,
+                reason="category_deleted",
+                description="Category deleted, preview refund: seo tips",
+            )
+            previews_cls.return_value.atomic_mark_expired.assert_awaited_once_with(99)
+            cat_cls.return_value.delete.assert_awaited_once_with(category.id)
