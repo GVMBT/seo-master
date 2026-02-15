@@ -1,0 +1,7 @@
+# OSV-Scanner config for CodeRabbit
+# Scans uv.lock for known vulnerabilities in dependencies
+
+[[IgnoredVulns]]
+# Example: ignore a specific vuln if it's a false positive
+# id = "GHSA-xxxx-xxxx-xxxx"
+# reason = "Not applicable — we don't use the affected feature"

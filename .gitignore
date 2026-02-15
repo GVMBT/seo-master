@@ -1,12 +1,10 @@
-# Byte-compiled / optimized / DLL files
+# === Python ===
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
 
-# Distribution / packaging
+# === Packaging ===
 .Python
 build/
 develop-eggs/
@@ -23,46 +21,45 @@ var/
 .installed.cfg
 *.egg
 
-# Virtual environments
+# === Virtual environments ===
+.venv/
 venv/
 ENV/
 env/
-.venv/
 .ENV/
 
-# Linters / type checkers / pytest cache
+# === Tool caches ===
 .cache
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-# Editor
+# === Editor / IDE ===
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
+pyrightconfig.json
 
-# Environment
+# === Environment ===
 .env
 .env.*
+!.env.example
 
-# Database files
-*.db
-database/*.db
-
-# Claude Code (personal/dev)
+# === Claude Code (personal / dev-only) ===
 CLAUDE.local.md
 .claude/settings.local.json
 .progress/
 
-# Development documentation
+# === Dev notes / scratch (not part of the product) ===
 audit.md
+audit-plan.md
 claude-workflow.md
+openrouter.md
+supabase-storage.md
+botfuzzer.md
 
-# IDE / type checker config
-pyrightconfig.json
-
-# OS
+# === OS ===
 .DS_Store
 Thumbs.db
 nul

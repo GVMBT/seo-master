@@ -1,0 +1,154 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "ru"
+tone_instructions: "Be direct and specific. Focus on bugs, security, and architecture violations. Skip style nitpicks — Ruff handles those."
+
+reviews:
+  profile: "assertive"
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  sequence_diagrams: true
+  changed_files_summary: true
+  collapse_walkthrough: true
+  poem: false
+  review_status: true
+  assess_linked_issues: true
+  related_prs: true
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: false
+  commit_status: true
+  fail_commit_status: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+      - "wip"
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+
+  tools:
+    ruff:
+      enabled: true
+    pylint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: true
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    osv-scanner:
+      enabled: true
+    hadolint:
+      enabled: false
+
+  # Architecture-aware review instructions per path
+  path_instructions:
+    - path: "routers/**/*.py"
+      instructions: |
+        Routers are THIN wrappers — zero SQL, zero API calls, zero business logic.
+        All logic delegated to services/. Check:
+        - No direct DB queries (only via services)
+        - No httpx/aiohttp calls
+        - callback.message checked for None/InaccessibleMessage before access
+        - FSM classes use *FSM suffix
+        - callback_data format: {entity}:{id}:{action} (max 64 bytes)
+
+    - path: "services/**/*.py"
+      instructions: |
+        Services have ZERO Telegram/Aiogram dependencies. Check:
+        - No imports from aiogram, telegram, or bot/
+        - No Message/CallbackQuery/Bot objects
+        - Uses Repository pattern (db/repositories/) for data access
+        - Credentials encrypt/decrypt ONLY via CredentialManager
+        - All async, type hints required (X | None, not Optional[X])
+
+    - path: "api/**/*.py"
+      instructions: |
+        API handlers are thin aiohttp.web handlers for webhooks (QStash, YooKassa, Pinterest OAuth).
+        Check:
+        - JSON in -> Pydantic validate -> Service Layer call
+        - NO business logic in handlers
+        - Shared http_client from app["http_client"] (never create new)
+        - QStash signature verification via require_qstash_signature decorator
+        - Idempotency via Redis NX lock with Upstash-Message-Id header
+
+    - path: "db/**/*.py"
+      instructions: |
+        Repository pattern. Check:
+        - Parameterized SQL queries ALWAYS (no f-strings in queries)
+        - Credentials encrypted/decrypted ONLY here via CredentialManager
+        - No Telegram imports
+        - Uses SupabaseClient type (not object or Any)
+
+    - path: "services/ai/**/*.py"
+      instructions: |
+        AI pipeline services. Check:
+        - Uses AIOrchestrator for all LLM calls (not direct OpenAI/httpx)
+        - Token charging happens BEFORE generation (debit-first)
+        - Refund on error via atomic_refund
+        - Temperature 0.6 for articles, structured outputs where applicable
+        - Anti-slop: no hardcoded AI cliche words
+
+    - path: "tests/**/*.py"
+      instructions: |
+        pytest-asyncio tests. Check:
+        - async def test_* with proper fixtures
+        - Mocks use httpx.MockTransport or unittest.mock, NOT real API calls
+        - No assert in production code (only in tests via S101 ignore)
+        - Test names follow test_{action}_{scenario}_{expected} pattern
+
+    - path: "cache/**/*.py"
+      instructions: |
+        Redis client and FSM storage. Check:
+        - Uses Upstash Redis HTTP client (stateless, no persistent connections)
+        - Key namespaces properly prefixed
+        - TTL set on all temporary keys
+        - No blocking operations
+
+    - path: "keyboards/**/*.py"
+      instructions: |
+        Telegram keyboards. Check:
+        - PAGE_SIZE = 8 for pagination
+        - callback_data within 64 bytes
+        - All text in Russian
+
+  path_filters:
+    - "!**/*.lock"
+    - "!**/*.min.js"
+    - "!uv.lock"
+
+  labeling_instructions:
+    - label: "security"
+      instructions: "Apply when PR touches credentials, encryption, auth, tokens, or API keys"
+    - label: "ai-pipeline"
+      instructions: "Apply when PR modifies services/ai/, prompts, or AI orchestration"
+    - label: "database"
+      instructions: "Apply when PR modifies db/, migrations, or SQL queries"
+    - label: "api"
+      instructions: "Apply when PR modifies api/ webhook handlers"
+    - label: "fsm"
+      instructions: "Apply when PR modifies FSM states, transitions, or routers/"
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: "local"
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true

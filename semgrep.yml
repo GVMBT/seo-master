@@ -1,0 +1,78 @@
+rules:
+  # SQL injection via f-strings
+  - id: no-fstring-sql
+    patterns:
+      - pattern: |
+          f"... SELECT ... {$VAR} ..."
+      - pattern: |
+          f"... INSERT ... {$VAR} ..."
+      - pattern: |
+          f"... UPDATE ... {$VAR} ..."
+      - pattern: |
+          f"... DELETE ... {$VAR} ..."
+    message: "Potential SQL injection via f-string. Use parameterized queries."
+    languages: [python]
+    severity: ERROR
+
+  # No assert in production code
+  - id: no-assert-in-prod
+    pattern: assert ...
+    paths:
+      exclude:
+        - tests/
+    message: "Use 'if not x: raise AppError(...)' instead of assert in production code."
+    languages: [python]
+    severity: WARNING
+
+  # No print() in production
+  - id: no-print
+    pattern: print(...)
+    paths:
+      exclude:
+        - tests/
+        - scripts/
+    message: "Use structlog instead of print()."
+    languages: [python]
+    severity: WARNING
+
+  # Telegram imports in services/
+  - id: no-telegram-in-services
+    patterns:
+      - pattern: import aiogram
+      - pattern: from aiogram import ...
+      - pattern: from aiogram.$MODULE import ...
+    paths:
+      include:
+        - services/
+    message: "Services must have ZERO Telegram/Aiogram dependencies."
+    languages: [python]
+    severity: ERROR
+
+  # No new httpx client creation (reuse shared)
+  - id: no-new-httpx-client
+    patterns:
+      - pattern: httpx.AsyncClient(...)
+    paths:
+      exclude:
+        - tests/
+        - bot/main.py
+    message: "Reuse shared http_client from app/workflow_data. Do not create new httpx.AsyncClient."
+    languages: [python]
+    severity: WARNING
+
+  # Secret in code
+  - id: hardcoded-secret
+    patterns:
+      - pattern: $KEY = "sk-..."
+      - pattern: $KEY = "sk_..."
+      - pattern: password = "..."
+    message: "Possible hardcoded secret. Use environment variables via Settings."
+    languages: [python]
+    severity: ERROR
+
+  # No Optional[X] — use X | None
+  - id: use-pipe-none
+    pattern: "Optional[$TYPE]"
+    message: "Use '$TYPE | None' instead of 'Optional[$TYPE]' (PEP 604)."
+    languages: [python]
+    severity: INFO
