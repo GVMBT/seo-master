@@ -8,19 +8,18 @@ from __future__ import annotations
 import json
 import time
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from tests.integration.conftest import (
-    ADMIN_ID,
     DEFAULT_USER,
     DEFAULT_USER_ID,
     MockResponse,
     make_update_callback,
     make_update_message,
 )
-from tests.integration.fsm.conftest import DEFAULT_PROJECT, make_mock_settings
+from tests.integration.fsm.conftest import DEFAULT_PROJECT, _test_cm, make_mock_settings
 
 pytestmark = pytest.mark.integration
 
@@ -176,13 +175,18 @@ async def test_wp_step3_valid_credentials(
     """Valid app password format -> creates connection."""
     setup_user()
     _setup_wp_db(mock_db)
-    # Set up connection creation response
+    # Connection creation response (with encrypted credentials for decryption)
+    conn_creds = _test_cm.encrypt({"url": "https://myblog.example.com", "login": "admin", "app_password": "test"})
     conn_data = {
         "id": 100, "project_id": 1, "platform_type": "wordpress",
         "status": "active", "identifier": "myblog.example.com",
-        "metadata": {}, "created_at": "2025-01-01T00:00:00Z",
+        "credentials": conn_creds, "metadata": {}, "created_at": "2025-01-01T00:00:00Z",
     }
-    mock_db.set_response("platform_connections", MockResponse(data=conn_data))
+    # First query: get_by_identifier_for_user returns None (no dup), second: insert
+    mock_db.set_responses("platform_connections", [
+        MockResponse(data=None),  # get_by_identifier_for_user: no duplicate
+        MockResponse(data=conn_data),  # create: returns new connection
+    ])
     _put_in_wp_fsm(mock_redis, "ConnectWordPressFSM:password", {
         "wp_url": "https://myblog.example.com",
         "wp_login": "admin",
@@ -190,8 +194,6 @@ async def test_wp_step3_valid_credentials(
 
     # Valid WP Application Password format: xxxx xxxx xxxx xxxx xxxx xxxx
     update = make_update_message("Abcd Efgh Ijkl Mnop Qrst Uvwx")
-    # Mock message.delete (auto-delete for security)
-    mock_bot.delete_message = AsyncMock(return_value=True)
 
     await dispatcher.feed_update(mock_bot, update)
 
@@ -255,12 +257,17 @@ async def test_wp_full_flow_end_to_end(
     """Full 3-step WP connection flow."""
     setup_user()
     _setup_wp_db(mock_db)
+    conn_creds = _test_cm.encrypt({"url": "https://blog.example.com", "login": "admin", "app_password": "test"})
     conn_data = {
         "id": 100, "project_id": 1, "platform_type": "wordpress",
         "status": "active", "identifier": "blog.example.com",
-        "metadata": {}, "created_at": "2025-01-01T00:00:00Z",
+        "credentials": conn_creds, "metadata": {}, "created_at": "2025-01-01T00:00:00Z",
     }
-    mock_db.set_response("platform_connections", MockResponse(data=conn_data))
+    # Set up responses: None for dup check, conn_data for create
+    mock_db.set_responses("platform_connections", [
+        MockResponse(data=None),  # get_by_identifier during step 3
+        MockResponse(data=conn_data),  # create result
+    ])
 
     # Step 1: start
     update = make_update_callback("project:1:add:wordpress")

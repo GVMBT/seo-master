@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
+from db.credential_manager import CredentialManager
 from tests.integration.conftest import (
     ADMIN_ID,
     DEFAULT_USER,
@@ -13,7 +14,10 @@ from tests.integration.conftest import (
 )
 
 # Valid Fernet key for test mocks (NOT a secret — generated once for deterministic tests)
-TEST_FERNET_KEY = "UmghTYp__Hb9Pg5feH76qp_Nam7gTEUhCV40FcK6Dk8="  # noqa: S105  # nosec B105
+TEST_FERNET_KEY = "UmghTYp__Hb9Pg5feH76qp_Nam7gTEUhCV40FcK6Dk8="  # nosec B105
+
+# Pre-create a CredentialManager for encrypting test credentials
+_test_cm = CredentialManager(TEST_FERNET_KEY)
 
 
 def make_mock_settings() -> MagicMock:
@@ -97,12 +101,14 @@ DEFAULT_CATEGORY = {
     "created_at": "2025-01-01T00:00:00Z",
 }
 
+_WP_CREDENTIALS = {"url": "https://blog.example.com", "username": "admin", "app_password": "xxxx"}
+
 DEFAULT_CONNECTION_WP = {
     "id": 100,
     "project_id": 1,
     "platform_type": "wordpress",
     "status": "active",
-    "credentials": {"url": "https://blog.example.com", "username": "admin", "app_password": "xxxx"},
+    "credentials": _test_cm.encrypt(_WP_CREDENTIALS),
     "metadata": {},
     "identifier": "https://blog.example.com",
     "created_at": "2025-01-01T00:00:00Z",

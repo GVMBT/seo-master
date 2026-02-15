@@ -8,13 +8,14 @@ maintaining ZERO aiogram dependencies in the services/ layer.
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 import httpx
 import pytest
 import respx
 
 from db.models import PlatformConnection
-from services.publishers.base import PublishRequest, PublishResult
+from services.publishers.base import PublishRequest
 from services.publishers.telegram import TelegramPublisher
 
 pytestmark = pytest.mark.integration
@@ -49,7 +50,7 @@ def _make_connection(creds: dict[str, str] | None = None) -> PlatformConnection:
 def _make_request(
     content: str = "Test post content",
     images: list[bytes] | None = None,
-    content_type: str = "telegram_html",
+    content_type: Literal["html", "telegram_html", "plain_text", "pin_text"] = "telegram_html",
     connection: PlatformConnection | None = None,
 ) -> PublishRequest:
     return PublishRequest(

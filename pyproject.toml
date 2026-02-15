@@ -55,7 +55,6 @@ dev = [
     "vulture>=2.14",
     "telethon>=1.39",
     "respx>=0.22",
-    "bandit>=1.9.3",
 ]
 
 [tool.ruff]

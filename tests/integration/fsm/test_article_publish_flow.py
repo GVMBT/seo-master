@@ -66,9 +66,14 @@ def _setup_article_db(
     mock_db.set_response("users", MockResponse(data=u))
     mock_db.set_response("categories", MockResponse(data=category or _CATEGORY_WITH_KEYWORDS))
     mock_db.set_response("projects", MockResponse(data=DEFAULT_PROJECT))
-    conn_list = connections or [DEFAULT_CONNECTION_WP]
+    conn_list = connections if connections is not None else [DEFAULT_CONNECTION_WP]
     mock_db.set_response("platform_connections", MockResponse(data=conn_list))
-    mock_db.set_response("publication_logs", MockResponse(data=[]))
+    mock_db.set_response("publication_logs", MockResponse(data={
+        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
+        "platform_type": "wordpress", "connection_id": 100, "keyword": "seo guide",
+        "content_type": "article", "images_count": 4, "post_url": "https://blog.example.com/test",
+        "word_count": 2000, "tokens_spent": 320, "created_at": "2025-01-01T00:00:00Z",
+    }))
     mock_db.set_response("article_previews", MockResponse(data={
         "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
         "connection_id": 100, "title": "Test Article", "keyword": "seo optimization guide",
@@ -77,7 +82,10 @@ def _setup_article_db(
         "telegraph_path": "test", "regeneration_count": 0, "status": "draft",
         "created_at": "2025-01-01T00:00:00Z",
     }))
-    mock_db.set_response("token_expenses", MockResponse(data=[]))
+    mock_db.set_response("token_expenses", MockResponse(data={
+        "id": 1, "user_id": DEFAULT_USER_ID, "amount": -320, "operation_type": "article",
+        "description": "Article generation", "created_at": "2025-01-01T00:00:00Z",
+    }))
     # RPC for charge_balance
     mock_db.set_rpc_response("charge_balance", [{"new_balance": balance - 320}])
     mock_db.set_rpc_response("refund_balance", [{"new_balance": balance}])
@@ -199,7 +207,7 @@ async def test_article_no_connections(
 
     assert mock_bot.answer_callback_query.called
     call_kwargs = mock_bot.answer_callback_query.call_args.kwargs
-    text = call_kwargs.get("text", "")
+    text = call_kwargs.get("text") or ""
     assert "WordPress" in text or "подключен" in text.lower()
 
 
@@ -249,7 +257,6 @@ async def test_article_confirm_charges_tokens(
         await dispatcher.feed_update(mock_bot, update)
 
     # Should have progressed to generating/preview
-    all_text = _get_all_text(mock_bot)
     # May show "Подбираю ключевую фразу..." or preview
     assert mock_bot.edit_message_text.called or mock_bot.send_message.called
 
@@ -403,7 +410,12 @@ async def test_article_god_mode_no_charge(
     mock_db.set_response("categories", MockResponse(data=_CATEGORY_WITH_KEYWORDS))
     mock_db.set_response("projects", MockResponse(data=admin_project))
     mock_db.set_response("platform_connections", MockResponse(data=[DEFAULT_CONNECTION_WP]))
-    mock_db.set_response("publication_logs", MockResponse(data=[]))
+    mock_db.set_response("publication_logs", MockResponse(data={
+        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
+        "platform_type": "wordpress", "connection_id": 100, "keyword": "seo guide",
+        "content_type": "article", "images_count": 4, "post_url": "https://blog.example.com/test",
+        "word_count": 2000, "tokens_spent": 320, "created_at": "2025-01-01T00:00:00Z",
+    }))
     mock_db.set_response("article_previews", MockResponse(data={
         "id": 1, "user_id": ADMIN_ID, "project_id": 1, "category_id": 10,
         "connection_id": 100, "title": "Admin Article", "keyword": "seo guide",

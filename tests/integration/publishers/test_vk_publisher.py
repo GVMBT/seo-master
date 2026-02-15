@@ -10,14 +10,12 @@ The VK publisher uses a 3-step photo upload flow:
 
 from __future__ import annotations
 
-import json
-
 import httpx
 import pytest
 import respx
 
 from db.models import PlatformConnection
-from services.publishers.base import PublishRequest, PublishResult
+from services.publishers.base import PublishRequest
 from services.publishers.vk import VKPublisher
 
 pytestmark = pytest.mark.integration

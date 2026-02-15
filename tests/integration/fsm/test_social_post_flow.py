@@ -8,12 +8,11 @@ from __future__ import annotations
 import json
 import time
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from tests.integration.conftest import (
-    ADMIN_ID,
     DEFAULT_USER,
     DEFAULT_USER_ID,
     MockResponse,
@@ -21,8 +20,8 @@ from tests.integration.conftest import (
 )
 from tests.integration.fsm.conftest import (
     DEFAULT_CATEGORY,
-    DEFAULT_CONNECTION_WP,
     DEFAULT_PROJECT,
+    _test_cm,
     make_mock_settings,
 )
 
@@ -50,7 +49,7 @@ _CONNECTION_TG = {
     "project_id": 1,
     "platform_type": "telegram",
     "status": "active",
-    "credentials": {"bot_token": "123:FAKE", "channel_id": "-100123456"},
+    "credentials": _test_cm.encrypt({"bot_token": "123:FAKE", "channel_id": "-100123456"}),
     "metadata": {},
     "identifier": "@test_channel",
     "created_at": "2025-01-01T00:00:00Z",
@@ -61,7 +60,7 @@ _CONNECTION_VK = {
     "project_id": 1,
     "platform_type": "vk",
     "status": "active",
-    "credentials": {"access_token": "vk1.a.FAKE", "group_id": "12345"},
+    "credentials": _test_cm.encrypt({"access_token": "vk1.a.FAKE", "group_id": "12345"}),
     "metadata": {},
     "identifier": "12345",
     "created_at": "2025-01-01T00:00:00Z",
@@ -83,8 +82,16 @@ def _setup_social_db(
     mock_db.set_response("categories", MockResponse(data=category or _CATEGORY_WITH_KEYWORDS))
     mock_db.set_response("projects", MockResponse(data=DEFAULT_PROJECT))
     mock_db.set_response("platform_connections", MockResponse(data=connection or _CONNECTION_TG))
-    mock_db.set_response("publication_logs", MockResponse(data=[]))
-    mock_db.set_response("token_expenses", MockResponse(data=[]))
+    mock_db.set_response("publication_logs", MockResponse(data={
+        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
+        "platform_type": "telegram", "connection_id": 200, "keyword": "test",
+        "content_type": "social_post", "images_count": 0, "post_url": "",
+        "word_count": 100, "tokens_spent": 40, "created_at": "2025-01-01T00:00:00Z",
+    }))
+    mock_db.set_response("token_expenses", MockResponse(data={
+        "id": 1, "user_id": DEFAULT_USER_ID, "amount": -40, "operation_type": "social_post",
+        "description": "Social post generation", "created_at": "2025-01-01T00:00:00Z",
+    }))
     mock_db.set_rpc_response("charge_balance", [{"new_balance": balance - 40}])
     mock_db.set_rpc_response("refund_balance", [{"new_balance": balance}])
 

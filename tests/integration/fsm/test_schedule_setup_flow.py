@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from tests.integration.conftest import (
-    ADMIN_ID,
     DEFAULT_USER,
     DEFAULT_USER_ID,
     MockResponse,

@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from tests.integration.conftest import (
-    ADMIN_ID,
     DEFAULT_USER,
     DEFAULT_USER_ID,
     MockResponse,
@@ -47,7 +46,13 @@ def _setup_keyword_db(
     mock_db.set_response("users", MockResponse(data=u))
     mock_db.set_response("categories", MockResponse(data=category or DEFAULT_CATEGORY))
     mock_db.set_response("projects", MockResponse(data=DEFAULT_PROJECT))
-    mock_db.set_response("token_expenses", MockResponse(data=[]))
+    # token_expenses needs a valid record for insert (create_expense calls _require_first)
+    mock_db.set_response("token_expenses", MockResponse(data={
+        "id": 1, "user_id": DEFAULT_USER["id"], "amount": -50,
+        "operation_type": "keyword_generation", "description": "Keywords",
+        "ai_model": None, "input_tokens": None, "output_tokens": None,
+        "cost_usd": None, "created_at": "2025-01-01T00:00:00Z",
+    }))
     mock_db.set_rpc_response("charge_balance", [{"new_balance": balance - 50}])
     mock_db.set_rpc_response("refund_balance", [{"new_balance": balance}])
 
@@ -185,7 +190,7 @@ async def test_keyword_gen_confirm_runs_pipeline(
          "total_volume": 1000, "phrases": [{"phrase": "seo guide", "volume": 1000}]},
     ]
 
-    with patch("routers.categories.keywords.KeywordService") as mock_kw_svc_cls:
+    with patch("services.keywords.KeywordService") as mock_kw_svc_cls:
         mock_svc = MagicMock()
         mock_svc.fetch_raw_phrases = AsyncMock(return_value=["seo guide", "seo basics"])
         mock_svc.cluster_phrases = AsyncMock(return_value=mock_clusters)
@@ -236,7 +241,7 @@ async def test_keyword_gen_pipeline_error_refunds(
     })
     mock_services["rate_limiter"].check = AsyncMock()
 
-    with patch("routers.categories.keywords.KeywordService") as mock_kw_svc_cls:
+    with patch("services.keywords.KeywordService") as mock_kw_svc_cls:
         mock_svc = MagicMock()
         mock_svc.fetch_raw_phrases = AsyncMock(side_effect=Exception("DataForSEO unavailable"))
         mock_kw_svc_cls.return_value = mock_svc

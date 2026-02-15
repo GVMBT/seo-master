@@ -185,9 +185,10 @@ async def test_boundary_exactly_30_min(
     setup_user()
     _setup_db(mock_db)
 
-    # Set last_update_time to exactly 1800 seconds ago (boundary)
-    # The check is: (now - last_update) > timeout, so exactly 1800 is NOT expired
-    exactly_30_min_ago = time.time() - 1800
+    # Set last_update_time to 1799 seconds ago (just under boundary)
+    # The check is: (now - last_update) > timeout, so 1799 < 1800 is NOT expired
+    # Use 1799 instead of 1800 to account for execution time between set and check
+    exactly_30_min_ago = time.time() - 1799
     _put_in_fsm(mock_redis, "ProjectCreateFSM:name", last_update_time=exactly_30_min_ago)
 
     update = make_update_message("Boundary Test Project")

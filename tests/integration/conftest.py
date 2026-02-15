@@ -293,17 +293,30 @@ def mock_db() -> MockSupabaseClient:
 
 
 @pytest.fixture
-def mock_bot() -> MagicMock:
+def mock_bot() -> AsyncMock:
     """Mock Bot with captured send_message / edit_message_text / answer_callback_query.
 
-    Uses MagicMock(spec=Bot) so isinstance checks pass where needed.
-    All Telegram API methods are AsyncMocks returning sensible defaults.
+    Uses AsyncMock(spec=Bot) so:
+    - isinstance checks pass where needed
+    - await bot(method) works (Aiogram 3.x calls bot(method_object) internally)
+
+    When you do message.answer("text"), Aiogram creates SendMessage(...) and awaits
+    bot(send_message_method). The side_effect routes calls to per-method trackers
+    (bot.send_message, bot.edit_message_text, etc.) for test assertions.
     """
-    bot = MagicMock(spec=Bot)
+    from aiogram.methods import (
+        AnswerCallbackQuery,
+        DeleteMessage,
+        EditMessageReplyMarkup,
+        EditMessageText,
+        SendMessage,
+    )
+
+    bot = AsyncMock(spec=Bot)
     bot.id = 1234567890
     bot.token = "123:FAKE"
 
-    # Core API methods
+    # Per-method trackers (AsyncMocks so tests can assert on calls/kwargs)
     bot.send_message = AsyncMock(return_value=MagicMock())
     bot.edit_message_text = AsyncMock(return_value=MagicMock())
     bot.edit_message_reply_markup = AsyncMock(return_value=MagicMock())
@@ -313,6 +326,46 @@ def mock_bot() -> MagicMock:
     bot.set_webhook = AsyncMock(return_value=True)
     bot.session = MagicMock()
     bot.session.close = AsyncMock()
+
+    # Route bot(method) -> per-method tracker for assertions
+    async def _dispatch_method(method: Any, request_timeout: int | None = None) -> Any:
+        if isinstance(method, SendMessage):
+            return await bot.send_message(
+                chat_id=method.chat_id,
+                text=method.text,
+                reply_markup=method.reply_markup,
+                parse_mode=method.parse_mode,
+            )
+        if isinstance(method, EditMessageText):
+            return await bot.edit_message_text(
+                chat_id=method.chat_id,
+                message_id=method.message_id,
+                text=method.text,
+                reply_markup=method.reply_markup,
+                parse_mode=method.parse_mode,
+                inline_message_id=method.inline_message_id,
+            )
+        if isinstance(method, EditMessageReplyMarkup):
+            return await bot.edit_message_reply_markup(
+                chat_id=method.chat_id,
+                message_id=method.message_id,
+                reply_markup=method.reply_markup,
+            )
+        if isinstance(method, AnswerCallbackQuery):
+            return await bot.answer_callback_query(
+                callback_query_id=method.callback_query_id,
+                text=method.text,
+                show_alert=method.show_alert,
+            )
+        if isinstance(method, DeleteMessage):
+            return await bot.delete_message(
+                chat_id=method.chat_id,
+                message_id=method.message_id,
+            )
+        # Fallback: return a generic mock
+        return MagicMock()
+
+    bot.side_effect = _dispatch_method
 
     return bot
 
@@ -384,6 +437,41 @@ def _setup_db_for_auth(mock_db: MockSupabaseClient, user_data: dict[str, Any] | 
     mock_db.set_response("users", MockResponse(data=data))
 
 
+def _detach_all_routers() -> None:
+    """Detach all sub-routers from their parents before re-including them.
+
+    Aiogram Router instances are module-level singletons. Once attached to a
+    parent via include_router(), they cannot be re-attached without resetting
+    the _parent_router attribute. This is needed because each test gets a fresh
+    Dispatcher fixture.
+    """
+    from routers.admin import router as admin_router
+    from routers.analysis import router as analysis_router
+    from routers.categories import router as categories_router
+    from routers.help import router as help_router
+    from routers.payments import router as payments_router
+    from routers.platforms import router as platforms_router
+    from routers.profile import router as profile_router
+    from routers.projects import router as projects_router
+    from routers.publishing import router as publishing_router
+    from routers.settings import router as settings_router
+    from routers.start import router as start_router
+    from routers.tariffs import router as tariffs_router
+
+    all_routers = [
+        admin_router, help_router, start_router, projects_router,
+        categories_router, platforms_router, publishing_router,
+        analysis_router, profile_router, settings_router,
+        tariffs_router, payments_router,
+    ]
+    for r in all_routers:
+        if r._parent_router is not None:
+            parent = r._parent_router
+            if r in parent.sub_routers:
+                parent.sub_routers.remove(r)
+            r._parent_router = None
+
+
 @pytest.fixture
 def dispatcher(
     mock_db: MockSupabaseClient,
@@ -408,6 +496,9 @@ def dispatcher(
         observer.middleware(ThrottlingMiddleware(mock_redis))
         observer.middleware(FSMInactivityMiddleware(1800))
         observer.middleware(LoggingMiddleware())
+
+    # Detach routers from any previous parent before re-including
+    _detach_all_routers()
 
     # Include all real routers
     dp.include_router(setup_routers())

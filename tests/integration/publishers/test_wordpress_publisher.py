@@ -13,6 +13,7 @@ import pytest
 import respx
 
 from db.models import PlatformConnection
+from services.publishers.base import PublishRequest
 from services.publishers.wordpress import WordPressPublisher
 
 pytestmark = pytest.mark.integration
@@ -50,9 +51,7 @@ def _make_request(
     images: list[bytes] | None = None,
     images_meta: list[dict[str, str]] | None = None,
     metadata: dict[str, object] | None = None,
-) -> "PublishRequest":
-    from services.publishers.base import PublishRequest
-
+) -> PublishRequest:
     return PublishRequest(
         connection=connection or _make_connection(),
         content=content,

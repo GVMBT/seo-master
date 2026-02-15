@@ -44,12 +44,14 @@ from routers.categories.reviews import ReviewGenerationFSM
 from routers.categories.reviews import router as reviews_router
 
 router = Router(name="categories")
-# Sub-routers: specific features BEFORE manage (manage has catch-all stub)
+# Sub-routers: specific features BEFORE manage (manage has catch-all stub).
+# keywords BEFORE media: KeywordUploadFSM.file_upload (state+F.document)
+# must match before media's generic F.document catch-all.
 router.include_router(description_router)
 router.include_router(reviews_router)
 router.include_router(prices_router)
-router.include_router(media_router)
 router.include_router(keywords_router)
+router.include_router(media_router)
 router.include_router(manage_router)
 
 __all__ = [

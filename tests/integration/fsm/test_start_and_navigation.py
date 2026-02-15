@@ -6,10 +6,12 @@ Tests the full middleware -> filter -> handler pipeline via Dispatcher.feed_upda
 from __future__ import annotations
 
 import json
+import time as time_mod
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+from aiogram.types import Chat, Message, PhotoSize, Update
 
 from tests.integration.conftest import (
     ADMIN_ID,
@@ -17,6 +19,8 @@ from tests.integration.conftest import (
     DEFAULT_USER,
     DEFAULT_USER_ID,
     MockResponse,
+    _next_update_id,
+    make_tg_user,
     make_update_callback,
     make_update_message,
 )
@@ -70,12 +74,7 @@ async def test_start_new_user_welcome(
     # Should have called send_message (message.answer calls bot.send_message)
     assert mock_bot.send_message.called
     calls = mock_bot.send_message.call_args_list
-    # Find the call with welcome text
-    all_text = " ".join(
-        str(c.kwargs.get("text", "") or c.args[1] if len(c.args) > 1 else "")
-        for c in calls
-        if c.kwargs.get("text") or (len(c.args) > 1 and c.args[1])
-    )
+    all_text = " ".join(str(c.kwargs.get("text", "")) for c in calls)
     assert "1500" in all_text or "Добро пожаловать" in all_text
 
 
@@ -240,11 +239,6 @@ async def test_non_text_in_fsm_rejected(
     mock_redis._store[storage_data_key] = json.dumps({"last_update_time": 9999999999})
 
     # Create an update with a photo (non-text, non-document)
-    import time as time_mod
-    from aiogram.types import Chat, Message, PhotoSize, Update
-    from aiogram.types import User as TgUser
-    from tests.integration.conftest import _next_update_id, make_tg_user
-
     tg_user = make_tg_user()
     chat = Chat(id=DEFAULT_USER_ID, type="private")
     photo = PhotoSize(file_id="photo_123", file_unique_id="unique_photo", width=100, height=100)

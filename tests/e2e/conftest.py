@@ -15,6 +15,7 @@ import asyncio
 import os
 
 import pytest
+import pytest_asyncio
 
 # Skip entire module if Telethon credentials not configured
 _TELETHON_API_ID = os.environ.get("TELETHON_API_ID")
@@ -31,7 +32,7 @@ def _telethon_available() -> bool:
     return bool(_TELETHON_API_ID and _TELETHON_API_HASH and _TELETHON_SESSION)
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def telethon_client():
     """Create Telethon client with StringSession (no interactive phone prompt)."""
     if not _telethon_available():
@@ -53,7 +54,7 @@ async def telethon_client():
     await client.disconnect()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def bot_username() -> str:
     """Staging bot username (without @)."""
     return _BOT_USERNAME.lstrip("@")

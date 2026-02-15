@@ -41,6 +41,10 @@ def _make_fake_message(**kwargs: Any) -> MagicMock:
     return msg
 
 
+# ---------------------------------------------------------------------------
+# Overridden fixtures
+# ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_bot() -> AsyncMock:

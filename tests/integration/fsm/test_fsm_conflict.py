@@ -9,12 +9,11 @@ from __future__ import annotations
 import json
 import time
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from tests.integration.conftest import (
-    ADMIN_ID,
     DEFAULT_USER,
     DEFAULT_USER_ID,
     MockResponse,
@@ -279,9 +278,9 @@ async def test_concurrent_updates_safe(
     await dispatcher.feed_update(mock_bot, update1)
     await dispatcher.feed_update(mock_bot, update2)
 
-    # The last successful state transition should be the active one
-    state = _get_fsm_state(mock_redis)
-    # After first message, state should advance to company_name
-    # After second message (in company_name), should advance to specialization
-    # Both updates should have been processed
+    # The last successful state transition should be the active one.
+    # After first message, state should advance to company_name.
+    # After second message (in company_name), should advance to specialization.
+    # Both updates should have been processed.
+    assert _get_fsm_state(mock_redis) is not None
     assert mock_bot.send_message.call_count >= 2

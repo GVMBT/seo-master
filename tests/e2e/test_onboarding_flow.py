@@ -18,6 +18,7 @@ pytestmark = [
         not os.environ.get("TELETHON_API_ID"),
         reason="E2E: Telethon credentials not configured",
     ),
+    pytest.mark.asyncio(loop_scope="module"),
 ]
 
 

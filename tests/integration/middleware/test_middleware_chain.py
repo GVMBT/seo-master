@@ -12,10 +12,10 @@ from __future__ import annotations
 import json
 import time
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-from aiogram import Bot, Dispatcher
+from aiogram import Dispatcher
 
 from tests.integration.conftest import (
     ADMIN_ID,
@@ -42,7 +42,7 @@ async def _feed(dispatcher: Dispatcher, mock_bot: MagicMock, update: Any) -> Non
 
 def _send_call_count(mock_bot: MagicMock) -> int:
     """Return total number of send_message calls on the mock bot."""
-    return mock_bot.send_message.call_count
+    return int(mock_bot.send_message.call_count)
 
 
 # ---------------------------------------------------------------------------
