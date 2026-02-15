@@ -34,6 +34,10 @@ reviews:
     unit_tests:
       enabled: false
 
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+
   tools:
     ruff:
       enabled: true
