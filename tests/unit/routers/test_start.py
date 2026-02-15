@@ -264,12 +264,18 @@ class TestCmdStartDeepLink:
 
 class TestCmdCancel:
     @pytest.mark.asyncio
-    async def test_clears_state_and_shows_menu(
-        self, mock_message: MagicMock, mock_state: AsyncMock, user: User
-    ) -> None:
+    async def test_cancel_with_active_fsm(self, mock_message: MagicMock, mock_state: AsyncMock, user: User) -> None:
+        mock_state.get_state.return_value = "SomeState:step"
         await cmd_cancel(mock_message, mock_state, user)
         mock_state.clear.assert_awaited_once()
         assert "отменено" in mock_message.answer.call_args.args[0].lower()
+
+    @pytest.mark.asyncio
+    async def test_cancel_without_active_fsm(self, mock_message: MagicMock, mock_state: AsyncMock, user: User) -> None:
+        mock_state.get_state.return_value = None
+        await cmd_cancel(mock_message, mock_state, user)
+        mock_state.clear.assert_awaited_once()
+        assert "нет активного" in mock_message.answer.call_args.args[0].lower()
 
 
 class TestBtnCancel:
