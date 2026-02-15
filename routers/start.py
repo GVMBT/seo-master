@@ -266,8 +266,12 @@ async def _handle_pinterest_auth(
 @router.message(Command("cancel"), StateFilter("*"))
 async def cmd_cancel(message: Message, state: FSMContext, user: User) -> None:
     """Cancel any active FSM and return to main menu."""
+    current = await state.get_state()
     await state.clear()
-    await message.answer("Действие отменено.", reply_markup=main_menu(is_admin=user.role == "admin"))
+    if current is not None:
+        await message.answer("Действие отменено.", reply_markup=main_menu(is_admin=user.role == "admin"))
+    else:
+        await message.answer("Нет активного действия.", reply_markup=main_menu(is_admin=user.role == "admin"))
 
 
 @router.message(F.text == "Отмена", StateFilter("*"))

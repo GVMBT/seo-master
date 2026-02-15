@@ -55,7 +55,7 @@ rules:
     paths:
       exclude:
         - tests/
-        - bot/main.py
+        - "**/bot/main.py"
     message: "Reuse shared http_client from app/workflow_data. Do not create new httpx.AsyncClient."
     languages: [python]
     severity: WARNING
