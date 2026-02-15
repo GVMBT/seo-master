@@ -420,10 +420,28 @@ class TestCbKwConfirm:
             "geography": "Moscow",
         }
         with patch("routers.categories.keywords.TokenService") as svc_cls, \
-             patch("routers.categories.keywords.get_settings") as mock_settings:
+             patch("routers.categories.keywords.get_settings") as mock_settings, \
+             patch("routers.categories.keywords.CategoriesRepository") as mock_cat_cls, \
+             patch("services.keywords.KeywordService") as mock_kw_cls:
             mock_settings.return_value = MagicMock(admin_id=999)
             svc_cls.return_value.charge = AsyncMock(return_value=1400)
-            await cb_kw_confirm(mock_callback, mock_state, user, mock_db, mock_rate_limiter)
+            mock_cat_cls.return_value.get_by_id = AsyncMock(
+                return_value=MagicMock(project_id=1),
+            )
+            kw_svc = mock_kw_cls.return_value
+            kw_svc.fetch_raw_phrases = AsyncMock(return_value=[{"phrase": "test"}])
+            kw_svc.cluster_phrases = AsyncMock(return_value=[
+                {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
+            ])
+            kw_svc.enrich_clusters = AsyncMock(return_value=[
+                {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
+            ])
+            mock_ai = MagicMock()
+            mock_dataforseo = MagicMock()
+            await cb_kw_confirm(
+                mock_callback, mock_state, user, mock_db, mock_rate_limiter,
+                mock_ai, mock_dataforseo,
+            )
             svc_cls.return_value.charge.assert_awaited_once()
             # Pipeline should reach results state
             state_calls = [c.args[0] for c in mock_state.set_state.call_args_list]
@@ -453,7 +471,10 @@ class TestCbKwConfirm:
             svc_cls.return_value.format_insufficient_msg = MagicMock(
                 return_value="Недостаточно токенов."
             )
-            await cb_kw_confirm(mock_callback, mock_state, user, mock_db, mock_rate_limiter)
+            await cb_kw_confirm(
+                mock_callback, mock_state, user, mock_db, mock_rate_limiter,
+                MagicMock(), MagicMock(),
+            )
             text = mock_callback.message.edit_text.call_args.args[0]
             assert "Недостаточно" in text
 
@@ -467,10 +488,28 @@ class TestCbKwConfirm:
             "products": "test products", "geography": "Russia",
         }
         with patch("routers.categories.keywords.TokenService") as svc_cls, \
-             patch("routers.categories.keywords.get_settings") as mock_settings:
+             patch("routers.categories.keywords.get_settings") as mock_settings, \
+             patch("routers.categories.keywords.CategoriesRepository") as mock_cat_cls, \
+             patch("services.keywords.KeywordService") as mock_kw_cls:
             mock_settings.return_value = MagicMock(admin_id=999)
             svc_cls.return_value.charge = AsyncMock(return_value=1450)
-            await cb_kw_confirm(mock_callback, mock_state, user, mock_db, mock_rate_limiter)
+            mock_cat_cls.return_value.get_by_id = AsyncMock(
+                return_value=MagicMock(project_id=1),
+            )
+            kw_svc = mock_kw_cls.return_value
+            kw_svc.fetch_raw_phrases = AsyncMock(return_value=[{"phrase": "test"}])
+            kw_svc.cluster_phrases = AsyncMock(return_value=[
+                {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
+            ])
+            kw_svc.enrich_clusters = AsyncMock(return_value=[
+                {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
+            ])
+            mock_ai = MagicMock()
+            mock_dataforseo = MagicMock()
+            await cb_kw_confirm(
+                mock_callback, mock_state, user, mock_db, mock_rate_limiter,
+                mock_ai, mock_dataforseo,
+            )
             # Check clusters were stored in state
             update_calls = mock_state.update_data.call_args_list
             clusters_stored = any(

@@ -121,6 +121,11 @@ def _rl() -> MagicMock:
     return rl
 
 
+def _ai_deps() -> tuple[MagicMock, MagicMock, MagicMock]:
+    """Dummy AI pipeline deps: (ai_orchestrator, image_storage, http_client)."""
+    return MagicMock(), MagicMock(), MagicMock()
+
+
 # ---------------------------------------------------------------------------
 # Helper tests
 # ---------------------------------------------------------------------------
@@ -401,6 +406,7 @@ async def test_article_start_with_conn_ownership_check(
 # ---------------------------------------------------------------------------
 
 
+@patch("routers.publishing.preview.PreviewService")
 @patch("routers.publishing.preview.PreviewsRepository")
 @patch("routers.publishing.preview.PublicationsRepository")
 @patch("routers.publishing.preview.CategoriesRepository")
@@ -408,6 +414,7 @@ async def test_article_start_with_conn_ownership_check(
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_confirm_happy(
     mock_guard, mock_token_cls, mock_cat_cls, mock_pub_cls, mock_prev_cls,
+    mock_preview_svc_cls,
 ):
     """Confirm charges tokens and creates preview."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -416,6 +423,14 @@ async def test_article_confirm_happy(
 
     mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_category())
     mock_pub_cls.return_value.get_rotation_keyword = AsyncMock(return_value=("test phrase", False))
+
+    # Mock PreviewService.generate_article_content
+    mock_preview_svc_cls.return_value.generate_article_content = AsyncMock(
+        return_value=MagicMock(
+            title="Test Article", content_html="<p>Content</p>",
+            word_count=2000, images_count=4, stored_images=[],
+        ),
+    )
 
     preview = _preview()
     mock_prev_cls.return_value.create = AsyncMock(return_value=preview)
@@ -433,7 +448,7 @@ async def test_article_confirm_happy(
         mock_tg_page.path = "test"
         mock_tg_inst.create_page = AsyncMock(return_value=mock_tg_page)
 
-        await cb_article_confirm(cb, _user(), MagicMock(), st, _rl())
+        await cb_article_confirm(cb, _user(), MagicMock(), st, _rl(), *_ai_deps())
 
     # Should charge tokens
     mock_token_cls.return_value.charge.assert_awaited_once()
@@ -458,7 +473,7 @@ async def test_article_confirm_insufficient_balance(mock_guard, mock_token_cls):
     cb = _callback("pub:article:confirm")
     st = _state(category_id=10, project_id=1, connection_id=5, cost=320)
 
-    await cb_article_confirm(cb, _user(balance=10), MagicMock(), st, _rl())
+    await cb_article_confirm(cb, _user(balance=10), MagicMock(), st, _rl(), *_ai_deps())
 
     msg.edit_text.assert_awaited()
     st.clear.assert_awaited()
@@ -480,7 +495,7 @@ async def test_article_confirm_no_keyword_refunds(
     cb = _callback("pub:article:confirm")
     st = _state(category_id=10, project_id=1, connection_id=5, cost=320)
 
-    await cb_article_confirm(cb, _user(), MagicMock(), st, _rl())
+    await cb_article_confirm(cb, _user(), MagicMock(), st, _rl(), *_ai_deps())
 
     # Should refund
     mock_token_cls.return_value.refund.assert_awaited_once()
@@ -495,7 +510,7 @@ async def test_article_confirm_session_lost(mock_guard):
     cb = _callback("pub:article:confirm")
     st = _state()  # empty state
 
-    await cb_article_confirm(cb, _user(), MagicMock(), st, _rl())
+    await cb_article_confirm(cb, _user(), MagicMock(), st, _rl(), *_ai_deps())
 
     st.clear.assert_awaited()
     cb.answer.assert_awaited_once()
@@ -507,18 +522,32 @@ async def test_article_confirm_session_lost(mock_guard):
 # ---------------------------------------------------------------------------
 
 
+@patch("routers.publishing.preview.PreviewService")
+@patch("routers.publishing.preview.CredentialManager")
+@patch("routers.publishing.preview.ConnectionsRepository")
+@patch("routers.publishing.preview.get_settings")
 @patch("routers.publishing.preview.PublicationsRepository")
 @patch("routers.publishing.preview.PreviewsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
-async def test_article_publish_success(mock_guard, mock_prev_cls, mock_pub_cls):
+async def test_article_publish_success(
+    mock_guard, mock_prev_cls, mock_pub_cls, mock_settings,
+    mock_conn_cls, mock_cm_cls, mock_preview_svc_cls,
+):
     """Publish creates log and clears FSM."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
     mock_guard.return_value = msg
+    mock_settings.return_value = MagicMock(
+        encryption_key=MagicMock(get_secret_value=MagicMock(return_value="testkey")),
+    )
 
     preview = _preview()
     mock_prev_cls.return_value.get_by_id = AsyncMock(return_value=preview)
     mock_prev_cls.return_value.update = AsyncMock()
     mock_pub_cls.return_value.create_log = AsyncMock(return_value=MagicMock())
+    mock_conn_cls.return_value.get_by_id = AsyncMock(return_value=_connection())
+    mock_preview_svc_cls.return_value.publish_to_wordpress = AsyncMock(
+        return_value=MagicMock(success=True, post_url="https://test.com/post-1"),
+    )
 
     cb = _callback("pub:article:publish")
     st = _state(
@@ -526,7 +555,7 @@ async def test_article_publish_success(mock_guard, mock_prev_cls, mock_pub_cls):
         keyword="test phrase", cost=320,
     )
 
-    await cb_article_publish(cb, _user(), MagicMock(), st)
+    await cb_article_publish(cb, _user(), MagicMock(), st, *_ai_deps())
 
     # Should transition to publishing state (E07 guard)
     st.set_state.assert_any_call(ArticlePublishFSM.publishing)
@@ -554,7 +583,7 @@ async def test_article_publish_expired_preview(mock_guard, mock_prev_cls):
     cb = _callback("pub:article:publish")
     st = _state(preview_id=1, connection_id=5, category_id=10, project_id=1, cost=320)
 
-    await cb_article_publish(cb, _user(), MagicMock(), st)
+    await cb_article_publish(cb, _user(), MagicMock(), st, *_ai_deps())
 
     st.clear.assert_awaited()
     assert "устарело" in msg.edit_text.call_args[0][0].lower()
@@ -570,7 +599,7 @@ async def test_article_publish_missing_preview(mock_guard, mock_prev_cls):
     cb = _callback("pub:article:publish")
     st = _state()  # no preview_id
 
-    await cb_article_publish(cb, _user(), MagicMock(), st)
+    await cb_article_publish(cb, _user(), MagicMock(), st, *_ai_deps())
 
     st.clear.assert_awaited()
     assert "не найдено" in msg.edit_text.call_args[0][0].lower()
@@ -581,9 +610,10 @@ async def test_article_publish_missing_preview(mock_guard, mock_prev_cls):
 # ---------------------------------------------------------------------------
 
 
+@patch("routers.publishing.preview.PreviewService")
 @patch("routers.publishing.preview.PreviewsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
-async def test_article_regen_free(mock_guard, mock_prev_cls):
+async def test_article_regen_free(mock_guard, mock_prev_cls, mock_svc_cls):
     """Free regeneration (count < 2) does not charge."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
     mock_guard.return_value = msg
@@ -592,11 +622,17 @@ async def test_article_regen_free(mock_guard, mock_prev_cls):
     updated = _preview(regen_count=1)
     mock_prev_cls.return_value.get_by_id = AsyncMock(side_effect=[preview, updated])
     mock_prev_cls.return_value.update = AsyncMock()
+    mock_svc_cls.return_value.generate_article_content = AsyncMock(
+        return_value=MagicMock(
+            title="Regen", content_html="<p>New</p>",
+            word_count=2000, images_count=4, stored_images=[],
+        ),
+    )
 
     cb = _callback("pub:article:regen")
     st = _state(preview_id=1, cost=320, keyword="test phrase")
 
-    await cb_article_regen(cb, _user(), MagicMock(), st)
+    await cb_article_regen(cb, _user(), MagicMock(), st, *_ai_deps())
 
     # Should transition through regenerating -> preview
     st.set_state.assert_any_call(ArticlePublishFSM.regenerating)
@@ -605,10 +641,11 @@ async def test_article_regen_free(mock_guard, mock_prev_cls):
     mock_prev_cls.return_value.update.assert_awaited_once()
 
 
+@patch("routers.publishing.preview.PreviewService")
 @patch("routers.publishing.preview.TokenService")
 @patch("routers.publishing.preview.PreviewsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
-async def test_article_regen_paid_e10(mock_guard, mock_prev_cls, mock_token_cls):
+async def test_article_regen_paid_e10(mock_guard, mock_prev_cls, mock_token_cls, mock_svc_cls):
     """Paid regen (count >= 2) charges tokens (E10)."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
     mock_guard.return_value = msg
@@ -618,11 +655,17 @@ async def test_article_regen_paid_e10(mock_guard, mock_prev_cls, mock_token_cls)
     mock_prev_cls.return_value.get_by_id = AsyncMock(side_effect=[preview, updated])
     mock_prev_cls.return_value.update = AsyncMock()
     mock_token_cls.return_value.charge = AsyncMock(return_value=860)
+    mock_svc_cls.return_value.generate_article_content = AsyncMock(
+        return_value=MagicMock(
+            title="Regen", content_html="<p>New</p>",
+            word_count=2000, images_count=4, stored_images=[],
+        ),
+    )
 
     cb = _callback("pub:article:regen")
     st = _state(preview_id=1, cost=320, keyword="test phrase")
 
-    await cb_article_regen(cb, _user(), MagicMock(), st)
+    await cb_article_regen(cb, _user(), MagicMock(), st, *_ai_deps())
 
     mock_token_cls.return_value.charge.assert_awaited_once()
 
@@ -644,7 +687,7 @@ async def test_article_regen_paid_insufficient_e10(mock_guard, mock_prev_cls, mo
     cb = _callback("pub:article:regen")
     st = _state(preview_id=1, cost=320)
 
-    await cb_article_regen(cb, _user(balance=10), MagicMock(), st)
+    await cb_article_regen(cb, _user(balance=10), MagicMock(), st, *_ai_deps())
 
     cb.answer.assert_awaited()
     assert "320" in cb.answer.call_args[0][0]
@@ -659,7 +702,7 @@ async def test_article_regen_missing_preview(mock_guard, mock_prev_cls):
     cb = _callback("pub:article:regen")
     st = _state()  # no preview_id
 
-    await cb_article_regen(cb, _user(), MagicMock(), st)
+    await cb_article_regen(cb, _user(), MagicMock(), st, *_ai_deps())
 
     st.clear.assert_awaited()
     cb.answer.assert_awaited_once()
@@ -675,7 +718,7 @@ async def test_article_regen_preview_not_found(mock_guard, mock_prev_cls):
     cb = _callback("pub:article:regen")
     st = _state(preview_id=999)
 
-    await cb_article_regen(cb, _user(), MagicMock(), st)
+    await cb_article_regen(cb, _user(), MagicMock(), st, *_ai_deps())
 
     st.clear.assert_awaited()
     cb.answer.assert_awaited()
@@ -763,12 +806,13 @@ async def test_article_confirm_no_keywords_refunds(
     cb = _callback("pub:article:confirm")
     st = _state(category_id=10, project_id=1, connection_id=5, cost=320)
 
-    await cb_article_confirm(cb, _user(), MagicMock(), st, _rl())
+    await cb_article_confirm(cb, _user(), MagicMock(), st, _rl(), *_ai_deps())
 
     mock_token_cls.return_value.refund.assert_awaited_once()
     st.clear.assert_awaited()
 
 
+@patch("routers.publishing.preview.PreviewService")
 @patch("routers.publishing.preview.PreviewsRepository")
 @patch("routers.publishing.preview.PublicationsRepository")
 @patch("routers.publishing.preview.CategoriesRepository")
@@ -776,6 +820,7 @@ async def test_article_confirm_no_keywords_refunds(
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_confirm_preview_create_fails_refunds(
     mock_guard, mock_token_cls, mock_cat_cls, mock_pub_cls, mock_prev_cls,
+    mock_preview_svc_cls,
 ):
     """Preview creation failure -> refund."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -786,12 +831,18 @@ async def test_article_confirm_preview_create_fails_refunds(
     cat = _category()
     mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=cat)
     mock_pub_cls.return_value.get_rotation_keyword = AsyncMock(return_value=("test phrase", False))
+    mock_preview_svc_cls.return_value.generate_article_content = AsyncMock(
+        return_value=MagicMock(
+            title="Test", content_html="<p>T</p>",
+            word_count=200, images_count=0, stored_images=[],
+        ),
+    )
     mock_prev_cls.return_value.create = AsyncMock(side_effect=Exception("DB error"))
 
     cb = _callback("pub:article:confirm")
     st = _state(category_id=10, project_id=1, connection_id=5, cost=320)
 
-    await cb_article_confirm(cb, _user(), MagicMock(), st, _rl())
+    await cb_article_confirm(cb, _user(), MagicMock(), st, _rl(), *_ai_deps())
 
     mock_token_cls.return_value.refund.assert_awaited_once()
     st.clear.assert_awaited()
@@ -802,17 +853,24 @@ async def test_article_confirm_preview_create_fails_refunds(
 # ---------------------------------------------------------------------------
 
 
+@patch("routers.publishing.preview.CredentialManager")
+@patch("routers.publishing.preview.get_settings")
 @patch("routers.publishing.preview.PublicationsRepository")
 @patch("routers.publishing.preview.PreviewsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
-async def test_article_publish_error_returns_to_preview(mock_guard, mock_prev_cls, mock_pub_cls):
-    """Publish error returns to preview state."""
+async def test_article_publish_error_returns_to_preview(
+    mock_guard, mock_prev_cls, mock_pub_cls, mock_settings, mock_cm,
+):
+    """Publish error returns to preview state (connection lookup fails)."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
     mock_guard.return_value = msg
+    mock_settings.return_value = MagicMock(
+        encryption_key=MagicMock(get_secret_value=MagicMock(return_value="k")),
+    )
 
     preview = _preview()
     mock_prev_cls.return_value.get_by_id = AsyncMock(return_value=preview)
-    mock_prev_cls.return_value.update = AsyncMock(side_effect=Exception("WP error"))
+    mock_prev_cls.return_value.update = AsyncMock()
 
     cb = _callback("pub:article:publish")
     st = _state(
@@ -820,7 +878,9 @@ async def test_article_publish_error_returns_to_preview(mock_guard, mock_prev_cl
         project_id=1, keyword="test", cost=320,
     )
 
-    await cb_article_publish(cb, _user(), MagicMock(), st)
+    # ConnectionsRepository(db, cm).get_by_id uses real code with MagicMock db
+    # → await .execute() raises TypeError → handler recovers
+    await cb_article_publish(cb, _user(), MagicMock(), st, *_ai_deps())
 
     # Should go back to preview state on error
     st.set_state.assert_any_call(ArticlePublishFSM.preview)
@@ -843,18 +903,18 @@ async def test_article_start_inaccessible_message(mock_guard):
 async def test_article_confirm_inaccessible_message(mock_guard):
     """Inaccessible message -> early return."""
     cb = _callback("pub:article:confirm")
-    await cb_article_confirm(cb, _user(), MagicMock(), _state(), _rl())
+    await cb_article_confirm(cb, _user(), MagicMock(), _state(), _rl(), *_ai_deps())
 
 
 @patch("routers.publishing.preview.guard_callback_message", return_value=None)
 async def test_article_publish_inaccessible_message(mock_guard):
     """Inaccessible message -> early return."""
     cb = _callback("pub:article:publish")
-    await cb_article_publish(cb, _user(), MagicMock(), _state())
+    await cb_article_publish(cb, _user(), MagicMock(), _state(), *_ai_deps())
 
 
 @patch("routers.publishing.preview.guard_callback_message", return_value=None)
 async def test_article_regen_inaccessible_message(mock_guard):
     """Inaccessible message -> early return."""
     cb = _callback("pub:article:regen")
-    await cb_article_regen(cb, _user(), MagicMock(), _state())
+    await cb_article_regen(cb, _user(), MagicMock(), _state(), *_ai_deps())

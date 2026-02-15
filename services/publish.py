@@ -455,6 +455,16 @@ class PublishService:
         publisher = self._get_publisher(connection.platform_type)
         # Social post content is a dict {text, hashtags, pin_title} — extract text
         content = result.content.get("text", "") if isinstance(result.content, dict) else result.content
+
+        # Validate content before publishing (placeholder detection + platform limits)
+        from services.ai.content_validator import ContentValidator
+
+        validator = ContentValidator()
+        validation = validator.validate(content, "social_post", connection.platform_type)
+        if not validation.is_valid:
+            raise RuntimeError(f"Social post validation failed: {'; '.join(validation.errors)}")
+        if validation.warnings:
+            log.warning("social_post_validation_warnings", warnings=validation.warnings)
         ct: Literal["html", "telegram_html", "plain_text", "pin_text"] = self._get_content_type(
             connection.platform_type
         )  # type: ignore[assignment]

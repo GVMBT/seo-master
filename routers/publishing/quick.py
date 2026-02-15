@@ -121,7 +121,7 @@ async def cb_publish_dispatch(
         if conn.platform_type == "wordpress":
             callback.data = f"category:{category_id}:publish:wp:{conn.id}"  # type: ignore[assignment]
             from routers.publishing.preview import cb_article_start_with_conn
-            await cb_article_start_with_conn(callback, state, user, db)
+            await cb_article_start_with_conn(callback, user, db, state)
         else:
             callback.data = f"category:{category_id}:publish:{ps}:{conn.id}"  # type: ignore[assignment]
             from routers.publishing.social import cb_social_start
@@ -203,7 +203,7 @@ async def cb_quick_publish_target(
         callback.data = f"category:{category_id}:publish:wp:{connection_id}"  # type: ignore[assignment]
         from routers.publishing.preview import cb_article_start_with_conn
 
-        await cb_article_start_with_conn(callback, state, user, db)
+        await cb_article_start_with_conn(callback, user, db, state)
     else:
         # Route to SocialPostPublishFSM
         plat_map = {"tg": "tg", "vk": "vk", "pi": "pin"}

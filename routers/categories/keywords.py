@@ -23,7 +23,9 @@ from keyboards.publish import (
 )
 from keyboards.reply import cancel_kb, main_menu
 from routers._helpers import guard_callback_message
+from services.ai.orchestrator import AIOrchestrator
 from services.ai.rate_limiter import RateLimiter
+from services.external.dataforseo import DataForSEOClient
 from services.tokens import TokenService, estimate_keywords_cost
 
 log = structlog.get_logger()
@@ -278,6 +280,8 @@ async def cb_kw_quantity(
 async def cb_kw_confirm(
     callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
     rate_limiter: RateLimiter,
+    ai_orchestrator: AIOrchestrator,
+    dataforseo_client: DataForSEOClient,
 ) -> None:
     """Charge tokens and run the data-first keyword pipeline."""
     msg = await guard_callback_message(callback)
@@ -313,26 +317,36 @@ async def cb_kw_confirm(
         await callback.answer()
         return
 
-    # Pipeline progress messages
+    # Resolve project_id from category for AI context
+    category_for_project = await CategoriesRepository(db).get_by_id(category_id)
+    project_id = category_for_project.project_id if category_for_project else 0
+
+    # Data-first keyword pipeline via KeywordService
+    from services.keywords import KeywordService
+
+    kw_svc = KeywordService(ai_orchestrator, dataforseo_client, db)
+
     try:
+        # Step 1: Fetch raw phrases (DataForSEO → fallback AI)
         await state.set_state(KeywordGenerationFSM.fetching)
-        await msg.edit_text("Получаю реальные поисковые фразы из Google... (3 сек)")
+        await msg.edit_text("Получаю реальные поисковые фразы из Google...")
+        raw_phrases = await kw_svc.fetch_raw_phrases(
+            products, geography, quantity,
+            project_id=project_id, user_id=user.id,
+        )
 
-        # TODO Phase 11: DataForSEO keyword_suggestions + related_keywords
-        # For now, generate placeholder clusters
-
+        # Step 2: AI clustering
         await state.set_state(KeywordGenerationFSM.clustering)
-        await msg.edit_text("Группирую фразы по поисковому интенту... (10 сек)")
+        await msg.edit_text("Группирую фразы по поисковому интенту...")
+        clusters = await kw_svc.cluster_phrases(
+            raw_phrases, products, geography, quantity,
+            project_id=project_id, user_id=user.id,
+        )
 
-        # TODO Phase 11: AI clustering via keywords_cluster_v3.yaml
-
+        # Step 3: Enrich with volume/CPC/difficulty
         await state.set_state(KeywordGenerationFSM.enriching)
-        await msg.edit_text("Обогащаю данные: объём, сложность, CPC... (2 сек)")
-
-        # TODO Phase 11: DataForSEO enrich_keywords
-
-        # Placeholder cluster result
-        clusters = _build_placeholder_clusters(products, geography, quantity)
+        await msg.edit_text("Обогащаю данные: объём, сложность, CPC...")
+        clusters = await kw_svc.enrich_clusters(clusters)
 
         await state.update_data(clusters=clusters)
         await state.set_state(KeywordGenerationFSM.results)

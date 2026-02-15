@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import html
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from aiogram import F, Router
@@ -44,8 +44,14 @@ from keyboards.publish import (
     quick_wp_choice_kb,
 )
 from routers._helpers import guard_callback_message
+from services.ai.orchestrator import AIOrchestrator
 from services.ai.rate_limiter import RateLimiter
+from services.preview import PreviewService
+from services.storage import ImageStorage
 from services.tokens import TokenService, estimate_article_cost
+
+if TYPE_CHECKING:
+    import httpx
 
 log = structlog.get_logger()
 
@@ -281,6 +287,9 @@ async def _show_article_confirm(
 async def cb_article_confirm(
     callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
     rate_limiter: RateLimiter,
+    ai_orchestrator: AIOrchestrator,
+    image_storage: ImageStorage,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Confirm generation: charge tokens, generate article, show preview."""
     msg = await guard_callback_message(callback)
@@ -354,14 +363,22 @@ async def cb_article_confirm(
     start_time = time.monotonic()
     await msg.edit_text(f"Генерирую статью по фразе: {html.escape(keyword)}...")
 
-    # TODO: Integrate actual AI generation (AIOrchestrator.generate, task_type="article")
-    # For now, create a placeholder preview record
-    title = f"Статья: {keyword}"
-    word_count = 2000
-    images_count = 4
-
-    # Create preview record
+    # Generate article + images in parallel (real AI pipeline)
+    preview_svc = PreviewService(ai_orchestrator, db, image_storage, http_client)
     previews = PreviewsRepository(db)
+    try:
+        article = await preview_svc.generate_article_content(
+            user_id=user.id,
+            project_id=project_id,
+            category_id=category_id,
+            keyword=keyword,
+        )
+    except Exception:
+        log.exception("article_generation_failed", user_id=user.id, keyword=keyword)
+        await _refund_and_error(msg, token_svc, user.id, cost, state, "Ошибка генерации статьи.")
+        return
+
+    # Create preview record with real content
     try:
         preview = await previews.create(
             ArticlePreviewCreate(
@@ -369,12 +386,13 @@ async def cb_article_confirm(
                 project_id=project_id,
                 category_id=category_id,
                 connection_id=connection_id,
-                title=title,
+                title=article.title,
                 keyword=keyword,
-                word_count=word_count,
-                images_count=images_count,
+                word_count=article.word_count,
+                images_count=article.images_count,
                 tokens_charged=cost,
-                content_html=f"<h1>{html.escape(title)}</h1><p>Content placeholder.</p>",
+                content_html=article.content_html,
+                images=article.stored_images,
             )
         )
     except Exception:
@@ -397,7 +415,7 @@ async def cb_article_confirm(
         http_client = callback.bot.session._session  # type: ignore[union-attr]
         telegraph = TelegraphClient(http_client)
         page = await telegraph.create_page(
-            title=preview.title or title,
+            title=preview.title or article.title,
             html=preview.content_html or "",
         )
         if page:
@@ -448,6 +466,9 @@ async def cb_article_confirm(
 @router.callback_query(ArticlePublishFSM.preview, F.data == "pub:article:publish")
 async def cb_article_publish(
     callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
+    ai_orchestrator: AIOrchestrator,
+    image_storage: ImageStorage,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Publish article to WordPress."""
     msg = await guard_callback_message(callback)
@@ -480,12 +501,28 @@ async def cb_article_publish(
 
     await msg.edit_text("Публикую статью...")
 
-    # TODO: Integrate WordPressPublisher (services.publishers.wordpress)
-    # For now, simulate publication and create log
     post_url: str | None = None
     try:
-        # Placeholder: actual WP publisher will be called here
-        post_url = f"https://example.com/article-{preview.id}"
+        # Load connection with credentials for WP publish
+        settings = get_settings()
+        cm = CredentialManager(settings.encryption_key.get_secret_value())
+        conn = await ConnectionsRepository(db, cm).get_by_id(int(connection_id or 0))
+        if not conn:
+            await state.set_state(ArticlePublishFSM.preview)
+            await msg.edit_text(
+                "Подключение не найдено.",
+                reply_markup=article_preview_kb(preview_id, preview.regeneration_count).as_markup(),
+            )
+            return
+
+        # Publish via PreviewService (downloads images from Storage, uploads to WP)
+        preview_svc = PreviewService(ai_orchestrator, db, image_storage, http_client)
+        pub_result = await preview_svc.publish_to_wordpress(preview, conn)
+
+        if not pub_result.success:
+            raise RuntimeError(f"WP publish failed: {pub_result.error}")
+
+        post_url = pub_result.post_url
 
         # Update preview status
         await previews.update(preview_id, ArticlePreviewUpdate(status="published"))
@@ -502,7 +539,7 @@ async def cb_article_publish(
                 keyword=keyword,
                 content_type="article",
                 images_count=preview.images_count or 0,
-                post_url=post_url,
+                post_url=post_url or "",
                 word_count=preview.word_count or 0,
                 tokens_spent=cost,
             )
@@ -528,6 +565,9 @@ async def cb_article_publish(
 @router.callback_query(ArticlePublishFSM.preview, F.data == "pub:article:regen")
 async def cb_article_regen(
     callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
+    ai_orchestrator: AIOrchestrator,
+    image_storage: ImageStorage,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Regenerate article. First 2 are free, then charged (E10)."""
     msg = await guard_callback_message(callback)
@@ -584,16 +624,34 @@ async def cb_article_regen(
     new_count = preview.regeneration_count + 1
     keyword = data.get("keyword", preview.keyword or "")
 
-    # TODO: Actual AI re-generation
-    new_title = f"Статья (v{new_count + 1}): {keyword}"
+    # Re-generate via real AI pipeline
+    preview_svc = PreviewService(ai_orchestrator, db, image_storage, http_client)
+    try:
+        article = await preview_svc.generate_article_content(
+            user_id=user.id,
+            project_id=data.get("project_id", 0),
+            category_id=data.get("category_id", 0),
+            keyword=keyword,
+        )
+    except Exception:
+        log.exception("article_regen_failed", user_id=user.id, preview_id=preview_id)
+        await state.set_state(ArticlePublishFSM.preview)
+        await msg.edit_text(
+            "Ошибка перегенерации.",
+            reply_markup=article_preview_kb(preview_id, preview.regeneration_count).as_markup(),
+        )
+        return
 
     try:
         await previews.update(
             preview_id,
             ArticlePreviewUpdate(
                 regeneration_count=new_count,
-                title=new_title,
-                content_html=f"<h1>{html.escape(new_title)}</h1><p>Regenerated content.</p>",
+                title=article.title,
+                word_count=article.word_count,
+                images_count=article.images_count,
+                content_html=article.content_html,
+                images=article.stored_images,
             ),
         )
         updated_preview = await previews.get_by_id(preview_id)

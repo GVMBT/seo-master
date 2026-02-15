@@ -102,5 +102,7 @@ async def publish_handler(request: web.Request) -> web.Response:
         return web.Response(status=503, headers={"Retry-After": "120"})
     except Exception:
         log.exception("publish_handler_error")
-        await redis.delete(lock_key)
-        raise  # 5xx → QStash retries with backoff (API_CONTRACTS §1.5)
+        # Don't delete lock — prevents double publish on QStash retry.
+        # Return 200 to stop QStash retries (aiohttp-handlers rule).
+        # Lock expires via TTL (5 min).
+        return web.json_response({"status": "error", "reason": "internal_error"})

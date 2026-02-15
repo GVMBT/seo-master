@@ -243,7 +243,10 @@ async def cb_connection_delete(callback: CallbackQuery, user: User, db: Supabase
 
 @router.callback_query(F.data.regexp(r"^conn:(\d+):delete:confirm$"))
 async def cb_connection_delete_confirm(
-    callback: CallbackQuery, user: User, db: SupabaseClient, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Confirm and delete a connection."""
     msg = await guard_callback_message(callback)
@@ -334,8 +337,13 @@ async def fsm_wp_login(message: Message, state: FSMContext) -> None:
     await state.set_state(ConnectWordPressFSM.password)
     await message.answer(
         "Шаг 3/3. Введите Application Password:\n"
-        "Формат: xxxx xxxx xxxx xxxx xxxx xxxx\n"
-        "(Создайте в WP-админке: Пользователи -> Профиль -> Пароли приложений)"
+        "Формат: xxxx xxxx xxxx xxxx xxxx xxxx\n\n"
+        "Как создать:\n"
+        "WP-админка → Пользователи → Профиль →\n"
+        "прокрутите до «Пароли приложений» →\n"
+        "введите имя (любое) → «Добавить» →\n"
+        "скопируйте пароль (показывается 1 раз!)\n\n"
+        "Это НЕ основной пароль от WordPress."
     )
 
 
@@ -373,8 +381,7 @@ async def fsm_wp_password(message: Message, state: FSMContext, user: User, db: S
         existing_project = await ProjectsRepository(db).get_by_id(existing.project_id)
         existing_name = html.escape(existing_project.name) if existing_project else "?"
         await message.answer(
-            f"Этот сайт уже подключён к проекту «{existing_name}».\n"
-            "Публикации в оба проекта будут идти на один сайт.",
+            f"Этот сайт уже подключён к проекту «{existing_name}».\nПубликации в оба проекта будут идти на один сайт.",
         )
 
     credentials = {

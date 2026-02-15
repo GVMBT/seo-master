@@ -194,7 +194,13 @@ class SchedulerService:
             )
         )
 
-        qstash_ids = await self.create_qstash_schedules(db_schedule, user_id, project_id, timezone)
+        try:
+            qstash_ids = await self.create_qstash_schedules(db_schedule, user_id, project_id, timezone)
+        except Exception:
+            # Clean up orphaned DB row if QStash creation fails
+            log.exception("qstash_schedule_creation_failed", schedule_id=db_schedule.id)
+            await self._schedules.delete(db_schedule.id)
+            raise
         updated = await self._schedules.update(
             db_schedule.id,
             PlatformScheduleUpdate(enabled=True, qstash_schedule_ids=qstash_ids, status="active"),
