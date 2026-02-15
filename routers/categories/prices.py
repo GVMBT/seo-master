@@ -82,12 +82,12 @@ async def cb_prices_start(callback: CallbackQuery, user: User, db: SupabaseClien
     if cat.prices:
         lines = cat.prices.strip().split("\n")
         preview = "\n".join(lines[:20])
-        text = (
-            f"<b>Прайс-лист ({len(lines)} позиций)</b>\n\n"
-            f"<pre>{html.escape(preview)}</pre>"
-        )
+        text = f"<b>Прайс-лист ({len(lines)} позиций)</b>\n\n<pre>{html.escape(preview)}</pre>"
         if len(lines) > 20:
             text += f"\n\n... и ещё {len(lines) - 20} позиций"
+        # Truncate to Telegram message limit (4096 chars)
+        if len(text) > 4000:
+            text = text[:3990] + "\n...</pre>"
         await msg.edit_text(text, reply_markup=price_existing_kb(cat.id).as_markup())
     else:
         text = "Прайс-лист пуст. Выберите способ загрузки:"
@@ -175,6 +175,9 @@ async def fsm_price_text_input(message: Message, state: FSMContext, user: User, 
     if len(lines) > 10:
         text_preview += f"\n\n... и ещё {len(lines) - 10} позиций"
     text_preview += "\n\nСохранить?"
+    # Truncate to Telegram message limit (4096 chars)
+    if len(text_preview) > 4000:
+        text_preview = text_preview[:3990] + "\n...</pre>\n\nСохранить?"
     await message.answer(text_preview, reply_markup=price_result_kb(cat_id).as_markup())
 
 
@@ -203,9 +206,7 @@ async def cb_price_excel(callback: CallbackQuery, state: FSMContext, user: User,
     await state.update_data(category_id=cat_id, project_id=project_id)
 
     await msg.answer(
-        "Отправьте файл Excel (.xlsx).\n"
-        "Колонки: Название | Цена\n"
-        f"Максимум: {_MAX_LINES} строк, 5 МБ.",
+        f"Отправьте файл Excel (.xlsx).\nКолонки: Название | Цена\nМаксимум: {_MAX_LINES} строк, 5 МБ.",
         reply_markup=cancel_kb(),
     )
     await callback.answer()
@@ -272,6 +273,9 @@ async def fsm_price_file_upload(message: Message, state: FSMContext, user: User,
     if len(lines) > 10:
         text += f"\n\n... и ещё {len(lines) - 10} позиций"
     text += "\n\nСохранить?"
+    # Truncate to Telegram message limit (4096 chars)
+    if len(text) > 4000:
+        text = text[:3990] + "\n...</pre>\n\nСохранить?"
     await message.answer(text, reply_markup=price_result_kb(cat_id).as_markup())
 
 
@@ -307,7 +311,7 @@ async def fsm_price_save_text(callback: CallbackQuery, state: FSMContext, user: 
         )
     else:
         await msg.edit_text("Категория не найдена.")
-    await msg.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
     await callback.answer()
 
 
@@ -338,7 +342,7 @@ async def fsm_price_save_excel(callback: CallbackQuery, state: FSMContext, user:
         )
     else:
         await msg.edit_text("Категория не найдена.")
-    await msg.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
     await callback.answer()
 
 
@@ -363,3 +367,23 @@ async def cb_price_clear(callback: CallbackQuery, user: User, db: SupabaseClient
 
     await msg.edit_text("Прайс-лист очищен.", reply_markup=price_method_kb(cat_id).as_markup())
     await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# FSM guards / stubs for unused states
+# ---------------------------------------------------------------------------
+
+
+@router.message(PriceInputFSM.choose_method)
+async def fsm_price_choose_method_guard(message: Message, _state: FSMContext) -> None:
+    """TODO Phase 11: choose_method state is currently unused (entry skips to text/file).
+
+    Guard handler to prevent stuck state.
+    """
+    await message.answer("Выберите способ загрузки кнопкой выше.")
+
+
+@router.message(PriceInputFSM.file_upload, ~F.document)
+async def fsm_price_file_upload_text_guard(message: Message) -> None:
+    """Guard: user sent text instead of a document in file_upload state."""
+    await message.answer("Ожидаю файл Excel (.xlsx). Отправьте файл как документ.")

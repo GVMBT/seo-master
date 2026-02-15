@@ -57,9 +57,7 @@ def _validate_category_name(value: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-async def _verify_project_owner(
-    project_id: int, user_id: int, db: SupabaseClient, callback: CallbackQuery
-) -> bool:
+async def _verify_project_owner(project_id: int, user_id: int, db: SupabaseClient, callback: CallbackQuery) -> bool:
     """Check that user owns the project. Answers callback on failure."""
     project = await ProjectsRepository(db).get_by_id(project_id)
     if not project or project.user_id != user_id:
@@ -172,9 +170,7 @@ async def cb_category_card(callback: CallbackQuery, user: User, db: SupabaseClie
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(
-    F.data.regexp(r"^category:(\d+):(img_settings|text_settings)$")
-)
+@router.callback_query(F.data.regexp(r"^category:(\d+):(img_settings|text_settings)$"))
 async def cb_category_feature_stub(callback: CallbackQuery) -> None:
     """Stub for not-yet-implemented category features (img_settings, text_settings)."""
     await callback.answer("В разработке.", show_alert=True)
@@ -189,9 +185,7 @@ _MAX_CATEGORIES_PER_PROJECT = 50
 
 
 @router.callback_query(F.data.regexp(r"^project:(\d+):cat:new$"))
-async def cb_category_new(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_category_new(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Start category creation FSM."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -203,9 +197,7 @@ async def cb_category_new(
     # Enforce category limit (S4)
     existing = await CategoriesRepository(db).get_by_project(project_id)
     if len(existing) >= _MAX_CATEGORIES_PER_PROJECT:
-        await callback.answer(
-            f"Достигнут лимит: {_MAX_CATEGORIES_PER_PROJECT} категорий.", show_alert=True
-        )
+        await callback.answer(f"Достигнут лимит: {_MAX_CATEGORIES_PER_PROJECT} категорий.", show_alert=True)
         return
 
     # Auto-clear any active FSM (P4.11, FSM conflict resolution)
@@ -242,7 +234,7 @@ async def fsm_category_name(message: Message, state: FSMContext, user: User, db:
         reply_markup=category_card_kb(category).as_markup(),
     )
     # Restore reply keyboard after FSM completion (I3)
-    await message.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await message.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +262,10 @@ async def cb_category_delete(callback: CallbackQuery, user: User, db: SupabaseCl
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):delete:confirm$"))
 async def cb_category_delete_confirm(
-    callback: CallbackQuery, user: User, db: SupabaseClient, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Confirm deletion and show updated category list."""
     msg = await guard_callback_message(callback)
@@ -294,27 +289,30 @@ async def cb_category_delete_confirm(
 
         tokens_svc = TokenService(db, get_settings().admin_id)
         for preview in active_previews:
-            tokens = preview.tokens_charged or 0
-            if tokens > 0:
-                try:
-                    await tokens_svc.refund(
-                        preview.user_id,
-                        tokens,
-                        reason="category_deleted",
-                        description=f"Category deleted, preview refund: {preview.keyword or 'unknown'}",
-                    )
-                except Exception:
-                    log.warning("e42_cat_refund_failed", preview_id=preview.id, user_id=preview.user_id)
-            await previews_repo.atomic_mark_expired(preview.id)
+            try:
+                tokens = preview.tokens_charged or 0
+                if tokens > 0:
+                    try:
+                        await tokens_svc.refund(
+                            preview.user_id,
+                            tokens,
+                            reason="category_deleted",
+                            description=f"Category deleted, preview refund: {preview.keyword or 'unknown'}",
+                        )
+                    except Exception:  # noqa: BLE001 — best-effort refund, must not block category deletion
+                        log.warning("e42_cat_refund_failed", preview_id=preview.id, user_id=preview.user_id)
+                await previews_repo.atomic_mark_expired(preview.id)
+            except Exception:  # noqa: BLE001 — best-effort cleanup per E42, must not block deletion
+                log.exception(
+                    "e42_cat_preview_cleanup_failed",
+                    preview_id=preview.id,
+                    user_id=preview.user_id,
+                )
 
     repo = CategoriesRepository(db)
     await repo.delete(category_id)
 
     categories = await repo.get_by_project(project_id)
-    text = (
-        f"Категория удалена. Категории ({len(categories)}):"
-        if categories
-        else "Категория удалена. Нет категорий."
-    )
+    text = f"Категория удалена. Категории ({len(categories)}):" if categories else "Категория удалена. Нет категорий."
     await msg.edit_text(text, reply_markup=category_list_kb(categories, project_id).as_markup())
     await callback.answer("Категория удалена.")
