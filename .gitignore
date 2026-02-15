@@ -58,6 +58,7 @@ claude-workflow.md
 openrouter.md
 supabase-storage.md
 botfuzzer.md
+smoke-test.md
 scripts/generate_session.py
 
 # === OS ===
