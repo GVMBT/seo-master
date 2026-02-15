@@ -67,11 +67,20 @@ uv run pytest tests/ -x -v                # тесты (один файл: -k "t
 uv run ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF  # расширенный линтинг
 uv run ruff format .                       # форматирование
 uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # проверка типов
+uv run bandit -r bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules/ -ll  # безопасность (Medium+)
+uv run vulture bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules/ --min-confidence 80  # мёртвый код
 ```
 
 ## Stop hooks (выполняются автоматически при завершении)
 При каждом завершении сессии автоматически запускаются pytest, ruff, mypy.
 Если что-то красное — сессия блокируется до исправления. Держи код зелёным.
+
+## Статический анализ (полный набор)
+- **ruff** — линтинг + форматирование (расширенные правила)
+- **mypy** — type checking
+- **bandit** — сканер безопасности (`-ll` = Medium+ severity, `# nosec BXXX` для осознанных исключений)
+- **vulture** — обнаружение мёртвого кода (`--min-confidence 80`)
+- **ty** (Astral) — когда выйдет stable, заменит mypy + vulture
 
 ## Стандарты кода
 - async/await повсюду, type hints обязательны (`X | None`, не `Optional[X]`)

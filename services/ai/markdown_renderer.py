@@ -32,11 +32,39 @@ except ImportError as exc:  # pragma: no cover
 # ---------------------------------------------------------------------------
 
 _TRANSLIT: dict[str, str] = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
-    "ж": "zh", "з": "z", "и": "i", "й": "j", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
-    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+    "а": "a",
+    "б": "b",
+    "в": "v",
+    "г": "g",
+    "д": "d",
+    "е": "e",
+    "ё": "yo",
+    "ж": "zh",
+    "з": "z",
+    "и": "i",
+    "й": "j",
+    "к": "k",
+    "л": "l",
+    "м": "m",
+    "н": "n",
+    "о": "o",
+    "п": "p",
+    "р": "r",
+    "с": "s",
+    "т": "t",
+    "у": "u",
+    "ф": "f",
+    "х": "kh",
+    "ц": "ts",
+    "ч": "ch",
+    "ш": "sh",
+    "щ": "shch",
+    "ъ": "",
+    "ы": "y",
+    "ь": "",
+    "э": "e",
+    "ю": "yu",
+    "я": "ya",
 }
 
 
@@ -72,7 +100,7 @@ class SEORenderer(mistune.HTMLRenderer):  # type: ignore[misc]
         self._toc: list[dict[str, Any]] = []
         self._branding = branding or {}
 
-    def heading(self, text: str, level: int, **attrs: Any) -> str:
+    def heading(self, text: str, level: int, **_attrs: Any) -> str:
         """Render heading with auto-generated slug ID."""
         slug = slugify(text)
         self._toc.append({"level": level, "text": text, "id": slug})
@@ -81,10 +109,7 @@ class SEORenderer(mistune.HTMLRenderer):  # type: ignore[misc]
     def image(self, alt: str, url: str, title: str | None = None) -> str:
         """Render image as <figure> with lazy loading and figcaption."""
         caption = title or alt
-        return (
-            f'<figure><img src="{url}" alt="{alt}" loading="lazy">'
-            f"<figcaption>{caption}</figcaption></figure>\n"
-        )
+        return f'<figure><img src="{url}" alt="{alt}" loading="lazy"><figcaption>{caption}</figcaption></figure>\n'
 
     def render_toc(self) -> str:
         """Generate Table of Contents HTML from collected headings (H2/H3 only).
@@ -167,11 +192,7 @@ def render_markdown(
     except Exception:
         log.warning("markdown_parse_failed", exc_info=True)
         # E47 fallback: raw markdown in <pre> block
-        safe_text = (
-            markdown_text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        safe_text = markdown_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         return f"<pre>{safe_text}</pre>"
 
     # Insert ToC after first H1

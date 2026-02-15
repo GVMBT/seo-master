@@ -40,7 +40,7 @@ def _empty_result() -> SerperResult:
 
 def _cache_key(query: str) -> str:
     """Build Redis cache key from query string."""
-    query_hash = hashlib.md5(query.encode()).hexdigest()  # noqa: S324
+    query_hash = hashlib.md5(query.encode()).hexdigest()  # noqa: S324  # nosec B324 — cache key, not security
     return f"serper:{query_hash}"
 
 
@@ -193,11 +193,13 @@ class SerperClient:
         try:
             if self._redis is None:
                 return
-            data = json.dumps({
-                "organic": result.organic,
-                "people_also_ask": result.people_also_ask,
-                "related_searches": result.related_searches,
-            })
+            data = json.dumps(
+                {
+                    "organic": result.organic,
+                    "people_also_ask": result.people_also_ask,
+                    "related_searches": result.related_searches,
+                }
+            )
             await self._redis.set(key, data, ex=_CACHE_TTL)
         except Exception:
             log.debug("serper.cache_set_error", key=key)

@@ -113,7 +113,7 @@ async def _global_error_handler(event: ErrorEvent) -> bool:
     if update and update.message:
         await update.message.answer(user_message)
     elif update and update.callback_query:
-        await update.callback_query.answer(user_message, show_alert=True)
+        await update.callback_query.answer(user_message[:200], show_alert=True)
     elif update and update.pre_checkout_query:
         await update.pre_checkout_query.answer(ok=False, error_message=user_message[:255])
 
@@ -155,11 +155,13 @@ async def on_shutdown(
     log.info("shutdown_started", drain_timeout=timeout)
 
     # Wait for all 10 semaphore permits to become available (no in-flight tasks).
+    # Single timeout wraps entire loop — total drain time is capped at `timeout` seconds.
     acquired = 0
     try:
-        for _ in range(10):
-            await asyncio.wait_for(PUBLISH_SEMAPHORE.acquire(), timeout=timeout)
-            acquired += 1
+        async with asyncio.timeout(timeout):
+            for _ in range(10):
+                await PUBLISH_SEMAPHORE.acquire()
+                acquired += 1
     except TimeoutError:
         log.warning("shutdown_drain_timeout", acquired=acquired, total=10)
     finally:

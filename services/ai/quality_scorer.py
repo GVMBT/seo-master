@@ -75,7 +75,7 @@ class _HTMLTextExtractor(HTMLParser):
         self.text_parts: list[str] = []
         self._skip = False
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
         if tag in ("script", "style"):
             self._skip = True
 

@@ -303,6 +303,11 @@ class YooKassaPaymentService:
             log.error("yookassa_refund_payment_not_found", payment_id=payment_id)
             return
 
+        # Idempotency: skip if already refunded (duplicate webhook)
+        if payment.status == "refunded":
+            log.warning("yookassa_duplicate_refund", payment_id=payment_id)
+            return
+
         # Debit tokens — allows negative balance (API_CONTRACTS.md §2.3)
         tokens_to_debit = payment.tokens_amount
         await self._users.force_debit_balance(payment.user_id, tokens_to_debit)

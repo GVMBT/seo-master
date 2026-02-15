@@ -39,21 +39,21 @@ router = Router(name="categories_keywords")
 
 
 class KeywordGenerationFSM(StatesGroup):
-    products = State()     # "What products/services?"
-    geography = State()    # "What geography?"
-    quantity = State()     # Choose 50/100/150/200
-    confirm = State()      # Confirm cost
-    fetching = State()     # DataForSEO
-    clustering = State()   # AI clustering
-    enriching = State()    # DataForSEO enrich
-    results = State()      # Show results + [Save]
+    products = State()  # "What products/services?"
+    geography = State()  # "What geography?"
+    quantity = State()  # Choose 50/100/150/200
+    confirm = State()  # Confirm cost
+    fetching = State()  # DataForSEO
+    clustering = State()  # AI clustering
+    enriching = State()  # DataForSEO enrich
+    results = State()  # Show results + [Save]
 
 
 class KeywordUploadFSM(StatesGroup):
     file_upload = State()  # "Upload TXT file"
-    enriching = State()    # DataForSEO enrich
-    clustering = State()   # AI clustering
-    results = State()      # Show results + [Save]
+    enriching = State()  # DataForSEO enrich
+    clustering = State()  # AI clustering
+    results = State()  # Show results + [Save]
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +98,10 @@ def _format_cluster_summary(clusters: list[dict]) -> str:  # type: ignore[type-a
 
 
 async def _get_category_or_notify(
-    category_id: int, user_id: int, db: SupabaseClient, callback: CallbackQuery,
+    category_id: int,
+    user_id: int,
+    db: SupabaseClient,
+    callback: CallbackQuery,
 ) -> tuple[Category, int] | None:
     """Fetch category and verify ownership via project. Returns (category, project_id) or None."""
     category = await CategoriesRepository(db).get_by_id(category_id)
@@ -155,7 +158,10 @@ async def cb_keywords_main(callback: CallbackQuery, user: User, db: SupabaseClie
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):kw:generate$"))
 async def cb_kw_generate_start(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Start KeywordGenerationFSM: ask about products/services."""
     msg = await guard_callback_message(callback)
@@ -233,7 +239,10 @@ async def fsm_kw_geography(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(KeywordGenerationFSM.quantity, F.data.regexp(r"^kw:qty:(\d+):(\d+)$"))
 async def cb_kw_quantity(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Parse quantity, check balance, show cost confirmation."""
     msg = await guard_callback_message(callback)
@@ -278,7 +287,10 @@ async def cb_kw_quantity(
 
 @router.callback_query(KeywordGenerationFSM.confirm, F.data == "kw:confirm")
 async def cb_kw_confirm(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
     rate_limiter: RateLimiter,
     ai_orchestrator: AIOrchestrator,
     dataforseo_client: DataForSEOClient,
@@ -304,7 +316,8 @@ async def cb_kw_confirm(
     # Charge tokens (E01: InsufficientBalanceError handled)
     try:
         await token_svc.charge(
-            user.id, cost,
+            user.id,
+            cost,
             operation_type="keyword_generation",
             description=f"Keywords: {quantity} phrases, {products[:50]}",
         )
@@ -331,16 +344,23 @@ async def cb_kw_confirm(
         await state.set_state(KeywordGenerationFSM.fetching)
         await msg.edit_text("Получаю реальные поисковые фразы из Google...")
         raw_phrases = await kw_svc.fetch_raw_phrases(
-            products, geography, quantity,
-            project_id=project_id, user_id=user.id,
+            products,
+            geography,
+            quantity,
+            project_id=project_id,
+            user_id=user.id,
         )
 
         # Step 2: AI clustering
         await state.set_state(KeywordGenerationFSM.clustering)
         await msg.edit_text("Группирую фразы по поисковому интенту...")
         clusters = await kw_svc.cluster_phrases(
-            raw_phrases, products, geography, quantity,
-            project_id=project_id, user_id=user.id,
+            raw_phrases,
+            products,
+            geography,
+            quantity,
+            project_id=project_id,
+            user_id=user.id,
         )
 
         # Step 3: Enrich with volume/CPC/difficulty
@@ -358,7 +378,8 @@ async def cb_kw_confirm(
         # E03 fallback: refund tokens
         try:
             await token_svc.refund(
-                user.id, cost,
+                user.id,
+                cost,
                 reason="refund",
                 description="Keyword generation failed",
             )
@@ -379,7 +400,10 @@ async def cb_kw_confirm(
 
 @router.callback_query(KeywordGenerationFSM.results, F.data == "kw:save")
 async def cb_kw_save(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Save generated clusters to category.keywords."""
     msg = await guard_callback_message(callback)
@@ -417,7 +441,10 @@ async def cb_kw_save(
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):kw:upload$"))
 async def cb_kw_upload_start(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Start KeywordUploadFSM: ask for TXT file."""
     msg = await guard_callback_message(callback)
@@ -453,7 +480,10 @@ _MAX_PHRASE_LEN = 200
 
 @router.message(KeywordUploadFSM.file_upload, F.document)
 async def fsm_kw_upload_file(
-    message: Message, state: FSMContext, user: User, db: SupabaseClient,
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Process uploaded TXT file with keywords."""
     doc = message.document
@@ -512,9 +542,7 @@ async def fsm_kw_upload_file(
             invalid.append(f"Строка {i + 1}: «{phrase[:30]}...» ({len(phrase)} символов)")
     if invalid:
         err_lines = "\n".join(invalid)
-        await message.answer(
-            f"Некоторые фразы не прошли валидацию (2-200 символов):\n{err_lines}"
-        )
+        await message.answer(f"Некоторые фразы не прошли валидацию (2-200 символов):\n{err_lines}")
         return
 
     # Check all phrases length
@@ -558,7 +586,10 @@ async def fsm_kw_upload_file(
 
 @router.callback_query(KeywordUploadFSM.results, F.data == "kw:save")
 async def cb_kw_upload_save(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Save uploaded/clustered keywords to category.keywords."""
     msg = await guard_callback_message(callback)
@@ -588,46 +619,8 @@ async def cb_kw_upload_save(
 
 
 # ---------------------------------------------------------------------------
-# Placeholder builders (replaced by real services in Phase 11)
+# Upload cluster builder
 # ---------------------------------------------------------------------------
-
-
-def _build_placeholder_clusters(
-    products: str, geography: str, quantity: int,
-) -> list[dict[str, object]]:
-    """Build placeholder clusters for the keyword generation pipeline.
-
-    Real implementation in Phase 11 will use DataForSEO + AI clustering.
-    """
-    base_phrase = products.split(",")[0].strip()[:50] if products else "услуга"
-    geo = geography.strip()[:30] if geography else "Россия"
-
-    clusters: list[dict[str, object]] = []
-    per_cluster = max(quantity // 5, 5)
-    for i in range(min(5, quantity // per_cluster)):
-        cluster_name = f"{base_phrase} {geo}" if i == 0 else f"{base_phrase} вариант {i + 1}"
-        phrases: list[dict[str, object]] = [
-            {
-                "phrase": f"{base_phrase} {geo} {j + 1}",
-                "volume": 100 - j * 5,
-                "difficulty": 30 + j,
-                "cpc": 15.0,
-                "intent": "informational",
-                "ai_suggested": False,
-            }
-            for j in range(per_cluster)
-        ]
-        total_vol = sum(100 - j * 5 for j in range(per_cluster))
-        clusters.append({
-            "cluster_name": cluster_name,
-            "cluster_type": "article",
-            "main_phrase": f"{base_phrase} {geo}" if i == 0 else f"{base_phrase} {i + 1}",
-            "total_volume": total_vol,
-            "avg_difficulty": 35,
-            "phrases": phrases,
-        })
-
-    return clusters
 
 
 def _build_upload_clusters(phrases: list[str]) -> list[dict[str, object]]:
@@ -646,11 +639,13 @@ def _build_upload_clusters(phrases: list[str]) -> list[dict[str, object]]:
         }
         for p in phrases
     ]
-    return [{
-        "cluster_name": "Загруженные фразы",
-        "cluster_type": "article",
-        "main_phrase": phrases[0] if phrases else "unknown",
-        "total_volume": 0,
-        "avg_difficulty": 0,
-        "phrases": phrase_dicts,
-    }]
+    return [
+        {
+            "cluster_name": "Загруженные фразы",
+            "cluster_type": "article",
+            "main_phrase": phrases[0] if phrases else "unknown",
+            "total_volume": 0,
+            "avg_difficulty": 0,
+            "phrases": phrase_dicts,
+        }
+    ]

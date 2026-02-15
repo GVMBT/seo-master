@@ -52,6 +52,10 @@ dev = [
     "ruff>=0.15",
     "mypy>=1.19",
     "types-pyyaml>=6.0",
+    "vulture>=2.14",
+    "telethon>=1.39",
+    "respx>=0.22",
+    "bandit>=1.9.3",
 ]
 
 [tool.ruff]
@@ -80,6 +84,11 @@ max-complexity = 15
 asyncio_mode = "auto"
 testpaths = ["tests"]
 timeout = 60
+markers = [
+    "integration: Integration tests — real handler wiring, mocked externals",
+    "e2e: End-to-end tests — real Telegram via Telethon against staging bot",
+    "smoke: Post-deploy smoke tests — Railway health checks",
+]
 
 [tool.mypy]
 python_version = "3.14"

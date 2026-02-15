@@ -76,8 +76,9 @@ class DataForSEOClient:
         POST /v3/dataforseo_labs/google/keyword_suggestions/live
         Cost: ~$0.01/request.
 
-        Returns empty list (stub).
+        Returns empty list (stub). language_code/limit used when implemented.
         """
+        _ = language_code, limit
         log.info(
             "dataforseo_stub_called",
             method="keyword_suggestions",
@@ -98,8 +99,9 @@ class DataForSEOClient:
         POST /v3/dataforseo_labs/google/related_keywords/live
         Cost: ~$0.01/request.
 
-        Returns empty list (stub).
+        Returns empty list (stub). language_code/limit used when implemented.
         """
+        _ = language_code, limit
         log.info(
             "dataforseo_stub_called",
             method="related_keywords",
@@ -120,8 +122,9 @@ class DataForSEOClient:
         Batch: up to 700 phrases per request.
         Cost: $0.0001/phrase.
 
-        Returns empty list (stub).
+        Returns empty list (stub). language_code used when implemented.
         """
+        _ = language_code
         log.info(
             "dataforseo_stub_called",
             method="enrich_keywords",

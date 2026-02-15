@@ -8,7 +8,6 @@ from db.models import Category, Project, User
 from routers.categories.keywords import (
     KeywordGenerationFSM,
     KeywordUploadFSM,
-    _build_placeholder_clusters,
     _build_upload_clusters,
     _format_cluster_summary,
     _select_keyword_from_clusters,
@@ -99,19 +98,14 @@ class TestSelectKeywordFromClusters:
 
 class TestFormatClusterSummary:
     def test_basic_format(self) -> None:
-        clusters = [
-            {"cluster_name": "Test", "phrases": [{"phrase": "a"}], "total_volume": 100}
-        ]
+        clusters = [{"cluster_name": "Test", "phrases": [{"phrase": "a"}], "total_volume": 100}]
         result = _format_cluster_summary(clusters)
         assert "1 кластеров" in result
         assert "Test" in result
         assert "100" in result
 
     def test_truncates_at_10(self) -> None:
-        clusters = [
-            {"cluster_name": f"Cluster {i}", "phrases": [], "total_volume": 0}
-            for i in range(15)
-        ]
+        clusters = [{"cluster_name": f"Cluster {i}", "phrases": [], "total_volume": 0} for i in range(15)]
         result = _format_cluster_summary(clusters)
         assert "ещё 5" in result
 
@@ -125,28 +119,6 @@ class TestFormatClusterSummary:
         ]
         result = _format_cluster_summary(clusters)
         assert "3 фраз" in result
-
-
-class TestBuildPlaceholderClusters:
-    def test_returns_list(self) -> None:
-        result = _build_placeholder_clusters("shoes, boots", "Moscow", 50)
-        assert isinstance(result, list)
-        assert len(result) > 0
-
-    def test_cluster_structure(self) -> None:
-        result = _build_placeholder_clusters("shoes", "Moscow", 50)
-        cluster = result[0]
-        assert "cluster_name" in cluster
-        assert "cluster_type" in cluster
-        assert "main_phrase" in cluster
-        assert "phrases" in cluster
-
-    def test_quantity_affects_size(self) -> None:
-        small = _build_placeholder_clusters("test", "RU", 50)
-        large = _build_placeholder_clusters("test", "RU", 200)
-        total_small = sum(len(c["phrases"]) for c in small)
-        total_large = sum(len(c["phrases"]) for c in large)
-        assert total_large >= total_small
 
 
 class TestBuildUploadClusters:
@@ -168,8 +140,12 @@ class TestBuildUploadClusters:
 
 class TestCbKeywordsMain:
     async def test_shows_empty_state(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
-        project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"category:{category.id}:keywords"
         with (
@@ -183,8 +159,12 @@ class TestCbKeywordsMain:
             assert "не добавлены" in text
 
     async def test_shows_keyword_summary(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
-        project: Project, category_with_keywords: Category,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category_with_keywords: Category,
     ) -> None:
         mock_callback.data = f"category:{category_with_keywords.id}:keywords"
         with (
@@ -199,7 +179,10 @@ class TestCbKeywordsMain:
             assert "3 фраз" in text
 
     async def test_unauthorized_shows_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "category:999:keywords"
         with patch("routers.categories.keywords.CategoriesRepository") as cat_cls:
@@ -209,12 +192,14 @@ class TestCbKeywordsMain:
             assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
 
     async def test_wrong_owner_shows_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, category: Category,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
+        category: Category,
     ) -> None:
         mock_callback.data = f"category:{category.id}:keywords"
-        other_project = Project(
-            id=1, user_id=999, name="Other", company_name="Other", specialization="Other"
-        )
+        other_project = Project(id=1, user_id=999, name="Other", company_name="Other", specialization="Other")
         with (
             patch("routers.categories.keywords.CategoriesRepository") as cat_cls,
             patch("routers.categories.keywords.ProjectsRepository") as proj_cls,
@@ -226,7 +211,10 @@ class TestCbKeywordsMain:
             assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
 
     async def test_inaccessible_message(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "category:10:keywords"
         mock_callback.message = MagicMock()  # Not a Message instance
@@ -241,8 +229,13 @@ class TestCbKeywordsMain:
 
 class TestCbKwGenerateStart:
     async def test_sets_fsm_state(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"category:{category.id}:kw:generate"
         mock_state.get_state = AsyncMock(return_value=None)
@@ -257,8 +250,13 @@ class TestCbKwGenerateStart:
             mock_state.update_data.assert_awaited_once_with(category_id=category.id)
 
     async def test_clears_previous_fsm(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"category:{category.id}:kw:generate"
         mock_state.get_state = AsyncMock(return_value="CategoryCreateFSM:name")
@@ -275,8 +273,11 @@ class TestCbKwGenerateStart:
             assert "прерван" in answered_text
 
     async def test_unauthorized_denied(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "category:999:kw:generate"
         with patch("routers.categories.keywords.CategoriesRepository") as cat_cls:
@@ -358,12 +359,17 @@ class TestFsmKwGeography:
 
 class TestCbKwQuantity:
     async def test_valid_quantity_with_balance(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "kw:qty:10:100"
-        with patch("routers.categories.keywords.TokenService") as svc_cls, \
-             patch("routers.categories.keywords.get_settings") as mock_settings:
+        with (
+            patch("routers.categories.keywords.TokenService") as svc_cls,
+            patch("routers.categories.keywords.get_settings") as mock_settings,
+        ):
             mock_settings.return_value = MagicMock(admin_id=999)
             svc_cls.return_value.check_balance = AsyncMock(return_value=True)
             await cb_kw_quantity(mock_callback, mock_state, user, mock_db)
@@ -374,26 +380,32 @@ class TestCbKwQuantity:
             assert call_kwargs["cost"] == 100
 
     async def test_insufficient_balance(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "kw:qty:10:200"
-        with patch("routers.categories.keywords.TokenService") as svc_cls, \
-             patch("routers.categories.keywords.get_settings") as mock_settings:
+        with (
+            patch("routers.categories.keywords.TokenService") as svc_cls,
+            patch("routers.categories.keywords.get_settings") as mock_settings,
+        ):
             mock_settings.return_value = MagicMock(admin_id=999)
             svc_cls.return_value.check_balance = AsyncMock(return_value=False)
             svc_cls.return_value.get_balance = AsyncMock(return_value=50)
-            svc_cls.return_value.format_insufficient_msg = MagicMock(
-                return_value="Недостаточно токенов."
-            )
+            svc_cls.return_value.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов.")
             await cb_kw_quantity(mock_callback, mock_state, user, mock_db)
             mock_state.set_state.assert_not_awaited()
             text = mock_callback.message.edit_text.call_args.args[0]
             assert "Недостаточно" in text
 
     async def test_invalid_quantity_value(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "kw:qty:10:99"
         await cb_kw_quantity(mock_callback, mock_state, user, mock_db)
@@ -408,8 +420,12 @@ class TestCbKwQuantity:
 
 class TestCbKwConfirm:
     async def test_charges_and_runs_pipeline(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, mock_rate_limiter: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_rate_limiter: MagicMock,
     ) -> None:
         mock_callback.data = "kw:confirm"
         mock_state.get_data.return_value = {
@@ -419,10 +435,12 @@ class TestCbKwConfirm:
             "products": "shoes and boots",
             "geography": "Moscow",
         }
-        with patch("routers.categories.keywords.TokenService") as svc_cls, \
-             patch("routers.categories.keywords.get_settings") as mock_settings, \
-             patch("routers.categories.keywords.CategoriesRepository") as mock_cat_cls, \
-             patch("services.keywords.KeywordService") as mock_kw_cls:
+        with (
+            patch("routers.categories.keywords.TokenService") as svc_cls,
+            patch("routers.categories.keywords.get_settings") as mock_settings,
+            patch("routers.categories.keywords.CategoriesRepository") as mock_cat_cls,
+            patch("services.keywords.KeywordService") as mock_kw_cls,
+        ):
             mock_settings.return_value = MagicMock(admin_id=999)
             svc_cls.return_value.charge = AsyncMock(return_value=1400)
             mock_cat_cls.return_value.get_by_id = AsyncMock(
@@ -430,17 +448,26 @@ class TestCbKwConfirm:
             )
             kw_svc = mock_kw_cls.return_value
             kw_svc.fetch_raw_phrases = AsyncMock(return_value=[{"phrase": "test"}])
-            kw_svc.cluster_phrases = AsyncMock(return_value=[
-                {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
-            ])
-            kw_svc.enrich_clusters = AsyncMock(return_value=[
-                {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
-            ])
+            kw_svc.cluster_phrases = AsyncMock(
+                return_value=[
+                    {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
+                ]
+            )
+            kw_svc.enrich_clusters = AsyncMock(
+                return_value=[
+                    {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
+                ]
+            )
             mock_ai = MagicMock()
             mock_dataforseo = MagicMock()
             await cb_kw_confirm(
-                mock_callback, mock_state, user, mock_db, mock_rate_limiter,
-                mock_ai, mock_dataforseo,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_rate_limiter,
+                mock_ai,
+                mock_dataforseo,
             )
             svc_cls.return_value.charge.assert_awaited_once()
             # Pipeline should reach results state
@@ -451,46 +478,65 @@ class TestCbKwConfirm:
             assert KeywordGenerationFSM.results in state_calls
 
     async def test_charge_failure_shows_insufficient(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, mock_rate_limiter: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_rate_limiter: MagicMock,
     ) -> None:
         mock_callback.data = "kw:confirm"
         mock_state.get_data.return_value = {
-            "category_id": 10, "cost": 100, "quantity": 100,
-            "products": "test", "geography": "test",
+            "category_id": 10,
+            "cost": 100,
+            "quantity": 100,
+            "products": "test",
+            "geography": "test",
         }
         from bot.exceptions import InsufficientBalanceError
 
-        with patch("routers.categories.keywords.TokenService") as svc_cls, \
-             patch("routers.categories.keywords.get_settings") as mock_settings:
+        with (
+            patch("routers.categories.keywords.TokenService") as svc_cls,
+            patch("routers.categories.keywords.get_settings") as mock_settings,
+        ):
             mock_settings.return_value = MagicMock(admin_id=999)
-            svc_cls.return_value.charge = AsyncMock(
-                side_effect=InsufficientBalanceError()
-            )
+            svc_cls.return_value.charge = AsyncMock(side_effect=InsufficientBalanceError())
             svc_cls.return_value.get_balance = AsyncMock(return_value=10)
-            svc_cls.return_value.format_insufficient_msg = MagicMock(
-                return_value="Недостаточно токенов."
-            )
+            svc_cls.return_value.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов.")
             await cb_kw_confirm(
-                mock_callback, mock_state, user, mock_db, mock_rate_limiter,
-                MagicMock(), MagicMock(),
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_rate_limiter,
+                MagicMock(),
+                MagicMock(),
             )
             text = mock_callback.message.edit_text.call_args.args[0]
             assert "Недостаточно" in text
 
     async def test_stores_clusters_in_state(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, mock_rate_limiter: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_rate_limiter: MagicMock,
     ) -> None:
         mock_callback.data = "kw:confirm"
         mock_state.get_data.return_value = {
-            "category_id": 10, "cost": 50, "quantity": 50,
-            "products": "test products", "geography": "Russia",
+            "category_id": 10,
+            "cost": 50,
+            "quantity": 50,
+            "products": "test products",
+            "geography": "Russia",
         }
-        with patch("routers.categories.keywords.TokenService") as svc_cls, \
-             patch("routers.categories.keywords.get_settings") as mock_settings, \
-             patch("routers.categories.keywords.CategoriesRepository") as mock_cat_cls, \
-             patch("services.keywords.KeywordService") as mock_kw_cls:
+        with (
+            patch("routers.categories.keywords.TokenService") as svc_cls,
+            patch("routers.categories.keywords.get_settings") as mock_settings,
+            patch("routers.categories.keywords.CategoriesRepository") as mock_cat_cls,
+            patch("services.keywords.KeywordService") as mock_kw_cls,
+        ):
             mock_settings.return_value = MagicMock(admin_id=999)
             svc_cls.return_value.charge = AsyncMock(return_value=1450)
             mock_cat_cls.return_value.get_by_id = AsyncMock(
@@ -498,23 +544,30 @@ class TestCbKwConfirm:
             )
             kw_svc = mock_kw_cls.return_value
             kw_svc.fetch_raw_phrases = AsyncMock(return_value=[{"phrase": "test"}])
-            kw_svc.cluster_phrases = AsyncMock(return_value=[
-                {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
-            ])
-            kw_svc.enrich_clusters = AsyncMock(return_value=[
-                {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
-            ])
+            kw_svc.cluster_phrases = AsyncMock(
+                return_value=[
+                    {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
+                ]
+            )
+            kw_svc.enrich_clusters = AsyncMock(
+                return_value=[
+                    {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100},
+                ]
+            )
             mock_ai = MagicMock()
             mock_dataforseo = MagicMock()
             await cb_kw_confirm(
-                mock_callback, mock_state, user, mock_db, mock_rate_limiter,
-                mock_ai, mock_dataforseo,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_rate_limiter,
+                mock_ai,
+                mock_dataforseo,
             )
             # Check clusters were stored in state
             update_calls = mock_state.update_data.call_args_list
-            clusters_stored = any(
-                "clusters" in (c.kwargs or {}) for c in update_calls
-            )
+            clusters_stored = any("clusters" in (c.kwargs or {}) for c in update_calls)
             assert clusters_stored
 
 
@@ -525,17 +578,21 @@ class TestCbKwConfirm:
 
 class TestCbKwSave:
     async def test_saves_to_db_and_clears_fsm(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        category: Category,
     ) -> None:
         mock_callback.data = "kw:save"
-        clusters = [
-            {"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100}
-        ]
+        clusters = [{"cluster_name": "Test", "phrases": [{"phrase": "test"}], "total_volume": 100}]
         mock_state.get_data.return_value = {"clusters": clusters, "category_id": category.id}
 
-        with patch("routers.categories.keywords.CategoriesRepository") as cat_cls, \
-             patch("keyboards.inline.category_card_kb"):
+        with (
+            patch("routers.categories.keywords.CategoriesRepository") as cat_cls,
+            patch("keyboards.inline.category_card_kb"),
+        ):
             cat_cls.return_value.update_keywords = AsyncMock(return_value=category)
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             await cb_kw_save(mock_callback, mock_state, user, mock_db)
@@ -543,14 +600,20 @@ class TestCbKwSave:
             cat_cls.return_value.update_keywords.assert_awaited_once_with(category.id, clusters)
 
     async def test_shows_saved_message(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        category: Category,
     ) -> None:
         mock_callback.data = "kw:save"
         mock_state.get_data.return_value = {"clusters": [], "category_id": category.id}
 
-        with patch("routers.categories.keywords.CategoriesRepository") as cat_cls, \
-             patch("keyboards.inline.category_card_kb"):
+        with (
+            patch("routers.categories.keywords.CategoriesRepository") as cat_cls,
+            patch("keyboards.inline.category_card_kb"),
+        ):
             cat_cls.return_value.update_keywords = AsyncMock(return_value=category)
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             await cb_kw_save(mock_callback, mock_state, user, mock_db)
@@ -558,14 +621,20 @@ class TestCbKwSave:
             assert "сохранены" in text.lower()
 
     async def test_restores_main_menu(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        category: Category,
     ) -> None:
         mock_callback.data = "kw:save"
         mock_state.get_data.return_value = {"clusters": [], "category_id": category.id}
 
-        with patch("routers.categories.keywords.CategoriesRepository") as cat_cls, \
-             patch("keyboards.inline.category_card_kb"):
+        with (
+            patch("routers.categories.keywords.CategoriesRepository") as cat_cls,
+            patch("keyboards.inline.category_card_kb"),
+        ):
             cat_cls.return_value.update_keywords = AsyncMock(return_value=category)
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             await cb_kw_save(mock_callback, mock_state, user, mock_db)
@@ -582,8 +651,13 @@ class TestCbKwSave:
 
 class TestCbKwUploadStart:
     async def test_sets_upload_fsm(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"category:{category.id}:kw:upload"
         mock_state.get_state = AsyncMock(return_value=None)
@@ -598,8 +672,13 @@ class TestCbKwUploadStart:
             mock_state.update_data.assert_awaited_once_with(category_id=category.id)
 
     async def test_shows_upload_instructions(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"category:{category.id}:kw:upload"
         mock_state.get_state = AsyncMock(return_value=None)
@@ -615,8 +694,13 @@ class TestCbKwUploadStart:
             assert "500" in text
 
     async def test_clears_previous_fsm(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"category:{category.id}:kw:upload"
         mock_state.get_state = AsyncMock(return_value="KeywordGenerationFSM:products")
@@ -630,8 +714,11 @@ class TestCbKwUploadStart:
             mock_state.clear.assert_awaited()
 
     async def test_unauthorized_denied(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "category:999:kw:upload"
         with patch("routers.categories.keywords.CategoriesRepository") as cat_cls:
@@ -656,16 +743,17 @@ def _make_document(file_name: str = "keywords.txt", file_size: int = 100) -> Mag
 
 class TestFsmKwUploadFile:
     async def test_valid_file(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         content = "seo tools\nmarketing automation\ncontent strategy\n"
         doc = _make_document(file_size=len(content.encode()))
         mock_message.document = doc
         mock_message.bot = MagicMock()
-        mock_message.bot.download = AsyncMock(
-            side_effect=lambda d, destination: destination.write(content.encode())
-        )
+        mock_message.bot.download = AsyncMock(side_effect=lambda d, destination: destination.write(content.encode()))
         mock_state.get_data.return_value = {"category_id": 10}
 
         await fsm_kw_upload_file(mock_message, mock_state, user, mock_db)
@@ -674,8 +762,11 @@ class TestFsmKwUploadFile:
         assert KeywordUploadFSM.results in state_calls
 
     async def test_wrong_extension(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         doc = _make_document(file_name="keywords.csv")
         mock_message.document = doc
@@ -686,8 +777,11 @@ class TestFsmKwUploadFile:
         mock_state.set_state.assert_not_awaited()
 
     async def test_file_too_large(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         doc = _make_document(file_size=2 * 1024 * 1024)  # 2 MB
         mock_message.document = doc
@@ -698,17 +792,18 @@ class TestFsmKwUploadFile:
         mock_state.set_state.assert_not_awaited()
 
     async def test_too_many_phrases(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         phrases = [f"phrase {i}" for i in range(501)]
         content = "\n".join(phrases)
         doc = _make_document(file_size=len(content.encode()))
         mock_message.document = doc
         mock_message.bot = MagicMock()
-        mock_message.bot.download = AsyncMock(
-            side_effect=lambda d, destination: destination.write(content.encode())
-        )
+        mock_message.bot.download = AsyncMock(side_effect=lambda d, destination: destination.write(content.encode()))
         mock_state.get_data.return_value = {"category_id": 10}
 
         await fsm_kw_upload_file(mock_message, mock_state, user, mock_db)
@@ -717,16 +812,17 @@ class TestFsmKwUploadFile:
         assert "501" in text or "500" in text
 
     async def test_empty_file(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         content = "\n\n  \n  "
         doc = _make_document(file_size=len(content.encode()))
         mock_message.document = doc
         mock_message.bot = MagicMock()
-        mock_message.bot.download = AsyncMock(
-            side_effect=lambda d, destination: destination.write(content.encode())
-        )
+        mock_message.bot.download = AsyncMock(side_effect=lambda d, destination: destination.write(content.encode()))
         mock_state.get_data.return_value = {"category_id": 10}
 
         await fsm_kw_upload_file(mock_message, mock_state, user, mock_db)
@@ -734,16 +830,17 @@ class TestFsmKwUploadFile:
         assert "не содержит" in text.lower()
 
     async def test_phrase_too_short(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         content = "a\nvalid phrase\n"
         doc = _make_document(file_size=len(content.encode()))
         mock_message.document = doc
         mock_message.bot = MagicMock()
-        mock_message.bot.download = AsyncMock(
-            side_effect=lambda d, destination: destination.write(content.encode())
-        )
+        mock_message.bot.download = AsyncMock(side_effect=lambda d, destination: destination.write(content.encode()))
         mock_state.get_data.return_value = {"category_id": 10}
 
         await fsm_kw_upload_file(mock_message, mock_state, user, mock_db)
@@ -751,24 +848,28 @@ class TestFsmKwUploadFile:
         # Should report validation error for short phrase
 
     async def test_phrase_too_long(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         content = "x" * 201 + "\nvalid phrase\n"
         doc = _make_document(file_size=len(content.encode()))
         mock_message.document = doc
         mock_message.bot = MagicMock()
-        mock_message.bot.download = AsyncMock(
-            side_effect=lambda d, destination: destination.write(content.encode())
-        )
+        mock_message.bot.download = AsyncMock(side_effect=lambda d, destination: destination.write(content.encode()))
         mock_state.get_data.return_value = {"category_id": 10}
 
         await fsm_kw_upload_file(mock_message, mock_state, user, mock_db)
         mock_message.answer.assert_awaited()
 
     async def test_no_bot_reference(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         doc = _make_document()
         mock_message.document = doc
@@ -778,8 +879,11 @@ class TestFsmKwUploadFile:
         assert "загрузки" in mock_message.answer.call_args.args[0].lower()
 
     async def test_no_document(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_message: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_message.document = None
         await fsm_kw_upload_file(mock_message, mock_state, user, mock_db)
@@ -793,8 +897,12 @@ class TestFsmKwUploadFile:
 
 class TestCbKwUploadSave:
     async def test_saves_uploaded_keywords(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        category: Category,
     ) -> None:
         mock_callback.data = "kw:save"
         clusters = [
@@ -807,8 +915,10 @@ class TestCbKwUploadSave:
         ]
         mock_state.get_data.return_value = {"clusters": clusters, "category_id": category.id}
 
-        with patch("routers.categories.keywords.CategoriesRepository") as cat_cls, \
-             patch("keyboards.inline.category_card_kb"):
+        with (
+            patch("routers.categories.keywords.CategoriesRepository") as cat_cls,
+            patch("keyboards.inline.category_card_kb"),
+        ):
             cat_cls.return_value.update_keywords = AsyncMock(return_value=category)
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             await cb_kw_upload_save(mock_callback, mock_state, user, mock_db)
@@ -816,14 +926,20 @@ class TestCbKwUploadSave:
             cat_cls.return_value.update_keywords.assert_awaited_once_with(category.id, clusters)
 
     async def test_clears_fsm_on_save(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        category: Category,
     ) -> None:
         mock_callback.data = "kw:save"
         mock_state.get_data.return_value = {"clusters": [], "category_id": category.id}
 
-        with patch("routers.categories.keywords.CategoriesRepository") as cat_cls, \
-             patch("keyboards.inline.category_card_kb"):
+        with (
+            patch("routers.categories.keywords.CategoriesRepository") as cat_cls,
+            patch("keyboards.inline.category_card_kb"),
+        ):
             cat_cls.return_value.update_keywords = AsyncMock(return_value=category)
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             await cb_kw_upload_save(mock_callback, mock_state, user, mock_db)

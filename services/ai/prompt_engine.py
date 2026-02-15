@@ -56,7 +56,7 @@ class PromptEngine:
             block_end_string="%>",
             comment_start_string="<#",
             comment_end_string="#>",
-            autoescape=False,  # noqa: S701 — prompts are not HTML, sanitization via _sanitize_variables
+            autoescape=False,  # noqa: S701  # nosec B701 — prompts are AI text, not HTML; sanitized via _sanitize_variables
         )
 
     async def _load_prompt(self, task_type: str) -> PromptVersion | None:
