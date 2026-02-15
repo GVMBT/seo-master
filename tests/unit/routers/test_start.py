@@ -7,7 +7,7 @@ import pytest
 from db.models import User
 from routers.start import (
     _build_dashboard_text,
-    btn_admin_stub,
+    btn_admin_redirect,
     btn_cancel,
     btn_menu,
     cb_help,
@@ -327,16 +327,10 @@ class TestCbMainMenu:
 
 class TestCbHelp:
     @pytest.mark.asyncio
-    async def test_edits_to_help_text(self, mock_callback: MagicMock) -> None:
+    @patch("routers.help.cb_help_main", new_callable=AsyncMock)
+    async def test_delegates_to_help_main(self, mock_help_main: AsyncMock, mock_callback: MagicMock) -> None:
         await cb_help(mock_callback)
-        mock_callback.message.edit_text.assert_awaited_once()
-        text = mock_callback.message.edit_text.call_args.args[0]
-        assert "/start" in text
-        assert "/cancel" in text
-        # Has back-to-menu button
-        kb = mock_callback.message.edit_text.call_args.kwargs["reply_markup"]
-        callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
-        assert "menu:main" in callbacks
+        mock_help_main.assert_awaited_once_with(mock_callback)
 
 
 # ---------------------------------------------------------------------------
@@ -359,11 +353,14 @@ class TestBtnMenu:
 # ---------------------------------------------------------------------------
 
 
-class TestBtnAdminStub:
+class TestBtnAdminRedirect:
     @pytest.mark.asyncio
-    async def test_shows_in_development(self, mock_message: MagicMock) -> None:
-        await btn_admin_stub(mock_message)
-        assert "разработке" in mock_message.answer.call_args.args[0].lower()
+    @patch("routers.admin.dashboard.btn_admin_main", new_callable=AsyncMock)
+    async def test_redirects_to_admin_dashboard(
+        self, mock_admin_main: AsyncMock, mock_message: MagicMock, user: User, mock_db: MagicMock
+    ) -> None:
+        await btn_admin_redirect(mock_message, user, mock_db)
+        mock_admin_main.assert_awaited_once_with(mock_message, user, mock_db)
 
 
 class TestFsmNonTextGuard:

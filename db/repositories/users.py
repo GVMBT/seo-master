@@ -259,6 +259,51 @@ class UsersRepository(BaseRepository):
         )
         return [User(**row) for row in self._rows(resp)]
 
+    async def count_all(self) -> int:
+        """Count all users."""
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .execute()
+        )
+        return self._count(resp)
+
+    async def count_active(self, days: int = 7) -> int:
+        """Count users active within the last N days."""
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .gte("last_activity", cutoff)
+            .execute()
+        )
+        return self._count(resp)
+
+    async def get_ids_by_audience(self, audience: str) -> list[int]:
+        """Get user IDs by audience type for broadcast.
+
+        Audiences: all, active_7d, active_30d, paid.
+        """
+        if audience == "active_7d":
+            users = await self.get_active_users(days=7)
+            return [u.id for u in users]
+        if audience == "active_30d":
+            users = await self.get_active_users(days=30)
+            return [u.id for u in users]
+        if audience == "paid":
+            # Users who have at least one payment
+            resp = (
+                await self._db.table("payments")
+                .select("user_id")
+                .eq("status", "completed")
+                .execute()
+            )
+            rows = self._rows(resp)
+            return sorted({int(row["user_id"]) for row in rows})
+        # "all"
+        resp = await self._table(_TABLE).select("id").execute()
+        return [int(row["id"]) for row in self._rows(resp)]
+
     async def get_referral_count(self, user_id: int) -> int:
         """Count users who have this user as referrer."""
         resp = (

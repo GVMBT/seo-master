@@ -319,15 +319,10 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext, user: User, d
 
 @router.callback_query(F.data == "help:main")
 async def cb_help(callback: CallbackQuery) -> None:
-    """Show help text via inline button with back-to-menu navigation."""
-    msg = await guard_callback_message(callback)
-    if msg is None:
-        return
-    back_kb = InlineKeyboardBuilder()
-    back_kb.button(text="Главное меню", callback_data="menu:main")
-    back_kb.adjust(1)
-    await msg.edit_text(_HELP_TEXT, reply_markup=back_kb.as_markup())
-    await callback.answer()
+    """Redirect to help system (routers/help.py handles detailed sections)."""
+    from routers.help import cb_help_main
+
+    await cb_help_main(callback)
 
 
 # ---------------------------------------------------------------------------
@@ -351,9 +346,11 @@ async def btn_quick_publish(message: Message, user: User, db: SupabaseClient) ->
 
 
 @router.message(F.text == "АДМИНКА")
-async def btn_admin_stub(message: Message) -> None:
-    """Stub for admin panel button."""
-    await message.answer("В разработке.")
+async def btn_admin_redirect(message: Message, user: User, db: SupabaseClient) -> None:
+    """Redirect to admin panel (routers/admin/dashboard handles the logic)."""
+    from routers.admin.dashboard import btn_admin_main
+
+    await btn_admin_main(message, user, db)
 
 
 @router.callback_query(F.data == "stats:all")

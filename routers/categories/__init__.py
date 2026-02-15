@@ -1,7 +1,9 @@
-"""Category routers: manage (CRUD) + keywords (generation/upload FSMs)."""
+"""Category routers: manage (CRUD) + keywords + description + reviews + prices + media."""
 
 from aiogram import Router
 
+from routers.categories.description import DescriptionGenerateFSM
+from routers.categories.description import router as description_router
 from routers.categories.keywords import (
     KeywordGenerationFSM,
     KeywordUploadFSM,
@@ -35,15 +37,28 @@ from routers.categories.manage import (
 from routers.categories.manage import (
     router as manage_router,
 )
+from routers.categories.media import router as media_router
+from routers.categories.prices import PriceInputFSM
+from routers.categories.prices import router as prices_router
+from routers.categories.reviews import ReviewGenerationFSM
+from routers.categories.reviews import router as reviews_router
 
 router = Router(name="categories")
+# Sub-routers: specific features BEFORE manage (manage has catch-all stub)
+router.include_router(description_router)
+router.include_router(reviews_router)
+router.include_router(prices_router)
+router.include_router(media_router)
 router.include_router(keywords_router)
 router.include_router(manage_router)
 
 __all__ = [
     "CategoryCreateFSM",
+    "DescriptionGenerateFSM",
     "KeywordGenerationFSM",
     "KeywordUploadFSM",
+    "PriceInputFSM",
+    "ReviewGenerationFSM",
     "_format_category_card",
     "_validate_category_name",
     "cb_category_card",

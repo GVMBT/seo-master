@@ -92,6 +92,39 @@ class PaymentsRepository(BaseRepository):
         row = self._single(resp)
         return Payment(**row) if row else None
 
+    async def sum_revenue(self, days: int = 30) -> int:
+        """Sum revenue (amount_rub) for completed payments within N days."""
+        from datetime import UTC, datetime, timedelta
+
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        resp = (
+            await self._table(_PAYMENTS_TABLE)
+            .select("amount_rub")
+            .eq("status", "completed")
+            .gte("created_at", cutoff)
+            .execute()
+        )
+        rows = self._rows(resp)
+        return sum(int(float(row.get("amount_rub") or 0)) for row in rows)
+
+    async def get_expenses_summary(self, days: int = 7) -> dict[str, int]:
+        """Aggregate token expenses by operation_type within N days."""
+        from datetime import UTC, datetime, timedelta
+
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        resp = (
+            await self._table(_EXPENSES_TABLE)
+            .select("operation_type,amount")
+            .gte("created_at", cutoff)
+            .execute()
+        )
+        summary: dict[str, int] = {}
+        for row in self._rows(resp):
+            op = row.get("operation_type", "unknown")
+            amt = abs(int(row.get("amount", 0)))
+            summary[op] = summary.get(op, 0) + amt
+        return summary
+
     # --- token_expenses ---
 
     async def create_expense(self, data: TokenExpenseCreate) -> TokenExpense:

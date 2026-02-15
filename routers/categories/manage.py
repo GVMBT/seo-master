@@ -173,10 +173,10 @@ async def cb_category_card(callback: CallbackQuery, user: User, db: SupabaseClie
 
 
 @router.callback_query(
-    F.data.regexp(r"^category:(\d+):(description|prices|reviews|media|img_settings|text_settings)$")
+    F.data.regexp(r"^category:(\d+):(img_settings|text_settings)$")
 )
 async def cb_category_feature_stub(callback: CallbackQuery) -> None:
-    """Stub for not-yet-implemented category features."""
+    """Stub for not-yet-implemented category features (img_settings, text_settings)."""
     await callback.answer("В разработке.", show_alert=True)
 
 

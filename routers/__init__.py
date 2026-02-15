@@ -2,8 +2,10 @@
 
 from aiogram import Router
 
+from routers.admin import router as admin_router
 from routers.analysis import router as analysis_router
 from routers.categories import router as categories_router
+from routers.help import router as help_router
 from routers.payments import router as payments_router
 from routers.platforms import router as platforms_router
 from routers.profile import router as profile_router
@@ -17,6 +19,9 @@ from routers.tariffs import router as tariffs_router
 def setup_routers() -> Router:
     """Create root router with all sub-routers included."""
     root = Router(name="root")
+    # Admin + help BEFORE start (start has catch-all reply button handlers)
+    root.include_router(admin_router)
+    root.include_router(help_router)
     root.include_router(start_router)
     root.include_router(projects_router)
     root.include_router(categories_router)

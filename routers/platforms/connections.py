@@ -364,6 +364,19 @@ async def fsm_wp_password(message: Message, state: FSMContext, user: User, db: S
     parsed = urlparse(wp_url)
     identifier = parsed.hostname or wp_url
 
+    # E41: duplicate WP site warning
+    repo = _get_connections_repo(db)
+    existing = await repo.get_by_identifier_for_user(identifier, "wordpress", user.id)
+    if existing:
+        from db.repositories.projects import ProjectsRepository
+
+        existing_project = await ProjectsRepository(db).get_by_id(existing.project_id)
+        existing_name = html.escape(existing_project.name) if existing_project else "?"
+        await message.answer(
+            f"Этот сайт уже подключён к проекту «{existing_name}».\n"
+            "Публикации в оба проекта будут идти на один сайт.",
+        )
+
     credentials = {
         "url": wp_url,
         "login": wp_login,

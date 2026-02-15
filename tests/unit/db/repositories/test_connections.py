@@ -142,6 +142,40 @@ class TestDelete:
         assert await repo.delete(1) is True
 
 
+class TestGetByIdentifierForUser:
+    async def test_found(
+        self,
+        repo: ConnectionsRepository,
+        mock_db: MockSupabaseClient,
+        connection_row: dict,
+    ) -> None:
+        mock_db.set_response("projects", MockResponse(data=[{"id": 1}]))
+        mock_db.set_response("platform_connections", MockResponse(data=[connection_row]))
+        conn = await repo.get_by_identifier_for_user("https://site.com", "wordpress", 42)
+        assert conn is not None
+        assert isinstance(conn, PlatformConnection)
+        assert conn.identifier == "https://site.com"
+
+    async def test_not_found(
+        self,
+        repo: ConnectionsRepository,
+        mock_db: MockSupabaseClient,
+    ) -> None:
+        mock_db.set_response("projects", MockResponse(data=[{"id": 1}]))
+        mock_db.set_response("platform_connections", MockResponse(data=[]))
+        conn = await repo.get_by_identifier_for_user("https://other.com", "wordpress", 42)
+        assert conn is None
+
+    async def test_no_projects(
+        self,
+        repo: ConnectionsRepository,
+        mock_db: MockSupabaseClient,
+    ) -> None:
+        mock_db.set_response("projects", MockResponse(data=[]))
+        conn = await repo.get_by_identifier_for_user("https://site.com", "wordpress", 999)
+        assert conn is None
+
+
 class TestGetAllRaw:
     async def test_returns_encrypted_data(
         self,

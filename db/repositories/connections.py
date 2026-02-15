@@ -109,6 +109,40 @@ class ConnectionsRepository(BaseRepository):
         resp = await self._table(_TABLE).delete().eq("id", connection_id).execute()
         return len(self._rows(resp)) > 0
 
+    async def get_by_identifier_for_user(
+        self, identifier: str, platform_type: str, user_id: int
+    ) -> PlatformConnection | None:
+        """Find an existing connection by identifier+platform across user's projects.
+
+        Used for E41: duplicate WordPress site warning.
+        Joins through projects table to filter by user_id.
+        """
+        # Get all user's projects first, then check connections
+        projects_resp = (
+            await self._db.table("projects")
+            .select("id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        project_ids = [row["id"] for row in self._rows(projects_resp)]
+        if not project_ids:
+            return None
+
+        for pid in project_ids:
+            resp = (
+                await self._table(_TABLE)
+                .select("*")
+                .eq("project_id", pid)
+                .eq("platform_type", platform_type)
+                .eq("identifier", identifier)
+                .limit(1)
+                .execute()
+            )
+            rows = self._rows(resp)
+            if rows:
+                return self._to_connection(rows[0])
+        return None
+
     async def get_platform_types_by_project(self, project_id: int) -> list[str]:
         """Get distinct active platform types for a project (no credential decryption)."""
         resp = (
