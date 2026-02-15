@@ -299,10 +299,10 @@ async def cb_category_delete_confirm(
                             reason="category_deleted",
                             description=f"Category deleted, preview refund: {preview.keyword or 'unknown'}",
                         )
-                    except Exception:
+                    except Exception:  # noqa: BLE001 — best-effort refund, must not block category deletion
                         log.warning("e42_cat_refund_failed", preview_id=preview.id, user_id=preview.user_id)
                 await previews_repo.atomic_mark_expired(preview.id)
-            except Exception:
+            except Exception:  # noqa: BLE001 — best-effort cleanup per E42, must not block deletion
                 log.exception(
                     "e42_cat_preview_cleanup_failed",
                     preview_id=preview.id,

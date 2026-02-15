@@ -375,7 +375,7 @@ async def cb_price_clear(callback: CallbackQuery, user: User, db: SupabaseClient
 
 
 @router.message(PriceInputFSM.choose_method)
-async def fsm_price_choose_method_guard(message: Message, state: FSMContext) -> None:
+async def fsm_price_choose_method_guard(message: Message, _state: FSMContext) -> None:
     """TODO Phase 11: choose_method state is currently unused (entry skips to text/file).
 
     Guard handler to prevent stuck state.
