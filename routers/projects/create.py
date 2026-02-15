@@ -113,9 +113,7 @@ _MAX_PROJECTS_PER_USER = 20
 
 
 @router.callback_query(F.data == "projects:new")
-async def cb_project_new(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_project_new(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Start project creation FSM.
 
     TODO P4.11: [Прервать] (save progress) button requires a draft mechanism
@@ -128,9 +126,7 @@ async def cb_project_new(
     # Enforce project limit (S4)
     count = await ProjectsRepository(db).get_count_by_user(user.id)
     if count >= _MAX_PROJECTS_PER_USER:
-        await callback.answer(
-            f"Достигнут лимит: {_MAX_PROJECTS_PER_USER} проектов.", show_alert=True
-        )
+        await callback.answer(f"Достигнут лимит: {_MAX_PROJECTS_PER_USER} проектов.", show_alert=True)
         return
 
     # Auto-clear any active FSM (P4.11, FSM conflict resolution)
@@ -209,13 +205,12 @@ async def fsm_project_url(message: Message, state: FSMContext, user: User, db: S
         )
     )
     await message.answer(
-        _format_project_card(project)
-        + "\n\nЗаполните остальные данные (город, телефон, соцсети)"
+        _format_project_card(project) + "\n\nЗаполните остальные данные (город, телефон, соцсети)"
         " в разделе «Редактировать данные» для лучшего качества контента.",
         reply_markup=project_card_kb(project).as_markup(),
     )
     # Restore reply keyboard after FSM completion (I3)
-    await message.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await message.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
 
 
 # ---------------------------------------------------------------------------
@@ -275,9 +270,7 @@ async def cb_project_field(callback: CallbackQuery, state: FSMContext, user: Use
 
 
 @router.message(ProjectEditFSM.field_value, F.text)
-async def fsm_project_field_value(
-    message: Message, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def fsm_project_field_value(message: Message, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """FSM: validate and save edited field value."""
     data = await state.get_data()
     field_name = data["field_name"]
@@ -293,9 +286,7 @@ async def fsm_project_field_value(
     repo = ProjectsRepository(db)
     updated = await repo.update(project_id, ProjectUpdate(**{field_name: message.text}))
     if updated is None:
-        await message.answer(
-            "Проект не найден.", reply_markup=main_menu(is_admin=user.role == "admin")
-        )
+        await message.answer("Проект не найден.", reply_markup=main_menu(is_admin=user.role == "admin"))
         return
 
     await message.answer(
@@ -303,4 +294,4 @@ async def fsm_project_field_value(
         reply_markup=project_card_kb(updated).as_markup(),
     )
     # Restore reply keyboard after FSM completion (I3)
-    await message.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await message.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))

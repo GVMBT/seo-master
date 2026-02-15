@@ -4,6 +4,7 @@ import io
 
 import structlog
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -430,8 +431,30 @@ async def cb_kw_save(
         )
 
     # Restore main menu reply keyboard
-    await msg.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
     await callback.answer()
+
+
+@router.callback_query(KeywordGenerationFSM.results, F.data == "kw:results:cancel")
+async def cb_kw_results_cancel(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """Discard generated keywords and return."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    data = await state.get_data()
+    cat_id = data.get("category_id")
+    await state.clear()
+    await callback.answer("Результаты отброшены.")
+    if msg:
+        back_cb = f"category:{cat_id}:keywords" if cat_id else "menu:main"
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+        kb = InlineKeyboardBuilder()
+        kb.button(text="К ключевым фразам", callback_data=back_cb)
+        await msg.edit_text("Результаты генерации отброшены.", reply_markup=kb.as_markup())
 
 
 # ---------------------------------------------------------------------------
@@ -614,8 +637,30 @@ async def cb_kw_upload_save(
             reply_markup=category_card_kb(category).as_markup(),
         )
 
-    await msg.answer("Выберите действие:", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
     await callback.answer()
+
+
+@router.callback_query(KeywordUploadFSM.results, F.data == "kw:results:cancel")
+async def cb_kw_upload_results_cancel(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """Discard uploaded keyword results and return."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    data = await state.get_data()
+    cat_id = data.get("category_id")
+    await state.clear()
+    await callback.answer("Результаты отброшены.")
+    if msg:
+        back_cb = f"category:{cat_id}:keywords" if cat_id else "menu:main"
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+        kb = InlineKeyboardBuilder()
+        kb.button(text="К ключевым фразам", callback_data=back_cb)
+        await msg.edit_text("Результаты загрузки отброшены.", reply_markup=kb.as_markup())
 
 
 # ---------------------------------------------------------------------------
@@ -649,3 +694,31 @@ def _build_upload_clusters(phrases: list[str]) -> list[dict[str, object]]:
             "phrases": phrase_dicts,
         }
     ]
+
+
+# ---------------------------------------------------------------------------
+# Guard handlers: block interactions during pipeline execution
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(
+    StateFilter(
+        KeywordGenerationFSM.fetching,
+        KeywordGenerationFSM.clustering,
+        KeywordGenerationFSM.enriching,
+    )
+)
+async def cb_kw_pipeline_guard(callback: CallbackQuery) -> None:
+    """E07/E26: block callbacks while keyword pipeline is running."""
+    await callback.answer("Генерация в процессе. Подождите.", show_alert=True)
+
+
+@router.callback_query(
+    StateFilter(
+        KeywordUploadFSM.enriching,
+        KeywordUploadFSM.clustering,
+    )
+)
+async def cb_kw_upload_pipeline_guard(callback: CallbackQuery) -> None:
+    """E07/E26: block callbacks while keyword upload pipeline is running."""
+    await callback.answer("Обработка в процессе. Подождите.", show_alert=True)

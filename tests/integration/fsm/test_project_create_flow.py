@@ -50,6 +50,7 @@ def _put_user_in_fsm_state(
 ) -> None:
     """Put user in a specific FSM state."""
     import time
+
     storage_key = f"fsm:{user_id}:{user_id}:state"
     mock_redis._store[storage_key] = state
     data = state_data or {}
@@ -76,7 +77,11 @@ def _get_all_text(mock_bot: Any) -> str:
 
 
 async def test_create_project_callback_starts_fsm(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Callback 'projects:new' -> asks for name (step 1/4)."""
     setup_user()
@@ -96,7 +101,11 @@ async def test_create_project_callback_starts_fsm(
 
 
 async def test_step1_name_accepted(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Valid name -> asks for company name (step 2/4)."""
     setup_user()
@@ -111,7 +120,11 @@ async def test_step1_name_accepted(
 
 
 async def test_step1_name_too_long(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """>100 chars name -> error, stays in state."""
     setup_user()
@@ -133,7 +146,11 @@ async def test_step1_name_too_long(
 
 
 async def test_step2_company_name_accepted(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Valid company name -> asks for specialization (step 3/4)."""
     setup_user()
@@ -148,7 +165,11 @@ async def test_step2_company_name_accepted(
 
 
 async def test_step3_specialization_accepted(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Valid specialization -> asks for website (step 4/4)."""
     setup_user()
@@ -167,7 +188,11 @@ async def test_step3_specialization_accepted(
 
 
 async def test_step4_skip_website(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """'Пропустить' at step 4 -> creates project without URL."""
     setup_user()
@@ -192,7 +217,11 @@ async def test_step4_skip_website(
 
 
 async def test_step4_valid_url(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Valid URL -> creates project."""
     setup_user()
@@ -207,7 +236,7 @@ async def test_step4_valid_url(
     await dispatcher.feed_update(mock_bot, update)
 
     all_text = _get_all_text(mock_bot)
-    assert "Test Project" in all_text or "Выберите действие" in all_text
+    assert "Test Project" in all_text or "\u200b" in all_text
 
     # FSM should be cleared
     state_key = f"fsm:{DEFAULT_USER_ID}:{DEFAULT_USER_ID}:state"
@@ -216,7 +245,11 @@ async def test_step4_valid_url(
 
 
 async def test_step4_invalid_url(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Bad URL -> error, retry."""
     setup_user()
@@ -242,7 +275,11 @@ async def test_step4_invalid_url(
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_cancel_during_creation(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """/cancel during creation -> clears FSM."""
     setup_user()
@@ -262,7 +299,11 @@ async def test_cancel_during_creation(
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_start_during_creation(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """/start during creation -> clears FSM, shows dashboard."""
     setup_user()
@@ -282,7 +323,11 @@ async def test_start_during_creation(
 
 
 async def test_full_flow_end_to_end(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """All 4 steps -> project created in DB."""
     setup_user()
@@ -324,7 +369,7 @@ async def test_full_flow_end_to_end(
 
     all_text = _get_all_text(mock_bot)
     # Project card should be shown
-    assert "Test Project" in all_text or "Выберите действие" in all_text
+    assert "Test Project" in all_text or "\u200b" in all_text
 
     # FSM should be cleared
     state_key = f"fsm:{DEFAULT_USER_ID}:{DEFAULT_USER_ID}:state"
@@ -333,7 +378,11 @@ async def test_full_flow_end_to_end(
 
 
 async def test_max_projects_limit(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """20 projects -> reject (E05)."""
     setup_user()
@@ -353,7 +402,11 @@ async def test_max_projects_limit(
 
 
 async def test_project_create_shows_card_after(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """After creation -> shows project card."""
     setup_user()
@@ -369,11 +422,15 @@ async def test_project_create_shows_card_after(
     await dispatcher.feed_update(mock_bot, update)
 
     all_text = _get_all_text(mock_bot)
-    assert "Fresh Project" in all_text or "Выберите действие" in all_text
+    assert "Fresh Project" in all_text or "\u200b" in all_text
 
 
 async def test_project_create_stores_user_id(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Verifies user_id from middleware is used when creating project."""
     setup_user()
