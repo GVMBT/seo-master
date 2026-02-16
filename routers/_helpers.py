@@ -46,5 +46,10 @@ async def restore_reply_kb(target: Message, *, is_admin: bool) -> None:
     Telegram doesn't allow mixing InlineKeyboardMarkup and ReplyKeyboardMarkup
     in one message, so a separate message is required to bring back the
     persistent [Menu] + [Write Article] buttons.
+
+    parse_mode=None overrides the bot-level default (HTML) — without it,
+    Telegram strips U+2800 and rejects the message as empty.
     """
-    await target.answer(_KB_RESTORE_CHAR, reply_markup=main_menu(is_admin=is_admin))
+    await target.answer(
+        _KB_RESTORE_CHAR, reply_markup=main_menu(is_admin=is_admin), parse_mode=None
+    )
