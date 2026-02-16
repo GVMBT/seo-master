@@ -1,9 +1,9 @@
 """Router: Article Pipeline -- Goal-Oriented funnel for article creation.
 
 Phase 13A: steps 1-3 (select project/WP/category), 5-8 (confirm/generate/preview/publish).
-Readiness check (step 4) + inline sub-flows -> Phase 13B.
+Phase 13B: step 4 (readiness check + inline keyword generation sub-flow).
 
-PIPELINE_UX_PROPOSAL.md section 4.1, section 12, section 13 Phase A
+PIPELINE_UX_PROPOSAL.md section 4.1, section 12, section 13 Phase A+B
 FSM_SPEC.md: ArticlePipelineFSM (23 states)
 """
 
@@ -31,6 +31,7 @@ from db.models import (
     ArticlePreview,
     ArticlePreviewCreate,
     ArticlePreviewUpdate,
+    ProjectUpdate,
     PublicationLogCreate,
     User,
 )
@@ -43,21 +44,27 @@ from keyboards.errors import error_generic_kb, error_no_keywords_kb, error_not_f
 from keyboards.pipeline import (
     pipeline_category_list_kb,
     pipeline_confirm_kb,
+    pipeline_keywords_geo_kb,
+    pipeline_keywords_options_kb,
+    pipeline_keywords_qty_kb,
     pipeline_no_entities_kb,
     pipeline_post_publish_kb,
     pipeline_preview_kb,
     pipeline_project_list_kb,
+    pipeline_readiness_kb,
     pipeline_resume_kb,
     pipeline_wp_list_kb,
 )
 from routers._helpers import guard_callback_message
-from services.tokens import TokenService, estimate_article_cost
+from services.readiness import ReadinessService
+from services.tokens import TokenService, estimate_article_cost, estimate_keywords_cost
 
 if TYPE_CHECKING:
     import httpx
 
     from services.ai.orchestrator import AIOrchestrator
     from services.ai.rate_limiter import RateLimiter
+    from services.external.dataforseo import DataForSEOClient
     from services.storage import ImageStorage
 
 log = structlog.get_logger()
@@ -337,9 +344,9 @@ async def _show_category_selection(
 
     if len(categories) == 1:
         await state.update_data(category_id=categories[0].id)
-        # Phase 13A: skip readiness -> go to confirm_cost
-        await state.set_state(ArticlePipelineFSM.confirm_cost)
-        await _show_confirm(msg, user, db, state)
+        await state.set_state(ArticlePipelineFSM.readiness_check)
+        data = await state.get_data()
+        await _show_readiness(msg, db, data)
         return
 
     await msg.edit_text(
@@ -369,9 +376,450 @@ async def cb_pipeline_select_category(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
     await state.update_data(category_id=category_id)
+    await state.set_state(ArticlePipelineFSM.readiness_check)
+    data = await state.get_data()
+    await _show_readiness(msg, db, data)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Step 4: readiness check (PIPELINE_UX_PROPOSAL section 4.1 step 4)
+# ---------------------------------------------------------------------------
+
+_GEO_MAP: dict[str, str] = {
+    "msk": "Москва",
+    "spb": "Санкт-Петербург",
+    "ru": "Россия",
+}
+
+
+async def _show_readiness(msg: Message, db: SupabaseClient, data: dict[str, Any]) -> None:
+    """Show readiness checklist (step 4). If all ready, still show checklist with proceed button."""
+    category_id = data["category_id"]
+    project_id = data["project_id"]
+
+    svc = ReadinessService(db)
+    result = await svc.check(category_id, project_id)
+
+    lines = ["Статья > Подготовка данных\n"]
+    if result.all_ready:
+        lines.append("Все данные заполнены!")
+    else:
+        lines.append("Можно улучшить статью:")
+
+    for item in result.items:
+        icon = "\u2705" if item.ready else "\u2b1c"
+        status = "заполнено" if item.ready else item.hint
+        lines.append(f"{icon} {item.label} \u2014 {status}")
+
+    await msg.edit_text(
+        "\n".join(lines),
+        reply_markup=pipeline_readiness_kb(result.items, result.all_ready).as_markup(),
+    )
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data == "pipeline:article:ready:proceed",
+)
+async def cb_readiness_proceed(
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+) -> None:
+    """User clicked 'Proceed' on readiness checklist -> move to cost confirmation."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
     await state.set_state(ArticlePipelineFSM.confirm_cost)
     await _show_confirm(msg, user, db, state)
     await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data == "pipeline:article:ready:keywords",
+)
+async def cb_readiness_keywords(
+    callback: CallbackQuery, state: FSMContext,
+) -> None:
+    """User wants to fill keywords -> show keyword options."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    cost = estimate_keywords_cost(100)
+    await msg.edit_text(
+        "Статья > Ключевые фразы\n\n"
+        "Как получить ключевые фразы?",
+        reply_markup=pipeline_keywords_options_kb(auto_cost=cost).as_markup(),
+    )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Step 4a: inline keyword generation sub-flow
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data == "pipeline:article:kw:auto",
+)
+async def cb_kw_auto(
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+) -> None:
+    """Auto-generate keywords using project data. Ask geo if missing."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    data = await state.get_data()
+    project = await ProjectsRepository(db).get_by_id(data["project_id"])
+    if not project:
+        await callback.answer("Проект не найден.", show_alert=True)
+        return
+
+    products = project.specialization or project.company_name
+    await state.update_data(kw_products=products, kw_mode="auto", kw_quantity=100)
+
+    if project.company_city:
+        # City known -> generate immediately
+        await state.update_data(kw_geo=project.company_city)
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_generating)
+        await msg.edit_text("Статья > Ключевые фразы\n\nПодбираю ключевые фразы...")
+        await callback.answer()
+        await _generate_keywords_inline(msg, state, user, db)
+    else:
+        # Ask geography
+        await msg.edit_text(
+            "Статья > Ключевые фразы\n\n"
+            "В каком городе ваш бизнес? (для точных SEO-фраз)",
+            reply_markup=pipeline_keywords_geo_kb().as_markup(),
+        )
+        await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data == "pipeline:article:kw:custom",
+)
+async def cb_kw_custom(
+    callback: CallbackQuery, state: FSMContext,
+) -> None:
+    """Custom keyword params -> ask products first."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    await state.set_state(ArticlePipelineFSM.readiness_keywords_products)
+    await msg.edit_text(
+        "Статья > Ключевые фразы\n\n"
+        "Какие товары/услуги продвигаем?\n"
+        "Введите через запятую:",
+    )
+    await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data == "pipeline:article:kw:back",
+)
+async def cb_kw_back(
+    callback: CallbackQuery, state: FSMContext, db: SupabaseClient,
+) -> None:
+    """Back to readiness checklist from keyword options."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    data = await state.get_data()
+    await _show_readiness(msg, db, data)
+    await callback.answer()
+
+
+@router.message(ArticlePipelineFSM.readiness_keywords_products)
+async def msg_kw_products(
+    message: Message, state: FSMContext,
+) -> None:
+    """User entered products text -> ask geography."""
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer("Отправьте текстовое сообщение с товарами/услугами.")
+        return
+    if len(text) > 500:
+        await message.answer("Слишком длинный текст. Максимум 500 символов.")
+        return
+    await state.update_data(kw_products=text, kw_mode="custom")
+    await state.set_state(ArticlePipelineFSM.readiness_keywords_geo)
+    await message.answer(
+        "Статья > Ключевые фразы\n\n"
+        "Укажите географию (город или регион):",
+        reply_markup=pipeline_keywords_geo_kb().as_markup(),
+    )
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data.regexp(r"^pipeline:article:kw:geo:(msk|spb|ru|custom)$"),
+)
+async def cb_kw_geo_from_readiness(
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+) -> None:
+    """Geo selected from readiness state (auto flow without company_city)."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    geo_code = callback.data.split(":")[-1]  # type: ignore[union-attr]
+
+    if geo_code == "custom":
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_geo)
+        await msg.edit_text(
+            "Статья > Ключевые фразы\n\n"
+            "Введите город или регион:",
+        )
+        await callback.answer()
+        return
+
+    geo = _GEO_MAP.get(geo_code, geo_code)
+    await state.update_data(kw_geo=geo)
+
+    # Save city to project for future use
+    data = await state.get_data()
+    await ProjectsRepository(db).update(
+        data["project_id"],
+        ProjectUpdate(company_city=geo),
+    )
+
+    await state.set_state(ArticlePipelineFSM.readiness_keywords_generating)
+    await msg.edit_text("Статья > Ключевые фразы\n\nПодбираю ключевые фразы...")
+    await callback.answer()
+    await _generate_keywords_inline(msg, state, user, db)
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_keywords_geo,
+    F.data.regexp(r"^pipeline:article:kw:geo:(msk|spb|ru|custom)$"),
+)
+async def cb_kw_geo_from_geo_state(
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+) -> None:
+    """Geo selected from geo state (custom flow)."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    geo_code = callback.data.split(":")[-1]  # type: ignore[union-attr]
+
+    if geo_code == "custom":
+        await msg.edit_text(
+            "Статья > Ключевые фразы\n\n"
+            "Введите город или регион:",
+        )
+        await callback.answer()
+        return
+
+    geo = _GEO_MAP.get(geo_code, geo_code)
+    await state.update_data(kw_geo=geo)
+
+    data = await state.get_data()
+    mode = data.get("kw_mode", "auto")
+
+    if mode == "auto":
+        # Auto flow -> generate immediately
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_generating)
+        await msg.edit_text("Статья > Ключевые фразы\n\nПодбираю ключевые фразы...")
+        await callback.answer()
+        await _generate_keywords_inline(msg, state, user, db)
+    else:
+        # Custom flow -> ask quantity
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_qty)
+        await msg.edit_text(
+            "Статья > Ключевые фразы\n\n"
+            "Сколько фраз подобрать?",
+            reply_markup=pipeline_keywords_qty_kb().as_markup(),
+        )
+        await callback.answer()
+
+
+@router.message(ArticlePipelineFSM.readiness_keywords_geo)
+async def msg_kw_geo(
+    message: Message, state: FSMContext, user: User, db: SupabaseClient,
+) -> None:
+    """User typed custom geography."""
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer("Отправьте текстовое сообщение с городом или регионом.")
+        return
+    if len(text) > 100:
+        await message.answer("Слишком длинный текст. Максимум 100 символов.")
+        return
+
+    await state.update_data(kw_geo=text)
+    data = await state.get_data()
+    mode = data.get("kw_mode", "auto")
+
+    if mode == "auto":
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_generating)
+        await message.answer("Статья > Ключевые фразы\n\nПодбираю ключевые фразы...")
+        await _generate_keywords_inline(message, state, user, db)
+    else:
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_qty)
+        await message.answer(
+            "Статья > Ключевые фразы\n\n"
+            "Сколько фраз подобрать?",
+            reply_markup=pipeline_keywords_qty_kb().as_markup(),
+        )
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_keywords_qty,
+    F.data.regexp(r"^pipeline:article:kw:qty:(\d+)$"),
+)
+async def cb_kw_qty(
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+) -> None:
+    """User selected keyword quantity -> generate."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    qty = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+    await state.update_data(kw_quantity=qty)
+    await state.set_state(ArticlePipelineFSM.readiness_keywords_generating)
+    await msg.edit_text("Статья > Ключевые фразы\n\nПодбираю ключевые фразы...")
+    await callback.answer()
+    await _generate_keywords_inline(msg, state, user, db)
+
+
+@router.callback_query(ArticlePipelineFSM.readiness_keywords_generating)
+async def cb_kw_generating_guard(callback: CallbackQuery) -> None:
+    """E07: Block callbacks while keyword generation is in progress."""
+    await callback.answer("Подбор фраз в процессе...", show_alert=True)
+
+
+async def _generate_keywords_inline(
+    msg: Message, state: FSMContext, user: User, db: SupabaseClient,
+) -> None:
+    """Generate keywords inline and save to category. Return to readiness checklist."""
+    data = await state.get_data()
+    products = data.get("kw_products", "")
+    geo = data.get("kw_geo", "Россия")
+    quantity = data.get("kw_quantity", 100)
+    project_id = data["project_id"]
+    category_id = data["category_id"]
+    settings = get_settings()
+    is_god = user.id in settings.admin_ids
+
+    cost = estimate_keywords_cost(quantity)
+    token_svc = TokenService(db, settings.admin_ids)
+
+    # Check balance (keywords cost tokens)
+    if not is_god:
+        has_balance = await token_svc.check_balance(user.id, cost)
+        if not has_balance:
+            balance = await token_svc.get_balance(user.id)
+            await msg.edit_text(
+                f"Недостаточно токенов для подбора фраз.\n"
+                f"Нужно: {cost} ток. | Баланс: {balance}",
+            )
+            await state.set_state(ArticlePipelineFSM.readiness_check)
+            data = await state.get_data()
+            await _show_readiness(msg, db, data)
+            return
+
+    # Charge tokens
+    if not is_god:
+        try:
+            await token_svc.charge(
+                user_id=user.id,
+                amount=cost,
+                operation_type="keyword_generation",
+                description=f"Pipeline keywords ({quantity} phrases) for category {category_id}",
+            )
+        except InsufficientBalanceError:
+            await msg.edit_text("Недостаточно токенов.")
+            await state.set_state(ArticlePipelineFSM.readiness_check)
+            return
+
+    # Generate keywords via KeywordService
+    try:
+        from services.keywords import KeywordService
+
+        ai_orchestrator: AIOrchestrator = msg.bot.workflow_data["ai_orchestrator"]  # type: ignore[union-attr]
+        dataforseo: DataForSEOClient = msg.bot.workflow_data["dataforseo_client"]  # type: ignore[union-attr]
+
+        kw_svc = KeywordService(orchestrator=ai_orchestrator, dataforseo=dataforseo, db=db)
+
+        await msg.edit_text("Статья > Ключевые фразы\n\nИщу фразы в DataForSEO...")
+
+        raw = await kw_svc.fetch_raw_phrases(
+            products=products,
+            geography=geo,
+            quantity=quantity,
+            project_id=project_id,
+            user_id=user.id,
+        )
+
+        await msg.edit_text("Статья > Ключевые фразы\n\nКластеризую фразы...")
+
+        clusters = await kw_svc.cluster_phrases(
+            raw_phrases=raw,
+            products=products,
+            geography=geo,
+            quantity=quantity,
+            project_id=project_id,
+            user_id=user.id,
+        )
+
+        await msg.edit_text("Статья > Ключевые фразы\n\nОбогащаю данными...")
+
+        clusters = await kw_svc.enrich_clusters(clusters)
+
+    except Exception:
+        log.exception("pipeline_keyword_generation_failed", user_id=user.id)
+        # Refund tokens on error
+        if not is_god:
+            try:
+                await token_svc.refund(
+                    user.id, cost, reason="refund", description="Pipeline keyword generation failed",
+                )
+            except Exception:
+                log.exception("pipeline_keyword_refund_failed", user_id=user.id)
+        await msg.edit_text("Ошибка при подборе фраз. Токены возвращены.")
+        await state.set_state(ArticlePipelineFSM.readiness_check)
+        data = await state.get_data()
+        await _show_readiness(msg, db, data)
+        return
+
+    # Save clusters to category
+    cat_repo = CategoriesRepository(db)
+    await cat_repo.update_keywords(category_id, clusters)
+
+    total_phrases = sum(len(c.get("phrases", [])) for c in clusters)
+    log.info(
+        "pipeline_keywords_generated",
+        user_id=user.id,
+        category_id=category_id,
+        cluster_count=len(clusters),
+        phrase_count=total_phrases,
+        cost=cost,
+    )
+
+    # Return to readiness checklist with success message
+    await state.set_state(ArticlePipelineFSM.readiness_check)
+    # Clean up keyword sub-flow state
+    await state.update_data(kw_products=None, kw_geo=None, kw_quantity=None, kw_mode=None)
+
+    data = await state.get_data()
+    svc = ReadinessService(db)
+    result = await svc.check(category_id, project_id)
+
+    lines = [
+        "Статья > Подготовка данных\n",
+        f"\u2705 Подобрано {len(clusters)} кластеров ({total_phrases} фраз). Что ещё?\n",
+    ]
+    for item in result.items:
+        icon = "\u2705" if item.ready else "\u2b1c"
+        status = "заполнено" if item.ready else item.hint
+        lines.append(f"{icon} {item.label} \u2014 {status}")
+
+    await msg.edit_text(
+        "\n".join(lines),
+        reply_markup=pipeline_readiness_kb(result.items, result.all_ready).as_markup(),
+    )
 
 
 # ---------------------------------------------------------------------------

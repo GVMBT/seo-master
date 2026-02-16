@@ -1,9 +1,16 @@
 """Inline keyboard builders for Goal-Oriented Pipeline (PIPELINE_UX_PROPOSAL.md)."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from db.models import Category, PlatformConnection, Project
 from keyboards.pagination import paginate
+
+if TYPE_CHECKING:
+    from services.readiness import ReadinessItem
 
 
 def pipeline_project_list_kb(
@@ -138,4 +145,102 @@ def pipeline_no_entities_kb(entity: str, project_id: int = 0) -> InlineKeyboardB
         builder.button(text="Создать категорию", callback_data=f"project:{project_id}:categories")
     builder.button(text="Отмена", callback_data="menu:main")
     builder.adjust(1)
+    return builder
+
+
+def pipeline_readiness_kb(
+    items: list[ReadinessItem],
+    all_ready: bool,
+) -> InlineKeyboardBuilder:
+    """Readiness checklist for pipeline step 4 (PROPOSAL section 4.1).
+
+    Shows buttons only for unfilled items. The main "proceed" button
+    is always visible so the user can skip optional enrichers.
+    """
+    builder = InlineKeyboardBuilder()
+
+    for item in items:
+        if item.ready:
+            continue  # Don't show buttons for filled items
+
+        # Button text includes cost if > 0
+        cost_text = f" ({item.cost} ток.)" if item.cost > 0 else ""
+
+        builder.button(
+            text=f"{item.label}{cost_text}",
+            callback_data=f"pipeline:article:ready:{item.key}",
+        )
+
+    builder.button(
+        text="Всё OK — генерировать →",
+        callback_data="pipeline:article:ready:proceed",
+        style="success",
+    )
+    builder.button(text="Отмена", callback_data="pipeline:article:cancel")
+    builder.adjust(1)
+    return builder
+
+
+def pipeline_keywords_options_kb(auto_cost: int = 100) -> InlineKeyboardBuilder:
+    """Keyword generation options (PROPOSAL section 4.1 step 4a)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=f"Подобрать автоматически ({auto_cost} ток.)",
+        callback_data="pipeline:article:kw:auto",
+    )
+    builder.button(
+        text="Настроить параметры",
+        callback_data="pipeline:article:kw:custom",
+    )
+    builder.button(
+        text="Назад к чеклисту",
+        callback_data="pipeline:article:kw:back",
+    )
+    builder.adjust(1)
+    return builder
+
+
+def pipeline_keywords_geo_kb() -> InlineKeyboardBuilder:
+    """Geography quick-select for auto keyword generation."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Москва",
+        callback_data="pipeline:article:kw:geo:msk",
+    )
+    builder.button(
+        text="Санкт-Петербург",
+        callback_data="pipeline:article:kw:geo:spb",
+    )
+    builder.button(
+        text="Вся Россия",
+        callback_data="pipeline:article:kw:geo:ru",
+    )
+    builder.button(
+        text="Ввести свой",
+        callback_data="pipeline:article:kw:geo:custom",
+    )
+    builder.adjust(2)
+    return builder
+
+
+def pipeline_keywords_qty_kb() -> InlineKeyboardBuilder:
+    """Keyword quantity selection for custom params."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="50 фраз (50 ток.)",
+        callback_data="pipeline:article:kw:qty:50",
+    )
+    builder.button(
+        text="100 фраз (100 ток.)",
+        callback_data="pipeline:article:kw:qty:100",
+    )
+    builder.button(
+        text="150 фраз (150 ток.)",
+        callback_data="pipeline:article:kw:qty:150",
+    )
+    builder.button(
+        text="200 фраз (200 ток.)",
+        callback_data="pipeline:article:kw:qty:200",
+    )
+    builder.adjust(2)
     return builder

@@ -17,6 +17,8 @@ Covers:
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from aiogram.types import Message
+
 from db.models import ArticlePreview, Category, PlatformConnection, Project, User
 from routers.publishing.pipeline.article import (
     ArticlePipelineFSM,
@@ -419,7 +421,7 @@ class TestPipelineSelectWp:
 
 
 class TestPipelineSelectCategory:
-    async def test_valid_category_moves_to_confirm(
+    async def test_valid_category_moves_to_readiness(
         self,
         mock_callback: MagicMock,
         mock_state: AsyncMock,
@@ -431,12 +433,12 @@ class TestPipelineSelectCategory:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "category_id": category.id})
         with (
             patch("routers.publishing.pipeline.article.CategoriesRepository") as cat_repo,
-            patch("routers.publishing.pipeline.article._show_confirm", new_callable=AsyncMock) as mock_confirm,
+            patch("routers.publishing.pipeline.article._show_readiness", new_callable=AsyncMock) as mock_readiness,
         ):
             cat_repo.return_value.get_by_id = AsyncMock(return_value=category)
             await cb_pipeline_select_category(mock_callback, mock_state, user, mock_db)
-        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.confirm_cost)
-        mock_confirm.assert_awaited_once()
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_check)
+        mock_readiness.assert_awaited_once()
 
     async def test_category_not_found(
         self,
@@ -1105,3 +1107,499 @@ class TestCacheKeysPipelineState:
         from cache.keys import PIPELINE_CHECKPOINT_TTL
 
         assert PIPELINE_CHECKPOINT_TTL == 86400  # 24 hours
+
+
+# ---------------------------------------------------------------------------
+# Step 4: readiness check (_show_readiness + cb_readiness_proceed)
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineReadiness:
+    """Tests for readiness checklist display and proceed action."""
+
+    async def test_show_readiness_all_filled(
+        self, mock_callback: MagicMock, mock_db: MagicMock, category: Category,
+    ) -> None:
+        """All data filled -> checklist with green checkmarks and proceed button."""
+        from services.readiness import ReadinessItem, ReadinessResult
+
+        mock_result = ReadinessResult(items=[
+            ReadinessItem(key="keywords", label="Ключевые фразы", hint="SEO", ready=True, cost=0),
+            ReadinessItem(key="description", label="Описание компании", hint="контекст", ready=True, cost=0),
+            ReadinessItem(key="prices", label="Цены", hint="реальные цены", ready=True, cost=0),
+            ReadinessItem(key="media", label="Фото", hint="AI-изображения", ready=True, cost=0),
+        ])
+
+        msg = mock_callback.message
+        data = {"project_id": 1, "category_id": category.id}
+
+        from routers.publishing.pipeline.article import _show_readiness
+        with patch("routers.publishing.pipeline.article.ReadinessService") as svc_cls:
+            svc_cls.return_value.check = AsyncMock(return_value=mock_result)
+            await _show_readiness(msg, mock_db, data)
+
+        msg.edit_text.assert_awaited_once()
+        text = msg.edit_text.call_args.args[0]
+        assert "\u2705" in text  # green checkmark
+        assert "Все данные заполнены" in text
+
+    async def test_show_readiness_missing_keywords(
+        self, mock_callback: MagicMock, mock_db: MagicMock, category: Category,
+    ) -> None:
+        """Keywords missing -> checklist with hint for keywords."""
+        from services.readiness import ReadinessItem, ReadinessResult
+
+        mock_result = ReadinessResult(items=[
+            ReadinessItem(key="keywords", label="Ключевые фразы", hint="SEO-оптимизация", ready=False, cost=100),
+            ReadinessItem(key="description", label="Описание компании", hint="контекст", ready=True, cost=0),
+            ReadinessItem(key="prices", label="Цены", hint="реальные цены", ready=True, cost=0),
+            ReadinessItem(key="media", label="Фото", hint="AI-изображения", ready=True, cost=0),
+        ])
+
+        msg = mock_callback.message
+        data = {"project_id": 1, "category_id": category.id}
+
+        from routers.publishing.pipeline.article import _show_readiness
+        with patch("routers.publishing.pipeline.article.ReadinessService") as svc_cls:
+            svc_cls.return_value.check = AsyncMock(return_value=mock_result)
+            await _show_readiness(msg, mock_db, data)
+
+        msg.edit_text.assert_awaited_once()
+        text = msg.edit_text.call_args.args[0]
+        assert "\u2b1c" in text  # white square (not ready)
+        assert "Можно улучшить статью" in text
+        assert "SEO-оптимизация" in text
+
+    async def test_readiness_proceed_moves_to_confirm(
+        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+    ) -> None:
+        """Click 'Proceed' -> transition to confirm_cost state."""
+        mock_callback.data = "pipeline:article:ready:proceed"
+        from routers.publishing.pipeline.article import cb_readiness_proceed
+        with patch("routers.publishing.pipeline.article._show_confirm", new_callable=AsyncMock) as mock_confirm:
+            await cb_readiness_proceed(mock_callback, mock_state, user, mock_db)
+
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.confirm_cost)
+        mock_confirm.assert_awaited_once()
+        mock_callback.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Step 4a: keyword options
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineKeywordOptions:
+    """Tests for keyword option buttons (auto/custom/back)."""
+
+    async def test_readiness_keywords_shows_options(
+        self, mock_callback: MagicMock, mock_state: AsyncMock,
+    ) -> None:
+        """Click 'keywords' -> show 3 buttons (auto/custom/back)."""
+        mock_callback.data = "pipeline:article:ready:keywords"
+        from routers.publishing.pipeline.article import cb_readiness_keywords
+        await cb_readiness_keywords(mock_callback, mock_state)
+
+        mock_callback.message.edit_text.assert_awaited_once()
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "Как получить ключевые фразы" in text
+        mock_callback.answer.assert_awaited_once()
+
+    async def test_kw_back_returns_to_readiness(
+        self, mock_callback: MagicMock, mock_state: AsyncMock, mock_db: MagicMock,
+    ) -> None:
+        """Click 'back' -> return to readiness checklist."""
+        mock_callback.data = "pipeline:article:kw:back"
+        mock_state.get_data = AsyncMock(return_value={"project_id": 1, "category_id": 10})
+        from routers.publishing.pipeline.article import cb_kw_back
+        with patch("routers.publishing.pipeline.article._show_readiness", new_callable=AsyncMock) as mock_readiness:
+            await cb_kw_back(mock_callback, mock_state, mock_db)
+
+        mock_readiness.assert_awaited_once()
+        mock_callback.answer.assert_awaited_once()
+
+    async def test_kw_custom_asks_products(
+        self, mock_callback: MagicMock, mock_state: AsyncMock,
+    ) -> None:
+        """Click 'custom' -> transition to readiness_keywords_products state."""
+        mock_callback.data = "pipeline:article:kw:custom"
+        from routers.publishing.pipeline.article import cb_kw_custom
+        await cb_kw_custom(mock_callback, mock_state)
+
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_keywords_products)
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "товары" in text.lower() or "услуги" in text.lower()
+        mock_callback.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Step 4a: auto keyword flow
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineKeywordAuto:
+    """Tests for auto keyword generation flow."""
+
+    async def test_auto_with_city_generates_immediately(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+    ) -> None:
+        """Project with company_city -> immediate transition to generating."""
+        project.company_city = "Москва"
+        mock_callback.data = "pipeline:article:kw:auto"
+        mock_state.get_data = AsyncMock(return_value={"project_id": project.id, "category_id": 10})
+
+        from routers.publishing.pipeline.article import cb_kw_auto
+        with (
+            patch("routers.publishing.pipeline.article.ProjectsRepository") as proj_repo,
+            patch("routers.publishing.pipeline.article._generate_keywords_inline", new_callable=AsyncMock) as mock_gen,
+        ):
+            proj_repo.return_value.get_by_id = AsyncMock(return_value=project)
+            await cb_kw_auto(mock_callback, mock_state, user, mock_db)
+
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_keywords_generating)
+        mock_state.update_data.assert_any_await(kw_geo="Москва")
+        mock_gen.assert_awaited_once()
+        mock_callback.answer.assert_awaited()
+
+    async def test_auto_without_city_asks_geo(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+    ) -> None:
+        """Project without company_city -> show geo keyboard."""
+        project.company_city = None
+        mock_callback.data = "pipeline:article:kw:auto"
+        mock_state.get_data = AsyncMock(return_value={"project_id": project.id, "category_id": 10})
+
+        from routers.publishing.pipeline.article import cb_kw_auto
+        with patch("routers.publishing.pipeline.article.ProjectsRepository") as proj_repo:
+            proj_repo.return_value.get_by_id = AsyncMock(return_value=project)
+            await cb_kw_auto(mock_callback, mock_state, user, mock_db)
+
+        mock_callback.message.edit_text.assert_awaited()
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "город" in text.lower()
+        # Should NOT transition to generating
+        mock_state.set_state.assert_not_awaited()
+        mock_callback.answer.assert_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Step 4a: geo selection
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineKeywordGeo:
+    """Tests for geo selection callbacks and text input."""
+
+    async def test_geo_msk_saves_and_generates(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+    ) -> None:
+        """Select 'Moscow' from readiness state -> save city, transition to generating."""
+        mock_callback.data = "pipeline:article:kw:geo:msk"
+        mock_state.get_data = AsyncMock(return_value={"project_id": 1, "category_id": 10})
+
+        from routers.publishing.pipeline.article import cb_kw_geo_from_readiness
+        with (
+            patch("routers.publishing.pipeline.article.ProjectsRepository") as proj_repo,
+            patch("routers.publishing.pipeline.article._generate_keywords_inline", new_callable=AsyncMock) as mock_gen,
+        ):
+            proj_repo.return_value.update = AsyncMock()
+            await cb_kw_geo_from_readiness(mock_callback, mock_state, user, mock_db)
+
+        mock_state.update_data.assert_any_await(kw_geo="Москва")
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_keywords_generating)
+        proj_repo.return_value.update.assert_awaited_once()
+        mock_gen.assert_awaited_once()
+
+    async def test_geo_custom_asks_text_input(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+    ) -> None:
+        """Select 'custom' -> transition to text input state."""
+        mock_callback.data = "pipeline:article:kw:geo:custom"
+
+        from routers.publishing.pipeline.article import cb_kw_geo_from_readiness
+        await cb_kw_geo_from_readiness(mock_callback, mock_state, user, mock_db)
+
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_keywords_geo)
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "город" in text.lower() or "регион" in text.lower()
+
+    async def test_geo_text_input_auto_mode_generates(
+        self,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+    ) -> None:
+        """Text geo input in auto mode -> transition to generating."""
+        mock_message = MagicMock(spec=Message)
+        mock_message.text = "Казань"
+        mock_message.answer = AsyncMock()
+        mock_message.edit_text = AsyncMock()
+        mock_message.bot = MagicMock()
+        mock_state.get_data = AsyncMock(return_value={
+            "project_id": 1, "category_id": 10, "kw_mode": "auto",
+        })
+
+        from routers.publishing.pipeline.article import msg_kw_geo
+        with patch("routers.publishing.pipeline.article._generate_keywords_inline", new_callable=AsyncMock) as mock_gen:
+            await msg_kw_geo(mock_message, mock_state, user, mock_db)
+
+        mock_state.update_data.assert_any_await(kw_geo="Казань")
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_keywords_generating)
+        mock_gen.assert_awaited_once()
+
+    async def test_geo_text_input_custom_mode_asks_qty(
+        self,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+    ) -> None:
+        """Text geo input in custom mode -> ask quantity."""
+        mock_message = MagicMock(spec=Message)
+        mock_message.text = "Новосибирск"
+        mock_message.answer = AsyncMock()
+        mock_message.edit_text = AsyncMock()
+        mock_state.get_data = AsyncMock(return_value={
+            "project_id": 1, "category_id": 10, "kw_mode": "custom",
+        })
+
+        from routers.publishing.pipeline.article import msg_kw_geo
+        await msg_kw_geo(mock_message, mock_state, user, mock_db)
+
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_keywords_qty)
+        text = mock_message.answer.call_args.args[0]
+        assert "фраз" in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Step 4a: quantity selection + generating guard
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineKeywordQty:
+    """Tests for keyword quantity selection and generating guard."""
+
+    async def test_qty_50_starts_generation(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+    ) -> None:
+        """Select 50 keywords -> transition to generating."""
+        mock_callback.data = "pipeline:article:kw:qty:50"
+
+        from routers.publishing.pipeline.article import cb_kw_qty
+        with patch("routers.publishing.pipeline.article._generate_keywords_inline", new_callable=AsyncMock) as mock_gen:
+            await cb_kw_qty(mock_callback, mock_state, user, mock_db)
+
+        mock_state.update_data.assert_any_await(kw_quantity=50)
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_keywords_generating)
+        mock_gen.assert_awaited_once()
+        mock_callback.answer.assert_awaited()
+
+    async def test_generating_guard_blocks_callback(
+        self, mock_callback: MagicMock,
+    ) -> None:
+        """E07: Callback during generating state -> alert 'in progress'."""
+        from routers.publishing.pipeline.article import cb_kw_generating_guard
+        await cb_kw_generating_guard(mock_callback)
+
+        mock_callback.answer.assert_awaited_once()
+        assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
+        assert "процессе" in mock_callback.answer.call_args.args[0].lower()
+
+
+# ---------------------------------------------------------------------------
+# _generate_keywords_inline
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateKeywordsInline:
+    """Tests for inline keyword generation helper."""
+
+    async def test_successful_generation_saves_and_returns_to_readiness(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+    ) -> None:
+        """Successful generation -> save clusters to category, return to readiness."""
+        from services.readiness import ReadinessItem, ReadinessResult
+
+        mock_state.get_data = AsyncMock(return_value={
+            "project_id": 1,
+            "category_id": 10,
+            "kw_products": "тестовые товары",
+            "kw_geo": "Москва",
+            "kw_quantity": 100,
+        })
+
+        mock_clusters = [
+            {"cluster_name": "SEO", "main_phrase": "seo оптимизация", "phrases": ["seo", "оптимизация сайтов"]},
+            {"cluster_name": "Продвижение", "main_phrase": "продвижение сайта", "phrases": ["продвижение"]},
+        ]
+
+        mock_readiness_result = ReadinessResult(items=[
+            ReadinessItem(key="keywords", label="Ключевые фразы", hint="SEO", ready=True, cost=0),
+            ReadinessItem(key="description", label="Описание", hint="контекст", ready=False, cost=20),
+        ])
+
+        msg = mock_callback.message
+        msg.bot = MagicMock()
+        msg.bot.workflow_data = {
+            "ai_orchestrator": MagicMock(),
+            "dataforseo_client": MagicMock(),
+        }
+
+        from routers.publishing.pipeline.article import _generate_keywords_inline
+        with (
+            patch("routers.publishing.pipeline.article.get_settings") as gs,
+            patch("routers.publishing.pipeline.article.TokenService") as ts_cls,
+            patch("routers.publishing.pipeline.article.CategoriesRepository") as cat_repo,
+            patch("routers.publishing.pipeline.article.ReadinessService") as readiness_cls,
+            patch("services.keywords.KeywordService") as kw_svc_cls,
+        ):
+            gs.return_value.admin_ids = []
+            ts_cls.return_value.check_balance = AsyncMock(return_value=True)
+            ts_cls.return_value.charge = AsyncMock(return_value=1400)
+            cat_repo.return_value.update_keywords = AsyncMock()
+            readiness_cls.return_value.check = AsyncMock(return_value=mock_readiness_result)
+
+            kw_svc = kw_svc_cls.return_value
+            kw_svc.fetch_raw_phrases = AsyncMock(return_value=["seo", "продвижение"])
+            kw_svc.cluster_phrases = AsyncMock(return_value=mock_clusters)
+            kw_svc.enrich_clusters = AsyncMock(return_value=mock_clusters)
+
+            await _generate_keywords_inline(msg, mock_state, user, mock_db)
+
+        # Clusters saved to category
+        cat_repo.return_value.update_keywords.assert_awaited_once_with(10, mock_clusters)
+        # State returned to readiness_check
+        mock_state.set_state.assert_any_await(ArticlePipelineFSM.readiness_check)
+        # Success text displayed
+        text = msg.edit_text.call_args.args[0]
+        assert "2 кластеров" in text
+        assert "3 фраз" in text
+
+    async def test_insufficient_balance_returns_to_readiness(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+    ) -> None:
+        """Insufficient balance -> error message + return to readiness."""
+        from services.readiness import ReadinessItem, ReadinessResult
+
+        user.balance = 0
+        mock_state.get_data = AsyncMock(return_value={
+            "project_id": 1,
+            "category_id": 10,
+            "kw_products": "товары",
+            "kw_geo": "Москва",
+            "kw_quantity": 100,
+        })
+
+        mock_readiness_result = ReadinessResult(items=[
+            ReadinessItem(key="keywords", label="Ключевые фразы", hint="SEO", ready=False, cost=100),
+        ])
+
+        msg = mock_callback.message
+
+        from routers.publishing.pipeline.article import _generate_keywords_inline
+        with (
+            patch("routers.publishing.pipeline.article.get_settings") as gs,
+            patch("routers.publishing.pipeline.article.TokenService") as ts_cls,
+            patch("routers.publishing.pipeline.article.ReadinessService") as readiness_cls,
+        ):
+            gs.return_value.admin_ids = []
+            ts_cls.return_value.check_balance = AsyncMock(return_value=False)
+            ts_cls.return_value.get_balance = AsyncMock(return_value=0)
+            readiness_cls.return_value.check = AsyncMock(return_value=mock_readiness_result)
+
+            await _generate_keywords_inline(msg, mock_state, user, mock_db)
+
+        # Error message shown
+        calls = msg.edit_text.call_args_list
+        balance_msg = calls[0].args[0]
+        assert "Недостаточно" in balance_msg
+        # State returned to readiness_check
+        mock_state.set_state.assert_any_await(ArticlePipelineFSM.readiness_check)
+
+    async def test_generation_error_refunds_and_returns(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+    ) -> None:
+        """Generation error -> refund tokens + return to readiness."""
+        from services.readiness import ReadinessItem, ReadinessResult
+
+        mock_state.get_data = AsyncMock(return_value={
+            "project_id": 1,
+            "category_id": 10,
+            "kw_products": "товары",
+            "kw_geo": "Москва",
+            "kw_quantity": 100,
+        })
+
+        mock_readiness_result = ReadinessResult(items=[
+            ReadinessItem(key="keywords", label="Ключевые фразы", hint="SEO", ready=False, cost=100),
+        ])
+
+        msg = mock_callback.message
+        msg.bot = MagicMock()
+        msg.bot.workflow_data = {
+            "ai_orchestrator": MagicMock(),
+            "dataforseo_client": MagicMock(),
+        }
+
+        from routers.publishing.pipeline.article import _generate_keywords_inline
+        with (
+            patch("routers.publishing.pipeline.article.get_settings") as gs,
+            patch("routers.publishing.pipeline.article.TokenService") as ts_cls,
+            patch("routers.publishing.pipeline.article.ReadinessService") as readiness_cls,
+            patch("services.keywords.KeywordService") as kw_svc_cls,
+        ):
+            gs.return_value.admin_ids = []
+            ts_cls.return_value.check_balance = AsyncMock(return_value=True)
+            ts_cls.return_value.charge = AsyncMock(return_value=1400)
+            ts_cls.return_value.refund = AsyncMock(return_value=1500)
+            readiness_cls.return_value.check = AsyncMock(return_value=mock_readiness_result)
+
+            kw_svc = kw_svc_cls.return_value
+            kw_svc.fetch_raw_phrases = AsyncMock(side_effect=RuntimeError("DataForSEO unavailable"))
+
+            await _generate_keywords_inline(msg, mock_state, user, mock_db)
+
+        # Refund called
+        ts_cls.return_value.refund.assert_awaited_once()
+        refund_args = ts_cls.return_value.refund.call_args
+        assert refund_args.args[0] == user.id
+        assert refund_args.args[1] == 100  # estimate_keywords_cost(100)
+        # Error message shown
+        error_text = msg.edit_text.call_args_list[-2].args[0]  # -2 because _show_readiness calls edit_text again
+        assert "Ошибка" in error_text
+        assert "возвращены" in error_text.lower()
+        # State returned to readiness_check
+        mock_state.set_state.assert_any_await(ArticlePipelineFSM.readiness_check)
