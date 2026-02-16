@@ -43,9 +43,15 @@ seo-master-bot-v2/
 │       └── logging.py             # LoggingMiddleware (correlation_id, latency)
 │
 ├── keyboards/                      # Клавиатуры Telegram
-│   ├── inline.py                   # Inline-клавиатуры (проекты, категории, настройки)
+│   ├── inline.py                   # Inline-клавиатуры (проекты, категории, настройки, профиль, тарифы)
 │   ├── reply.py                    # Reply-клавиатуры (главное меню, cancel, skip)
 │   ├── pipeline.py                # Pipeline-клавиатуры (CTA, readiness, confirmation, preview)
+│   ├── category.py                # Клавиатуры категорий (описание, отзывы, прайс, медиа)
+│   ├── publish.py                 # Клавиатуры публикации (статьи, посты, ключевики, аудит)
+│   ├── schedule.py                # Клавиатуры расписания
+│   ├── admin.py                   # Админ-панель (F20: дашборд, рассылка)
+│   ├── help.py                    # Справка (F46: разделы помощи)
+│   ├── errors.py                  # Шаблонные error-клавиатуры (retry, back, support)
 │   └── pagination.py              # Generic paginator (PAGE_SIZE=8)
 │
 ├── routers/                        # Роутеры Aiogram (~25 роутеров вместо 382 обработчиков)

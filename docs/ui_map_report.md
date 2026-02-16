@@ -621,7 +621,7 @@ File: `keyboards/category.py:122`
 | Очистить | `media:cat:{cat_id}:clear` |
 
 ### admin_dashboard_kb()
-File: `keyboards/category.py:138`
+File: `keyboards/admin.py:6`
 
 | Button Text | callback_data |
 |-------------|---------------|
@@ -631,7 +631,7 @@ File: `keyboards/category.py:138`
 | Назад | `menu:main` |
 
 ### admin_broadcast_audience_kb()
-File: `keyboards/category.py:149`
+File: `keyboards/admin.py:17`
 
 | Button Text | callback_data |
 |-------------|---------------|
@@ -642,7 +642,7 @@ File: `keyboards/category.py:149`
 | Отмена | `admin:main` |
 
 ### admin_broadcast_confirm_kb()
-File: `keyboards/category.py:161`
+File: `keyboards/admin.py:29`
 
 | Button Text | callback_data |
 |-------------|---------------|
@@ -650,7 +650,7 @@ File: `keyboards/category.py:161`
 | Отмена | `admin:main` |
 
 ### help_main_kb()
-File: `keyboards/category.py:175`
+File: `keyboards/help.py:6`
 
 | Button Text | callback_data |
 |-------------|---------------|
@@ -661,7 +661,7 @@ File: `keyboards/category.py:175`
 | Главное меню | `menu:main` |
 
 ### help_back_kb()
-File: `keyboards/category.py:187`
+File: `keyboards/help.py:18`
 
 | Button Text | callback_data |
 |-------------|---------------|
@@ -1134,31 +1134,31 @@ Which keyboard button leads to which handler:
   - [К категории] `category:{cat_id}:card` -> `cb_category_card` (routers/categories/manage.py:151)
   - [Очистить] `media:cat:{cat_id}:clear` -> `cb_media_clear` (routers/categories/media.py:178)
 
-**admin_dashboard_kb()** (keyboards/category.py):
+**admin_dashboard_kb()** (keyboards/admin.py):
   - [Мониторинг] `admin:monitoring` -> `cb_admin_monitoring` (routers/admin/dashboard.py:99)
   - [Сообщения всем] `admin:broadcast` -> `cb_broadcast_start` (routers/admin/broadcast.py:49)
   - [Затраты API] `admin:costs` -> `cb_admin_costs` (routers/admin/dashboard.py:136)
   - [Назад] `menu:main` -> `cb_main_menu` (routers/start.py:305)
 
-**admin_broadcast_audience_kb()** (keyboards/category.py):
+**admin_broadcast_audience_kb()** (keyboards/admin.py):
   - [Всем] `admin:bc:all` -> `cb_broadcast_audience` (routers/admin/broadcast.py:77)
   - [Активные 7д] `admin:bc:active_7d` -> `cb_broadcast_audience` (routers/admin/broadcast.py:77)
   - [Активные 30д] `admin:bc:active_30d` -> `cb_broadcast_audience` (routers/admin/broadcast.py:77)
   - [Платные] `admin:bc:paid` -> `cb_broadcast_audience` (routers/admin/broadcast.py:77)
   - [Отмена] `admin:main` -> `cb_admin_main` (routers/admin/dashboard.py:79)
 
-**admin_broadcast_confirm_kb()** (keyboards/category.py):
+**admin_broadcast_confirm_kb()** (keyboards/admin.py):
   - [Да, отправить ({count} чел.)] `admin:bc:confirm` -> `cb_broadcast_confirm` (routers/admin/broadcast.py:150)
   - [Отмена] `admin:main` -> `cb_admin_main` (routers/admin/dashboard.py:79)
 
-**help_main_kb()** (keyboards/category.py):
+**help_main_kb()** (keyboards/help.py):
   - [Первое подключение] `help:connect` -> `cb_help_connect` (routers/help.py:116)
   - [Создание проекта] `help:project` -> `cb_help_project` (routers/help.py:126)
   - [Категории] `help:category` -> `cb_help_category` (routers/help.py:136)
   - [Публикация] `help:publish` -> `cb_help_publish` (routers/help.py:146)
   - [Главное меню] `menu:main` -> `cb_main_menu` (routers/start.py:305)
 
-**help_back_kb()** (keyboards/category.py):
+**help_back_kb()** (keyboards/help.py):
   - [Назад к помощи] `help:main` -> `cb_help_main` (routers/help.py:106)
   - [Главное меню] `menu:main` -> `cb_main_menu` (routers/start.py:305)
 

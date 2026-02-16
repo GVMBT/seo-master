@@ -32,7 +32,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 ```
 bot/            — main.py, config.py, exceptions.py, middlewares/ (запуск, конфиг, ошибки, middleware)
 routers/        — Aiogram роутеры: nested packages (projects/, categories/, platforms/, publishing/, admin/)
-keyboards/      — reply.py, inline.py, pagination.py (UI-клавиатуры, PAGE_SIZE=8)
+keyboards/      — inline.py, reply.py, pipeline.py, category.py, publish.py, schedule.py, admin.py, help.py, errors.py, pagination.py
 services/       — бизнес-логика (ZERO зависимости от Telegram/Aiogram)
 db/             — client.py, models.py, credential_manager.py, repositories/ (Repository pattern, Fernet)
 api/            — HTTP-эндпоинты (QStash webhooks, YooKassa, Pinterest OAuth, health)
