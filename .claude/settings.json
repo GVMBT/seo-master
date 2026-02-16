@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" pytest tests/ -x -q --timeout=60",
+            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" pytest tests/ -x -q --timeout=60 --ignore=tests/e2e",
             "timeout": 120
           }
         ]

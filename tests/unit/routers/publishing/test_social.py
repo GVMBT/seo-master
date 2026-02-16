@@ -44,8 +44,12 @@ def _category_no_keywords() -> Category:
 
 def _connection(platform: str = "telegram") -> PlatformConnection:
     return PlatformConnection(
-        id=5, project_id=1, platform_type=platform,
-        status="active", credentials={}, identifier="@test_channel",
+        id=5,
+        project_id=1,
+        platform_type=platform,
+        status="active",
+        credentials={},
+        identifier="@test_channel",
     )
 
 
@@ -84,7 +88,7 @@ def _rl() -> MagicMock:
 def _settings_mock() -> MagicMock:
     settings = MagicMock()
     settings.encryption_key = MagicMock(get_secret_value=MagicMock(return_value="k"))
-    settings.admin_id = 999
+    settings.admin_ids = [999]
     return settings
 
 
@@ -234,7 +238,8 @@ async def test_social_start_pinterest_platform(
 @patch("routers.publishing.social.CategoriesRepository")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_start_category_not_found(
-    mock_guard: MagicMock, mock_cat_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_cat_cls: MagicMock,
 ) -> None:
     """Category not found: show alert."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -250,7 +255,9 @@ async def test_social_start_category_not_found(
 @patch("routers.publishing.social.CategoriesRepository")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_start_wrong_owner(
-    mock_guard: MagicMock, mock_cat_cls: MagicMock, mock_proj_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_cat_cls: MagicMock,
+    mock_proj_cls: MagicMock,
 ) -> None:
     """Category belongs to different user: show alert."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -272,7 +279,9 @@ async def test_social_start_wrong_owner(
 @patch("routers.publishing.social.CategoriesRepository")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_start_no_keywords_e16(
-    mock_guard: MagicMock, mock_cat_cls: MagicMock, mock_proj_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_cat_cls: MagicMock,
+    mock_proj_cls: MagicMock,
 ) -> None:
     """E16: Category has no keywords — block publish."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -432,6 +441,7 @@ async def test_social_confirm_charges_and_generates(
     """Confirm: charges tokens, generates content, transitions to review."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
     mock_settings.return_value = _settings_mock()
+    mock_token_cls.return_value.check_balance = AsyncMock(return_value=True)
     mock_token_cls.return_value.charge = AsyncMock(return_value=1460)
     mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_category())
 
@@ -459,6 +469,7 @@ async def test_social_confirm_charge_failure(
     """Charge failure: show error, clear FSM."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
     mock_settings.return_value = _settings_mock()
+    mock_token_cls.return_value.check_balance = AsyncMock(return_value=True)
     mock_token_cls.return_value.charge = AsyncMock(side_effect=Exception("charge error"))
 
     state = _state(cost=40, category_id=10, platform="telegram")
@@ -478,16 +489,21 @@ async def test_social_confirm_charge_failure(
 @patch("routers.publishing.social.PublicationsRepository")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_publish_success(
-    mock_guard: MagicMock, mock_pub_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_pub_cls: MagicMock,
 ) -> None:
     """Publish: transitions to publishing, creates log, shows success."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
     mock_pub_cls.return_value.create_log = AsyncMock(return_value=MagicMock(id=1))
 
     state = _state(
-        category_id=10, project_id=1, connection_id=5,
-        platform="telegram", keyword="test keyword",
-        generated_content="Hello world", cost=40,
+        category_id=10,
+        project_id=1,
+        connection_id=5,
+        platform="telegram",
+        keyword="test keyword",
+        generated_content="Hello world",
+        cost=40,
     )
     cb = _callback("pub:social:publish")
     await cb_social_publish(cb, state, _user(), MagicMock())
@@ -503,15 +519,21 @@ async def test_social_publish_success(
 @patch("routers.publishing.social.PublicationsRepository")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_publish_log_failure_still_succeeds(
-    mock_guard: MagicMock, mock_pub_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_pub_cls: MagicMock,
 ) -> None:
     """Publication log failure: still completes (post is published, log is non-critical)."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
     mock_pub_cls.return_value.create_log = AsyncMock(side_effect=Exception("log error"))
 
     state = _state(
-        category_id=10, project_id=1, connection_id=5,
-        platform="vk", keyword="test", generated_content="VK post", cost=40,
+        category_id=10,
+        project_id=1,
+        connection_id=5,
+        platform="vk",
+        keyword="test",
+        generated_content="VK post",
+        cost=40,
     )
     cb = _callback("pub:social:publish")
     await cb_social_publish(cb, state, _user(), MagicMock())
@@ -524,16 +546,21 @@ async def test_social_publish_log_failure_still_succeeds(
 @patch("routers.publishing.social.PublicationsRepository")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_publish_creates_log_with_correct_data(
-    mock_guard: MagicMock, mock_pub_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_pub_cls: MagicMock,
 ) -> None:
     """Publication log has correct fields."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
     mock_pub_cls.return_value.create_log = AsyncMock(return_value=MagicMock(id=1))
 
     state = _state(
-        category_id=10, project_id=1, connection_id=5,
-        platform="pinterest", keyword="my keyword",
-        generated_content="Pin content here", cost=40,
+        category_id=10,
+        project_id=1,
+        connection_id=5,
+        platform="pinterest",
+        keyword="my keyword",
+        generated_content="Pin content here",
+        cost=40,
     )
     cb = _callback("pub:social:publish")
     await cb_social_publish(cb, state, _user(), MagicMock())
@@ -560,7 +587,10 @@ async def test_social_regen_free_first(mock_guard: MagicMock) -> None:
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
 
     state = _state(
-        regeneration_count=0, cost=40, platform="telegram", keyword="test",
+        regeneration_count=0,
+        cost=40,
+        platform="telegram",
+        keyword="test",
     )
     cb = _callback("pub:social:regen")
     await cb_social_regen(cb, state, _user(), MagicMock())
@@ -579,7 +609,10 @@ async def test_social_regen_free_second(mock_guard: MagicMock) -> None:
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
 
     state = _state(
-        regeneration_count=1, cost=40, platform="telegram", keyword="test",
+        regeneration_count=1,
+        cost=40,
+        platform="telegram",
+        keyword="test",
     )
     cb = _callback("pub:social:regen")
     await cb_social_regen(cb, state, _user(), MagicMock())
@@ -598,7 +631,9 @@ async def test_social_regen_free_second(mock_guard: MagicMock) -> None:
 @patch("routers.publishing.social.get_settings")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_regen_paid_third(
-    mock_guard: MagicMock, mock_settings: MagicMock, mock_token_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_settings: MagicMock,
+    mock_token_cls: MagicMock,
 ) -> None:
     """Third regen (count=2): paid, charges tokens."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -607,7 +642,10 @@ async def test_social_regen_paid_third(
     mock_token_cls.return_value.charge = AsyncMock(return_value=1420)
 
     state = _state(
-        regeneration_count=2, cost=40, platform="telegram", keyword="test",
+        regeneration_count=2,
+        cost=40,
+        platform="telegram",
+        keyword="test",
     )
     cb = _callback("pub:social:regen")
     await cb_social_regen(cb, state, _user(), MagicMock())
@@ -622,7 +660,9 @@ async def test_social_regen_paid_third(
 @patch("routers.publishing.social.get_settings")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_regen_paid_insufficient_balance(
-    mock_guard: MagicMock, mock_settings: MagicMock, mock_token_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_settings: MagicMock,
+    mock_token_cls: MagicMock,
 ) -> None:
     """E10: Paid regen with insufficient balance shows alert."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -631,7 +671,10 @@ async def test_social_regen_paid_insufficient_balance(
     mock_token_cls.return_value.get_balance = AsyncMock(return_value=10)
 
     state = _state(
-        regeneration_count=2, cost=40, platform="telegram", keyword="test",
+        regeneration_count=2,
+        cost=40,
+        platform="telegram",
+        keyword="test",
     )
     cb = _callback("pub:social:regen")
     await cb_social_regen(cb, state, _user(balance=10), MagicMock())
@@ -648,7 +691,9 @@ async def test_social_regen_paid_insufficient_balance(
 @patch("routers.publishing.social.get_settings")
 @patch("routers.publishing.social.guard_callback_message")
 async def test_social_regen_paid_charge_failure(
-    mock_guard: MagicMock, mock_settings: MagicMock, mock_token_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_settings: MagicMock,
+    mock_token_cls: MagicMock,
 ) -> None:
     """Paid regen charge failure: show alert, stay in review."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -657,7 +702,10 @@ async def test_social_regen_paid_charge_failure(
     mock_token_cls.return_value.charge = AsyncMock(side_effect=Exception("charge error"))
 
     state = _state(
-        regeneration_count=2, cost=40, platform="telegram", keyword="test",
+        regeneration_count=2,
+        cost=40,
+        platform="telegram",
+        keyword="test",
     )
     cb = _callback("pub:social:regen")
     await cb_social_regen(cb, state, _user(), MagicMock())

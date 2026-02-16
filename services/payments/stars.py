@@ -58,12 +58,14 @@ async def credit_referral_bonus(
     desc = f"Реферальный бонус от пользователя {user_id}"
     if provider_label:
         desc += f" ({provider_label})"
-    await payments.create_expense(TokenExpenseCreate(
-        user_id=user.referrer_id,
-        amount=bonus,
-        operation_type="referral",
-        description=desc,
-    ))
+    await payments.create_expense(
+        TokenExpenseCreate(
+            user_id=user.referrer_id,
+            amount=bonus,
+            operation_type="referral",
+            description=desc,
+        )
+    )
     await payments.update(payment_id, PaymentUpdate(referral_bonus_credited=True))
     log.info("referral_bonus_credited", referrer_id=user.referrer_id, buyer_id=user_id, bonus=bonus)
 
@@ -75,11 +77,11 @@ class StarsPaymentService:
     returned by this service. Processing callbacks also go through here.
     """
 
-    def __init__(self, db: SupabaseClient, admin_id: int) -> None:
+    def __init__(self, db: SupabaseClient, admin_ids: list[int]) -> None:
         self._db = db
         self._users = UsersRepository(db)
         self._payments = PaymentsRepository(db)
-        self._admin_id = admin_id
+        self._admin_ids = admin_ids
 
     # ------------------------------------------------------------------
     # Invoice parameter builders (router passes these to Bot API)
@@ -185,14 +187,21 @@ class StarsPaymentService:
 
         if action == "purchase":
             return await self._process_purchase(
-                user_id, name, telegram_payment_charge_id,
-                provider_payment_charge_id, total_amount,
+                user_id,
+                name,
+                telegram_payment_charge_id,
+                provider_payment_charge_id,
+                total_amount,
             )
         elif action == "sub":
             return await self._process_subscription(
-                user_id, name, telegram_payment_charge_id,
-                provider_payment_charge_id, total_amount,
-                is_recurring, is_first_recurring,
+                user_id,
+                name,
+                telegram_payment_charge_id,
+                provider_payment_charge_id,
+                total_amount,
+                is_recurring,
+                is_first_recurring,
                 subscription_expiration_date,
             )
         else:
@@ -217,27 +226,34 @@ class StarsPaymentService:
         new_balance = await self._users.credit_balance(user_id, pkg.tokens)
 
         # 2. Create payment record
-        payment = await self._payments.create(PaymentCreate(
-            user_id=user_id,
-            provider="stars",
-            tokens_amount=pkg.tokens,
-            package_name=package_name,
-            amount_rub=Decimal(str(pkg.price_rub)),
-            stars_amount=stars_amount,
-        ))
-        await self._payments.update(payment.id, PaymentUpdate(
-            status="completed",
-            telegram_payment_charge_id=charge_id,
-            provider_payment_charge_id=provider_charge_id,
-        ))
+        payment = await self._payments.create(
+            PaymentCreate(
+                user_id=user_id,
+                provider="stars",
+                tokens_amount=pkg.tokens,
+                package_name=package_name,
+                amount_rub=Decimal(str(pkg.price_rub)),
+                stars_amount=stars_amount,
+            )
+        )
+        await self._payments.update(
+            payment.id,
+            PaymentUpdate(
+                status="completed",
+                telegram_payment_charge_id=charge_id,
+                provider_payment_charge_id=provider_charge_id,
+            ),
+        )
 
         # 3. Record token expense
-        await self._payments.create_expense(TokenExpenseCreate(
-            user_id=user_id,
-            amount=pkg.tokens,
-            operation_type="purchase",
-            description=f"Пакет {package_name.capitalize()} ({pkg.tokens} токенов)",
-        ))
+        await self._payments.create_expense(
+            TokenExpenseCreate(
+                user_id=user_id,
+                amount=pkg.tokens,
+                operation_type="purchase",
+                description=f"Пакет {package_name.capitalize()} ({pkg.tokens} токенов)",
+            )
+        )
 
         # 4. Referral bonus (F19: 10% of price_rub to referrer)
         await credit_referral_bonus(self._users, self._payments, user_id, pkg.price_rub, payment.id)
@@ -278,15 +294,17 @@ class StarsPaymentService:
         new_balance = await self._users.credit_balance(user_id, sub.tokens_per_month)
 
         # 2. Create payment record
-        payment = await self._payments.create(PaymentCreate(
-            user_id=user_id,
-            provider="stars",
-            tokens_amount=sub.tokens_per_month,
-            package_name=sub_name,
-            amount_rub=Decimal(str(sub.price_rub)),
-            stars_amount=stars_amount,
-            is_subscription=True,
-        ))
+        payment = await self._payments.create(
+            PaymentCreate(
+                user_id=user_id,
+                provider="stars",
+                tokens_amount=sub.tokens_per_month,
+                package_name=sub_name,
+                amount_rub=Decimal(str(sub.price_rub)),
+                stars_amount=stars_amount,
+                is_subscription=True,
+            )
+        )
         update = PaymentUpdate(
             status="completed",
             telegram_payment_charge_id=charge_id,
@@ -295,19 +313,19 @@ class StarsPaymentService:
         )
         # G1: save subscription_expiration_date from Telegram Stars (API_CONTRACTS.md §2.2)
         if subscription_expiration_date:
-            update.subscription_expires_at = datetime.fromtimestamp(
-                subscription_expiration_date, tz=UTC
-            )
+            update.subscription_expires_at = datetime.fromtimestamp(subscription_expiration_date, tz=UTC)
         await self._payments.update(payment.id, update)
 
         # 3. Record token expense
         label = "Продление подписки" if is_recurring and not is_first_recurring else "Подписка"
-        await self._payments.create_expense(TokenExpenseCreate(
-            user_id=user_id,
-            amount=sub.tokens_per_month,
-            operation_type="subscription",
-            description=f"{label} {sub_name.capitalize()} ({sub.tokens_per_month} токенов)",
-        ))
+        await self._payments.create_expense(
+            TokenExpenseCreate(
+                user_id=user_id,
+                amount=sub.tokens_per_month,
+                operation_type="subscription",
+                description=f"{label} {sub_name.capitalize()} ({sub.tokens_per_month} токенов)",
+            )
+        )
 
         # 4. Referral bonus on every successful_payment including renewals (§31)
         await credit_referral_bonus(self._users, self._payments, user_id, sub.price_rub, payment.id)
@@ -394,7 +412,7 @@ class StarsPaymentService:
         return (
             f"<b>Пакет {pkg.name.capitalize()}</b>\n\n"
             f"Токенов: {pkg.tokens}{bonus_text}\n"
-            f"Цена: {pkg.price_rub} руб.\n\n"  # noqa: RUF001
+            f"Цена: {pkg.price_rub} руб.\n\n"
             f"Выберите способ оплаты:"
         )
 
@@ -404,7 +422,7 @@ class StarsPaymentService:
         return (
             f"<b>Подписка {sub.name.capitalize()}</b>\n\n"
             f"Токенов в месяц: {sub.tokens_per_month}\n"
-            f"Цена: {sub.price_rub} руб/мес\n"  # noqa: RUF001
+            f"Цена: {sub.price_rub} руб/мес\n"
             f"Автопродление каждые 30 дней.\n\n"
             f"Выберите способ оплаты:"
         )
@@ -429,9 +447,7 @@ class StarsPaymentService:
         expires = sub_info["expires_at"]
         expires_str = expires.strftime("%d.%m.%Y") if expires else "дата неизвестна"
         return (
-            f"Подписка будет действовать до {expires_str}.\n"
-            f"После этого автопродление отключится.\n\n"
-            f"Отменить подписку?"
+            f"Подписка будет действовать до {expires_str}.\nПосле этого автопродление отключится.\n\nОтменить подписку?"
         )
 
     def format_payment_link_text(self, package_name: str, is_subscription: bool = False) -> str:
@@ -439,13 +455,13 @@ class StarsPaymentService:
         if is_subscription:
             sub = SUBSCRIPTIONS[package_name]
             return (
-                f"Подписка <b>{sub.name.capitalize()}</b> — {sub.price_rub} руб/мес\n\n"  # noqa: RUF001
+                f"Подписка <b>{sub.name.capitalize()}</b> — {sub.price_rub} руб/мес\n\n"
                 f"Нажмите для перехода на страницу оплаты.\n"
                 f"Карта будет сохранена для автопродления."
             )
         pkg = PACKAGES[package_name]
         return (
-            f"Оплата пакета <b>{pkg.name.capitalize()}</b> — {pkg.price_rub} руб.\n\n"  # noqa: RUF001
+            f"Оплата пакета <b>{pkg.name.capitalize()}</b> — {pkg.price_rub} руб.\n\n"
             f"Нажмите кнопку для перехода на страницу оплаты."
         )
 

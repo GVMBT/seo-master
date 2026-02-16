@@ -47,3 +47,21 @@ paths:
 - E10: Перегенерация 3+ при балансе 0 → "[Пополнить] или [Опубликовать текущий]"
 - E18: Превью >24ч → "Превью устарело. Токены возвращены."
 - E19: Stars недостаточно → подписка приостановлена
+- E37: YooKassa автосписание failed → подписка действует до expires_at
+- E39: YooKassa дубликат → идемпотентность по Redis NX
+
+## Конфликты и защита
+- E26: Конфликт FSM → автосброс, предупреждение, возврат при дорогих операциях
+- E29: Health endpoint → без токена только {"status": "ok"}
+- E30: Pinterest OAuth CSRF → HMAC-SHA256 state validation
+
+## AI Pipeline
+- E31-E35: Firecrawl/Image/Text partial failures → graceful degradation, partial refund
+- E36: Legacy keywords → фразовая ротация fallback
+- E43-E48: Multi-step AI (outline fail, critique loop, NLP crash, SimHash, Markdown error, hallucination)
+
+## Pipeline (Goal-Oriented)
+- E49: Pipeline timeout → Redis checkpoint 24ч, возобновление с Dashboard
+- E50: Pipeline inline sub-flow fail → вернуться в pipeline с ошибкой
+- E51: Pipeline + insufficient balance → webhook проверяет pipeline state после пополнения
+- E52: Cross-post fail → оригинальный пост опубликован, cross-post токены возвращаются

@@ -18,26 +18,30 @@ def _make_request(msg_id: str = "msg_1") -> MagicMock:
     redis_mock.set = AsyncMock(return_value="OK")
 
     settings_mock = MagicMock()
-    settings_mock.admin_id = 999
+    settings_mock.admin_ids = [999]
 
     bot_mock = MagicMock()
     bot_mock.send_message = AsyncMock()
 
-    app.__getitem__ = MagicMock(side_effect=lambda key: {
-        "db": MagicMock(),
-        "redis": redis_mock,
-        "http_client": MagicMock(),
-        "image_storage": MagicMock(),
-        "settings": settings_mock,
-        "bot": bot_mock,
-    }[key])
+    app.__getitem__ = MagicMock(
+        side_effect=lambda key: {
+            "db": MagicMock(),
+            "redis": redis_mock,
+            "http_client": MagicMock(),
+            "image_storage": MagicMock(),
+            "settings": settings_mock,
+            "bot": bot_mock,
+        }[key]
+    )
 
     request = MagicMock()
     request.app = app
-    request.__getitem__ = MagicMock(side_effect=lambda k: {
-        "verified_body": {"action": "cleanup"},
-        "qstash_msg_id": msg_id,
-    }[k])
+    request.__getitem__ = MagicMock(
+        side_effect=lambda k: {
+            "verified_body": {"action": "cleanup"},
+            "qstash_msg_id": msg_id,
+        }[k]
+    )
 
     return request
 
@@ -53,9 +57,13 @@ async def test_cleanup_happy_path(mock_svc_cls: MagicMock) -> None:
     from services.cleanup import CleanupResult
 
     mock_svc = MagicMock()
-    mock_svc.execute = AsyncMock(return_value=CleanupResult(
-        expired_count=2, refunded=[], logs_deleted=5,
-    ))
+    mock_svc.execute = AsyncMock(
+        return_value=CleanupResult(
+            expired_count=2,
+            refunded=[],
+            logs_deleted=5,
+        )
+    )
     mock_svc_cls.return_value = mock_svc
 
     request = _make_request()
@@ -79,10 +87,12 @@ async def test_cleanup_notifies_users(mock_svc_cls: MagicMock) -> None:
     from services.cleanup import CleanupResult
 
     mock_svc = MagicMock()
-    mock_svc.execute = AsyncMock(return_value=CleanupResult(
-        expired_count=1,
-        refunded=[{"user_id": 1, "keyword": "seo", "tokens_refunded": 200, "notify_publications": True}],
-    ))
+    mock_svc.execute = AsyncMock(
+        return_value=CleanupResult(
+            expired_count=1,
+            refunded=[{"user_id": 1, "keyword": "seo", "tokens_refunded": 200, "notify_balance": True}],
+        )
+    )
     mock_svc_cls.return_value = mock_svc
 
     request = _make_request()

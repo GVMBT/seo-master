@@ -68,7 +68,7 @@ def service(mock_db: MagicMock, mock_http: MagicMock) -> YooKassaPaymentService:
         shop_id="test_shop",
         secret_key="test_secret",
         return_url="https://example.com/return",
-        admin_id=999,
+        admin_ids=[999],
     )
 
 
@@ -125,9 +125,12 @@ class TestProcessWebhook:
     @pytest.fixture
     def service_with_mocks(self, mock_db: MagicMock, mock_http: MagicMock) -> YooKassaPaymentService:
         svc = YooKassaPaymentService(
-            db=mock_db, http_client=mock_http,
-            shop_id="shop", secret_key="secret",
-            return_url="https://example.com", admin_id=999,
+            db=mock_db,
+            http_client=mock_http,
+            shop_id="shop",
+            secret_key="secret",
+            return_url="https://example.com",
+            admin_ids=[999],
         )
         svc._users = MagicMock()
         svc._users.credit_balance = AsyncMock(return_value=5000)
@@ -158,9 +161,7 @@ class TestProcessWebhook:
 
     async def test_payment_succeeded_idempotent(self, service_with_mocks: YooKassaPaymentService) -> None:
         """Duplicate yookassa_id should be skipped."""
-        service_with_mocks._payments.get_by_yookassa_payment_id = AsyncMock(
-            return_value=MagicMock(id=1)
-        )
+        service_with_mocks._payments.get_by_yookassa_payment_id = AsyncMock(return_value=MagicMock(id=1))
         obj = {
             "id": "yk_dup",
             "metadata": {"user_id": "42", "package_name": "mini", "tokens_amount": "1000"},
@@ -207,9 +208,7 @@ class TestProcessWebhook:
         assert result is None
 
     async def test_refund_succeeded(self, service_with_mocks: YooKassaPaymentService) -> None:
-        payment = MagicMock(
-            id=5, user_id=42, tokens_amount=1000, package_name="mini"
-        )
+        payment = MagicMock(id=5, user_id=42, tokens_amount=1000, package_name="mini")
         service_with_mocks._payments.get_by_yookassa_payment_id = AsyncMock(return_value=payment)
         service_with_mocks._users.force_debit_balance = AsyncMock(return_value=-500)
 
@@ -217,9 +216,7 @@ class TestProcessWebhook:
         await service_with_mocks.process_webhook("refund.succeeded", obj)
         service_with_mocks._users.force_debit_balance.assert_called_once_with(42, 1000)
 
-    async def test_saves_payment_method_for_subscription(
-        self, service_with_mocks: YooKassaPaymentService
-    ) -> None:
+    async def test_saves_payment_method_for_subscription(self, service_with_mocks: YooKassaPaymentService) -> None:
         obj = {
             "id": "yk_sub_1",
             "metadata": {
@@ -254,25 +251,19 @@ class TestRenewSubscription:
         mock_resp.raise_for_status = MagicMock()
         mock_http.post = AsyncMock(return_value=mock_resp)
 
-        result = await service.renew_subscription(
-            user_id=42, payment_method_id="pm_123", package_name="pro"
-        )
+        result = await service.renew_subscription(user_id=42, payment_method_id="pm_123", package_name="pro")
         assert result is True
         mock_http.post.assert_called_once()
 
     async def test_renewal_unknown_sub_returns_false(self, service: YooKassaPaymentService) -> None:
-        result = await service.renew_subscription(
-            user_id=42, payment_method_id="pm_123", package_name="nonexistent"
-        )
+        result = await service.renew_subscription(user_id=42, payment_method_id="pm_123", package_name="nonexistent")
         assert result is False
 
     async def test_renewal_http_error_returns_false(
         self, service: YooKassaPaymentService, mock_http: MagicMock
     ) -> None:
         mock_http.post = AsyncMock(side_effect=httpx.HTTPError("timeout"))
-        result = await service.renew_subscription(
-            user_id=42, payment_method_id="pm_123", package_name="pro"
-        )
+        result = await service.renew_subscription(user_id=42, payment_method_id="pm_123", package_name="pro")
         assert result is False
 
 
@@ -284,14 +275,15 @@ class TestRenewSubscription:
 class TestCancelSubscription:
     async def test_cancel_updates_status(self, mock_db: MagicMock, mock_http: MagicMock) -> None:
         svc = YooKassaPaymentService(
-            db=mock_db, http_client=mock_http,
-            shop_id="s", secret_key="k",
-            return_url="https://e.com", admin_id=999,
+            db=mock_db,
+            http_client=mock_http,
+            shop_id="s",
+            secret_key="k",
+            return_url="https://e.com",
+            admin_ids=[999],
         )
         svc._payments = MagicMock()
-        svc._payments.get_active_subscription = AsyncMock(
-            return_value=MagicMock(id=10, provider="yookassa")
-        )
+        svc._payments.get_active_subscription = AsyncMock(return_value=MagicMock(id=10, provider="yookassa"))
         svc._payments.update = AsyncMock()
 
         result = await svc.cancel_subscription(42)
@@ -300,9 +292,12 @@ class TestCancelSubscription:
 
     async def test_cancel_no_sub_returns_false(self, mock_db: MagicMock, mock_http: MagicMock) -> None:
         svc = YooKassaPaymentService(
-            db=mock_db, http_client=mock_http,
-            shop_id="s", secret_key="k",
-            return_url="https://e.com", admin_id=999,
+            db=mock_db,
+            http_client=mock_http,
+            shop_id="s",
+            secret_key="k",
+            return_url="https://e.com",
+            admin_ids=[999],
         )
         svc._payments = MagicMock()
         svc._payments.get_active_subscription = AsyncMock(return_value=None)
@@ -312,14 +307,15 @@ class TestCancelSubscription:
 
     async def test_cancel_wrong_provider_returns_false(self, mock_db: MagicMock, mock_http: MagicMock) -> None:
         svc = YooKassaPaymentService(
-            db=mock_db, http_client=mock_http,
-            shop_id="s", secret_key="k",
-            return_url="https://e.com", admin_id=999,
+            db=mock_db,
+            http_client=mock_http,
+            shop_id="s",
+            secret_key="k",
+            return_url="https://e.com",
+            admin_ids=[999],
         )
         svc._payments = MagicMock()
-        svc._payments.get_active_subscription = AsyncMock(
-            return_value=MagicMock(id=10, provider="stars")
-        )
+        svc._payments.get_active_subscription = AsyncMock(return_value=MagicMock(id=10, provider="stars"))
 
         result = await svc.cancel_subscription(42)
         assert result is False

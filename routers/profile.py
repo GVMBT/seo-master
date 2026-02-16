@@ -93,7 +93,7 @@ def _format_profile(user: User, stats: dict[str, int]) -> str:
 
 def _make_service(db: SupabaseClient) -> TokenService:
     """Create TokenService with admin_id from settings (C1: GOD_MODE fix)."""
-    return TokenService(db, admin_id=get_settings().admin_id)
+    return TokenService(db, admin_ids=get_settings().admin_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +180,5 @@ async def cb_referral(callback: CallbackQuery, user: User, db: SupabaseClient) -
         "Вы получаете 10% от каждой покупки приглашённого друга."
     )
 
-    await msg.edit_text(
-        text, reply_markup=profile_referral_kb(user.id, bot_username).as_markup()
-    )
+    await msg.edit_text(text, reply_markup=profile_referral_kb(user.id, bot_username).as_markup())
     await callback.answer()

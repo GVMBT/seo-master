@@ -122,7 +122,7 @@ def dispatcher(
 
     # Inner middleware on all event types
     for observer in (dp.message, dp.callback_query, dp.pre_checkout_query):
-        observer.middleware(AuthMiddleware(ADMIN_ID))
+        observer.middleware(AuthMiddleware([ADMIN_ID]))
         observer.middleware(ThrottlingMiddleware(mock_redis))
         observer.middleware(FSMInactivityMiddleware(1800))
         observer.middleware(LoggingMiddleware())
@@ -142,10 +142,18 @@ def dispatcher(
     from routers.tariffs import router as tariffs_router
 
     all_routers = [
-        admin_router, help_router, start_router, projects_router,
-        categories_router, platforms_router, publishing_router,
-        analysis_router, profile_router, settings_router,
-        tariffs_router, payments_router,
+        admin_router,
+        help_router,
+        start_router,
+        projects_router,
+        categories_router,
+        platforms_router,
+        publishing_router,
+        analysis_router,
+        profile_router,
+        settings_router,
+        tariffs_router,
+        payments_router,
     ]
 
     # Detach top-level routers from any existing parent (aiogram singleton constraint)

@@ -114,19 +114,19 @@ async def test_cleanup_invalid_payload(api_client, app_services):
 
 
 async def test_cleanup_notifies_users_about_refunds(api_client, app_services):
-    """When cleanup refunds tokens, bot.send_message is called for users with notify_publications=True."""
+    """When cleanup refunds tokens, bot.send_message is called for users with notify_balance=True."""
     refund_entries = [
         {
             "user_id": 111,
             "keyword": "seo optimization",
             "tokens_refunded": 200,
-            "notify_publications": True,
+            "notify_balance": True,
         },
         {
             "user_id": 222,
             "keyword": "content marketing",
             "tokens_refunded": 150,
-            "notify_publications": True,
+            "notify_balance": True,
         },
     ]
     result = CleanupResult(expired_count=2, refunded=refund_entries, logs_deleted=0, images_deleted=0)
@@ -163,19 +163,19 @@ async def test_cleanup_notifies_users_about_refunds(api_client, app_services):
 
 
 async def test_cleanup_skips_notification_when_disabled(api_client, app_services):
-    """Users with notify_publications=False should NOT receive cleanup notifications."""
+    """Users with notify_balance=False should NOT receive cleanup notifications."""
     refund_entries = [
         {
             "user_id": 333,
             "keyword": "web development",
             "tokens_refunded": 100,
-            "notify_publications": False,  # notifications disabled
+            "notify_balance": False,  # notifications disabled
         },
         {
             "user_id": 444,
             "keyword": "seo audit",
             "tokens_refunded": 300,
-            "notify_publications": True,  # notifications enabled
+            "notify_balance": True,  # notifications enabled
         },
     ]
     result = CleanupResult(expired_count=2, refunded=refund_entries, logs_deleted=0, images_deleted=0)
@@ -195,6 +195,6 @@ async def test_cleanup_skips_notification_when_disabled(api_client, app_services
 
     assert resp.status == 200
     bot = app_services["bot"]
-    # Only user 444 should be notified (notify_publications=True)
+    # Only user 444 should be notified (notify_balance=True)
     assert bot.send_message.call_count == 1
     assert bot.send_message.call_args[0][0] == 444

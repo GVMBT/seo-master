@@ -287,7 +287,7 @@ async def cb_category_delete_confirm(
         from bot.config import get_settings
         from services.tokens import TokenService
 
-        tokens_svc = TokenService(db, get_settings().admin_id)
+        tokens_svc = TokenService(db, get_settings().admin_ids)
         for preview in active_previews:
             try:
                 tokens = preview.tokens_charged or 0
@@ -299,10 +299,10 @@ async def cb_category_delete_confirm(
                             reason="category_deleted",
                             description=f"Category deleted, preview refund: {preview.keyword or 'unknown'}",
                         )
-                    except Exception:  # noqa: BLE001 — best-effort refund, must not block category deletion
+                    except Exception:
                         log.warning("e42_cat_refund_failed", preview_id=preview.id, user_id=preview.user_id)
                 await previews_repo.atomic_mark_expired(preview.id)
-            except Exception:  # noqa: BLE001 — best-effort cleanup per E42, must not block deletion
+            except Exception:
                 log.exception(
                     "e42_cat_preview_cleanup_failed",
                     preview_id=preview.id,

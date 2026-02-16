@@ -13,7 +13,7 @@ from bot.main import _global_error_handler, create_bot, create_dispatcher, creat
 def mock_settings() -> MagicMock:
     settings = MagicMock()
     settings.telegram_bot_token.get_secret_value.return_value = "123:ABC"
-    settings.admin_id = 999
+    settings.admin_ids = [999]
     settings.fsm_ttl_seconds = 86400
     settings.fsm_inactivity_timeout = 1800
     settings.railway_public_url = "https://test.up.railway.app"
@@ -56,6 +56,7 @@ class TestCreateBot:
 class TestCreateHttpClient:
     def test_creates_httpx_client(self) -> None:
         import httpx
+
         client = create_http_client()
         assert isinstance(client, httpx.AsyncClient)
 
@@ -72,6 +73,7 @@ class TestCreateDispatcher:
     ) -> None:
         dp = create_dispatcher(db, redis, http_client, mock_settings)
         from cache.fsm_storage import UpstashFSMStorage
+
         assert isinstance(dp.storage, UpstashFSMStorage)
 
     def test_outer_middleware_registered(

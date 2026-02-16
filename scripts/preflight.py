@@ -26,7 +26,7 @@ load_dotenv()
 
 _REQUIRED_VARS = [
     "TELEGRAM_BOT_TOKEN",
-    "ADMIN_ID",
+    "ADMIN_IDS",
     "SUPABASE_URL",
     "SUPABASE_KEY",
     "UPSTASH_REDIS_URL",

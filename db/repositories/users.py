@@ -90,7 +90,7 @@ class UsersRepository(BaseRepository):
             if user is None:
                 raise AppError(f"User {user_id} not found")
             if user.balance < amount:
-                msg = f"Недостаточно токенов. Нужно {amount}, у вас {user.balance}."  # noqa: RUF001
+                msg = f"Недостаточно токенов. Нужно {amount}, у вас {user.balance}."
                 raise InsufficientBalanceError(user_message=msg)
             new_balance = user.balance - amount
             rows = self._rows(
@@ -106,7 +106,7 @@ class UsersRepository(BaseRepository):
             )
         # All retries exhausted — balance may have been drained concurrently
         raise InsufficientBalanceError(
-            user_message=f"Не удалось списать {amount} токенов. Попробуйте ещё раз."  # noqa: RUF001
+            user_message=f"Не удалось списать {amount} токенов. Попробуйте ещё раз."
         )
 
     async def refund_balance(self, user_id: int, amount: int) -> int:

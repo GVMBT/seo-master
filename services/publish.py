@@ -66,7 +66,7 @@ class PublishService:
         http_client: httpx.AsyncClient,
         ai_orchestrator: AIOrchestrator,
         image_storage: ImageStorage,
-        admin_id: int,
+        admin_ids: list[int],
         scheduler_service: SchedulerService | None = None,
     ) -> None:
         self._db = db
@@ -74,9 +74,9 @@ class PublishService:
         self._http_client = http_client
         self._ai_orchestrator = ai_orchestrator
         self._image_storage = image_storage
-        self._admin_id = admin_id
+        self._admin_ids = admin_ids
         self._scheduler_service = scheduler_service
-        self._tokens = TokenService(db, admin_id)
+        self._tokens = TokenService(db, admin_ids)
         self._users = UsersRepository(db)
         self._categories = CategoriesRepository(db)
         self._projects = ProjectsRepository(db)

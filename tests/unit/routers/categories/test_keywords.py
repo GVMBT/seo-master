@@ -370,7 +370,7 @@ class TestCbKwQuantity:
             patch("routers.categories.keywords.TokenService") as svc_cls,
             patch("routers.categories.keywords.get_settings") as mock_settings,
         ):
-            mock_settings.return_value = MagicMock(admin_id=999)
+            mock_settings.return_value = MagicMock(admin_ids=[999])
             svc_cls.return_value.check_balance = AsyncMock(return_value=True)
             await cb_kw_quantity(mock_callback, mock_state, user, mock_db)
             mock_state.set_state.assert_awaited_once_with(KeywordGenerationFSM.confirm)
@@ -391,7 +391,7 @@ class TestCbKwQuantity:
             patch("routers.categories.keywords.TokenService") as svc_cls,
             patch("routers.categories.keywords.get_settings") as mock_settings,
         ):
-            mock_settings.return_value = MagicMock(admin_id=999)
+            mock_settings.return_value = MagicMock(admin_ids=[999])
             svc_cls.return_value.check_balance = AsyncMock(return_value=False)
             svc_cls.return_value.get_balance = AsyncMock(return_value=50)
             svc_cls.return_value.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов.")
@@ -441,7 +441,7 @@ class TestCbKwConfirm:
             patch("routers.categories.keywords.CategoriesRepository") as mock_cat_cls,
             patch("services.keywords.KeywordService") as mock_kw_cls,
         ):
-            mock_settings.return_value = MagicMock(admin_id=999)
+            mock_settings.return_value = MagicMock(admin_ids=[999])
             svc_cls.return_value.charge = AsyncMock(return_value=1400)
             mock_cat_cls.return_value.get_by_id = AsyncMock(
                 return_value=MagicMock(project_id=1),
@@ -499,7 +499,7 @@ class TestCbKwConfirm:
             patch("routers.categories.keywords.TokenService") as svc_cls,
             patch("routers.categories.keywords.get_settings") as mock_settings,
         ):
-            mock_settings.return_value = MagicMock(admin_id=999)
+            mock_settings.return_value = MagicMock(admin_ids=[999])
             svc_cls.return_value.charge = AsyncMock(side_effect=InsufficientBalanceError())
             svc_cls.return_value.get_balance = AsyncMock(return_value=10)
             svc_cls.return_value.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов.")
@@ -537,7 +537,7 @@ class TestCbKwConfirm:
             patch("routers.categories.keywords.CategoriesRepository") as mock_cat_cls,
             patch("services.keywords.KeywordService") as mock_kw_cls,
         ):
-            mock_settings.return_value = MagicMock(admin_id=999)
+            mock_settings.return_value = MagicMock(admin_ids=[999])
             svc_cls.return_value.charge = AsyncMock(return_value=1450)
             mock_cat_cls.return_value.get_by_id = AsyncMock(
                 return_value=MagicMock(project_id=1),

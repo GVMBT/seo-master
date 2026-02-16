@@ -43,13 +43,13 @@ class CleanupService:
         db: SupabaseClient,
         http_client: httpx.AsyncClient,
         image_storage: ImageStorage,
-        admin_id: int,
+        admin_ids: list[int],
     ) -> None:
         self._db = db
         self._http_client = http_client
         self._previews = PreviewsRepository(db)
         self._image_storage = image_storage
-        self._tokens = TokenService(db, admin_id)
+        self._tokens = TokenService(db, admin_ids)
 
     async def execute(self) -> CleanupResult:
         """Run full cleanup pipeline."""
@@ -91,14 +91,16 @@ class CleanupService:
                         reason="preview_expired",
                         description=f"Expired preview: {preview.keyword or 'unknown'}",
                     )
-                    # Load user to check notify preference (spec: notify_publications)
+                    # Load user to check notify preference (refund = balance notification)
                     user = await UsersRepository(self._db).get_by_id(preview.user_id)
-                    result.refunded.append({
-                        "user_id": preview.user_id,
-                        "keyword": preview.keyword or "",
-                        "tokens_refunded": tokens,
-                        "notify_publications": user.notify_publications if user else True,
-                    })
+                    result.refunded.append(
+                        {
+                            "user_id": preview.user_id,
+                            "keyword": preview.keyword or "",
+                            "tokens_refunded": tokens,
+                            "notify_balance": user.notify_balance if user else True,
+                        }
+                    )
 
                 # Clean up storage images
                 if preview.images:

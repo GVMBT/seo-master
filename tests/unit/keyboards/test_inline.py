@@ -18,27 +18,37 @@ from .helpers import make_category, make_project, make_user
 
 
 class TestDashboardKb:
-    def test_has_5_navigation_buttons(self) -> None:
+    def test_has_7_buttons(self) -> None:
         builder = dashboard_kb()
         markup = builder.as_markup()
         buttons = [btn for row in markup.inline_keyboard for btn in row]
-        assert len(buttons) == 5
+        assert len(buttons) == 7
 
     def test_callback_data_values(self) -> None:
         builder = dashboard_kb()
         markup = builder.as_markup()
         callbacks = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+        assert "pipeline:article:start" in callbacks
+        assert "pipeline:social:start" in callbacks
         assert "projects:list" in callbacks
         assert "profile:main" in callbacks
         assert "tariffs:main" in callbacks
         assert "settings:main" in callbacks
         assert "help:main" in callbacks
 
-    def test_layout_2_2_1(self) -> None:
+    def test_layout_1_1_2_2_1(self) -> None:
         builder = dashboard_kb()
         markup = builder.as_markup()
         row_sizes = [len(row) for row in markup.inline_keyboard]
-        assert row_sizes == [2, 2, 1]
+        assert row_sizes == [1, 1, 2, 2, 1]
+
+    def test_pipeline_cta_buttons_on_top(self) -> None:
+        builder = dashboard_kb()
+        markup = builder.as_markup()
+        first_btn = markup.inline_keyboard[0][0]
+        second_btn = markup.inline_keyboard[1][0]
+        assert first_btn.callback_data == "pipeline:article:start"
+        assert second_btn.callback_data == "pipeline:social:start"
 
 
 class TestProjectListKb:

@@ -65,8 +65,17 @@ permissionMode: default
 
 ### Спек-консистентность
 - [ ] Имена FSM-классов с суффиксом `*FSM` (ProjectCreateFSM, не ProjectCreate)
-- [ ] Quick publish callback: `quick:` prefix (НЕ `qp:`)
+- [ ] Pipeline callback: `pipeline:article:*`, `pipeline:social:*` (НЕ `quick:*`)
 - [ ] VK credentials: `access_token` (НЕ `token`)
+
+### Pipeline (Phase 13)
+- [ ] Inline handlers через Service Layer (НЕ вызов чужих FSM)
+- [ ] Redis checkpoint `pipeline:{user_id}:state` обновляется на каждом шаге
+- [ ] Exit protection на шагах 4-7 (подтверждение при /cancel)
+- [ ] ButtonStyle: максимум 1 PRIMARY кнопка на экране
+- [ ] Readiness check через ReadinessService (не inline логика в роутере)
+- [ ] Cross-post: обязательный review перед публикацией (E52)
+- [ ] Checklist UX: editMessageText для простых, deleteMessage+send для сложных sub-flows
 
 ### Статический анализ (запусти и включи в отчёт)
 - [ ] `uv run ruff check {module} --select=E,F,I,S,C901,B,UP,SIM,RUF` — 0 ошибок

@@ -21,9 +21,7 @@ from routers.categories.description import (
 
 @pytest.fixture
 def category_with_desc(project: Project) -> Category:
-    return Category(
-        id=10, project_id=project.id, name="Test Category", description="Existing description text."
-    )
+    return Category(id=10, project_id=project.id, name="Test Category", description="Existing description text.")
 
 
 @pytest.fixture
@@ -177,7 +175,7 @@ class TestCbDescriptionConfirm:
         mock_db: MagicMock,
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={"category_id": 10, "project_id": 1, "regen_count": 0})
-        mock_settings.return_value.admin_id = 0
+        mock_settings.return_value.admin_ids = [0]
         mock_token_cls.return_value.check_balance = AsyncMock(return_value=True)
         mock_token_cls.return_value.charge = AsyncMock()
 
@@ -203,7 +201,7 @@ class TestCbDescriptionConfirm:
         mock_db: MagicMock,
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={"category_id": 10, "project_id": 1})
-        mock_settings.return_value.admin_id = 0
+        mock_settings.return_value.admin_ids = [0]
         mock_token_cls.return_value.check_balance = AsyncMock(return_value=False)
         mock_token_cls.return_value.format_insufficient_msg = MagicMock(return_value="Not enough tokens")
 
@@ -239,7 +237,7 @@ class TestCbDescriptionConfirm:
         mock_db: MagicMock,
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={"category_id": 10, "project_id": 1})
-        mock_settings.return_value.admin_id = 0
+        mock_settings.return_value.admin_ids = [0]
         mock_token_cls.return_value.check_balance = AsyncMock(return_value=True)
         mock_token_cls.return_value.charge = AsyncMock()
         mock_token_cls.return_value.refund = AsyncMock()
@@ -315,10 +313,8 @@ class TestCbDescriptionRegen:
         mock_db: MagicMock,
     ) -> None:
         """Regen count 0 -> 1 (regen_count + 1 = 1, <= 2) — no charge."""
-        mock_state.get_data = AsyncMock(
-            return_value={"category_id": 10, "project_id": 1, "regen_count": 0}
-        )
-        mock_settings.return_value.admin_id = 0
+        mock_state.get_data = AsyncMock(return_value={"category_id": 10, "project_id": 1, "regen_count": 0})
+        mock_settings.return_value.admin_ids = [0]
         mock_result = MagicMock()
         mock_result.content = "New description"
         mock_desc_cls.return_value.generate = AsyncMock(return_value=mock_result)
@@ -341,10 +337,8 @@ class TestCbDescriptionRegen:
         mock_db: MagicMock,
     ) -> None:
         """Regen count 2 -> 3 (regen_count + 1 = 3, > 2) — paid."""
-        mock_state.get_data = AsyncMock(
-            return_value={"category_id": 10, "project_id": 1, "regen_count": 2}
-        )
-        mock_settings.return_value.admin_id = 0
+        mock_state.get_data = AsyncMock(return_value={"category_id": 10, "project_id": 1, "regen_count": 2})
+        mock_settings.return_value.admin_ids = [0]
         mock_token_cls.return_value.check_balance = AsyncMock(return_value=True)
         mock_token_cls.return_value.charge = AsyncMock()
         mock_result = MagicMock()

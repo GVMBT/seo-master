@@ -14,7 +14,7 @@ permissionMode: default
 1. Определи, какие файлы спецификации затрагивает задача
 2. Прочитай соответствующие секции из docs/ARCHITECTURE.md, docs/API_CONTRACTS.md
 3. Проверь docs/FSM_SPEC.md если задача связана с FSM
-4. Проверь docs/EDGE_CASES.md на применимые edge cases (E01-E25)
+4. Проверь docs/EDGE_CASES.md на применимые edge cases (E01-E52)
 5. Проверь docs/USER_FLOWS_AND_UI_MAP.md на ожидаемые экраны
 6. **Используй context7** для актуальной документации библиотек (Aiogram, Pydantic, OpenAI SDK, etc.)
 

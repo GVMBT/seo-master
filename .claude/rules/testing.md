@@ -32,7 +32,7 @@ paths:
 
 ## Покрытие
 - Минимум: каждый handler, каждый service method, каждый repository
-- Edge cases: КАЖДЫЙ E01-E25 из docs/EDGE_CASES.md = минимум 1 тест
+- Edge cases: КАЖДЫЙ E01-E52 из docs/EDGE_CASES.md = минимум 1 тест
 - Minimum 80% coverage per module
 
 ## Чего НЕ тестировать

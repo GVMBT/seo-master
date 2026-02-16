@@ -12,6 +12,7 @@ PINTEREST_AUTH_TTL = 1800  # 30 minutes
 RATE_LIMIT_WINDOW = 3600  # 1 hour (default for per-action rate limits)
 PROMPT_CACHE_TTL = 3600  # 1 hour (prompts change only on sync_prompts CLI)
 USER_CACHE_TTL = 300  # 5 minutes (AuthMiddleware user cache)
+PIPELINE_CHECKPOINT_TTL = 86400  # 24 hours (§12.3)
 
 
 class CacheKeys:
@@ -64,3 +65,7 @@ class CacheKeys:
     @staticmethod
     def user_cache(user_id: int) -> str:
         return f"user:{user_id}"
+
+    @staticmethod
+    def pipeline_state(user_id: int) -> str:
+        return f"pipeline:{user_id}:state"

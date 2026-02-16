@@ -8,7 +8,7 @@ from bot.config import Settings, get_settings
 # All required env vars for a valid Settings
 REQUIRED_ENV = {
     "TELEGRAM_BOT_TOKEN": "123:ABC",
-    "ADMIN_ID": "203473623",
+    "ADMIN_IDS": "203473623",
     "SUPABASE_URL": "https://test.supabase.co",
     "SUPABASE_KEY": "test-supabase-key",
     "UPSTASH_REDIS_URL": "https://redis.upstash.io",
@@ -44,7 +44,7 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestSettings:
     def test_loads_required_vars(self) -> None:
         s = _make_settings()
-        assert s.admin_id == 203473623
+        assert s.admin_ids == [203473623]
         assert s.supabase_url == "https://test.supabase.co"
 
     def test_secret_str_fields_hide_values(self) -> None:
@@ -53,7 +53,14 @@ class TestSettings:
         assert "123:ABC" not in repr(s.telegram_bot_token)
         assert s.telegram_bot_token.get_secret_value() == "123:ABC"
 
-    def test_optional_defaults(self) -> None:
+    def test_optional_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Clear optional env vars that may leak from host OS
+        for var in (
+            "DATAFORSEO_LOGIN", "YOOKASSA_SHOP_ID", "SENTRY_DSN",
+            "RAILWAY_PUBLIC_URL", "PINTEREST_APP_ID", "HEALTH_CHECK_TOKEN",
+            "USD_RUB_RATE",
+        ):
+            monkeypatch.delenv(var, raising=False)
         s = _make_settings()
         assert s.dataforseo_login == ""
         assert s.yookassa_shop_id == ""
@@ -76,14 +83,27 @@ class TestSettings:
         with pytest.raises(ValidationError, match="https://"):
             _make_settings(SUPABASE_URL="http://bad.supabase.co")
 
-    def test_missing_required_var_raises(self) -> None:
+    def test_missing_required_var_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         env = {k.lower(): v for k, v in REQUIRED_ENV.items() if k != "TELEGRAM_BOT_TOKEN"}
         with pytest.raises(ValidationError):
             Settings(_env_file=None, **env)  # type: ignore[call-arg]
 
-    def test_admin_id_must_be_int(self) -> None:
+    def test_admin_ids_must_be_ints(self) -> None:
         with pytest.raises(ValidationError):
-            _make_settings(ADMIN_ID="not-a-number")
+            _make_settings(ADMIN_IDS="not-a-number")
+
+    def test_admin_ids_comma_separated(self) -> None:
+        s = _make_settings(ADMIN_IDS="111,222,333")
+        assert s.admin_ids == [111, 222, 333]
+
+    def test_admin_ids_single_value(self) -> None:
+        s = _make_settings(ADMIN_IDS="42")
+        assert s.admin_ids == [42]
+
+    def test_admin_ids_empty_raises(self) -> None:
+        with pytest.raises(ValidationError, match="at least one admin ID"):
+            _make_settings(ADMIN_IDS="")
 
 
 @pytest.mark.usefixtures("_env")

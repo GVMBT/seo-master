@@ -28,7 +28,7 @@ class PinterestOAuthError(AppError):
     def __init__(
         self,
         message: str = "Pinterest OAuth failed",
-        user_message: str = "Не удалось подключить Pinterest",  # noqa: RUF001
+        user_message: str = "Не удалось подключить Pinterest",
     ) -> None:
         super().__init__(message=message, user_message=user_message)
 

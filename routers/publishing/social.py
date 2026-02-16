@@ -13,6 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery
 
 from bot.config import get_settings
+from bot.exceptions import InsufficientBalanceError
 from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
@@ -79,7 +80,10 @@ def _select_keyword(keywords: list[dict[str, object]]) -> str | None:
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):publish:(tg|vk|pin):(\d+)$"))
 async def cb_social_start(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Start SocialPostPublishFSM: show cost confirmation."""
     msg = await guard_callback_message(callback)
@@ -126,7 +130,7 @@ async def cb_social_start(
 
     # Estimate cost and check balance
     cost = estimate_social_post_cost()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
     has_balance = await token_svc.check_balance(user.id, cost)
 
     if not has_balance:
@@ -170,7 +174,10 @@ async def cb_social_start(
 
 @router.callback_query(SocialPostPublishFSM.confirm_cost, F.data == "pub:social:confirm")
 async def cb_social_confirm(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
     rate_limiter: RateLimiter,
 ) -> None:
     """Charge tokens and generate social post content."""
@@ -187,7 +194,19 @@ async def cb_social_confirm(
     platform = data.get("platform", "")
 
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
+
+    # Check balance before charging (E01, E07 — avoid inconsistent FSM state)
+    has_balance = await token_svc.check_balance(user.id, cost)
+    if not has_balance:
+        balance = await token_svc.get_balance(user.id)
+        await msg.edit_text(
+            token_svc.format_insufficient_msg(cost, balance),
+            reply_markup=insufficient_balance_kb().as_markup(),
+        )
+        await state.clear()
+        await callback.answer()
+        return
 
     # Charge tokens
     try:
@@ -197,6 +216,15 @@ async def cb_social_confirm(
             operation_type="social_post",
             description=f"Social post generation ({platform})",
         )
+    except InsufficientBalanceError:
+        balance = await token_svc.get_balance(user.id)
+        await msg.edit_text(
+            token_svc.format_insufficient_msg(cost, balance),
+            reply_markup=insufficient_balance_kb().as_markup(),
+        )
+        await state.clear()
+        await callback.answer()
+        return
     except Exception:
         log.exception("social_charge_failed", user_id=user.id, cost=cost)
         await msg.edit_text("Ошибка списания токенов. Попробуйте позже.")
@@ -237,13 +265,18 @@ async def cb_social_confirm(
 
 @router.callback_query(SocialPostPublishFSM.review, F.data == "pub:social:publish")
 async def cb_social_publish(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Publish the generated social post."""
     msg = await guard_callback_message(callback)
     if msg is None:
         return
 
+    # E07: answer callback FIRST to prevent double-click race
+    await callback.answer()
     await state.set_state(SocialPostPublishFSM.publishing)
 
     data = await state.get_data()
@@ -256,7 +289,6 @@ async def cb_social_publish(
     cost = data.get("cost", 40)
 
     await msg.edit_text("Публикую пост...")
-    await callback.answer()
 
     # Placeholder for actual publisher (wired later)
     # In real implementation: get connection credentials, call platform publisher
@@ -300,7 +332,10 @@ async def cb_social_publish(
 
 @router.callback_query(SocialPostPublishFSM.review, F.data == "pub:social:regen")
 async def cb_social_regen(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Regenerate the social post (2 free, then paid)."""
     msg = await guard_callback_message(callback)
@@ -317,7 +352,7 @@ async def cb_social_regen(
     if regen_count >= 2:
         # E10: Paid regeneration
         settings = get_settings()
-        token_svc = TokenService(db, settings.admin_id)
+        token_svc = TokenService(db, settings.admin_ids)
         has_balance = await token_svc.check_balance(user.id, cost)
 
         if not has_balance:
@@ -340,9 +375,10 @@ async def cb_social_regen(
             await callback.answer("Ошибка списания. Попробуйте позже.", show_alert=True)
             return
 
+    # E07: answer callback FIRST to prevent double-click race
+    await callback.answer()
     await state.set_state(SocialPostPublishFSM.regenerating)
     await msg.edit_text("Перегенерирую пост...")
-    await callback.answer()
 
     # Placeholder for actual AI generation
     new_content = f"Новый пост (попытка {regen_count + 2}) для {platform}. Ключевое слово: {keyword or 'N/A'}"
@@ -367,7 +403,8 @@ async def cb_social_regen(
 
 @router.callback_query(SocialPostPublishFSM.review, F.data == "pub:social:cancel")
 async def cb_social_cancel(
-    callback: CallbackQuery, state: FSMContext,
+    callback: CallbackQuery,
+    state: FSMContext,
 ) -> None:
     """Cancel social post generation. No refund for cheap posts (~40 tokens, E27)."""
     msg = await guard_callback_message(callback)
@@ -402,3 +439,9 @@ async def cb_social_cancel(
 async def cb_social_publishing_guard(callback: CallbackQuery) -> None:
     """E07: Prevent double-click during publishing."""
     await callback.answer("Публикация в процессе.", show_alert=True)
+
+
+@router.callback_query(SocialPostPublishFSM.regenerating)
+async def cb_social_regen_guard(callback: CallbackQuery) -> None:
+    """E07: Block double-click during social post regeneration."""
+    await callback.answer("Перегенерация в процессе. Подождите.", show_alert=True)

@@ -53,6 +53,7 @@ dev = [
     "mypy>=1.19",
     "types-pyyaml>=6.0",
     "vulture>=2.14",
+    "bandit>=1.7",
     "telethon>=1.39",
     "respx>=0.22",
 ]
@@ -63,21 +64,14 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "S", "C901", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # Cyrillic characters are intentional (Russian UI bot)
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105", "S106", "RUF001", "RUF002", "RUF003"]
-"routers/**/*.py" = ["RUF001", "RUF002"]
-"keyboards/**/*.py" = ["RUF001", "RUF002"]
-"services/ai/quality_scorer.py" = ["RUF001"]
-"services/ai/niche_detector.py" = ["RUF001"]
-"services/ai/anti_hallucination.py" = ["RUF001"]
-"services/ai/markdown_renderer.py" = ["RUF001"]
-"services/ai/reconciliation.py" = ["RUF001"]
-"services/ai/articles.py" = ["RUF001"]
-"services/ai/prompts/*.yaml" = ["RUF001"]
+"tests/**/*.py" = ["S101", "S105", "S106"]
+"scripts/**/*.py" = ["C901", "SIM102"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

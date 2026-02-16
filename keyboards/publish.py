@@ -2,8 +2,7 @@
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from db.models import PlatformConnection, Project
-from keyboards.pagination import PAGE_SIZE, paginate
+from db.models import PlatformConnection
 
 # ---------------------------------------------------------------------------
 # Article publish keyboards
@@ -78,71 +77,6 @@ def insufficient_balance_kb() -> InlineKeyboardBuilder:
 
 
 # ---------------------------------------------------------------------------
-# Quick publish keyboards
-# ---------------------------------------------------------------------------
-
-
-def quick_project_list_kb(projects: list[Project], page: int = 0) -> InlineKeyboardBuilder:
-    """Paginated project list for quick publish."""
-    builder, _, _nav_count = paginate(
-        items=projects,
-        page=page,
-        item_text_fn=lambda p: p.name,
-        item_callback_fn=lambda p: f"quick:project:{p.id}",
-        page_callback_fn=lambda pg: f"page:quick_proj:{pg}",
-    )
-    return builder
-
-
-def quick_combo_list_kb(
-    combos: list[dict[str, object]],
-    project_id: int,
-    page: int = 0,
-) -> InlineKeyboardBuilder:
-    """Paginated category→platform combos for quick publish.
-
-    Each combo: {cat_id, cat_name, platform, conn_id, conn_name}.
-    """
-    _PLAT_DISPLAY = {"wordpress": "WP", "telegram": "TG", "vk": "VK", "pinterest": "Pin"}
-    _PLAT_CODE = {"wordpress": "wp", "telegram": "tg", "vk": "vk", "pinterest": "pi"}
-
-    builder, _, nav_count = paginate(
-        items=combos,
-        page=page,
-        item_text_fn=lambda c: f"{c['cat_name']} → {_PLAT_DISPLAY.get(str(c['platform']), str(c['platform']))}",
-        item_callback_fn=lambda c: (
-            f"quick:cat:{c['cat_id']}:{_PLAT_CODE.get(str(c['platform']), str(c['platform'])[:2])}:{c['conn_id']}"
-        ),
-        page_callback_fn=lambda pg: f"page:quick_combo:{project_id}:{pg}",
-    )
-    # Add back button
-    builder.button(text="Назад", callback_data="menu:main")
-    # Re-adjust: paginate items + nav + back
-    page_items_count = len(combos[page * PAGE_SIZE : (page + 1) * PAGE_SIZE])
-    sizes = [1] * page_items_count
-    if nav_count:
-        sizes.append(nav_count)
-    sizes.append(1)  # back
-    builder.adjust(*sizes)
-    return builder
-
-
-def quick_wp_choice_kb(
-    connections: list[PlatformConnection], category_id: int,
-) -> InlineKeyboardBuilder:
-    """Choose which WP connection when >1 WordPress (E28)."""
-    builder = InlineKeyboardBuilder()
-    for conn in connections:
-        builder.button(
-            text=conn.identifier,
-            callback_data=f"quick:cat:{category_id}:wp:{conn.id}",
-        )
-    builder.button(text="Назад", callback_data="menu:main")
-    builder.adjust(1)
-    return builder
-
-
-# ---------------------------------------------------------------------------
 # Platform choice for category publish
 # ---------------------------------------------------------------------------
 
@@ -205,11 +139,12 @@ def keyword_confirm_kb(category_id: int, cost: int) -> InlineKeyboardBuilder:
 
 
 def keyword_results_kb(category_id: int) -> InlineKeyboardBuilder:
-    """Keyword results: save or go back."""
+    """Keyword results: save, cancel, or go back."""
     builder = InlineKeyboardBuilder()
     builder.button(text="Сохранить", callback_data="kw:save")
+    builder.button(text="Отменить", callback_data="kw:results:cancel")
     builder.button(text="К категории", callback_data=f"category:{category_id}:card")
-    builder.adjust(2)
+    builder.adjust(2, 1)
     return builder
 
 

@@ -77,7 +77,7 @@ class TestAuthMiddleware:
         return user
 
     async def test_registers_user_and_injects_data(self, mock_user: MagicMock) -> None:
-        mw = AuthMiddleware(admin_id=999)
+        mw = AuthMiddleware(admin_ids=[999])
         handler = _make_handler()
         tg_user = _make_tg_user(123)
         redis = _make_mock_redis()  # cache miss
@@ -95,7 +95,7 @@ class TestAuthMiddleware:
         redis.set.assert_called_once()  # cached after Supabase hit
 
     async def test_cache_hit_skips_supabase(self, mock_user: MagicMock) -> None:
-        mw = AuthMiddleware(admin_id=999)
+        mw = AuthMiddleware(admin_ids=[999])
         handler = _make_handler()
         cached_json = json.dumps({"id": 123, "balance": 1500, "role": "user"})
         redis = _make_mock_redis(cached_user=cached_json)
@@ -109,7 +109,7 @@ class TestAuthMiddleware:
         handler.assert_called_once()
 
     async def test_new_user_flag_set_when_created(self, mock_user: MagicMock) -> None:
-        mw = AuthMiddleware(admin_id=999)
+        mw = AuthMiddleware(admin_ids=[999])
         redis = _make_mock_redis()
         data: dict = {"event_from_user": _make_tg_user(123), "db": MagicMock(), "redis": redis}
 
@@ -120,7 +120,7 @@ class TestAuthMiddleware:
         assert data["is_new_user"] is True
 
     async def test_get_or_create_called_with_user_data(self, mock_user: MagicMock) -> None:
-        mw = AuthMiddleware(admin_id=999)
+        mw = AuthMiddleware(admin_ids=[999])
         tg_user = _make_tg_user(123)
         redis = _make_mock_redis()
         data: dict = {"event_from_user": tg_user, "db": MagicMock(), "redis": redis}
@@ -132,7 +132,7 @@ class TestAuthMiddleware:
 
     async def test_admin_flag_set_correctly(self, mock_user: MagicMock) -> None:
         mock_user.id = 999
-        mw = AuthMiddleware(admin_id=999)
+        mw = AuthMiddleware(admin_ids=[999])
         redis = _make_mock_redis()
         data: dict = {"event_from_user": _make_tg_user(999), "db": MagicMock(), "redis": redis}
 
@@ -143,7 +143,7 @@ class TestAuthMiddleware:
         assert data["is_admin"] is True
 
     async def test_no_user_passes_through(self) -> None:
-        mw = AuthMiddleware(admin_id=999)
+        mw = AuthMiddleware(admin_ids=[999])
         handler = _make_handler()
         data: dict = {}
 

@@ -62,8 +62,7 @@ class TestFormatCategoryCard:
 class TestCbCategoryList:
     @pytest.mark.asyncio
     async def test_shows_categories(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
-        project: Project, category: Category
+        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project, category: Category
     ) -> None:
         mock_callback.data = f"project:{project.id}:categories"
         with (
@@ -76,9 +75,7 @@ class TestCbCategoryList:
             mock_callback.message.edit_text.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_unauthorized_shows_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_unauthorized_shows_alert(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "project:999:categories"
         with patch("routers.categories.manage.ProjectsRepository") as proj_cls:
             proj_cls.return_value.get_by_id = AsyncMock(return_value=None)
@@ -89,9 +86,7 @@ class TestCbCategoryList:
 
 class TestCbCategoryPage:
     @pytest.mark.asyncio
-    async def test_pagination(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project
-    ) -> None:
+    async def test_pagination(self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project) -> None:
         mock_callback.data = f"page:categories:{project.id}:1"
         with (
             patch("routers.categories.manage.ProjectsRepository") as proj_cls,
@@ -111,8 +106,7 @@ class TestCbCategoryPage:
 class TestCbCategoryCard:
     @pytest.mark.asyncio
     async def test_shows_card(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
-        project: Project, category: Category
+        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project, category: Category
     ) -> None:
         mock_callback.data = f"category:{category.id}:card"
         with (
@@ -125,9 +119,7 @@ class TestCbCategoryCard:
             mock_callback.message.edit_text.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_not_found_shows_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_not_found_shows_alert(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "category:999:card"
         with patch("routers.categories.manage.CategoriesRepository") as cat_cls:
             cat_cls.return_value.get_by_id = AsyncMock(return_value=None)
@@ -156,8 +148,7 @@ class TestCbCategoryFeatureStub:
 class TestCategoryCreateFSM:
     @pytest.mark.asyncio
     async def test_new_starts_fsm(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project
+        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, project: Project
     ) -> None:
         mock_callback.data = f"project:{project.id}:cat:new"
         mock_state.get_state = AsyncMock(return_value=None)
@@ -172,8 +163,7 @@ class TestCategoryCreateFSM:
 
     @pytest.mark.asyncio
     async def test_name_valid_creates(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, category: Category
+        self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, category: Category
     ) -> None:
         mock_message.text = "New Category"
         mock_state.get_data.return_value = {"project_id": 1}
@@ -185,8 +175,7 @@ class TestCategoryCreateFSM:
 
     @pytest.mark.asyncio
     async def test_name_invalid_repeats(
-        self, mock_message: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock
+        self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
     ) -> None:
         mock_message.text = "X"
         await fsm_category_name(mock_message, mock_state, user, mock_db)
@@ -202,8 +191,7 @@ class TestCategoryCreateFSM:
 class TestCategoryDelete:
     @pytest.mark.asyncio
     async def test_shows_confirmation(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
-        project: Project, category: Category
+        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project, category: Category
     ) -> None:
         mock_callback.data = f"category:{category.id}:delete"
         with (
@@ -218,8 +206,7 @@ class TestCategoryDelete:
 
     @pytest.mark.asyncio
     async def test_confirm_deletes(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
-        project: Project, category: Category
+        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project, category: Category
     ) -> None:
         mock_callback.data = f"category:{category.id}:delete:confirm"
         mock_scheduler = MagicMock()
@@ -240,8 +227,7 @@ class TestCategoryDelete:
 
     @pytest.mark.asyncio
     async def test_confirm_refunds_active_previews_e42(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
-        project: Project, category: Category
+        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project, category: Category
     ) -> None:
         mock_callback.data = f"category:{category.id}:delete:confirm"
         mock_scheduler = MagicMock()
@@ -260,21 +246,20 @@ class TestCategoryDelete:
             patch("bot.config.get_settings") as mock_settings,
             patch("services.tokens.TokenService") as token_cls,
         ):
-            mock_settings.return_value = MagicMock(admin_id=999)
+            mock_settings.return_value = MagicMock(admin_ids=[999])
             cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
             proj_cls.return_value.get_by_id = AsyncMock(return_value=project)
             cat_cls.return_value.delete = AsyncMock(return_value=True)
             cat_cls.return_value.get_by_project = AsyncMock(return_value=[])
-            previews_cls.return_value.get_active_drafts_by_category = AsyncMock(
-                return_value=[mock_preview]
-            )
+            previews_cls.return_value.get_active_drafts_by_category = AsyncMock(return_value=[mock_preview])
             previews_cls.return_value.atomic_mark_expired = AsyncMock(return_value=None)
             token_cls.return_value.refund = AsyncMock(return_value=1320)
 
             await cb_category_delete_confirm(mock_callback, user, mock_db, mock_scheduler)
 
             token_cls.return_value.refund.assert_awaited_once_with(
-                user.id, 320,
+                user.id,
+                320,
                 reason="category_deleted",
                 description="Category deleted, preview refund: seo tips",
             )

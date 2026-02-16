@@ -175,7 +175,7 @@ def service(mock_db: AsyncMock, mock_users_repo: AsyncMock, mock_payments_repo: 
     svc._db = mock_db
     svc._users = mock_users_repo
     svc._payments = mock_payments_repo
-    svc._admin_id = 999
+    svc._admin_ids = [999]
     return svc
 
 
@@ -187,11 +187,13 @@ def service(mock_db: AsyncMock, mock_users_repo: AsyncMock, mock_payments_repo: 
 class TestCheckBalance:
     async def test_sufficient_balance(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         from db.models import User
+
         mock_users_repo.get_by_id.return_value = User(**_make_user_row(balance=500))
         assert await service.check_balance(123, 100) is True
 
     async def test_insufficient_balance(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         from db.models import User
+
         mock_users_repo.get_by_id.return_value = User(**_make_user_row(balance=50))
         assert await service.check_balance(123, 100) is False
 
@@ -201,6 +203,7 @@ class TestCheckBalance:
 
     async def test_exact_balance(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         from db.models import User
+
         mock_users_repo.get_by_id.return_value = User(**_make_user_row(balance=100))
         assert await service.check_balance(123, 100) is True
 
@@ -213,12 +216,11 @@ class TestCheckBalance:
 class TestGetBalance:
     async def test_returns_balance(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         from db.models import User
+
         mock_users_repo.get_by_id.return_value = User(**_make_user_row(balance=1500))
         assert await service.get_balance(123) == 1500
 
-    async def test_user_not_found_returns_zero(
-        self, service: TokenService, mock_users_repo: AsyncMock
-    ) -> None:
+    async def test_user_not_found_returns_zero(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         mock_users_repo.get_by_id.return_value = None
         assert await service.get_balance(123) == 0
 
@@ -251,6 +253,7 @@ class TestCharge:
         mock_payments_repo: AsyncMock,
     ) -> None:
         from db.models import User
+
         mock_users_repo.get_by_id.return_value = User(**_make_user_row(balance=1500))
         result = await service.charge(123, 0, "text_generation")
         assert result == 1500
@@ -263,8 +266,9 @@ class TestCharge:
         mock_users_repo: AsyncMock,
         mock_payments_repo: AsyncMock,
     ) -> None:
-        """GOD_MODE (admin_id=999) records expense but doesn't deduct."""
+        """GOD_MODE (admin_ids=[999]) records expense but doesn't deduct."""
         from db.models import User
+
         mock_users_repo.get_by_id.return_value = User(**_make_user_row(user_id=999, balance=99999))
         result = await service.charge(999, 320, "text_generation")
         assert result == 99999
@@ -279,7 +283,9 @@ class TestCharge:
     ) -> None:
         mock_users_repo.charge_balance.return_value = 1000
         await service.charge(
-            123, 200, "text_generation",
+            123,
+            200,
+            "text_generation",
             ai_model="anthropic/claude-sonnet-4.5",
             cost_usd=Decimal("0.05"),
         )
@@ -315,6 +321,7 @@ class TestRefund:
         mock_payments_repo: AsyncMock,
     ) -> None:
         from db.models import User
+
         mock_users_repo.get_by_id.return_value = User(**_make_user_row(balance=1500))
         result = await service.refund(123, 0)
         assert result == 1500
@@ -348,6 +355,7 @@ class TestCredit:
         mock_payments_repo: AsyncMock,
     ) -> None:
         from db.models import User
+
         mock_users_repo.get_by_id.return_value = User(**_make_user_row(balance=1500))
         result = await service.credit(123, 0)
         assert result == 1500
@@ -360,10 +368,9 @@ class TestCredit:
 
 
 class TestGetHistory:
-    async def test_returns_expenses(
-        self, service: TokenService, mock_payments_repo: AsyncMock
-    ) -> None:
+    async def test_returns_expenses(self, service: TokenService, mock_payments_repo: AsyncMock) -> None:
         from db.models import TokenExpense
+
         mock_payments_repo.get_expenses_by_user.return_value = [
             TokenExpense(**_make_expense_row(amount=-200, operation_type="text_generation")),
             TokenExpense(**_make_expense_row(amount=3500, operation_type="purchase")),
@@ -373,9 +380,7 @@ class TestGetHistory:
         assert history[0].amount == -200
         assert history[1].amount == 3500
 
-    async def test_empty_history(
-        self, service: TokenService, mock_payments_repo: AsyncMock
-    ) -> None:
+    async def test_empty_history(self, service: TokenService, mock_payments_repo: AsyncMock) -> None:
         mock_payments_repo.get_expenses_by_user.return_value = []
         history = await service.get_history(123)
         assert history == []
@@ -387,10 +392,9 @@ class TestGetHistory:
 
 
 class TestGetReferralBonusTotal:
-    async def test_sums_referral_bonuses(
-        self, service: TokenService, mock_payments_repo: AsyncMock
-    ) -> None:
+    async def test_sums_referral_bonuses(self, service: TokenService, mock_payments_repo: AsyncMock) -> None:
         from db.models import TokenExpense
+
         mock_payments_repo.get_expenses_by_user.return_value = [
             TokenExpense(**_make_expense_row(amount=300, operation_type="referral_bonus")),
             TokenExpense(**_make_expense_row(amount=-200, operation_type="text_generation")),
@@ -399,9 +403,7 @@ class TestGetReferralBonusTotal:
         total = await service.get_referral_bonus_total(123)
         assert total == 450
 
-    async def test_no_bonuses_returns_zero(
-        self, service: TokenService, mock_payments_repo: AsyncMock
-    ) -> None:
+    async def test_no_bonuses_returns_zero(self, service: TokenService, mock_payments_repo: AsyncMock) -> None:
         mock_payments_repo.get_expenses_by_user.return_value = []
         total = await service.get_referral_bonus_total(123)
         assert total == 0
@@ -439,11 +441,20 @@ class TestGetProfileStats:
             sched_repo = AsyncMock()
             sched_repo.get_by_project.return_value = [
                 PlatformSchedule(
-                    id=1, category_id=1, platform_type="wp", connection_id=1,
-                    enabled=True, schedule_days=["mon", "wed", "fri"], posts_per_day=2,
+                    id=1,
+                    category_id=1,
+                    platform_type="wp",
+                    connection_id=1,
+                    enabled=True,
+                    schedule_days=["mon", "wed", "fri"],
+                    posts_per_day=2,
                 ),
                 PlatformSchedule(
-                    id=2, category_id=1, platform_type="tg", connection_id=2, enabled=False,
+                    id=2,
+                    category_id=1,
+                    platform_type="tg",
+                    connection_id=2,
+                    enabled=False,
                 ),
             ]
             mock_sched_cls.return_value = sched_repo

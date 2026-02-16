@@ -260,7 +260,7 @@ async def cb_kw_quantity(
 
     cost = estimate_keywords_cost(quantity)
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
     has_enough = await token_svc.check_balance(user.id, cost)
 
     if not has_enough:
@@ -312,7 +312,7 @@ async def cb_kw_confirm(
     geography = data.get("geography", "")
 
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
 
     # Charge tokens (E01: InsufficientBalanceError handled)
     try:

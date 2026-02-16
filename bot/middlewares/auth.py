@@ -28,8 +28,8 @@ class AuthMiddleware(BaseMiddleware):
     last_activity is updated only on cache miss (every ~5 min).
     """
 
-    def __init__(self, admin_id: int) -> None:
-        self._admin_id = admin_id
+    def __init__(self, admin_ids: list[int]) -> None:
+        self._admin_ids = admin_ids
 
     async def __call__(
         self,
@@ -50,7 +50,7 @@ class AuthMiddleware(BaseMiddleware):
             user = User(**json.loads(cached))
             data["user"] = user
             data["is_new_user"] = False
-            data["is_admin"] = user.id == self._admin_id
+            data["is_admin"] = user.id in self._admin_ids
             return await handler(event, data)
 
         # Cache miss — hit Supabase
@@ -75,7 +75,7 @@ class AuthMiddleware(BaseMiddleware):
 
         data["user"] = user
         data["is_new_user"] = is_new
-        data["is_admin"] = user.id == self._admin_id
+        data["is_admin"] = user.id in self._admin_ids
         return await handler(event, data)
 
 

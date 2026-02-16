@@ -20,7 +20,7 @@ def mock_db() -> MagicMock:
 
 @pytest.fixture
 def service(mock_db: MagicMock) -> StarsPaymentService:
-    return StarsPaymentService(db=mock_db, admin_id=999)
+    return StarsPaymentService(db=mock_db, admin_ids=[999])
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ class TestValidatePreCheckout:
 class TestProcessSuccessfulPayment:
     @pytest.fixture
     def service_with_mocks(self, mock_db: MagicMock) -> StarsPaymentService:
-        svc = StarsPaymentService(db=mock_db, admin_id=999)
+        svc = StarsPaymentService(db=mock_db, admin_ids=[999])
         svc._users = MagicMock()
         svc._users.credit_balance = AsyncMock(return_value=2500)
         svc._users.get_by_id = AsyncMock(return_value=MagicMock(referrer_id=None))
@@ -143,9 +143,7 @@ class TestProcessSuccessfulPayment:
 
     async def test_idempotency_duplicate_charge(self, service_with_mocks: StarsPaymentService) -> None:
         """Duplicate charge_id should not credit tokens (E10)."""
-        service_with_mocks._payments.get_by_telegram_charge_id = AsyncMock(
-            return_value=MagicMock(package_name="mini")
-        )
+        service_with_mocks._payments.get_by_telegram_charge_id = AsyncMock(return_value=MagicMock(package_name="mini"))
         result = await service_with_mocks.process_successful_payment(
             user_id=42,
             payload="purchase:mini:user_42",
@@ -237,9 +235,7 @@ class TestReferralBonus:
         payments.create_expense = AsyncMock()
         payments.update = AsyncMock()
 
-        await credit_referral_bonus(
-            users, payments, user_id=42, price_rub=1000, payment_id=1, provider_label="ЮKassa"
-        )
+        await credit_referral_bonus(users, payments, user_id=42, price_rub=1000, payment_id=1, provider_label="ЮKassa")
         expense_call = payments.create_expense.call_args[0][0]
         assert "ЮKassa" in expense_call.description
 
@@ -251,7 +247,7 @@ class TestReferralBonus:
 
 class TestGetActiveSubscription:
     async def test_returns_sub_info(self, mock_db: MagicMock) -> None:
-        svc = StarsPaymentService(db=mock_db, admin_id=999)
+        svc = StarsPaymentService(db=mock_db, admin_ids=[999])
         svc._payments = MagicMock()
         svc._payments.get_active_subscription = AsyncMock(
             return_value=MagicMock(
@@ -270,7 +266,7 @@ class TestGetActiveSubscription:
         assert result["provider"] == "stars"
 
     async def test_returns_none_when_no_sub(self, mock_db: MagicMock) -> None:
-        svc = StarsPaymentService(db=mock_db, admin_id=999)
+        svc = StarsPaymentService(db=mock_db, admin_ids=[999])
         svc._payments = MagicMock()
         svc._payments.get_active_subscription = AsyncMock(return_value=None)
         result = await svc.get_active_subscription(42)
@@ -279,7 +275,7 @@ class TestGetActiveSubscription:
 
 class TestCancelSubscription:
     async def test_cancel_returns_provider_info(self, mock_db: MagicMock) -> None:
-        svc = StarsPaymentService(db=mock_db, admin_id=999)
+        svc = StarsPaymentService(db=mock_db, admin_ids=[999])
         svc._payments = MagicMock()
         svc._payments.get_active_subscription = AsyncMock(
             return_value=MagicMock(
@@ -296,7 +292,7 @@ class TestCancelSubscription:
         assert result["charge_id"] == "charge_cancel"
 
     async def test_cancel_no_sub_returns_none(self, mock_db: MagicMock) -> None:
-        svc = StarsPaymentService(db=mock_db, admin_id=999)
+        svc = StarsPaymentService(db=mock_db, admin_ids=[999])
         svc._payments = MagicMock()
         svc._payments.get_active_subscription = AsyncMock(return_value=None)
         result = await svc.cancel_subscription(42)
@@ -323,23 +319,27 @@ class TestFormatting:
         assert "6000" in text
 
     def test_subscription_manage_text(self, service: StarsPaymentService) -> None:
-        text = service.format_subscription_manage_text({
-            "package_name": "pro",
-            "tokens_per_month": 7200,
-            "price_rub": 6000,
-            "provider": "stars",
-            "status": "active",
-            "expires_at": None,
-            "charge_id": "ch",
-            "payment_id": 1,
-        })
+        text = service.format_subscription_manage_text(
+            {
+                "package_name": "pro",
+                "tokens_per_month": 7200,
+                "price_rub": 6000,
+                "provider": "stars",
+                "status": "active",
+                "expires_at": None,
+                "charge_id": "ch",
+                "payment_id": 1,
+            }
+        )
         assert "Stars" in text
 
     def test_cancel_confirm_text(self, service: StarsPaymentService) -> None:
-        text = service.format_cancel_confirm_text({
-            "expires_at": None,
-            "provider": "stars",
-        })
+        text = service.format_cancel_confirm_text(
+            {
+                "expires_at": None,
+                "provider": "stars",
+            }
+        )
         assert "Отменить" in text
 
     def test_payment_link_text_package(self, service: StarsPaymentService) -> None:

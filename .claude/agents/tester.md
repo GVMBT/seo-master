@@ -1,6 +1,6 @@
 ---
 name: tester
-description: "Пишет и запускает тесты для SEO Master Bot v2. Покрывает FSM flows, edge cases E01-E25, API контракты."
+description: "Пишет и запускает тесты для SEO Master Bot v2. Покрывает FSM flows, edge cases E01-E52, API контракты."
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__context7
 model: opus
 permissionMode: default
@@ -11,7 +11,7 @@ permissionMode: default
 Пиши тесты для каждой реализованной фичи. Запускай до зелёного.
 
 ## Приоритеты
-1. Edge cases (E01-E25) — каждый ОБЯЗАН иметь тест
+1. Edge cases (E01-E52) — каждый ОБЯЗАН иметь тест
 2. FSM flows — полный проход по состояниям
 3. API контракты — QStash webhooks, Stars flow
 4. Publishers — validate_connection + publish
@@ -34,6 +34,7 @@ tests/
 ├── unit/keyboards/ — клавиатуры
 ├── unit/services/ — бизнес-логика
 ├── unit/db/ — repositories
+├── e2e/ — end-to-end сценарии (onboarding, payments, publishing, navigation)
 ├── integration/fsm/ — FSM-мастера
 ├── integration/api/ — QStash webhooks
 ├── integration/publishers/ — публикация
