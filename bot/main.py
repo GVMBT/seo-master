@@ -220,10 +220,9 @@ def create_app() -> web.Application:
     bot = create_bot(settings)
     dp = create_dispatcher(db, redis, http_client, settings)
 
-    # Include all routers (after dispatcher creation, before lifecycle hooks)
-    from routers import setup_routers
-
-    dp.include_router(setup_routers())
+    # TODO: re-add routers after frontend rewrite
+    # from routers import setup_routers
+    # dp.include_router(setup_routers())
 
     # Register lifecycle hooks (async closures, not sync lambdas)
     async def _startup() -> None:

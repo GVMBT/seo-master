@@ -31,7 +31,6 @@ from bot.middlewares import (
     ThrottlingMiddleware,
 )
 from cache.fsm_storage import UpstashFSMStorage
-from routers import setup_routers
 from tests.unit.db.repositories.conftest import MockResponse, MockSupabaseClient
 
 # Re-export for convenience in sub-conftest files
@@ -439,86 +438,7 @@ def _setup_db_for_auth(mock_db: MockSupabaseClient, user_data: dict[str, Any] | 
     data = user_data or DEFAULT_USER
     mock_db.set_response("users", MockResponse(data=data))
 
-
-def _detach_all_routers() -> None:
-    """Detach all sub-routers from their parents before re-including them.
-
-    Aiogram Router instances are module-level singletons. Once attached to a
-    parent via include_router(), they cannot be re-attached without resetting
-    the _parent_router attribute. This is needed because each test gets a fresh
-    Dispatcher fixture.
-    """
-    from routers.admin import router as admin_router
-    from routers.analysis import router as analysis_router
-    from routers.categories import router as categories_router
-    from routers.help import router as help_router
-    from routers.payments import router as payments_router
-    from routers.platforms import router as platforms_router
-    from routers.profile import router as profile_router
-    from routers.projects import router as projects_router
-    from routers.publishing import router as publishing_router
-    from routers.settings import router as settings_router
-    from routers.start import router as start_router
-    from routers.tariffs import router as tariffs_router
-
-    all_routers = [
-        admin_router,
-        help_router,
-        start_router,
-        projects_router,
-        categories_router,
-        platforms_router,
-        publishing_router,
-        analysis_router,
-        profile_router,
-        settings_router,
-        tariffs_router,
-        payments_router,
-    ]
-    for r in all_routers:
-        if r._parent_router is not None:
-            parent = r._parent_router
-            if r in parent.sub_routers:
-                parent.sub_routers.remove(r)
-            r._parent_router = None
-
-
-@pytest.fixture
-def dispatcher(
-    mock_db: MockSupabaseClient,
-    mock_redis: MockRedisClient,
-    mock_http_client: MagicMock,
-    mock_settings: MagicMock,
-    mock_services: dict[str, MagicMock],
-) -> Dispatcher:
-    """Real Dispatcher with UpstashFSMStorage + full middleware chain + all routers.
-
-    Mirrors bot/main.py create_dispatcher() but with mocked dependencies.
-    """
-    storage = UpstashFSMStorage(mock_redis, state_ttl=86400)
-    dp = Dispatcher(storage=storage)
-
-    # Outer middleware: inject DB, Redis, httpx
-    dp.update.outer_middleware(DBSessionMiddleware(mock_db, mock_redis, mock_http_client))
-
-    # Inner middleware on all event types (same as bot/main.py)
-    for observer in (dp.message, dp.callback_query, dp.pre_checkout_query):
-        observer.middleware(AuthMiddleware([ADMIN_ID]))
-        observer.middleware(ThrottlingMiddleware(mock_redis))
-        observer.middleware(FSMInactivityMiddleware(1800))
-        observer.middleware(LoggingMiddleware())
-
-    # Detach routers from any previous parent before re-including
-    _detach_all_routers()
-
-    # Include all real routers
-    dp.include_router(setup_routers())
-
-    # Inject service mocks into workflow_data (same as bot/main.py)
-    for name, svc in mock_services.items():
-        dp.workflow_data[name] = svc
-
-    return dp
+    # TODO: restore dispatcher fixture after frontend rewrite
 
 
 @pytest.fixture

@@ -8,5 +8,4 @@ def test_project_importable() -> None:
     import cache  # noqa: F401
     import db  # noqa: F401
     import platform_rules  # noqa: F401
-    import routers  # noqa: F401
     import services  # noqa: F401
