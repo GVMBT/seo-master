@@ -2,7 +2,7 @@
 
 Covers: scrape_content (success, timeout E31, API error, non-success response),
 map_site (success, error, empty), scrape_branding via /extract (success, error),
-extract (success, timeout, error), extract_competitor, search,
+extract (success, timeout, error), search,
 helper functions (_count_words, _extract_headings).
 """
 
@@ -607,70 +607,6 @@ class TestScrapeBranding:
 
         client = _make_client(handler)
         result = await client.scrape_branding("https://example.com")
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
-# extract_competitor (F39)
-# ---------------------------------------------------------------------------
-
-
-class TestExtractCompetitor:
-    async def test_success(self) -> None:
-        async def handler(request: httpx.Request) -> httpx.Response:
-            if "/extract" in str(request.url):
-                return httpx.Response(
-                    200,
-                    json={
-                        "success": True,
-                        "data": {
-                            "company_name": "Competitor Corp",
-                            "main_topics": ["SEO", "Content Marketing", "PPC"],
-                            "content_types": ["blog", "landing pages"],
-                            "unique_selling_points": ["Free tools", "Large blog"],
-                            "content_gaps": ["No video content", "Missing local SEO"],
-                            "estimated_pages": 150,
-                            "primary_keywords": ["seo tools", "keyword research"],
-                        },
-                    },
-                )
-            return httpx.Response(404)
-
-        client = _make_client(handler)
-        result = await client.extract_competitor("https://competitor.com")
-        assert result is not None
-        assert result.data["company_name"] == "Competitor Corp"
-        assert "SEO" in result.data["main_topics"]
-        assert len(result.data["content_gaps"]) == 2
-        assert result.source_url == "https://competitor.com"
-
-    async def test_sends_competitor_schema(self) -> None:
-        captured_body: dict | None = None
-
-        async def handler(request: httpx.Request) -> httpx.Response:
-            nonlocal captured_body
-            captured_body = json.loads(request.content.decode())
-            return httpx.Response(
-                200,
-                json={
-                    "success": True,
-                    "data": {"company_name": "Test", "main_topics": []},
-                },
-            )
-
-        client = _make_client(handler)
-        await client.extract_competitor("https://example.com")
-        assert captured_body is not None
-        assert "schema" in captured_body
-        assert "company_name" in captured_body["schema"]["properties"]
-        assert "content_gaps" in captured_body["schema"]["properties"]
-
-    async def test_failure_returns_none(self) -> None:
-        async def handler(request: httpx.Request) -> httpx.Response:
-            raise httpx.ReadTimeout("Timed out")
-
-        client = _make_client(handler)
-        result = await client.extract_competitor("https://slow-competitor.com")
         assert result is None
 
 

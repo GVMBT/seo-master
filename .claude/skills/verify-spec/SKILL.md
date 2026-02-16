@@ -17,8 +17,8 @@ allowed-tools:
 
 ## Проверки
 1. **13 таблиц:** Каждая CREATE TABLE из ARCHITECTURE.md §3 существует в Supabase
-2. **18 FSM:** Каждый StatesGroup из FSM_SPEC.md реализован в routers/
-3. **MODEL_CHAINS:** 10 задач из API_CONTRACTS.md §3.1 реализованы (article, article_outline, article_critique, social_post, keywords, review, description, competitor_analysis, cross_post, image)
+2. **14 FSM:** Каждый StatesGroup из FSM_SPEC.md реализован в routers/
+3. **MODEL_CHAINS:** 9 задач из API_CONTRACTS.md §3.1 реализованы (article, article_outline, article_critique, social_post, keywords, review, description, cross_post, image)
 4. **52 edge cases:** Каждый E-код из EDGE_CASES.md имеет тест
 5. **ENV vars:** Все 16+ переменных из API_CONTRACTS.md §4.2 используются
 6. **Endpoints:** 6 файлов из api/ реализованы и обрабатывают запросы

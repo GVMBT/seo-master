@@ -123,42 +123,6 @@ _BRANDING_SCHEMA: dict[str, Any] = {
     },
 }
 
-# Competitor analysis schema for /v2/extract
-_COMPETITOR_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "company_name": {"type": "string"},
-        "main_topics": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Main topics/themes covered on the site",
-        },
-        "content_types": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Types of content: blog, product pages, landing pages, etc.",
-        },
-        "unique_selling_points": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "What makes this competitor stand out",
-        },
-        "content_gaps": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Topics or areas that seem underserved or missing",
-        },
-        "estimated_pages": {"type": "integer", "description": "Approximate number of content pages"},
-        "primary_keywords": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Primary SEO keywords the site targets",
-        },
-    },
-    "required": ["company_name", "main_topics"],
-}
-
-
 class FirecrawlClient:
     """Client for Firecrawl API v2.
 
@@ -376,28 +340,6 @@ class FirecrawlClient:
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             log.warning("firecrawl.scrape_branding_error", url=url, error=str(exc))
             return None
-
-    # ------------------------------------------------------------------
-    # /v2/extract — competitor analysis (F39)
-    # ------------------------------------------------------------------
-
-    async def extract_competitor(self, url: str) -> ExtractResult | None:
-        """Extract structured competitor analysis via /v2/extract.
-
-        Used by CompetitorAnalysisFSM (F39). Returns structured data about
-        competitor's content strategy, topics, gaps, and keywords.
-        Cost: ~5 credits.
-        """
-        return await self.extract(
-            urls=[url],
-            prompt=(
-                "Analyze this website as a competitor. Extract: "
-                "company name, main content topics/themes, types of content (blog, products, etc.), "
-                "unique selling points, content gaps (underserved topics), "
-                "estimated number of content pages, and primary SEO keywords targeted."
-            ),
-            schema=_COMPETITOR_SCHEMA,
-        )
 
     # ------------------------------------------------------------------
     # /v2/search — web search + scrape (potential Serper replacement)

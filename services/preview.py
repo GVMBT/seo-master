@@ -1,6 +1,6 @@
-"""Preview service — article generation + WP publishing for manual flow.
+"""Preview service — article generation + WP publishing.
 
-Used by routers/publishing/preview.py (ArticlePublishFSM).
+Used by routers/publishing/pipeline/article.py (ArticlePipelineFSM).
 Zero Telegram/Aiogram dependencies.
 """
 

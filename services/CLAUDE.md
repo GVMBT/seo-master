@@ -16,13 +16,12 @@ class ArticleService:
 
 ## services/ai/
 - orchestrator.py — AIOrchestrator: generate(), generate_stream()
-- MODEL_CHAINS по задачам (docs/API_CONTRACTS.md §3.1, 7 task types):
+- MODEL_CHAINS по задачам (docs/API_CONTRACTS.md §3.1, 6 task types):
   article: claude-sonnet-4.5 → gpt-5.2 → deepseek-v3.2
   social_post: deepseek-v3.2 → claude-sonnet-4.5
   keywords: deepseek-v3.2 → gpt-5.2
   review: deepseek-v3.2 → claude-sonnet-4.5
   description: deepseek-v3.2 → claude-sonnet-4.5
-  competitor_analysis: gpt-5.2 → claude-sonnet-4.5
   image: gemini-3-pro-image → gemini-2.5-flash-image
 - OpenAI SDK с base_url="https://openrouter.ai/api/v1"
 - extra_body.models для нативных fallbacks

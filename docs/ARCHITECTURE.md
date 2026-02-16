@@ -65,7 +65,7 @@ seo-master-bot-v2/
 │   │   └── settings.py             # Настройки контента по платформам
 │   ├── publishing/
 │   │   ├── preview.py              # Telegraph-предпросмотр + подтверждение
-│   │   ├── social.py               # SocialPostPublishFSM (TG/VK/Pinterest генерация + публикация)
+│   │   ├── social.py               # (legacy, replaced by SocialPipelineFSM)
 │   │   ├── scheduler.py            # Настройка расписания (FSM)
 │   │   └── pipeline/               # Goal-Oriented Pipeline (замена Quick Publish)
 │   │       ├── __init__.py          # Регистрация роутеров
@@ -108,7 +108,6 @@ seo-master-bot-v2/
 │   │       ├── image_v1.yaml            # v1: image generation prompts (+ niche styles, negatives)
 │   │       ├── review_v1.yaml           # v1: review generation
 │   │       ├── description_v1.yaml      # v1: category description generation
-│   │       ├── competitor_analysis_v1.yaml  # v1: standalone F39 competitor analysis
 │   │       └── cross_post_v1.yaml          # v1: text adaptation between platforms (Pipeline кросс-постинг)
 │   ├── publishers/
 │   │   ├── base.py                 # BasePublisher (валидация -> публикация -> отчет)
@@ -516,7 +515,7 @@ CREATE TABLE token_expenses (
     id              SERIAL PRIMARY KEY,
     user_id         BIGINT NOT NULL REFERENCES users(id),  -- NO ACTION: финансовые записи не удаляются при удалении пользователя (аудит)
     amount          INTEGER NOT NULL,          -- Отрицательное = списание, положительное = пополнение/возврат
-    operation_type  VARCHAR(50) NOT NULL,      -- text_generation (статьи И соц. посты), image_generation, keyword_generation, audit, review, description, competitor_analysis, cross_post, purchase, refund, referral_bonus, api_openrouter, api_dataforseo, api_firecrawl, api_pagespeed
+    operation_type  VARCHAR(50) NOT NULL,      -- text_generation (статьи И соц. посты), image_generation, keyword_generation, audit, review, description, cross_post, purchase, refund, referral_bonus, api_openrouter, api_dataforseo, api_firecrawl, api_pagespeed
     description     TEXT,
     ai_model        VARCHAR(100),
     input_tokens    INTEGER,                   -- Токены LLM (входящие)
@@ -629,7 +628,7 @@ CREATE INDEX idx_previews_expires ON article_previews(expires_at) WHERE status =
 ```sql
 CREATE TABLE prompt_versions (
     id              SERIAL PRIMARY KEY,
-    task_type       VARCHAR(50) NOT NULL,      -- article, social_post, keywords, review, image, description, competitor_analysis. keywords = clustering prompt (v3 data-first), NOT data fetching
+    task_type       VARCHAR(50) NOT NULL,      -- article, social_post, keywords, review, image, description. keywords = clustering prompt (v3 data-first), NOT data fetching
     version         VARCHAR(20) NOT NULL,      -- v1, v2, v3...
     prompt_yaml     TEXT NOT NULL,             -- YAML-содержимое промпта
     is_active       BOOLEAN DEFAULT FALSE,

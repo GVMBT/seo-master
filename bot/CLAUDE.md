@@ -34,7 +34,7 @@
 
 ## bot/fsm_utils.py
 - ensure_no_active_fsm(state) — auto-reset current FSM before entering new one (E29)
-- _FSM_NAMES: human-readable Russian names for all 18 FSM classes (16 toolbox + 2 pipeline)
+- _FSM_NAMES: human-readable Russian names for all 14 FSM classes (12 toolbox + 2 pipeline)
 - Called at every FSM entry point before set_state()
 
 ## Обработка ошибок

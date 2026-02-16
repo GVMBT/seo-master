@@ -21,7 +21,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/PRD.md — фичи F01-F46, токеномика, роадмап
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
-- docs/FSM_SPEC.md — 18 FSM StatesGroup, валидация, переходы
+- docs/FSM_SPEC.md — 14 FSM StatesGroup, валидация, переходы
 - docs/EDGE_CASES.md — E01-E52, обработка ошибок
 - docs/UX_PIPELINE.md — Pipeline UX: Dashboard, статьи, соцсети, кросс-постинг
 - docs/UX_TOOLBOX.md — Toolbox UX: проекты, категории, подключения, профиль, токены
@@ -150,7 +150,7 @@ uv run vulture bot/ services/ db/ api/ cache/ platform_rules/ --min-confidence 8
 
 Goal-Oriented Pipeline (Phase 13 — UX_PIPELINE.md):
 - Pipeline заменяет Quick Publish: воронка "Написать статью" / "Пост в соцсети" (2-3 клика для returning users)
-- ArticlePipelineFSM (23 состояния), SocialPipelineFSM (27 состояний) — итого 18 StatesGroup
+- ArticlePipelineFSM (25 состояний), SocialPipelineFSM (28 состояний) — итого 14 StatesGroup
 - Inline handlers (NOT FSM delegation): pipeline реализует sub-flows внутри себя, переиспользуя Service Layer
 - ReadinessService: чеклист готовности (keywords обяз., description обяз. для новичков, prices/media опциональны)
 - ButtonStyle (Bot API 9.4): PRIMARY/SUCCESS/DANGER семантика, макс. 1 PRIMARY на экране
@@ -191,7 +191,7 @@ P2 (Phase 11+):
 - **`/v2/map`**: internal links (NOT /crawl). 1 credit per 5000 URLs. Cache 14d
 - **`/v2/extract` (NEW)**: LLM-structured data extraction via JSON Schema. ~5 credits. Used for:
   - `scrape_branding()` → real CSS colors/fonts via `_BRANDING_SCHEMA` (NOT hardcoded fallbacks)
-  - `extract_competitor()` → structured competitor data via `_COMPETITOR_SCHEMA` (title, meta, h1-h3, content_type, word_count, internal_links_count, schema_org, images_count)
+  - ~~`extract_competitor()`~~ — deferred to v3 (F39 standalone competitor analysis removed from v2)
 - **`/v2/search` (NEW)**: search + scrape in one call. 2 credits/10 results. Potential Serper replacement (but no PAA)
 - **DataForSEO**: остаётся (keyword volumes/CPC/difficulty — Firecrawl этого не умеет)
 - **Serper**: остаётся (People Also Ask для антиканнибализации — Firecrawl /search не возвращает PAA)
