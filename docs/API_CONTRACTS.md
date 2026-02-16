@@ -452,7 +452,7 @@ openai_client = AsyncOpenAI(
 ```python
 @dataclass
 class GenerationRequest:
-    task: Literal["article", "social_post", "keywords", "review", "image", "description", "competitor_analysis"]
+    task: Literal["article", "social_post", "keywords", "review", "image", "description"]
     prompt_version: str          # "v6", "v3" — ссылка на prompt_versions
     context: GenerationContext   # Типизированный контекст (см. ниже)
     user_id: int                 # Для rate limiting и логирования
@@ -526,7 +526,6 @@ MODEL_CHAINS = {
     "keywords":             ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # AI clustering (keywords_cluster.yaml v3), NOT data fetching
     "review":               ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "description":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
-    "competitor_analysis":  ["openai/gpt-5.2", "anthropic/claude-sonnet-4.5"],
     "cross_post":           ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],           # Text adaptation between platforms (budget)
     "image":                ["google/gemini-3-pro-image-preview", "google/gemini-2.5-flash-image"],
 }
@@ -2173,72 +2172,6 @@ variables:
     default: ""
 ```
 
-### Пример: competitor_analysis_v1.yaml
-
-> **Важно:** F39 (standalone-анализ конкурентов) использует `FirecrawlClient.extract_competitor()` → `/v2/extract` с `_COMPETITOR_SCHEMA` (структурированные данные: темы, пробелы, ключевые слова). Стоимость: ~5 кредитов.
-> Пайплайн статей v7 использует `FirecrawlClient.scrape_content()` → `/v2/scrape` (полный markdown для контентного gap-анализа). Стоимость: 1 кредит/страница.
-> Это **два разных сценария** с разными эндпоинтами — не путать.
-
-```yaml
-meta:
-  task_type: competitor_analysis
-  version: v1
-  model_tier: analytical
-  max_tokens: 4000
-  temperature: 0.3
-
-system: |
-  Ты — SEO-аналитик. Анализируй на <<language>>.
-  Задача: сравнить сайт конкурента с бизнесом клиента и дать конкретные рекомендации.
-
-user: |
-  Проанализируй сайт конкурента на основе извлечённых данных.
-
-  Бизнес клиента: <<company_name>> (<<specialization>>).
-  Текущие ключевые фразы клиента: <<category_keywords>>.
-
-  Данные конкурента (Firecrawl /extract — структурированный JSON):
-  <<competitor_data>>
-
-  Задачи анализа:
-  1. Подсчитай количество проиндексированных страниц
-  2. Определи ключевые темы и категории контента конкурента
-  3. Найди контентные пробелы — темы, которые конкурент покрывает, а клиент нет
-  4. Сравни мета-теги, заголовки H1-H3, структуру контента
-  5. Дай 3-5 конкретных рекомендаций для клиента
-
-  Формат ответа — JSON:
-  {
-    "pages_indexed": 45,
-    "key_topics": ["тема1", "тема2", "тема3"],
-    "content_gaps": ["пробел1", "пробел2"],
-    "meta_analysis": "краткий анализ мета-тегов и структуры",
-    "recommendations": [
-      "Рекомендация 1: ...",
-      "Рекомендация 2: ..."
-    ]
-  }
-
-variables:
-  - name: company_name
-    source: projects.company_name
-    required: true
-  - name: specialization
-    source: projects.specialization
-    required: true
-  - name: language
-    source: users.language
-    required: true
-    default: "ru"
-  - name: category_keywords
-    source: categories.keywords (все фразы проекта)
-    required: false
-    default: "не заданы"
-  - name: competitor_data
-    source: FirecrawlClient.extract_competitor(url).data — структурированный JSON (_COMPETITOR_SCHEMA)
-    required: true
-```
-
 ---
 
 ## 6. Стратегия ротации кластеров ключевых фраз
@@ -2635,7 +2568,6 @@ class FirecrawlClient:
     async def scrape_branding(self, url: str) -> BrandingResult | None: ...
     async def map_site(self, url: str, limit: int = 5000) -> MapResult | None: ...
     async def extract(self, urls: list[str], prompt: str, schema: dict | None) -> ExtractResult | None: ...
-    async def extract_competitor(self, url: str) -> ExtractResult | None: ...
     async def search(self, query: str, limit: int = 5) -> list[SearchResult]: ...
 ```
 
@@ -2679,11 +2611,6 @@ POST `/v2/extract` с urls, prompt и опциональной JSON schema.
 Firecrawl скрейпит страницу, пропускает через LLM, возвращает структурированный JSON.
 Стоимость: ~5 кредитов/URL. Timeout: 60 секунд.
 
-**`extract_competitor(url)`** — анализ конкурента для F39 (обёртка над `extract`).
-Использует предопределённую `_COMPETITOR_SCHEMA`: company_name, main_topics, content_types,
-unique_selling_points, content_gaps, estimated_pages, primary_keywords.
-Стоимость: ~5 кредитов. Результат для CompetitorAnalysisFSM.
-
 **`search(query, limit=5)`** — поиск + скрейп в одном вызове.
 POST `/v2/search` с `scrapeOptions: {formats: ['markdown'], onlyMainContent: true}`.
 Стоимость: 2 кредита/10 результатов + 1 кредит/scraped page.
@@ -2715,7 +2642,7 @@ QStash CRON: 0 3 1,15 * * → POST /api/recrawl
 #### Будущее: Firecrawl `/agent` (v3+)
 
 > Firecrawl Agent (Spark 1) — автономный поиск и извлечение данных без указания URL.
-> Потенциал для F39 (конкурентный анализ): один запрос вместо ручного пайплайна.
+> Потенциал для standalone-анализа конкурентов (v3): один запрос вместо ручного пайплайна.
 > Пока в Research Preview, динамическая цена, всегда списывается. Оценить при стабилизации API.
 
 #### Будущее: Firecrawl `changeTracking` (v3, F45)
@@ -2783,7 +2710,7 @@ POST `/v3/dataforseo_labs/google/search_intent/live`. Стоимость: $0.001
 
 **`keyword_suggestions_for_url(url)`** — ключевики конкурента по URL.
 POST `/v3/dataforseo_labs/google/keywords_for_site/live`. Стоимость: ~$0.01/запрос.
-Полезно для F39 (standalone competitor analysis) — получить семантику конкурента без ручного ввода seed.
+Полезно для standalone-анализа конкурентов (v3) — получить семантику конкурента без ручного ввода seed.
 
 #### Rank Tracking (P2, Phase 11+)
 

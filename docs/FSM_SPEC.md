@@ -4,7 +4,9 @@
 
 Все FSM-мастера используют Aiogram 3 StatesGroup с хранением в Redis (Upstash).
 
-**Итого: 18 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ArticlePublishFSM, SocialPostPublishFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, ReviewGenerationFSM, DescriptionGenerateFSM, CompetitorAnalysisFSM, ArticlePipelineFSM, SocialPipelineFSM)
+**Итого: 14 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, DescriptionGenerateFSM, ArticlePipelineFSM, SocialPipelineFSM)
+
+> **Убраны в v2:** ArticlePublishFSM, SocialPostPublishFSM (заменены Pipeline FSM), ReviewGenerationFSM (F17 deferred to v3), CompetitorAnalysisFSM (F39 deferred to v3).
 
 ---
 
@@ -31,17 +33,6 @@ class KeywordGenerationFSM(StatesGroup):
     clustering = State()     # AI кластеризация через keywords_cluster.yaml (~10с), task_type="keywords"
     enriching = State()      # DataForSEO enrich_keywords (~2с), no AI call
     results = State()        # Показ результатов: кластеры с объёмами
-
-# routers/publishing/preview.py
-class ArticlePublishFSM(StatesGroup):
-    confirm_cost = State()   # Подтверждение стоимости
-    generating = State()     # Генерация (ожидание)
-    preview = State()        # Предпросмотр: [Опубликовать/Перегенерировать/Отмена]
-    publishing = State()     # Публикация в процессе (защита от двойного нажатия, E07)
-    regenerating = State()   # Перегенерация (ожидание)
-
-# Примечание: ArticlePublishFSM используется ТОЛЬКО для WordPress (с Telegraph-превью).
-# Для Telegram/VK/Pinterest используется SocialPostPublishFSM (без Telegraph).
 
 # routers/publishing/scheduler.py
 class ScheduleSetupFSM(StatesGroup):
@@ -76,28 +67,13 @@ class ConnectPinterestFSM(StatesGroup):
 
 # routers/categories/prices.py
 class PriceInputFSM(StatesGroup):
-    choose_method = State()  # Текст или Excel?
-    text_input = State()     # Ввод текста
-    file_upload = State()    # Загрузка Excel
-
-# routers/categories/reviews.py
-class ReviewGenerationFSM(StatesGroup):
-    quantity = State()       # 3/5/10 отзывов
-    confirm_cost = State()   # Подтверждение стоимости (N × 10 токенов, проверка баланса)
-    generating = State()     # Генерация (ожидание)
-    review = State()         # Просмотр: [Сохранить/Перегенерировать/Отмена]
+    text_input = State()     # Ввод текста (метод выбран callback-кнопкой до входа в FSM)
+    file_upload = State()    # Загрузка Excel (метод выбран callback-кнопкой до входа в FSM)
 
 # routers/categories/manage.py
 class DescriptionGenerateFSM(StatesGroup):
     confirm = State()        # Подтверждение стоимости (20 токенов)
     review = State()         # Просмотр результата: [Сохранить/Перегенерировать/Отмена]
-
-# routers/analysis.py
-class CompetitorAnalysisFSM(StatesGroup):
-    url = State()            # Ввод URL конкурента
-    confirm = State()        # Подтверждение стоимости (50 токенов)
-    analyzing = State()      # Анализ (ожидание: Firecrawl scrape + AI analysis)
-    results = State()        # Просмотр результатов: [Сохранить/К проекту]
 
 # routers/categories/manage.py
 class CategoryCreateFSM(StatesGroup):
@@ -126,7 +102,8 @@ class ArticlePipelineFSM(StatesGroup):
     readiness_keywords_qty = State()       # Inline: ключевые фразы — количество
     readiness_keywords_generating = State() # Inline: генерация ключевиков
     readiness_description = State()        # Inline: описание категории
-    configure_images = State()     # Шаг 4d: настройка изображений
+    readiness_prices = State()             # Inline: ввод цен (текст/Excel)
+    readiness_photos = State()     # Шаг 4d: настройка AI-изображений (количество, стиль)
     confirm_cost = State()         # Шаг 5: подтверждение стоимости
     generating = State()           # Шаг 6: генерация
     preview = State()              # Шаг 7: предпросмотр (Telegraph)
@@ -141,8 +118,9 @@ class SocialPipelineFSM(StatesGroup):
     create_project_spec = State()  # Inline: создание проекта — специализация
     create_project_url = State()   # Inline: создание проекта — URL
     select_connection = State()    # Шаг 2: выбор подключения (конкретный канал/группа, НЕ платформа)
-    connect_tg_token = State()     # Inline: подключение Telegram — токен канала
-    connect_tg_verify = State()    # Inline: подключение Telegram — верификация
+    connect_tg_channel = State()   # Inline: подключение Telegram — ссылка на канал (@channel / t.me/)
+    connect_tg_token = State()     # Inline: подключение Telegram — токен бота
+    connect_tg_verify = State()    # Inline: подключение Telegram — верификация (бот = админ канала)
     connect_vk_token = State()     # Inline: подключение VK — токен
     connect_vk_group = State()     # Inline: подключение VK — выбор группы
     connect_pinterest_oauth = State()  # Inline: подключение Pinterest — OAuth редирект
@@ -162,14 +140,6 @@ class SocialPipelineFSM(StatesGroup):
     regenerating = State()         # Перегенерация (аналогично ArticlePipeline)
     cross_post_review = State()    # Кросс-постинг: ревью адаптации (E52)
     cross_post_publishing = State() # Кросс-постинг: публикация
-
-# routers/publishing/social.py (вызывается из pipeline и из карточки категории)
-class SocialPostPublishFSM(StatesGroup):
-    confirm_cost = State()   # Подтверждение стоимости
-    generating = State()     # Генерация (ожидание)
-    review = State()         # Просмотр: [Опубликовать/Перегенерировать/Отмена]
-    publishing = State()     # Публикация в процессе
-    regenerating = State()   # Перегенерация (защита от двойного нажатия)
 
 # routers/categories/keywords.py
 class KeywordUploadFSM(StatesGroup):
@@ -202,14 +172,14 @@ class KeywordUploadFSM(StatesGroup):
 
 ### 2.1 Хранение промежуточных данных в FSM
 
-**SocialPostPublishFSM:** Сгенерированный контент (текст + хештеги) хранится в `state.data["generated_content"]` (Redis, TTL = FSM_TTL). Это означает:
+**SocialPipelineFSM:** Сгенерированный контент (текст + хештеги) хранится в `state.data["generated_content"]` (Redis, TTL = FSM_TTL). Это означает:
 - При таймауте 30 мин → контент теряется, токены НЕ возвращаются (для дешёвых соц. постов ~40 токенов — допустимо)
 - При Redis TTL 24ч → аналогично
 - Для **дорогих** операций (статьи, 320+ токенов) используется `article_previews` в PostgreSQL — устойчиво к перезапуску
 
 > **Принцип:** Redis для дешёвых данных (<50 токенов, потеря допустима), PostgreSQL для дорогих (>100 токенов, нужен refund при сбое). Это намеренное решение — не унифицируем ради простоты.
 
-**ArticlePublishFSM:** Контент НЕ хранится в FSM. Вместо этого:
+**ArticlePipelineFSM:** Контент НЕ хранится в FSM. Вместо этого:
 - `article_previews.id` сохраняется в `state.data["preview_id"]`
 - Сам контент — в PostgreSQL (`article_previews.content_html`, `article_previews.images`)
 - Изображения: генерация → in-memory → WebP-конвертация → Supabase Storage `content-images` (24ч TTL) → публикация на платформу. `article_previews.images` хранит `[{url, storage_path, width, height}]`
@@ -219,15 +189,15 @@ class KeywordUploadFSM(StatesGroup):
 
 Следующие фичи реализуются через inline-кнопки (callback_data), НЕ через FSM StatesGroup:
 - **F16/F41 (Настройки текста/изображений):** toggle-кнопки на экране категории. Нет пользовательского ввода — только выбор из предложенных опций
-- **F23 (Медиа-галерея):** загрузка медиа реализуется в рамках существующих FSM (ProjectCreateFSM, CategoryCreateFSM) как опциональный шаг, не отдельный StatesGroup
-- **Pipeline (Goal-Oriented):** Заменяет Quick Publish. ArticlePipelineFSM и SocialPipelineFSM реализуют полный flow с inline handlers для sub-flows (через Service Layer). Callback-based навигация до FSM не используется — pipeline сам управляет состояниями
+- **Пресеты расписания:** callback-кнопки [1р/нед] [3р/нед] [Каждый день] (см. UX_TOOLBOX §13). При выборе пресета — создание расписания без FSM. ScheduleSetupFSM используется только для ручной настройки
+- **Pipeline (Goal-Oriented):** ArticlePipelineFSM и SocialPipelineFSM реализуют полный flow с inline handlers для sub-flows (через Service Layer). Callback-based навигация до FSM не используется — pipeline сам управляет состояниями
 
 ### 2.2 Лимиты перегенерации
 
 | FSM | Бесплатных перегенераций | После лимита | Хранение счётчика |
 |-----|-------------------------|-------------|-------------------|
-| ArticlePublishFSM | 2 | Новый платный цикл (~320 токенов) | `article_previews.regeneration_count` (PostgreSQL) |
-| SocialPostPublishFSM | 2 | Новый платный цикл (~40 токенов) | `state.data["regeneration_count"]` (Redis) |
+| ArticlePipelineFSM | 2 | Новый платный цикл (~320 токенов) | `article_previews.regeneration_count` (PostgreSQL) |
+| SocialPipelineFSM | 2 | Новый платный цикл (~40 токенов) | `state.data["regeneration_count"]` (Redis) |
 | DescriptionGenerateFSM | 2 | Новый платный цикл (~20 токенов) | `state.data["regeneration_count"]` (Redis) |
 
 Стоимость перегенерации фиксируется на уровне первой генерации (даже если AI сгенерировал больше/меньше слов).
@@ -239,9 +209,9 @@ class KeywordUploadFSM(StatesGroup):
 | FSM | Шаг | Ожидаемый ввод | Валидация | При ошибке |
 |-----|-----|----------------|-----------|------------|
 | ProjectCreateFSM | name | Текст | 2-100 символов, без спецсимволов | "Введите название от 2 до 100 символов" |
-| ProjectCreateFSM | company_name | Текст | 2-200 символов | Аналогично |
-| ProjectCreateFSM | specialization | Текст | 5-500 символов | "Опишите подробнее (мин. 5 символов)" |
-| ProjectCreateFSM | website_url | Текст или "Пропустить" | URL-формат (http/https) или кнопка [Пропустить] | "Введите корректный URL или нажмите Пропустить" |
+| ProjectCreateFSM | company_name | Текст | 2-255 символов | "Введите название от 2 до 255 символов" |
+| ProjectCreateFSM | specialization | Текст | 2-500 символов | "Опишите специализацию (мин. 2 символа)" |
+| ProjectCreateFSM | website_url | Текст | URL-формат (http/https) или «нет»/«-»/пустая строка | "Введите URL сайта или напишите «нет»" |
 | ConnectWordPressFSM | url | Текст | URL с http/https, проверка доступности | "Сайт недоступен. Проверьте URL" |
 | ConnectWordPressFSM | login | Текст | 1-100 символов | "Введите логин WordPress" |
 | ConnectWordPressFSM | password | Текст | Формат App Password (xxxx xxxx xxxx xxxx) | "Введите Application Password из WordPress" |
@@ -253,10 +223,8 @@ class KeywordUploadFSM(StatesGroup):
 | ScheduleSetupFSM | select_days | Кнопки (множ. выбор) | Мин. 1 день | "Выберите хотя бы один день" |
 | PriceInputFSM | text_input | Текст | Формат "Название — Цена" per line, мин. 1 строка | "Формат: Товар — Цена (каждый с новой строки)" |
 | DescriptionGenerateFSM | confirm | Кнопка | Только [Да, сгенерировать] / [Отмена] | Показать кнопки повторно |
-| CompetitorAnalysisFSM | url | Текст | URL-формат (http/https), проверка доступности | "Введите корректный URL сайта конкурента" |
 | CategoryCreateFSM | name | Текст | 2-100 символов, без спецсимволов | "Введите название от 2 до 100 символов" |
 | ProjectEditFSM | field_value | Текст/URL | Зависит от поля (state.data["field_name"]): URL для website_url, email для company_email, phone для company_phone, 2-500 символов для текстовых | "Некорректный формат для поля {field_name}" |
-| SocialPostPublishFSM | confirm_cost | Кнопка | Только [Да, сгенерировать] / [Отмена] | Показать кнопки повторно |
 | KeywordUploadFSM | file_upload | Документ | .txt файл, UTF-8, макс. 1 МБ, одна фраза на строку, макс. 500 фраз | "Загрузите TXT-файл (UTF-8), одна фраза на строку. Макс. 500 фраз, 1 МБ" |
 | PriceInputFSM | file_upload | Документ | .xlsx файл, макс. 1000 строк, 5 МБ. Колонки: A=Название, B=Цена, C=Описание (опц.) | "Загрузите Excel (.xlsx), макс. 1000 строк, 5 МБ" |
 | ScheduleSetupFSM | select_days | Кнопки (множ. выбор) | Мин. 1 день выбран | "Выберите хотя бы один день" |
@@ -277,42 +245,10 @@ class KeywordUploadFSM(StatesGroup):
 
 **Общая конвенция:** `/cancel` из любого состояния → `CLEAR_STATE` + возврат в меню. Таймаут 30 мин → `CLEAR_STATE` + "Сессия истекла".
 
-### ArticlePublishFSM (WordPress)
-
-```
-[Кнопка "Опубликовать" в категории]
-  │
-  ▼
-confirm_cost ──[Да, сгенерировать]──► generating ──[AI завершил]──► preview
-  │                                      │                           │
-  [Отмена]                              [Ошибка AI]                 ├──[Опубликовать]──► publishing ──► CLEAR_STATE + лог
-  │                                      │                           │                      │
-  ▼                                      ▼                           [Перегенерировать]    [Ошибка]──► preview + сообщение
-CLEAR_STATE                     CLEAR_STATE + возврат токенов        │
-                                                                     ▼
-                                                                  regenerating ──[AI завершил]──► preview
-                                                                     │
-                                                                    [Ошибка AI]──► preview + сообщение
-```
-
-### SocialPostPublishFSM (Telegram / VK / Pinterest)
-
-```
-[Callback: pipeline:social:{conn_id}:confirm или из карточки категории]
-  │
-  ▼
-confirm_cost ──[Да]──► generating ──[OK]──► review
-  │                       │                  │
-  [Отмена]              [Ошибка]            ├──[Опубликовать]──► publishing ──► CLEAR_STATE
-  ▼                       ▼                  ├──[Перегенерировать]──► regenerating ──[OK]──► review
-CLEAR_STATE         CLEAR_STATE              [Отмена]──► CLEAR_STATE
-                    + возврат токенов
-```
-
 ### ProjectCreateFSM (быстрый старт)
 
 ```
-name ──[валидный текст]──► company_name ──[валидный текст]──► specialization ──[валидный текст]──► website_url ──[URL или Пропустить]──► CLEAR_STATE + сохранение
+name ──[валидный текст]──► company_name ──[валидный текст]──► specialization ──[валидный текст]──► website_url ──[URL или «нет»]──► CLEAR_STATE + сохранение
   │                           │                                  │                                   │
   [невалидный]               [невалидный]                      [невалидный]                        [невалидный URL]
   └── повтор запроса          └── повтор запроса                └── повтор запроса                   └── повтор запроса
@@ -378,7 +314,7 @@ products ──[валидный текст]──► geography ──[вали�
 - `fetching`: "Получаю реальные поисковые фразы из Google... (3 сек)"
 - `clustering`: "Группирую фразы по поисковому интенту... (10 сек)"
 - `enriching`: "Обогащаю данные: объём, сложность, CPC... (2 сек)"
-- `results`: показать кластеры (compact формат, см. USER_FLOWS)
+- `results`: показать кластеры (compact формат, см. UX_TOOLBOX §9)
 
 **E03 Fallback:** Если DataForSEO недоступен на шаге `fetching` → AI генерирует фразы "из головы" (legacy keywords.yaml v2), без кластеризации. Предупредить: "Данные без реальных объёмов поиска".
 
@@ -391,24 +327,6 @@ file_upload ──[TXT файл OK]──► enriching ──[DataForSEO OK]─�
   └── повтор запроса                      └── CLEAR_STATE                    └── CLEAR_STATE
 ```
 
-### CompetitorAnalysisFSM
-
-```
-[Кнопка "Анализ конкурента" в проекте]
-  │
-  ▼
-url ──[валидный URL]──► confirm ──[Да, анализировать (50 токенов)]──► analyzing ──[OK]──► results
-  │                        │                                             │                │
-  [невалидный URL]        [Отмена]                                     [E31/ошибка]      ├──[Сохранить]──► CLEAR_STATE + лог
-  └── повтор запроса       ▼                                             ▼                [К проекту]──► CLEAR_STATE
-                        CLEAR_STATE                              CLEAR_STATE
-                                                                 + возврат токенов
-```
-
-**Pipeline:** Firecrawl /scrape → AI анализ (task_type="competitor_analysis") → структурированный результат (позиционирование, преимущества, рекомендации).
-**E31:** Если Firecrawl недоступен → возврат токенов, "Анализ конкурентов недоступен. Попробуйте позже."
-**E38:** Если баланс < 50 → "Недостаточно токенов. Нужно 50, у вас {balance}. [Пополнить]"
-
 **Пост-обработка загруженных фраз:**
 1. Парсирование TXT: одна фраза на строку, валидация (не пусто, ≤100 символов/фраза)
 2. DataForSEO `enrich_keywords()` → volume, difficulty, CPC
@@ -417,7 +335,7 @@ url ──[валидный URL]──► confirm ──[Да, анализир�
 5. При E03 на `enriching` → skip `clustering`, сохранить в legacy-формате (плоский список без volume/difficulty), предупредить: "Данные без объёмов поиска"
 6. При AI error на `clustering` → сохранить как один кластер (все фразы, cluster_name = category_name), volume/difficulty из enrichment
 
-### ArticlePipelineFSM (Goal-Oriented Pipeline: статьи)
+### ArticlePipelineFSM (Goal-Oriented Pipeline: статьи, 25 состояний)
 
 > Подробное описание: [UX_PIPELINE.md](UX_PIPELINE.md) §4.1, §12, §13
 
@@ -446,6 +364,12 @@ create_project_url ──► select_wp   validate ──► select_category     
                                                                                                 ▼
                                                                                             readiness_check (обновлён)
 
+  readiness_check sub-flows (полный чеклист):
+  ├── readiness_keywords_products → _geo → _qty → _generating → readiness_check (обяз.)
+  ├── readiness_description → readiness_check (обяз. для новых)
+  ├── readiness_prices → readiness_check (опц.)
+  └── readiness_photos → readiness_check (опц., дефолт: 4 AI-изображения)
+
 confirm_cost ──[Да]──► generating ──[OK]──► preview
   │                       │                   │
   [Отмена]              [Ошибка]             ├──[Опубликовать]──► publishing ──► CLEAR_STATE + лог
@@ -460,27 +384,28 @@ CLEAR_STATE         CLEAR_STATE              [Отмена — вернуть т
 
 **Exit protection:** На шагах 4-7 кнопка [Назад] требует подтверждения: "Вы уверены? Прогресс сохранится." (E49).
 
-### SocialPipelineFSM (Goal-Oriented Pipeline: соц. посты, 27 состояний)
+### SocialPipelineFSM (Goal-Oriented Pipeline: соц. посты, 28 состояний)
 
 > Подробное описание: [UX_PIPELINE.md](UX_PIPELINE.md) §5.1, §11
 
 ```
-[CTA "Опубликовать пост" на Dashboard]
+[CTA "Создать пост в соцсети" на Dashboard]
   │
   ▼
 select_project ──[выбрал]──► select_connection ──[подключение]──► select_category ──[выбрал]──► readiness_check
   │                              │                                  │                            │
   [Нет проектов]                [Нет подключений]                 [Нет категорий]              [Готово]
   ▼                              ▼                                  ▼                            ▼
-create_project_name          [Подключить TG] → connect_tg_token  create_category_name        confirm_cost ──[Да]──► generating ──[OK]──► review
-  → _company → _spec           → connect_tg_verify                 → select_category            │                       │                │
-  → _url → select_project    [Подключить VK] → connect_vk_token   (автовозврат)                [Отмена]              [Ошибка]          ├──[Опубликовать]──► publishing ──► CLEAR_STATE + результат
-  (автовозврат)                → connect_vk_group                                              ▼                       ▼                ├──[Перегенерировать]──► regenerating ──► review
-                             [Подключить Pin] → connect_pinterest                           CLEAR_STATE          CLEAR_STATE            [Отмена]──► CLEAR_STATE + refund
-                               _oauth → _board                                                                   + refund
-                             (автовозврат в pipeline)                                                                                   (на экране результата)
-                                                                                                                                        ├──[Кросс-пост для VK]──► cross_post_review
-  readiness_check sub-flows (inline, сокращённый чеклист):                                                                              └──[Ещё пост] / [Главное меню]
+create_project_name          [Подключить TG] → connect_tg_channel create_category_name        confirm_cost ──[Да]──► generating ──[OK]──► review
+  → _company → _spec           → connect_tg_token                   → select_category            │                       │                │
+  → _url → select_project        → connect_tg_verify                (автовозврат)                [Отмена]              [Ошибка]          ├──[Опубликовать]──► publishing ──► CLEAR_STATE + результат
+  (автовозврат)              [Подключить VK] → connect_vk_token                                  ▼                       ▼                ├──[Перегенерировать]──► regenerating ──► review
+                               → connect_vk_group                                             CLEAR_STATE          CLEAR_STATE            [Отмена]──► CLEAR_STATE + refund
+                             [Подключить Pin] → connect_pinterest                                                   + refund
+                               _oauth → _board                                                                                           (на экране результата)
+                             (автовозврат в pipeline)                                                                                     ├──[Кросс-пост для VK]──► cross_post_review
+                                                                                                                                          └──[Ещё пост] / [Главное меню]
+  readiness_check sub-flows (inline, сокращённый чеклист):
   ├── readiness_keywords_products → _geo → _qty → _generating → readiness_check
   └── readiness_description → readiness_check
 
