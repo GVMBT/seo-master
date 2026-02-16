@@ -1,6 +1,6 @@
 # SEO Master Bot v2 — API-контракты и интеграции
 
-> Связанные документы: [PRD.md](PRD.md) (продуктовые требования), [ARCHITECTURE.md](ARCHITECTURE.md) (техническая архитектура), [FSM_SPEC.md](FSM_SPEC.md) (FSM-состояния), [EDGE_CASES.md](EDGE_CASES.md) (обработка ошибок), [USER_FLOWS_AND_UI_MAP.md](USER_FLOWS_AND_UI_MAP.md) (экраны и навигация)
+> Связанные документы: [PRD.md](PRD.md) (продуктовые требования), [ARCHITECTURE.md](ARCHITECTURE.md) (техническая архитектура), [FSM_SPEC.md](FSM_SPEC.md) (FSM-состояния), [EDGE_CASES.md](EDGE_CASES.md) (обработка ошибок), [UX_PIPELINE.md](UX_PIPELINE.md) + [UX_TOOLBOX.md](UX_TOOLBOX.md) (UX-спецификации)
 
 ---
 
@@ -1209,15 +1209,15 @@ def check_fabricated_data(html: str, prices_excerpt: str, advantages: str) -> li
 
 ### 3.8 ~~Быстрая публикация (F42)~~ → Goal-Oriented Pipeline
 
-> **Замена:** Quick Publish заменён на Goal-Oriented Pipeline (см. [PIPELINE_UX_PROPOSAL.md](PIPELINE_UX_PROPOSAL.md) v1.7).
-> Новые FSM: `ArticlePipelineFSM` (23 состояния), `SocialPipelineFSM` (10 состояний).
+> **Замена:** Quick Publish заменён на Goal-Oriented Pipeline (см. [UX_PIPELINE.md](UX_PIPELINE.md)).
+> Новые FSM: `ArticlePipelineFSM` (23 состояния), `SocialPipelineFSM` (27 состояний).
 > Новые callback_data: `pipeline:article:*`, `pipeline:social:*`.
 
 Pipeline использует FSM (не callback-based), т.к. включает inline sub-flows с пользовательским вводом (readiness check).
 
 ```
 ArticlePipelineFSM: select_project → select_wp → select_category → readiness_check → confirm_cost → generating → preview → publishing
-SocialPipelineFSM: select_project → select_platform → select_category → readiness_check → confirm_cost → generating → review → publishing
+SocialPipelineFSM: select_project → select_connection → select_category → readiness_check → confirm_cost → generating → review → publishing
 ```
 
 - ArticlePipeline: WordPress → Telegraph-превью → публикация
@@ -1388,6 +1388,10 @@ def sanitize_variables(context: dict) -> dict:
          → H1, H2×3-6, H3 при необходимости, FAQ вопросы, ключевые тезисы
 Шаг 6.  EXPAND: Claude расширяет outline в полную статью (article_v7.yaml)
          → Markdown-формат, images_meta, faq_schema
+Шаг 6a. BLOCK SPLIT: разбить текст на логические блоки (по H2/H3)
+         → distribute_images(blocks, images_count) → block_indices
+         → для каждого block_index: извлечь block_context (первые 200 слов секции)
+         → запустить N image-промптов параллельно (block_context + image_settings)
 Шаг 7.  ContentQualityScorer (§3.7): программная оценка качества
          → score >= 80: pass | score 60-79: warn | score < 40: block
 Шаг 8.  CONDITIONAL CRITIQUE: если score < 80:
@@ -1395,7 +1399,7 @@ def sanitize_variables(context: dict) -> dict:
          → ~30% статей, +$0.02 avg cost
 Шаг 9.  Markdown → HTML: mistune + SEORenderer (§5.1)
          → auto heading IDs, ToC, figure/figcaption, lazy loading, branding CSS
-Шаг 10. Telegraph-превью → публикация (текст и изображения параллельно на шаге 6)
+Шаг 10. Telegraph-превью → публикация (изображения вставляются в соответствующие блоки текста)
 ```
 
 **Стоимость multi-step:**
@@ -2380,13 +2384,53 @@ response = await client.chat.completions.create(
 
 #### 7.4.1 Генерация нескольких изображений (count > 1)
 
+**Блочная привязка (block-aware generation):** Изображения генерируются не абстрактно "к статье", а привязаны к конкретным логическим блокам (H2-секциям) текста. Промпт каждого изображения строится из контекста ближайшего блока.
+
+**Стратегия распределения по блокам:**
+
+После генерации текста (шаг 6) статья разбивается на логические блоки (по H2/H3 заголовкам). Изображения распределяются равномерно по значимым блокам:
+
+```python
+def distribute_images(blocks: list[dict], images_count: int) -> list[int]:
+    """Return block indices where images should be placed.
+    
+    blocks: [{heading: str, content: str, level: int}, ...]
+    Returns: sorted list of block indices (0-based).
+    """
+    if images_count == 0 or not blocks:
+        return []
+    # Skip intro (block 0) and conclusion (last block) when possible
+    candidate_blocks = list(range(len(blocks)))
+    if len(candidate_blocks) > images_count + 1:
+        candidate_blocks = candidate_blocks[1:-1]  # exclude intro/conclusion
+    # Evenly spaced selection
+    step = max(1, len(candidate_blocks) / images_count)
+    indices = []
+    for i in range(min(images_count, len(candidate_blocks))):
+        idx = candidate_blocks[int(i * step)]
+        indices.append(idx)
+    return sorted(indices)
+```
+
+| images_count | Статья из 6 блоков | Позиции |
+|-------------|-------------------|---------|
+| 1 | Hero после первого H2 | [1] |
+| 2 | Hero + середина | [1, 3] |
+| 3 | Через ~2 блока | [1, 2, 3] |
+| 4 | Равномерно | [1, 2, 3, 4] |
+
+**Контекстный промпт:** Каждое изображение получает `block_context` — краткое содержание блока, к которому оно привязано. Это заменяет generic-промпт по теме статьи на точный контекст раздела.
+
 **Стратегия вариативности:** Каждый запрос из N получает модифицированный промпт:
-- Изображение 1: базовый промпт (основной ракурс)
-- Изображение 2+: добавляется суффикс `"Покажи с другого ракурса: {angle}"`, где angle берётся из `image_settings.angles` (round-robin) или из предустановленного списка `["крупный план", "общий план", "детали", "в контексте использования"]`
+- `block_context`: текст H2-секции (первые 200 слов), к которой привязано изображение
+- Изображение 1: базовый промпт + block_context (hero, 16:9)
+- Изображение 2+: block_context + суффикс `"Покажи с другого ракурса: {angle}"`, где angle берётся из `image_settings.angles` (round-robin) или из предустановленного списка `["крупный план", "общий план", "детали", "в контексте использования"]`
 
-**Выбор aspect_ratio:** Если `formats` содержит несколько значений (напр. `["16:9", "1:1"]`), каждый запрос получает следующий формат по round-robin. Если один формат — все изображения одинаковые.
+**Выбор aspect_ratio:** Если `formats` содержит несколько значений (напр. `["16:9", "1:1"]`), каждый запрос получает следующий формат по round-robin. Если один формат — все изображения одинаковые. При Smart Aspect Ratio (§7.6): первое изображение = hero (16:9), остальные = content (4:3).
 
-**Partial failure:** Запросы выполняются через `asyncio.gather(return_exceptions=True)`. Если K из N изображений успешны (K ≥ 1) — продолжить с K изображениями, предупредить: "Сгенерировано {K} из {N} изображений". Если все N провалились — fallback на следующую модель из `MODEL_CHAINS["image"]`. Если вся цепочка исчерпана — возврат 30×N токенов, уведомление об ошибке.
+**Параллельная генерация:** Все N запросов запускаются одновременно через `asyncio.gather(return_exceptions=True)` — каждый бандл (block_context + image prompt) независим.
+
+**Partial failure:** Если K из N изображений успешны (K >= 1) — продолжить с K изображениями, перераспределить оставшиеся по блокам, предупредить: "Сгенерировано {K} из {N} изображений". Если все N провалились — fallback на следующую модель из `MODEL_CHAINS["image"]`. Если вся цепочка исчерпана — возврат 30*N токенов, уведомление об ошибке.
 
 ### 7.5 Промпт-шаблон (image.yaml)
 
@@ -2399,6 +2443,10 @@ meta:
 
 user: |
   Сгенерируй изображение для <<content_type>> на тему "<<keyword>>".
+  <% if block_context %>
+  Контекст раздела статьи, к которому привязано изображение:
+  <<block_context>>
+  <% endif %>
   
   Компания: <<company_name>> (<<specialization>>).
   Стиль: <<style>>. Тональность: <<tone>>.
@@ -2474,6 +2522,10 @@ variables:
     default: ""
   - name: variation_hint
     source: round-robin из image_settings.angles или ["крупный план", "общий план", "детали", "в контексте использования"]
+    required: false
+    default: ""
+  - name: block_context
+    source: первые 200 слов H2-секции, к которой привязано изображение (§7.4.1 distribute_images)
     required: false
     default: ""
   - name: niche_style

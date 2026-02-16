@@ -5,7 +5,7 @@ paths:
 
 # Pipeline Rules (Goal-Oriented Pipeline)
 
-## Архитектура (PIPELINE_UX_PROPOSAL.md v1.7)
+## Архитектура (UX_PIPELINE.md)
 
 Pipeline — воронка "Написать статью" / "Пост в соцсети". Заменяет Quick Publish.
 

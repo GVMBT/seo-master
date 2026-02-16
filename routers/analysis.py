@@ -1,6 +1,6 @@
 """Router: PageSpeed audit (callback-based) + CompetitorAnalysisFSM.
 
-Spec: docs/USER_FLOWS_AND_UI_MAP.md level 3 "Анализ сайта"
+Spec: docs/UX_TOOLBOX.md level 3 "Анализ сайта"
 FSM: docs/FSM_SPEC.md section 1 (CompetitorAnalysisFSM, 4 states)
 Edge cases: E31 (Firecrawl unavailable), E38 (insufficient balance)
 """

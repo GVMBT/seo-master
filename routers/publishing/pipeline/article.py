@@ -3,7 +3,7 @@
 Phase 13A: steps 1-3 (select project/WP/category), 5-8 (confirm/generate/preview/publish).
 Readiness check (step 4) + inline sub-flows -> Phase 13B.
 
-PIPELINE_UX_PROPOSAL.md section 4.1, section 12, section 13 Phase A
+UX_PIPELINE.md section 4.1, section 12, section 13 Phase A
 FSM_SPEC.md: ArticlePipelineFSM (23 states)
 """
 

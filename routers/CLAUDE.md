@@ -33,4 +33,4 @@ ArticlePublish(5), SocialPostPublish(5),
 ScheduleSetup(3), DescriptionGenerate(2), ReviewGeneration(4),
 CompetitorAnalysis(4), PriceInput(3),
 ConnectWordPress(3), ConnectTelegram(2), ConnectVK(2), ConnectPinterest(2),
-ArticlePipeline(23), SocialPipeline(10)
+ArticlePipeline(23), SocialPipeline(27)

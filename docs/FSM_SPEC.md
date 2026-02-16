@@ -1,6 +1,6 @@
 # SEO Master Bot v2 — FSM-спецификация
 
-> Связанные документы: [ARCHITECTURE.md](ARCHITECTURE.md) (техническая архитектура), [API_CONTRACTS.md](API_CONTRACTS.md) (API-контракты), [EDGE_CASES.md](EDGE_CASES.md) (обработка ошибок), [USER_FLOWS_AND_UI_MAP.md](USER_FLOWS_AND_UI_MAP.md) (экраны и навигация)
+> Связанные документы: [ARCHITECTURE.md](ARCHITECTURE.md) (техническая архитектура), [API_CONTRACTS.md](API_CONTRACTS.md) (API-контракты), [EDGE_CASES.md](EDGE_CASES.md) (обработка ошибок), [UX_PIPELINE.md](UX_PIPELINE.md) + [UX_TOOLBOX.md](UX_TOOLBOX.md) (UX-спецификации)
 
 Все FSM-мастера используют Aiogram 3 StatesGroup с хранением в Redis (Upstash).
 
@@ -136,14 +136,31 @@ class ArticlePipelineFSM(StatesGroup):
 # routers/publishing/pipeline/social.py (Goal-Oriented Pipeline: соц. посты)
 class SocialPipelineFSM(StatesGroup):
     select_project = State()       # Шаг 1: выбор проекта
-    select_platform = State()      # Шаг 2: выбор платформы
+    create_project_name = State()  # Inline: создание проекта — название
+    create_project_company = State()  # Inline: создание проекта — компания
+    create_project_spec = State()  # Inline: создание проекта — специализация
+    create_project_url = State()   # Inline: создание проекта — URL
+    select_connection = State()    # Шаг 2: выбор подключения (конкретный канал/группа, НЕ платформа)
+    connect_tg_token = State()     # Inline: подключение Telegram — токен канала
+    connect_tg_verify = State()    # Inline: подключение Telegram — верификация
+    connect_vk_token = State()     # Inline: подключение VK — токен
+    connect_vk_group = State()     # Inline: подключение VK — выбор группы
+    connect_pinterest_oauth = State()  # Inline: подключение Pinterest — OAuth редирект
+    connect_pinterest_board = State()  # Inline: подключение Pinterest — выбор доски
     select_category = State()      # Шаг 3: выбор категории
-    readiness_check = State()      # Шаг 4: чеклист готовности
+    create_category_name = State() # Inline: создание категории — название
+    readiness_check = State()      # Шаг 4: чеклист готовности (сокращённый: ключевики + описание)
+    readiness_keywords_products = State()  # Inline: ключевые фразы — товары
+    readiness_keywords_geo = State()       # Inline: ключевые фразы — география
+    readiness_keywords_qty = State()       # Inline: ключевые фразы — количество
+    readiness_keywords_generating = State() # Inline: генерация ключевиков
+    readiness_description = State()        # Inline: описание категории
     confirm_cost = State()         # Шаг 5: подтверждение стоимости
     generating = State()           # Шаг 6: генерация
-    review = State()               # Шаг 7: предпросмотр
-    publishing = State()           # Шаг 8: публикация
-    cross_post_review = State()    # Кросс-постинг: ревью адаптации
+    review = State()               # Шаг 6→7: ревью сгенерированного поста
+    publishing = State()           # Шаг 7: публикация → результат + кросс-постинг
+    regenerating = State()         # Перегенерация (аналогично ArticlePipeline)
+    cross_post_review = State()    # Кросс-постинг: ревью адаптации (E52)
     cross_post_publishing = State() # Кросс-постинг: публикация
 
 # routers/publishing/social.py (вызывается из pipeline и из карточки категории)
@@ -402,7 +419,7 @@ url ──[валидный URL]──► confirm ──[Да, анализир�
 
 ### ArticlePipelineFSM (Goal-Oriented Pipeline: статьи)
 
-> Подробное описание: [PIPELINE_UX_PROPOSAL.md](PIPELINE_UX_PROPOSAL.md) §4.1, §12, §13
+> Подробное описание: [UX_PIPELINE.md](UX_PIPELINE.md) §4.1, §12, §13
 
 ```
 [CTA "Написать статью" на Dashboard]
@@ -443,24 +460,29 @@ CLEAR_STATE         CLEAR_STATE              [Отмена — вернуть т
 
 **Exit protection:** На шагах 4-7 кнопка [Назад] требует подтверждения: "Вы уверены? Прогресс сохранится." (E49).
 
-### SocialPipelineFSM (Goal-Oriented Pipeline: соц. посты)
+### SocialPipelineFSM (Goal-Oriented Pipeline: соц. посты, 27 состояний)
 
-> Подробное описание: [PIPELINE_UX_PROPOSAL.md](PIPELINE_UX_PROPOSAL.md) §5.1, §11
+> Подробное описание: [UX_PIPELINE.md](UX_PIPELINE.md) §5.1, §11
 
 ```
 [CTA "Опубликовать пост" на Dashboard]
   │
   ▼
-select_project ──[выбрал]──► select_platform ──[TG/VK/Pin]──► select_category ──[выбрал]──► readiness_check
-  │                              │                                │                            │
-  [Нет проектов]                [Нет подключений]               [Нет категорий]              [Готово]
-  ▼                              ▼                                ▼                            ▼
-(переход в                    (предложить                     (предложить                  confirm_cost ──[Да]──► generating ──[OK]──► review
-ArticlePipelineFSM             подключить)                     создать)                       │                       │                │
-или inline create)                                                                            [Отмена]              [Ошибка]          ├──[Опубликовать]──► publishing ──► CLEAR_STATE
-                                                                                              ▼                       ▼                ├──[Перегенерировать]──► review
-                                                                                           CLEAR_STATE          CLEAR_STATE            ├──[Кросс-пост]──► cross_post_review
-                                                                                                                + refund               [Отмена]──► CLEAR_STATE
+select_project ──[выбрал]──► select_connection ──[подключение]──► select_category ──[выбрал]──► readiness_check
+  │                              │                                  │                            │
+  [Нет проектов]                [Нет подключений]                 [Нет категорий]              [Готово]
+  ▼                              ▼                                  ▼                            ▼
+create_project_name          [Подключить TG] → connect_tg_token  create_category_name        confirm_cost ──[Да]──► generating ──[OK]──► review
+  → _company → _spec           → connect_tg_verify                 → select_category            │                       │                │
+  → _url → select_project    [Подключить VK] → connect_vk_token   (автовозврат)                [Отмена]              [Ошибка]          ├──[Опубликовать]──► publishing ──► CLEAR_STATE + результат
+  (автовозврат)                → connect_vk_group                                              ▼                       ▼                ├──[Перегенерировать]──► regenerating ──► review
+                             [Подключить Pin] → connect_pinterest                           CLEAR_STATE          CLEAR_STATE            [Отмена]──► CLEAR_STATE + refund
+                               _oauth → _board                                                                   + refund
+                             (автовозврат в pipeline)                                                                                   (на экране результата)
+                                                                                                                                        ├──[Кросс-пост для VK]──► cross_post_review
+  readiness_check sub-flows (inline, сокращённый чеклист):                                                                              └──[Ещё пост] / [Главное меню]
+  ├── readiness_keywords_products → _geo → _qty → _generating → readiness_check
+  └── readiness_description → readiness_check
 
 cross_post_review ──[Подтвердить]──► cross_post_publishing ──► CLEAR_STATE + лог
   │                                      │
@@ -468,5 +490,7 @@ cross_post_review ──[Подтвердить]──► cross_post_publishing 
   ▼                                    (оригинальный пост уже опубликован — E52)
 CLEAR_STATE
 ```
+
+**Inline handlers:** Аналогично ArticlePipelineFSM — SocialPipeline НЕ вызывает существующие FSM (ConnectTelegramFSM, ConnectVKFSM, etc.) как sub-flows. Реализует inline states внутри SocialPipelineFSM, переиспользуя Service Layer (ConnectionService, KeywordService, CategoryRepository).
 
 **Кросс-постинг:** После публикации оригинального поста — предложение адаптировать для других подключённых платформ. AI-адаптация: `task_type="cross_post"`, стоимость `ceil(adapted_word_count / 100) * 10` токенов, images = 0. Обязательный ревью перед публикацией (E52).

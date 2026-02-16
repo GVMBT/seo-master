@@ -1,4 +1,4 @@
-"""Pipeline router package -- Goal-Oriented Pipeline (PIPELINE_UX_PROPOSAL.md)."""
+"""Pipeline router package -- Goal-Oriented Pipeline (UX_PIPELINE.md)."""
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery

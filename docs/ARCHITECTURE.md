@@ -1,6 +1,6 @@
 # SEO Master Bot v2 — Техническая архитектура
 
-> Связанные документы: [PRD.md](PRD.md) (продуктовые требования), [API_CONTRACTS.md](API_CONTRACTS.md) (QStash, Stars, rate limits, сервисные контракты, промпты, ротация фраз), [FSM_SPEC.md](FSM_SPEC.md) (FSM-состояния и валидация), [EDGE_CASES.md](EDGE_CASES.md) (обработка ошибок), [USER_FLOWS_AND_UI_MAP.md](USER_FLOWS_AND_UI_MAP.md) (экраны и навигация)
+> Связанные документы: [PRD.md](PRD.md) (продуктовые требования), [API_CONTRACTS.md](API_CONTRACTS.md) (QStash, Stars, rate limits, сервисные контракты, промпты, ротация фраз), [FSM_SPEC.md](FSM_SPEC.md) (FSM-состояния и валидация), [EDGE_CASES.md](EDGE_CASES.md) (обработка ошибок), [UX_PIPELINE.md](UX_PIPELINE.md) + [UX_TOOLBOX.md](UX_TOOLBOX.md) (UX-спецификации)
 
 ---
 
@@ -70,7 +70,7 @@ seo-master-bot-v2/
 │   │   └── pipeline/               # Goal-Oriented Pipeline (замена Quick Publish)
 │   │       ├── __init__.py          # Регистрация роутеров
 │   │       ├── article.py           # ArticlePipelineFSM (23 состояния, шаги 1-8 + inline sub-flows)
-│   │       ├── social.py            # SocialPipelineFSM (10 состояний, соц. посты + кросс-постинг)
+│   │       ├── social.py            # SocialPipelineFSM (27 состояний, соц. посты + кросс-постинг)
 │   │       └── readiness.py         # Inline readiness handlers (sub-flows через Service Layer)
 │   ├── profile.py                  # Профиль, расходы, реферал
 │   ├── tariffs.py                  # Пакеты + Telegram Stars

@@ -67,7 +67,7 @@ def _format_project_card(
     category_count: int = 0,
     platform_names: list[str] | None = None,
 ) -> str:
-    """Format project info for card display (USER_FLOWS_AND_UI_MAP.md level 2)."""
+    """Format project info for card display (UX_TOOLBOX.md level 2)."""
     filled = _count_filled_fields(project)
     platforms_str = ", ".join(platform_names) if platform_names else "не подключены"
     return (
