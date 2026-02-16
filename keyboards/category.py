@@ -1,4 +1,4 @@
-"""Keyboard builders for category features: description, reviews, prices, media, admin, help."""
+"""Keyboard builders for category features: description, reviews, prices, media."""
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -130,64 +130,3 @@ def media_menu_kb(cat_id: int, has_media: bool) -> InlineKeyboardBuilder:
     return builder
 
 
-# ---------------------------------------------------------------------------
-# Admin keyboards (F20 Admin Panel)
-# ---------------------------------------------------------------------------
-
-
-def admin_dashboard_kb() -> InlineKeyboardBuilder:
-    """Admin dashboard: [Мониторинг] [Сообщения всем] [Затраты API] [Назад]."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="Мониторинг", callback_data="admin:monitoring")
-    builder.button(text="Сообщения всем", callback_data="admin:broadcast")
-    builder.button(text="Затраты API", callback_data="admin:costs")
-    builder.button(text="Назад", callback_data="menu:main")
-    builder.adjust(2, 1, 1)
-    return builder
-
-
-def admin_broadcast_audience_kb() -> InlineKeyboardBuilder:
-    """Broadcast audience selection."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="Всем", callback_data="admin:bc:all")
-    builder.button(text="Активные 7д", callback_data="admin:bc:active_7d")
-    builder.button(text="Активные 30д", callback_data="admin:bc:active_30d")
-    builder.button(text="Платные", callback_data="admin:bc:paid")
-    builder.button(text="Отмена", callback_data="admin:main")
-    builder.adjust(2, 2, 1)
-    return builder
-
-
-def admin_broadcast_confirm_kb(count: int) -> InlineKeyboardBuilder:
-    """Confirm broadcast: [Да, отправить (N чел.)] [Отмена]."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text=f"Да, отправить ({count} чел.)", callback_data="admin:bc:confirm")
-    builder.button(text="Отмена", callback_data="admin:main")
-    builder.adjust(1)
-    return builder
-
-
-# ---------------------------------------------------------------------------
-# Help keyboards (F46 Built-in Help)
-# ---------------------------------------------------------------------------
-
-
-def help_main_kb() -> InlineKeyboardBuilder:
-    """Help sections menu."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="Первое подключение", callback_data="help:connect")
-    builder.button(text="Создание проекта", callback_data="help:project")
-    builder.button(text="Категории", callback_data="help:category")
-    builder.button(text="Публикация", callback_data="help:publish")
-    builder.button(text="Главное меню", callback_data="menu:main")
-    builder.adjust(2, 2, 1)
-    return builder
-
-
-def help_back_kb() -> InlineKeyboardBuilder:
-    """Back to help + main menu."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="Назад к помощи", callback_data="help:main")
-    builder.button(text="Главное меню", callback_data="menu:main")
-    builder.adjust(2)
-    return builder

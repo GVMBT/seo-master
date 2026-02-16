@@ -5,7 +5,10 @@ Edge cases: E08 (VK token revoked), E20 (Pinterest OAuth timeout),
 E21 (Pinterest OAuth error), E30 (CSRF protection via HMAC state).
 """
 
+from __future__ import annotations
+
 import html
+import json
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -22,13 +25,14 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.config import get_settings
 from bot.exceptions import AppError
 from bot.fsm_utils import ensure_no_active_fsm
+from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
 from db.models import PlatformConnection, PlatformConnectionCreate, User
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.reply import cancel_kb, main_menu
-from routers._helpers import guard_callback_message
+from routers._helpers import guard_callback_message, restore_reply_kb
 from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
@@ -420,7 +424,7 @@ async def fsm_wp_password(message: Message, state: FSMContext, user: User, db: S
         reply_markup=_connection_card_kb(conn, project_id).as_markup(),
     )
     # Restore reply keyboard (I3 pattern)
-    await message.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(message, is_admin=user.role == "admin")
 
 
 # ===========================================================================
@@ -559,7 +563,7 @@ async def fsm_telegram_token(message: Message, state: FSMContext, user: User, db
         f"Канал подключен!\n\n{_format_connection_card(conn)}",
         reply_markup=_connection_card_kb(conn, project_id).as_markup(),
     )
-    await message.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(message, is_admin=user.role == "admin")
 
 
 # ===========================================================================
@@ -717,7 +721,7 @@ async def cb_vk_select_group(callback: CallbackQuery, state: FSMContext, user: U
         await msg.edit_text(
             "Не удалось сохранить подключение. Возможно, группа уже подключена.",
         )
-        await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+        await restore_reply_kb(msg, is_admin=user.role == "admin")
         await callback.answer()
         return
 
@@ -725,13 +729,123 @@ async def cb_vk_select_group(callback: CallbackQuery, state: FSMContext, user: U
         f"VK подключен!\n\n{_format_connection_card(conn)}",
         reply_markup=_connection_card_kb(conn, project_id).as_markup(),
     )
-    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(msg, is_admin=user.role == "admin")
     await callback.answer()
 
 
 # ===========================================================================
-# ConnectPinterestFSM (OAuth flow)
+# Pinterest OAuth deep link handler (called from routers/start.py)
 # ===========================================================================
+
+
+async def handle_pinterest_deep_link(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    payload: str,
+) -> None:
+    """Handle /start pinterest_auth_{nonce} — retrieve tokens from Redis, fetch boards.
+
+    Flow: OAuth callback (api/auth.py) stores tokens in Redis → deep link back to bot →
+    this handler retrieves tokens → fetches boards → transitions to select_board FSM.
+    """
+    nonce = payload.removeprefix("pinterest_auth_")
+    if not nonce:
+        await message.answer(
+            "Ошибка авторизации Pinterest. Попробуйте снова.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    # Get tokens from Redis (stored by api/auth.py callback)
+    redis_key = f"pinterest_auth:{nonce}"
+    raw_tokens = await redis.get(redis_key)
+    if not raw_tokens:
+        log.warning("pinterest_auth_tokens_not_found", nonce=nonce, user_id=user.id)
+        await state.clear()
+        await message.answer(
+            "Подключение Pinterest отменено. Время авторизации истекло (E20).\nПопробуйте снова.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    tokens: dict = json.loads(raw_tokens)
+    # Clean up Redis key (one-time use)
+    await redis.delete(redis_key)
+
+    # Fetch boards from Pinterest API
+    access_token = tokens.get("access_token", "")
+    try:
+        resp = await http_client.get(
+            "https://api.pinterest.com/v5/boards",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"page_size": "25"},
+        )
+        if resp.status_code != 200:
+            log.warning("pinterest_boards_fetch_failed", status=resp.status_code, user_id=user.id)
+            await state.clear()
+            await message.answer(
+                "Не удалось получить список досок Pinterest (E21).\nПопробуйте снова.",
+                reply_markup=main_menu(is_admin=user.role == "admin"),
+            )
+            return
+
+        boards_data = resp.json().get("items", [])
+    except Exception as exc:
+        log.warning("pinterest_boards_request_failed", error=str(exc), user_id=user.id)
+        await state.clear()
+        await message.answer(
+            "Не удалось связаться с Pinterest API. Попробуйте позже.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    if not boards_data:
+        await state.clear()
+        await message.answer(
+            "У вас нет досок в Pinterest. Создайте хотя бы одну доску и попробуйте снова.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    # Check FSM state — should be ConnectPinterestFSM.oauth_callback
+    current_state = await state.get_state()
+    fsm_data = await state.get_data()
+
+    # Verify nonce matches (user might have started a new OAuth flow)
+    if current_state != ConnectPinterestFSM.oauth_callback or fsm_data.get("nonce") != nonce:
+        log.warning("pinterest_auth_fsm_mismatch", nonce=nonce, current_state=current_state)
+        await state.clear()
+        await message.answer(
+            "Сессия подключения Pinterest не найдена. Начните подключение заново.",
+            reply_markup=main_menu(is_admin=user.role == "admin"),
+        )
+        return
+
+    # Store tokens and boards in FSM, transition to board selection
+    boards = [{"id": b["id"], "name": b.get("name", f"Board {b['id']}")} for b in boards_data]
+    await state.update_data(pinterest_tokens=tokens, pinterest_boards=boards)
+    await state.set_state(ConnectPinterestFSM.select_board)
+
+    builder = InlineKeyboardBuilder()
+    for b in boards:
+        text = b["name"]
+        if len(text) > 60:
+            text = text[:57] + "..."
+        builder.button(text=text, callback_data=f"pin_board:{b['id']}")
+    builder.adjust(1)
+
+    await message.answer(
+        "Шаг 2/2. Выберите доску для публикации:",
+        reply_markup=builder.as_markup(),
+    )
+
+
+# ===========================================================================
+# ConnectPinterestFSM (OAuth flow)
 
 
 @router.callback_query(F.data.regexp(r"^project:(\d+):add:pinterest$"))
@@ -832,7 +946,7 @@ async def cb_pinterest_select_board(callback: CallbackQuery, state: FSMContext, 
     except Exception:
         log.exception("pinterest_connection_create_error", project_id=project_id)
         await msg.edit_text("Не удалось сохранить подключение Pinterest.")
-        await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+        await restore_reply_kb(msg, is_admin=user.role == "admin")
         await callback.answer()
         return
 
@@ -840,5 +954,5 @@ async def cb_pinterest_select_board(callback: CallbackQuery, state: FSMContext, 
         f"Pinterest подключен!\n\n{_format_connection_card(conn)}",
         reply_markup=_connection_card_kb(conn, project_id).as_markup(),
     )
-    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(msg, is_admin=user.role == "admin")
     await callback.answer()

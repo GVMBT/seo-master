@@ -3,7 +3,7 @@
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
-from keyboards.category import help_back_kb, help_main_kb
+from keyboards.help import help_back_kb, help_main_kb
 from routers._helpers import guard_callback_message
 
 router = Router(name="help")

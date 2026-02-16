@@ -236,7 +236,7 @@ async def test_step4_valid_url(
     await dispatcher.feed_update(mock_bot, update)
 
     all_text = _get_all_text(mock_bot)
-    assert "Test Project" in all_text or "\u200b" in all_text
+    assert "Test Project" in all_text or "\u2800" in all_text
 
     # FSM should be cleared
     state_key = f"fsm:{DEFAULT_USER_ID}:{DEFAULT_USER_ID}:state"
@@ -369,7 +369,7 @@ async def test_full_flow_end_to_end(
 
     all_text = _get_all_text(mock_bot)
     # Project card should be shown
-    assert "Test Project" in all_text or "\u200b" in all_text
+    assert "Test Project" in all_text or "\u2800" in all_text
 
     # FSM should be cleared
     state_key = f"fsm:{DEFAULT_USER_ID}:{DEFAULT_USER_ID}:state"
@@ -422,7 +422,7 @@ async def test_project_create_shows_card_after(
     await dispatcher.feed_update(mock_bot, update)
 
     all_text = _get_all_text(mock_bot)
-    assert "Fresh Project" in all_text or "\u200b" in all_text
+    assert "Fresh Project" in all_text or "\u2800" in all_text
 
 
 async def test_project_create_stores_user_id(

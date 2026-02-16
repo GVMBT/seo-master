@@ -16,8 +16,8 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import category_card_kb, category_delete_confirm_kb, category_list_kb
-from keyboards.reply import cancel_kb, main_menu
-from routers._helpers import guard_callback_message
+from keyboards.reply import cancel_kb
+from routers._helpers import guard_callback_message, restore_reply_kb
 from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
@@ -234,7 +234,7 @@ async def fsm_category_name(message: Message, state: FSMContext, user: User, db:
         reply_markup=category_card_kb(category).as_markup(),
     )
     # Restore reply keyboard after FSM completion (I3)
-    await message.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(message, is_admin=user.role == "admin")
 
 
 # ---------------------------------------------------------------------------

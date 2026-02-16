@@ -10,7 +10,6 @@ from aiogram import F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.config import get_settings
 from cache.client import RedisClient
@@ -171,7 +170,9 @@ async def cmd_start_deep_link(
 
     # Pinterest OAuth: /start pinterest_auth_{nonce}
     if payload.startswith("pinterest_auth_"):
-        await _handle_pinterest_auth(message, state, user, db, redis, http_client, payload)
+        from routers.platforms.connections import handle_pinterest_deep_link
+
+        await handle_pinterest_deep_link(message, state, user, db, redis, http_client, payload)
         return
 
     await _send_dashboard(message, user, db, is_new_user=is_new_user, redis=redis)
@@ -189,119 +190,6 @@ async def cmd_start(
     """Handle plain /start — clear FSM, show dashboard."""
     await state.clear()
     await _send_dashboard(message, user, db, is_new_user=is_new_user, redis=redis)
-
-
-# ---------------------------------------------------------------------------
-# Pinterest OAuth deep link handler
-# ---------------------------------------------------------------------------
-
-
-async def _handle_pinterest_auth(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    http_client: httpx.AsyncClient,
-    payload: str,
-) -> None:
-    """Handle /start pinterest_auth_{nonce} — retrieve tokens from Redis, fetch boards.
-
-    Flow: OAuth callback (api/auth.py) stores tokens in Redis → deep link back to bot →
-    this handler retrieves tokens → fetches boards → transitions to select_board FSM.
-    """
-    from routers.platforms.connections import ConnectPinterestFSM
-
-    nonce = payload.removeprefix("pinterest_auth_")
-    if not nonce:
-        await message.answer(
-            "Ошибка авторизации Pinterest. Попробуйте снова.",
-            reply_markup=main_menu(is_admin=user.role == "admin"),
-        )
-        return
-
-    # Get tokens from Redis (stored by api/auth.py callback)
-    redis_key = f"pinterest_auth:{nonce}"
-    raw_tokens = await redis.get(redis_key)
-    if not raw_tokens:
-        log.warning("pinterest_auth_tokens_not_found", nonce=nonce, user_id=user.id)
-        await state.clear()
-        await message.answer(
-            "Подключение Pinterest отменено. Время авторизации истекло (E20).\nПопробуйте снова.",
-            reply_markup=main_menu(is_admin=user.role == "admin"),
-        )
-        return
-
-    tokens: dict = json.loads(raw_tokens)
-    # Clean up Redis key (one-time use)
-    await redis.delete(redis_key)
-
-    # Fetch boards from Pinterest API
-    access_token = tokens.get("access_token", "")
-    try:
-        resp = await http_client.get(
-            "https://api.pinterest.com/v5/boards",
-            headers={"Authorization": f"Bearer {access_token}"},
-            params={"page_size": "25"},
-        )
-        if resp.status_code != 200:
-            log.warning("pinterest_boards_fetch_failed", status=resp.status_code, user_id=user.id)
-            await state.clear()
-            await message.answer(
-                "Не удалось получить список досок Pinterest (E21).\nПопробуйте снова.",
-                reply_markup=main_menu(is_admin=user.role == "admin"),
-            )
-            return
-
-        boards_data = resp.json().get("items", [])
-    except Exception as exc:
-        log.warning("pinterest_boards_request_failed", error=str(exc), user_id=user.id)
-        await state.clear()
-        await message.answer(
-            "Не удалось связаться с Pinterest API. Попробуйте позже.",
-            reply_markup=main_menu(is_admin=user.role == "admin"),
-        )
-        return
-
-    if not boards_data:
-        await state.clear()
-        await message.answer(
-            "У вас нет досок в Pinterest. Создайте хотя бы одну доску и попробуйте снова.",
-            reply_markup=main_menu(is_admin=user.role == "admin"),
-        )
-        return
-
-    # Check FSM state — should be ConnectPinterestFSM.oauth_callback
-    current_state = await state.get_state()
-    fsm_data = await state.get_data()
-
-    # Verify nonce matches (user might have started a new OAuth flow)
-    if current_state != ConnectPinterestFSM.oauth_callback or fsm_data.get("nonce") != nonce:
-        log.warning("pinterest_auth_fsm_mismatch", nonce=nonce, current_state=current_state)
-        await state.clear()
-        await message.answer(
-            "Сессия подключения Pinterest не найдена. Начните подключение заново.",
-            reply_markup=main_menu(is_admin=user.role == "admin"),
-        )
-        return
-
-    # Store tokens and boards in FSM, transition to board selection
-    boards = [{"id": b["id"], "name": b.get("name", f"Board {b['id']}")} for b in boards_data]
-    await state.update_data(pinterest_tokens=tokens, pinterest_boards=boards)
-    await state.set_state(ConnectPinterestFSM.select_board)
-
-    builder = InlineKeyboardBuilder()
-    for b in boards:
-        text = b["name"]
-        if len(text) > 60:
-            text = text[:57] + "..."
-        builder.button(text=text, callback_data=f"pin_board:{b['id']}")
-    builder.adjust(1)
-
-    await message.answer(
-        "Шаг 2/2. Выберите доску для публикации:",
-        reply_markup=builder.as_markup(),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -360,19 +248,6 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext, user: User, d
     text = await _build_dashboard_text(user, db)
     await msg.edit_text(text, reply_markup=dashboard_kb().as_markup())
     await callback.answer()
-
-
-# ---------------------------------------------------------------------------
-# Inline help callback (dashboard → Помощь)
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(F.data == "help:main")
-async def cb_help(callback: CallbackQuery) -> None:
-    """Redirect to help system (routers/help.py handles detailed sections)."""
-    from routers.help import cb_help_main
-
-    await cb_help_main(callback)
 
 
 # ---------------------------------------------------------------------------
@@ -451,14 +326,6 @@ async def btn_write_article(
         "Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_project_list_kb(projects, last_used_id=last_project_id).as_markup(),
     )
-
-
-@router.message(F.text == "АДМИНКА")
-async def btn_admin_redirect(message: Message, user: User, db: SupabaseClient) -> None:
-    """Redirect to admin panel (routers/admin/dashboard handles the logic)."""
-    from routers.admin.dashboard import btn_admin_main
-
-    await btn_admin_main(message, user, db)
 
 
 @router.callback_query(F.data == "stats:all")

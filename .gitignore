@@ -51,6 +51,9 @@ CLAUDE.local.md
 .claude/settings.local.json
 .progress/
 
+# === Screenshots / media (local dev only) ===
+screens/
+
 # === Dev notes / scratch (not part of the product) ===
 audit.md
 audit-plan.md

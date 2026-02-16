@@ -22,8 +22,8 @@ from keyboards.publish import (
     keyword_results_kb,
     keywords_main_kb,
 )
-from keyboards.reply import cancel_kb, main_menu
-from routers._helpers import guard_callback_message
+from keyboards.reply import cancel_kb
+from routers._helpers import guard_callback_message, restore_reply_kb
 from services.ai.orchestrator import AIOrchestrator
 from services.ai.rate_limiter import RateLimiter
 from services.external.dataforseo import DataForSEOClient
@@ -431,7 +431,7 @@ async def cb_kw_save(
         )
 
     # Restore main menu reply keyboard
-    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(msg, is_admin=user.role == "admin")
     await callback.answer()
 
 
@@ -637,7 +637,7 @@ async def cb_kw_upload_save(
             reply_markup=category_card_kb(category).as_markup(),
         )
 
-    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(msg, is_admin=user.role == "admin")
     await callback.answer()
 
 
