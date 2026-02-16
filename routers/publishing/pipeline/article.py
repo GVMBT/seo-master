@@ -31,6 +31,7 @@ from db.models import (
     ArticlePreview,
     ArticlePreviewCreate,
     ArticlePreviewUpdate,
+    CategoryUpdate,
     ProjectUpdate,
     PublicationLogCreate,
     User,
@@ -45,6 +46,8 @@ from keyboards.pipeline import (
     pipeline_back_to_readiness_kb,
     pipeline_category_list_kb,
     pipeline_confirm_kb,
+    pipeline_images_count_kb,
+    pipeline_images_style_kb,
     pipeline_keywords_geo_kb,
     pipeline_keywords_options_kb,
     pipeline_keywords_qty_kb,
@@ -859,6 +862,7 @@ async def cb_readiness_description(
     msg = await guard_callback_message(callback)
     if msg is None:
         return
+    await state.update_data(readiness_subflow=None)
     await state.set_state(ArticlePipelineFSM.readiness_description)
     await msg.edit_text(
         "Статья > Описание компании\n\n"
@@ -958,13 +962,199 @@ async def cb_readiness_prices(
     await callback.answer()
 
 
+# ---------------------------------------------------------------------------
+# Step 4d: inline image settings sub-flow (count + style)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data == "pipeline:article:ready:images",
+)
+async def cb_readiness_images(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: SupabaseClient,
+) -> None:
+    """User wants to configure images -> show count selection."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    data = await state.get_data()
+    category = await CategoriesRepository(db).get_by_id(data["category_id"])
+    current_count = (category.image_settings or {}).get("count") if category else None
+
+    await state.set_state(ArticlePipelineFSM.configure_images)
+    await msg.edit_text(
+        "Статья > Фото\n\nСколько изображений сгенерировать для статьи?\nСтоимость: 30 токенов за изображение.",
+        reply_markup=pipeline_images_count_kb(current_count).as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.configure_images,
+    F.data.regexp(r"^pipeline:article:img:cnt:(\d+)$"),
+)
+async def cb_images_count(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: SupabaseClient,
+) -> None:
+    """User selected image count -> show style selection (or save if 0)."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    count = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+    await state.update_data(img_count=count)
+
+    if count == 0:
+        # No images -> save immediately and return to checklist
+        data = await state.get_data()
+        category_id = data["category_id"]
+        cat_repo = CategoriesRepository(db)
+        category = await cat_repo.get_by_id(category_id)
+        img_settings = dict(category.image_settings or {}) if category else {}
+        img_settings["count"] = 0
+        img_settings.setdefault("styles", ["Фотореализм"])
+        await cat_repo.update(category_id, CategoryUpdate(image_settings=img_settings))
+
+        await state.update_data(img_count=None)
+        await state.set_state(ArticlePipelineFSM.readiness_check)
+        data = await state.get_data()
+        await _show_readiness_with_success(msg, db, data, "Изображения отключены.", edit=True)
+        await callback.answer()
+        return
+
+    # Show style selection
+    data = await state.get_data()
+    category = await CategoriesRepository(db).get_by_id(data["category_id"])
+    current_style = None
+    if category and category.image_settings:
+        styles = category.image_settings.get("styles", [])
+        current_style = styles[0] if styles else None
+
+    await msg.edit_text(
+        f"Статья > Фото > Стиль\n\nВыбрано: {count} изображений.\nКакой стиль?",
+        reply_markup=pipeline_images_style_kb(current_style).as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.configure_images,
+    F.data.regexp(r"^pipeline:article:img:style:(.+)$"),
+)
+async def cb_images_style(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: SupabaseClient,
+) -> None:
+    """User selected image style -> save to category.image_settings and return to checklist."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    # Extract style key (may contain colons in future, but current keys are simple)
+    parts = callback.data.split("pipeline:article:img:style:")  # type: ignore[union-attr]
+    style_key = parts[1] if len(parts) > 1 else "Фотореализм"
+
+    data = await state.get_data()
+    count = data.get("img_count", 4)
+    category_id = data["category_id"]
+
+    cat_repo = CategoriesRepository(db)
+    category = await cat_repo.get_by_id(category_id)
+    img_settings = dict(category.image_settings or {}) if category else {}
+    img_settings["count"] = count
+    img_settings["styles"] = [style_key]
+    await cat_repo.update(category_id, CategoryUpdate(image_settings=img_settings))
+
+    from services.readiness import IMAGE_STYLE_LABELS
+
+    style_label = IMAGE_STYLE_LABELS.get(style_key, style_key)
+    log.info(
+        "pipeline_images_configured",
+        category_id=category_id,
+        count=count,
+        style=style_key,
+    )
+
+    await state.update_data(img_count=None)
+    await state.set_state(ArticlePipelineFSM.readiness_check)
+    data = await state.get_data()
+    await _show_readiness_with_success(
+        msg,
+        db,
+        data,
+        f"Фото: {count} шт., {style_label}.",
+        edit=True,
+    )
+    await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.configure_images,
+    F.data == "pipeline:article:img:back",
+)
+async def cb_images_back(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: SupabaseClient,
+) -> None:
+    """Back to readiness checklist from image count selection."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    await state.update_data(img_count=None)
+    await state.set_state(ArticlePipelineFSM.readiness_check)
+    data = await state.get_data()
+    await _show_readiness(msg, db, data)
+    await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.configure_images,
+    F.data == "pipeline:article:img:back_to_count",
+)
+async def cb_images_back_to_count(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: SupabaseClient,
+) -> None:
+    """Back to image count selection from style selection."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    data = await state.get_data()
+    category = await CategoriesRepository(db).get_by_id(data["category_id"])
+    current_count = (category.image_settings or {}).get("count") if category else None
+
+    await msg.edit_text(
+        "Статья > Фото\n\nСколько изображений сгенерировать для статьи?\nСтоимость: 30 токенов за изображение.",
+        reply_markup=pipeline_images_count_kb(current_count).as_markup(),
+    )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Helpers (shared by sub-flows)
+# ---------------------------------------------------------------------------
+
+
 async def _show_readiness_with_success(
     message: Message,
     db: SupabaseClient,
     data: dict[str, Any],
     success_text: str,
+    *,
+    edit: bool = False,
 ) -> None:
-    """Show readiness checklist with a success prefix after returning from sub-flow."""
+    """Show readiness checklist with a success prefix after returning from sub-flow.
+
+    Args:
+        edit: If True, edit the existing message (for callback handlers).
+              If False, send a new message (for text input handlers).
+    """
     category_id = data["category_id"]
     project_id = data["project_id"]
 
@@ -980,10 +1170,13 @@ async def _show_readiness_with_success(
         status = "заполнено" if item.ready else item.hint
         lines.append(f"{icon} {item.label} \u2014 {status}")
 
-    await message.answer(
-        "\n".join(lines),
-        reply_markup=pipeline_readiness_kb(result.items, result.all_ready).as_markup(),
-    )
+    text = "\n".join(lines)
+    markup = pipeline_readiness_kb(result.items, result.all_ready).as_markup()
+
+    if edit:
+        await message.edit_text(text, reply_markup=markup)
+    else:
+        await message.answer(text, reply_markup=markup)
 
 
 # ---------------------------------------------------------------------------
@@ -1635,7 +1828,7 @@ async def cb_pipeline_resume(
 
     try:
         checkpoint = json.loads(checkpoint_raw)
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         await msg.edit_text("Статья > Ошибка\n\nСессия повреждена. Начните заново.")
         await redis.delete(CacheKeys.pipeline_state(user.id))
         await callback.answer()

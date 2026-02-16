@@ -1131,7 +1131,7 @@ class TestPipelineReadiness:
                 ReadinessItem(key="keywords", label="Ключевые фразы", hint="SEO", ready=True, cost=0),
                 ReadinessItem(key="description", label="Описание компании", hint="контекст", ready=True, cost=0),
                 ReadinessItem(key="prices", label="Цены", hint="реальные цены", ready=True, cost=0),
-                ReadinessItem(key="media", label="Фото", hint="AI-изображения", ready=True, cost=0),
+                ReadinessItem(key="images", label="Фото", hint="4 шт., Фотореализм", ready=True, cost=120),
             ]
         )
 
@@ -1163,7 +1163,7 @@ class TestPipelineReadiness:
                 ReadinessItem(key="keywords", label="Ключевые фразы", hint="SEO-оптимизация", ready=False, cost=100),
                 ReadinessItem(key="description", label="Описание компании", hint="контекст", ready=True, cost=0),
                 ReadinessItem(key="prices", label="Цены", hint="реальные цены", ready=True, cost=0),
-                ReadinessItem(key="media", label="Фото", hint="AI-изображения", ready=True, cost=0),
+                ReadinessItem(key="images", label="Фото", hint="4 шт., Фотореализм", ready=True, cost=120),
             ]
         )
 
@@ -1548,6 +1548,201 @@ class TestGenerateKeywordsInline:
         text = msg.edit_text.call_args.args[0]
         assert "2 кластеров" in text
         assert "3 фраз" in text
+
+
+# ---------------------------------------------------------------------------
+# Step 4d: image settings sub-flow
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineImageSettings:
+    """Tests for image count + style selection sub-flow."""
+
+    async def test_readiness_images_shows_count_selection(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        mock_db: MagicMock,
+        category: Category,
+    ) -> None:
+        """Click 'images' in checklist -> show count selection."""
+        mock_callback.data = "pipeline:article:ready:images"
+        mock_state.get_data = AsyncMock(return_value={"category_id": category.id})
+
+        from routers.publishing.pipeline.article import cb_readiness_images
+
+        with patch("routers.publishing.pipeline.article.CategoriesRepository") as cat_cls:
+            cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
+            await cb_readiness_images(mock_callback, mock_state, mock_db)
+
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.configure_images)
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "Сколько изображений" in text
+        mock_callback.answer.assert_awaited_once()
+
+    async def test_count_zero_saves_and_returns(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        mock_db: MagicMock,
+        category: Category,
+    ) -> None:
+        """Select 0 images -> save immediately, return to readiness."""
+        mock_callback.data = "pipeline:article:img:cnt:0"
+        mock_state.get_data = AsyncMock(return_value={"category_id": category.id, "project_id": 1})
+
+        from services.readiness import ReadinessItem, ReadinessResult
+
+        mock_result = ReadinessResult(
+            items=[
+                ReadinessItem(
+                    key="images",
+                    label="Фото",
+                    hint="без изображений",
+                    ready=True,
+                    cost=0,
+                ),
+            ]
+        )
+
+        from routers.publishing.pipeline.article import cb_images_count
+
+        with (
+            patch("routers.publishing.pipeline.article.CategoriesRepository") as cat_cls,
+            patch("routers.publishing.pipeline.article.ReadinessService") as rs_cls,
+        ):
+            cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
+            cat_cls.return_value.update = AsyncMock(return_value=category)
+            rs_cls.return_value.check = AsyncMock(return_value=mock_result)
+
+            await cb_images_count(mock_callback, mock_state, mock_db)
+
+        # Saved image_settings with count=0
+        update_call = cat_cls.return_value.update.call_args
+        img_settings = update_call.args[1].image_settings
+        assert img_settings["count"] == 0
+        # Returned to readiness
+        mock_state.set_state.assert_any_await(ArticlePipelineFSM.readiness_check)
+
+    async def test_count_nonzero_shows_style_selection(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        mock_db: MagicMock,
+        category: Category,
+    ) -> None:
+        """Select 4 images -> show style selection."""
+        mock_callback.data = "pipeline:article:img:cnt:4"
+        mock_state.get_data = AsyncMock(return_value={"category_id": category.id, "project_id": 1})
+
+        from routers.publishing.pipeline.article import cb_images_count
+
+        with patch("routers.publishing.pipeline.article.CategoriesRepository") as cat_cls:
+            cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
+            await cb_images_count(mock_callback, mock_state, mock_db)
+
+        # Updated state with img_count
+        mock_state.update_data.assert_any_await(img_count=4)
+        # Showed style selection
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "Стиль" in text
+        assert "4 изображений" in text
+
+    async def test_style_saves_and_returns(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        mock_db: MagicMock,
+        category: Category,
+    ) -> None:
+        """Select style -> save to category, return to readiness with success."""
+        mock_callback.data = "pipeline:article:img:style:medical"
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "category_id": category.id,
+                "project_id": 1,
+                "img_count": 4,
+            }
+        )
+
+        from services.readiness import ReadinessItem, ReadinessResult
+
+        mock_result = ReadinessResult(
+            items=[
+                ReadinessItem(
+                    key="images",
+                    label="Фото",
+                    hint="4 шт., Медицина",
+                    ready=True,
+                    cost=120,
+                ),
+            ]
+        )
+
+        from routers.publishing.pipeline.article import cb_images_style
+
+        with (
+            patch("routers.publishing.pipeline.article.CategoriesRepository") as cat_cls,
+            patch("routers.publishing.pipeline.article.ReadinessService") as rs_cls,
+        ):
+            cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
+            cat_cls.return_value.update = AsyncMock(return_value=category)
+            rs_cls.return_value.check = AsyncMock(return_value=mock_result)
+
+            await cb_images_style(mock_callback, mock_state, mock_db)
+
+        # Saved with correct style
+        update_call = cat_cls.return_value.update.call_args
+        img_settings = update_call.args[1].image_settings
+        assert img_settings["count"] == 4
+        assert img_settings["styles"] == ["medical"]
+        # Returned to readiness
+        mock_state.set_state.assert_any_await(ArticlePipelineFSM.readiness_check)
+        # Success message includes style label
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "Медицина" in text
+
+    async def test_back_returns_to_readiness(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        mock_db: MagicMock,
+    ) -> None:
+        """Click 'back' from count -> return to readiness."""
+        mock_callback.data = "pipeline:article:img:back"
+        mock_state.get_data = AsyncMock(return_value={"category_id": 10, "project_id": 1})
+
+        from routers.publishing.pipeline.article import cb_images_back
+
+        with patch(
+            "routers.publishing.pipeline.article._show_readiness",
+            new_callable=AsyncMock,
+        ) as mock_show:
+            await cb_images_back(mock_callback, mock_state, mock_db)
+
+        mock_state.update_data.assert_any_await(img_count=None)
+        mock_state.set_state.assert_awaited_with(ArticlePipelineFSM.readiness_check)
+        mock_show.assert_awaited_once()
+
+    async def test_back_to_count_from_style(
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        mock_db: MagicMock,
+        category: Category,
+    ) -> None:
+        """Click 'back' from style -> return to count selection."""
+        mock_callback.data = "pipeline:article:img:back_to_count"
+        mock_state.get_data = AsyncMock(return_value={"category_id": category.id, "project_id": 1})
+
+        from routers.publishing.pipeline.article import cb_images_back_to_count
+
+        with patch("routers.publishing.pipeline.article.CategoriesRepository") as cat_cls:
+            cat_cls.return_value.get_by_id = AsyncMock(return_value=category)
+            await cb_images_back_to_count(mock_callback, mock_state, mock_db)
+
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "Сколько изображений" in text
 
     async def test_insufficient_balance_returns_to_readiness(
         self,

@@ -14,7 +14,7 @@ import pytest
 from bot.exceptions import AppError
 from db.models import Category
 from services.readiness import ReadinessItem, ReadinessResult, ReadinessService
-from services.tokens import COST_DESCRIPTION, estimate_keywords_cost
+from services.tokens import COST_DESCRIPTION, COST_PER_IMAGE, estimate_keywords_cost
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,6 +29,7 @@ def _make_category(
     description: str | None = None,
     prices: str | None = None,
     media: list[dict[str, Any]] | None = None,
+    image_settings: dict[str, Any] | None = None,
 ) -> Category:
     """Build a minimal Category for tests."""
     return Category(
@@ -39,6 +40,7 @@ def _make_category(
         description=description,
         prices=prices,
         media=media or [],
+        image_settings=image_settings or {},
     )
 
 
@@ -116,16 +118,16 @@ class TestReadinessServiceCheck:
         ):
             await service.check(category_id=999, project_id=10)
 
-    async def test_all_empty_returns_three_unready_items(self, service: ReadinessService) -> None:
+    async def test_all_empty_returns_four_unready_items(self, service: ReadinessService) -> None:
         category = _make_category()
         with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
             result = await service.check(category_id=1, project_id=10)
 
-        assert len(result.items) == 3
+        assert len(result.items) == 4
         assert result.all_ready is False
 
         keys = [item.key for item in result.items]
-        assert keys == ["keywords", "description", "prices"]
+        assert keys == ["keywords", "description", "prices", "images"]
 
         for item in result.items:
             assert item.ready is False
@@ -135,6 +137,7 @@ class TestReadinessServiceCheck:
             keywords=[{"phrase": "test", "volume": 100}],
             description="Company description",
             prices="Product: 1000 RUB",
+            image_settings={"count": 4, "styles": ["Фотореализм"]},
         )
         with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
             result = await service.check(category_id=1, project_id=10)
@@ -143,10 +146,8 @@ class TestReadinessServiceCheck:
         assert result.optional_missing == []
         assert result.required_missing == []
 
-        # All costs should be 0 when items are already filled
         for item in result.items:
             assert item.ready is True
-            assert item.cost == 0
 
     async def test_keywords_cost_when_missing(self, service: ReadinessService) -> None:
         category = _make_category()
@@ -184,6 +185,7 @@ class TestReadinessServiceCheck:
         assert "keywords" not in result.optional_missing
         assert "description" in result.optional_missing
         assert "prices" in result.optional_missing
+        assert "images" in result.optional_missing
 
     async def test_partial_fill_description_and_prices(self, service: ReadinessService) -> None:
         category = _make_category(description="desc", prices="100 RUB")
@@ -191,7 +193,7 @@ class TestReadinessServiceCheck:
             result = await service.check(category_id=1, project_id=10)
 
         assert result.all_ready is False
-        assert result.optional_missing == ["keywords"]
+        assert result.optional_missing == ["keywords", "images"]
 
     async def test_labels_are_russian(self, service: ReadinessService) -> None:
         category = _make_category()
@@ -202,6 +204,7 @@ class TestReadinessServiceCheck:
         assert labels["keywords"] == "Ключевые фразы"
         assert labels["description"] == "Описание компании"
         assert labels["prices"] == "Цены"
+        assert labels["images"] == "Фото"
 
     async def test_hints_match_spec(self, service: ReadinessService) -> None:
         category = _make_category()
@@ -212,6 +215,49 @@ class TestReadinessServiceCheck:
         assert hints["keywords"] == "SEO-оптимизация"
         assert hints["description"] == "точность контекста"
         assert hints["prices"] == "реальные цены в статье"
+        assert hints["images"] == "выберите кол-во и стиль"
+
+    async def test_images_not_configured_cost_default_4(self, service: ReadinessService) -> None:
+        """When image_settings is empty, images item is not ready, cost = 4 * COST_PER_IMAGE."""
+        category = _make_category()
+        with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
+            result = await service.check(category_id=1, project_id=10)
+
+        img_item = next(i for i in result.items if i.key == "images")
+        assert img_item.ready is False
+        assert img_item.cost == 4 * COST_PER_IMAGE  # default 4 images
+
+    async def test_images_configured_shows_hint(self, service: ReadinessService) -> None:
+        """When image_settings has count+styles, images item is ready with descriptive hint."""
+        category = _make_category(image_settings={"count": 2, "styles": ["medical"]})
+        with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
+            result = await service.check(category_id=1, project_id=10)
+
+        img_item = next(i for i in result.items if i.key == "images")
+        assert img_item.ready is True
+        assert "2 шт." in img_item.hint
+        assert "Медицина" in img_item.hint
+        assert img_item.cost == 2 * COST_PER_IMAGE
+
+    async def test_images_zero_count(self, service: ReadinessService) -> None:
+        """When count=0, images are disabled."""
+        category = _make_category(image_settings={"count": 0, "styles": ["Фотореализм"]})
+        with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
+            result = await service.check(category_id=1, project_id=10)
+
+        img_item = next(i for i in result.items if i.key == "images")
+        assert img_item.ready is True
+        assert img_item.hint == "без изображений"
+        assert img_item.cost == 0
+
+    async def test_images_count_only_not_ready(self, service: ReadinessService) -> None:
+        """image_settings with count but no styles is not ready."""
+        category = _make_category(image_settings={"count": 4})
+        with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
+            result = await service.check(category_id=1, project_id=10)
+
+        img_item = next(i for i in result.items if i.key == "images")
+        assert img_item.ready is False
 
     async def test_frozen_dataclass_immutable(self, service: ReadinessService) -> None:
         """ReadinessItem is frozen -- cannot be mutated after creation."""

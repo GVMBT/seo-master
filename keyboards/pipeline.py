@@ -8,6 +8,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from db.models import Category, PlatformConnection, Project
 from keyboards.pagination import paginate
+from services.readiness import IMAGE_STYLE_LABELS
+from services.tokens import COST_PER_IMAGE
 
 if TYPE_CHECKING:
     from services.readiness import ReadinessItem
@@ -251,4 +253,46 @@ def pipeline_keywords_qty_kb() -> InlineKeyboardBuilder:
         callback_data="pipeline:article:kw:qty:200",
     )
     builder.adjust(2)
+    return builder
+
+
+# ---------------------------------------------------------------------------
+# Image settings sub-flow keyboards (step 4d)
+# ---------------------------------------------------------------------------
+
+
+def pipeline_images_count_kb(current_count: int | None = None) -> InlineKeyboardBuilder:
+    """Image count selection for pipeline readiness step 4d."""
+    builder = InlineKeyboardBuilder()
+    options = [
+        (0, "Без изображений (0 ток.)"),
+        (2, f"2 изображения ({2 * COST_PER_IMAGE} ток.)"),
+        (4, f"4 изображения ({4 * COST_PER_IMAGE} ток.)"),
+        (6, f"6 изображений ({6 * COST_PER_IMAGE} ток.)"),
+    ]
+    for count, label in options:
+        prefix = "\u2705 " if current_count == count else ""
+        builder.button(
+            text=f"{prefix}{label}",
+            callback_data=f"pipeline:article:img:cnt:{count}",
+        )
+    builder.button(text="Назад к чеклисту", callback_data="pipeline:article:img:back")
+    builder.adjust(1)
+    return builder
+
+
+def pipeline_images_style_kb(current_style: str | None = None) -> InlineKeyboardBuilder:
+    """Image style selection for pipeline readiness step 4d.
+
+    Styles from ARCHITECTURE.md IMAGE_DEFAULTS + API_CONTRACTS.md §7.5 NICHE_IMAGE_STYLES.
+    """
+    builder = InlineKeyboardBuilder()
+    for style_key, label in IMAGE_STYLE_LABELS.items():
+        prefix = "\u2705 " if current_style == style_key else ""
+        builder.button(
+            text=f"{prefix}{label}",
+            callback_data=f"pipeline:article:img:style:{style_key}",
+        )
+    builder.button(text="Назад", callback_data="pipeline:article:img:back_to_count")
+    builder.adjust(3, 3, 3, 1)
     return builder

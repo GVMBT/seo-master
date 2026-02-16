@@ -16,7 +16,7 @@ import structlog
 from bot.exceptions import AppError
 from db.client import SupabaseClient
 from db.repositories.categories import CategoriesRepository
-from services.tokens import COST_DESCRIPTION, estimate_keywords_cost
+from services.tokens import COST_DESCRIPTION, COST_PER_IMAGE, estimate_keywords_cost
 
 log = structlog.get_logger()
 
@@ -69,6 +69,37 @@ class ReadinessResult:
 
 _DEFAULT_KEYWORD_QUANTITY = 100
 
+# Default image count for WP articles (ARCHITECTURE.md §3.2, WP override = 4)
+_DEFAULT_IMAGE_COUNT = 4
+
+# User-friendly labels for image styles (ARCHITECTURE.md IMAGE_DEFAULTS)
+IMAGE_STYLE_LABELS: dict[str, str] = {
+    "Фотореализм": "Фотореализм",
+    "medical": "Медицина",
+    "legal": "Юриспруденция",
+    "finance": "Финансы",
+    "realestate": "Недвижимость",
+    "food": "Еда",
+    "beauty": "Красота",
+    "construction": "Строительство",
+    "auto": "Авто",
+}
+
+# Allowed image counts for pipeline UI
+ALLOWED_IMAGE_COUNTS: list[int] = [0, 2, 4, 6]
+
+
+def _format_images_hint(configured: bool, count: int, img_settings: dict[str, object]) -> str:
+    """Build human-readable hint for the images checklist item."""
+    if not configured:
+        return "выберите кол-во и стиль"
+    raw_styles = img_settings.get("styles", [])
+    styles: list[str] = list(raw_styles) if isinstance(raw_styles, list) else []
+    style_label = IMAGE_STYLE_LABELS.get(styles[0], styles[0]) if styles else "Фотореализм"
+    if count == 0:
+        return "без изображений"
+    return f"{count} шт., {style_label}"
+
 
 # ---------------------------------------------------------------------------
 # Service
@@ -110,6 +141,12 @@ class ReadinessService:
         has_description = bool(category.description)
         has_prices = bool(category.prices)
 
+        # Image settings: configured = user explicitly set count+style
+        img_settings = category.image_settings or {}
+        has_images = bool(img_settings.get("count") is not None and img_settings.get("styles"))
+        image_count = img_settings.get("count", _DEFAULT_IMAGE_COUNT)
+        image_cost = image_count * COST_PER_IMAGE
+
         items: list[ReadinessItem] = [
             ReadinessItem(
                 key="keywords",
@@ -132,8 +169,13 @@ class ReadinessService:
                 ready=has_prices,
                 cost=0,  # free manual input
             ),
-            # media (Phase D): AI generates 4 images automatically,
-            # user photo upload sub-flow is deferred to Phase D.
+            ReadinessItem(
+                key="images",
+                label="Фото",
+                hint=_format_images_hint(has_images, image_count, img_settings),
+                ready=has_images,
+                cost=image_cost,
+            ),
         ]
 
         result = ReadinessResult(items=items)
