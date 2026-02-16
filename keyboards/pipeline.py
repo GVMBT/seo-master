@@ -1,4 +1,4 @@
-"""Inline keyboard builders for Goal-Oriented Pipeline (PIPELINE_UX_PROPOSAL.md)."""
+"""Inline keyboard builders for Goal-Oriented Pipeline (UX_PIPELINE.md)."""
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 

@@ -52,7 +52,7 @@ _HELP_TEXT = (
 async def _build_dashboard_text(user: User, db: SupabaseClient, is_new_user: bool = False) -> str:
     """Build main menu dashboard text with stats.
 
-    Three variants (PIPELINE_UX_PROPOSAL.md section 3.1, section 16.5):
+    Three variants (UX_PIPELINE.md section 3.1, section 16.5):
     - New user: welcome + token grant + CTA
     - Returning without projects: balance + CTA
     - Returning with projects: balance + stats + articles_left forecast
@@ -272,7 +272,7 @@ async def btn_write_article(
 ) -> None:
     """Reply button [Написать статью] -- start article pipeline.
 
-    PIPELINE_UX_PROPOSAL.md section 16.10: check for active pipeline checkpoint.
+    UX_PIPELINE.md section 16.10: check for active pipeline checkpoint.
     If checkpoint exists, offer resume. Otherwise start fresh pipeline flow.
     """
     from bot.fsm_utils import ensure_no_active_fsm

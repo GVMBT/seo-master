@@ -1,6 +1,6 @@
 # SEO Master Bot v2 — Edge Cases и обработка ошибок
 
-> Связанные документы: [PRD.md](PRD.md) (продуктовые требования), [ARCHITECTURE.md](ARCHITECTURE.md) (техническая архитектура), [API_CONTRACTS.md](API_CONTRACTS.md) (QStash, Stars, rate limits), [FSM_SPEC.md](FSM_SPEC.md) (FSM-состояния), [USER_FLOWS_AND_UI_MAP.md](USER_FLOWS_AND_UI_MAP.md) (экраны и навигация)
+> Связанные документы: [PRD.md](PRD.md) (продуктовые требования), [ARCHITECTURE.md](ARCHITECTURE.md) (техническая архитектура), [API_CONTRACTS.md](API_CONTRACTS.md) (QStash, Stars, rate limits), [FSM_SPEC.md](FSM_SPEC.md) (FSM-состояния), [UX_PIPELINE.md](UX_PIPELINE.md) + [UX_TOOLBOX.md](UX_TOOLBOX.md) (UX-спецификации)
 
 ## Таблица edge cases
 
@@ -79,7 +79,7 @@
 | E47 | Markdown → HTML: mistune parse error | Fallback: использовать raw Markdown как plain text в `<pre>` блоке. Log "markdown_parse_failed". Редкий случай — mistune устойчив к невалидному Markdown |
 | E48 | Anti-hallucination: цена в тексте не совпадает с прайсом | Warning (не error): "Возможно выдуманная цена: {N} руб." Пользователь решает при превью. НЕ блокировать публикацию — может быть контекстная цена ("от 10 000 руб./мес" для услуги, не из прайса товаров) |
 
-## Pipeline edge cases (PIPELINE_UX_PROPOSAL.md)
+## Pipeline edge cases (UX_PIPELINE.md)
 
 | # | Сценарий | Ожидаемое поведение |
 |---|---------|---------------------|

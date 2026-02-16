@@ -23,7 +23,8 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
 - docs/FSM_SPEC.md — 18 FSM StatesGroup, валидация, переходы
 - docs/EDGE_CASES.md — E01-E52, обработка ошибок
-- docs/USER_FLOWS_AND_UI_MAP.md — все экраны, навигация
+- docs/UX_PIPELINE.md — Pipeline UX: Dashboard, статьи, соцсети, кросс-постинг
+- docs/UX_TOOLBOX.md — Toolbox UX: проекты, категории, подключения, профиль, токены
 
 ПЕРЕД реализацией любого модуля — ПРОЧИТАЙ соответствующие секции спеков.
 НЕ выдумывай имена таблиц, колонок, env vars — бери ТОЛЬКО из спеков.
@@ -96,7 +97,7 @@ uv run vulture bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules
 
 ## Известные расхождения в спеках (audit.md + февр. 2026)
 Спеки — source of truth. Конфликты (из аудита Part 1):
-1. **~~Quick publish callback_data~~**: Заменено Pipeline — `pipeline:article:*`, `pipeline:social:*` (PIPELINE_UX_PROPOSAL.md v1.7)
+1. **~~Quick publish callback_data~~**: Заменено Pipeline — `pipeline:article:*`, `pipeline:social:*` (UX_PIPELINE.md)
 2. ~~**VK credentials field**~~: РЕШЕНО — оба файла используют `"access_token"`
 3. **platform_schedules.status**: колонка `status` ДОБАВЛЕНА в схему (ARCHITECTURE.md §3.2), active | error
 
@@ -145,11 +146,11 @@ uv run vulture bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules
 
 Нерешённые вопросы:
 - QStash Pro plan limits (#23) — проверить при росте числа расписаний (schedule limits не документированы публично)
-- ~~F34 streaming edge cases~~ — Закрыто: F34 replaced by progress messages (PIPELINE_UX_PROPOSAL §16.26), deferred to v3 via sendMessageDraft
+- ~~F34 streaming edge cases~~ — Закрыто: F34 replaced by progress messages (UX_PIPELINE.md §11), deferred to v3 via sendMessageDraft
 
-Goal-Oriented Pipeline (Phase 13 — PIPELINE_UX_PROPOSAL.md v1.7):
+Goal-Oriented Pipeline (Phase 13 — UX_PIPELINE.md):
 - Pipeline заменяет Quick Publish: воронка "Написать статью" / "Пост в соцсети" (2-3 клика для returning users)
-- ArticlePipelineFSM (23 состояния), SocialPipelineFSM (10 состояний) — итого 18 StatesGroup
+- ArticlePipelineFSM (23 состояния), SocialPipelineFSM (27 состояний) — итого 18 StatesGroup
 - Inline handlers (NOT FSM delegation): pipeline реализует sub-flows внутри себя, переиспользуя Service Layer
 - ReadinessService: чеклист готовности (keywords обяз., description обяз. для новичков, prices/media опциональны)
 - ButtonStyle (Bot API 9.4): PRIMARY/SUCCESS/DANGER семантика, макс. 1 PRIMARY на экране

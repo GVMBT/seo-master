@@ -1,6 +1,6 @@
 """Router: user profile — balance, expense history, referral program.
 
-Source of truth: USER_FLOWS_AND_UI_MAP.md §Profile (lines 886-931).
+Source of truth: UX_TOOLBOX.md §Profile (lines 886-931).
 Features: F18 (profile dashboard), F19 (referral system).
 Edge cases: E01 (insufficient balance display).
 
@@ -51,7 +51,7 @@ def _format_expense(exp: TokenExpense) -> str:
 
 
 def _format_profile(user: User, stats: dict[str, int]) -> str:
-    """Build profile display text (USER_FLOWS_AND_UI_MAP.md §Profile, lines 886-905)."""
+    """Build profile display text (UX_TOOLBOX.md §Profile, lines 886-905)."""
     reg_date = user.created_at.strftime("%d.%m.%Y") if user.created_at else "—"
     name = f"{user.first_name or '—'} {user.last_name or ''}".rstrip()
 

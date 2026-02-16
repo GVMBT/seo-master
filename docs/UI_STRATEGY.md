@@ -2,7 +2,7 @@
 
 > **Версия:** 1.1
 > **Дата:** 2026-02-16
-> **Источники:** UI Text Audit (Opus 4.6), Code Audit (28 роутеров, 8 клавиатур), PIPELINE_UX_PROPOSAL v1.7
+> **Источники:** UI Text Audit (Opus 4.6), Code Audit (28 роутеров, 8 клавиатур), UX_PIPELINE v1.7
 > **Цель:** Единая стратегия улучшения UX/UI бота — от P0-багов до стратегических изменений
 
 ---
@@ -49,14 +49,14 @@
 
 ### B1. Dual PRIMARY на экране оплаты
 - **Файл:** `keyboards/inline.py:303,310` (`package_pay_kb`), `inline.py:323,325` (`subscription_pay_kb`)
-- **Проблема:** Обе кнопки (Stars и YooKassa) имеют `style="primary"`. Нарушает правило Bot API 9.4: макс. 1 PRIMARY на экран (USER_FLOWS_AND_UI_MAP.md §ButtonStyle)
+- **Проблема:** Обе кнопки (Stars и YooKassa) имеют `style="primary"`. Нарушает правило Bot API 9.4: макс. 1 PRIMARY на экран (UX_TOOLBOX.md §ButtonStyle)
 - **Решение:** Stars остаётся `style="primary"`, YooKassa — без style (default)
 - **Обоснование:** Stars — нативный метод Telegram, приоритетный для бота
 - **Effort:** 4 строки, 5 мин
 
 ### B2. Отсутствие exit protection (Pipeline шаги 4-7)
 - **Файл:** `routers/publishing/pipeline/article.py` — нет middleware/guard
-- **Проблема:** Пользователь может случайно выйти из pipeline через /start или «Меню» (reply-кнопка) во время генерации. Потеря прогресса и токенов. Спецификация PIPELINE_UX_PROPOSAL §7.5 требует exit protection
+- **Проблема:** Пользователь может случайно выйти из pipeline через /start или «Меню» (reply-кнопка) во время генерации. Потеря прогресса и токенов. Спецификация UX_PIPELINE §7.5 требует exit protection
 - **Решение:** Перехват /start и reply-кнопки «Меню» в состояниях `generating`..`preview` → показать «У вас генерация в процессе. Отменить? [Да/Нет]»
 - **Не трогать:** Шаги 1-3 (select project/wp/category) — выход свободный
 - **Effort:** ~50 строк
@@ -245,7 +245,7 @@ error_no_keywords_kb(category_id)                 # [Подобрать фраз
 - **Файл:** `routers/projects/create.py` (4 шага), `routers/platforms/connections.py` (3 шага)
 - **Текущее:** Каждый шаг — отдельный запрос без контекста
 - **Решение:** `"Новый проект (1/4) — Название"` → `"Новый проект (2/4) — Компания"` → ...
-- Спек: USER_FLOWS_AND_UI_MAP.md требует `[====>    ] 2/4`
+- Спек: UX_TOOLBOX.md требует `[====>    ] 2/4`
 
 ### 4.3. Confirm с предупреждением о последствиях
 - **Файл:** `inline.py:131-137` (`project_delete_confirm_kb`)

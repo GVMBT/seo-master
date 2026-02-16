@@ -128,7 +128,7 @@ class TestProjectCardKb:
         assert "projects:list" in callbacks
 
     def test_button_order_matches_spec(self) -> None:
-        """Button order per USER_FLOWS_AND_UI_MAP.md lines 507-516."""
+        """Button order per UX_TOOLBOX.md lines 507-516."""
         project = make_project(id=1)
         builder = project_card_kb(project)
         markup = builder.as_markup()

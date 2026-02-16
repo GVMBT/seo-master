@@ -12,7 +12,7 @@ from services.payments.packages import PACKAGES, SUBSCRIPTIONS
 
 
 def dashboard_kb() -> InlineKeyboardBuilder:
-    """Dashboard: Pipeline CTA + inline navigation (PIPELINE_UX_PROPOSAL.md)."""
+    """Dashboard: Pipeline CTA + inline navigation (UX_PIPELINE.md)."""
     builder = InlineKeyboardBuilder()
     # Pipeline CTA (top)
     builder.button(
@@ -32,7 +32,7 @@ def dashboard_kb() -> InlineKeyboardBuilder:
 
 
 # ---------------------------------------------------------------------------
-# Project fields (15 editable) — order matches USER_FLOWS_AND_UI_MAP.md §2
+# Project fields (15 editable) — order matches UX_TOOLBOX.md §2
 # ---------------------------------------------------------------------------
 
 PROJECT_FIELDS: list[tuple[str, str]] = [
@@ -62,7 +62,7 @@ PROJECT_FIELDS: list[tuple[str, str]] = [
 def project_list_kb(projects: list[Project], page: int = 0) -> InlineKeyboardBuilder:
     """Paginated project list + [Создать] + [Статистика] + [Главное меню].
 
-    When empty, shows [Создать проект] + [Помощь] (USER_FLOWS_AND_UI_MAP.md level 1).
+    When empty, shows [Создать проект] + [Помощь] (UX_TOOLBOX.md level 1).
     """
     if not projects:
         builder = InlineKeyboardBuilder()
@@ -93,7 +93,7 @@ def project_list_kb(projects: list[Project], page: int = 0) -> InlineKeyboardBui
 
 
 def project_card_kb(project: Project) -> InlineKeyboardBuilder:
-    """Project card action buttons (USER_FLOWS_AND_UI_MAP.md level 2, lines 507-516)."""
+    """Project card action buttons (UX_TOOLBOX.md level 2, lines 507-516)."""
     builder = InlineKeyboardBuilder()
     tz = project.timezone or "Europe/Moscow"
     # Exact order per spec:
@@ -212,7 +212,7 @@ def settings_main_kb() -> InlineKeyboardBuilder:
 
 
 # ---------------------------------------------------------------------------
-# Profile keyboards (USER_FLOWS_AND_UI_MAP.md §Profile)
+# Profile keyboards (UX_TOOLBOX.md §Profile)
 # ---------------------------------------------------------------------------
 
 
@@ -263,7 +263,7 @@ def settings_notifications_kb(user: User) -> InlineKeyboardBuilder:
 
 
 # ---------------------------------------------------------------------------
-# Tariffs keyboards (USER_FLOWS_AND_UI_MAP.md §1: Тарифы)
+# Tariffs keyboards (UX_TOOLBOX.md §1: Тарифы)
 # ---------------------------------------------------------------------------
 
 
