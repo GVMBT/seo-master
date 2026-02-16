@@ -45,23 +45,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs --no-error-summary",
+            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" mypy bot/ services/ db/ api/ cache/ --check-untyped-defs --no-error-summary",
             "timeout": 60
           }
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before writing to routers/ — verify the file does NOT contain business logic (SQL queries, token calculations, external API calls). Business logic must be in services/."
-          }
-        ]
-      }
-    ]
+    "PreToolUse": []
   },
   "mcpServers": {}
 }

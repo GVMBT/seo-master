@@ -67,9 +67,9 @@ tests/          — зеркалит top-level: unit/bot/, unit/db/, unit/router
 uv run pytest tests/ -x -v                # тесты (один файл: -k "test_name")
 uv run ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF  # расширенный линтинг
 uv run ruff format .                       # форматирование
-uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # проверка типов
-uv run bandit -r bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules/ -ll  # безопасность (Medium+)
-uv run vulture bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules/ --min-confidence 80  # мёртвый код
+uv run mypy bot/ services/ db/ api/ cache/ --check-untyped-defs  # проверка типов
+uv run bandit -r bot/ services/ db/ api/ cache/ platform_rules/ -ll  # безопасность (Medium+)
+uv run vulture bot/ services/ db/ api/ cache/ platform_rules/ --min-confidence 80  # мёртвый код
 ```
 
 ## Stop hooks (выполняются автоматически при завершении)
