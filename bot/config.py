@@ -57,8 +57,13 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_admin_ids(cls, v: str | list[int]) -> list[int]:
         if isinstance(v, list):
-            return v
-        return [int(x.strip()) for x in str(v).split(",") if x.strip()]
+            ids = v
+        else:
+            ids = [int(x.strip()) for x in str(v).split(",") if x.strip()]
+        if not ids:
+            msg = "ADMIN_IDS must contain at least one admin ID"
+            raise ValueError(msg)
+        return ids
 
     @field_validator("supabase_url")
     @classmethod

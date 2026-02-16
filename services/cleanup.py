@@ -91,14 +91,14 @@ class CleanupService:
                         reason="preview_expired",
                         description=f"Expired preview: {preview.keyword or 'unknown'}",
                     )
-                    # Load user to check notify preference (spec: notify_publications)
+                    # Load user to check notify preference (refund = balance notification)
                     user = await UsersRepository(self._db).get_by_id(preview.user_id)
                     result.refunded.append(
                         {
                             "user_id": preview.user_id,
                             "keyword": preview.keyword or "",
                             "tokens_refunded": tokens,
-                            "notify_publications": user.notify_publications if user else True,
+                            "notify_balance": user.notify_balance if user else True,
                         }
                     )
 

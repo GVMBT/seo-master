@@ -90,7 +90,7 @@ async def test_cleanup_notifies_users(mock_svc_cls: MagicMock) -> None:
     mock_svc.execute = AsyncMock(
         return_value=CleanupResult(
             expired_count=1,
-            refunded=[{"user_id": 1, "keyword": "seo", "tokens_refunded": 200, "notify_publications": True}],
+            refunded=[{"user_id": 1, "keyword": "seo", "tokens_refunded": 200, "notify_balance": True}],
         )
     )
     mock_svc_cls.return_value = mock_svc

@@ -101,6 +101,10 @@ class TestSettings:
         s = _make_settings(ADMIN_IDS="42")
         assert s.admin_ids == [42]
 
+    def test_admin_ids_empty_raises(self) -> None:
+        with pytest.raises(ValidationError, match="at least one admin ID"):
+            _make_settings(ADMIN_IDS="")
+
 
 @pytest.mark.usefixtures("_env")
 class TestGetSettings:

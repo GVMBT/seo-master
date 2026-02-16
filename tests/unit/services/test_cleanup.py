@@ -74,7 +74,7 @@ async def test_cleanup_expired_drafts_happy(mock_users_cls: MagicMock) -> None:
     assert result.expired_count == 1
     assert len(result.refunded) == 1
     assert result.refunded[0]["tokens_refunded"] == 200
-    assert result.refunded[0]["notify_publications"] is True
+    assert result.refunded[0]["notify_balance"] is True
     svc._tokens.refund.assert_called_once_with(
         100,
         200,
