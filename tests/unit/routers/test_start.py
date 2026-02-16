@@ -8,11 +8,9 @@ import pytest
 from db.models import Project, User
 from routers.start import (
     _build_dashboard_text,
-    btn_admin_redirect,
     btn_cancel,
     btn_menu,
     btn_write_article,
-    cb_help,
     cb_main_menu,
     cb_stub,
     cmd_cancel,
@@ -397,19 +395,6 @@ class TestCbMainMenu:
 
 
 # ---------------------------------------------------------------------------
-# help:main callback
-# ---------------------------------------------------------------------------
-
-
-class TestCbHelp:
-    @pytest.mark.asyncio
-    @patch("routers.help.cb_help_main", new_callable=AsyncMock)
-    async def test_delegates_to_help_main(self, mock_help_main: AsyncMock, mock_callback: MagicMock) -> None:
-        await cb_help(mock_callback)
-        mock_help_main.assert_awaited_once_with(mock_callback)
-
-
-# ---------------------------------------------------------------------------
 # Reply button: Menu
 # ---------------------------------------------------------------------------
 
@@ -557,16 +542,6 @@ class TestBtnWriteArticle:
 # ---------------------------------------------------------------------------
 # Stubs
 # ---------------------------------------------------------------------------
-
-
-class TestBtnAdminRedirect:
-    @pytest.mark.asyncio
-    @patch("routers.admin.dashboard.btn_admin_main", new_callable=AsyncMock)
-    async def test_redirects_to_admin_dashboard(
-        self, mock_admin_main: AsyncMock, mock_message: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
-        await btn_admin_redirect(mock_message, user, mock_db)
-        mock_admin_main.assert_awaited_once_with(mock_message, user, mock_db)
 
 
 class TestFsmNonTextGuard:

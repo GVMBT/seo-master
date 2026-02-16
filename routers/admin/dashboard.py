@@ -11,7 +11,7 @@ from db.client import SupabaseClient
 from db.models import User
 from db.repositories.payments import PaymentsRepository
 from db.repositories.users import UsersRepository
-from keyboards.category import admin_dashboard_kb
+from keyboards.admin import admin_dashboard_kb
 from routers._helpers import guard_callback_message
 
 log = structlog.get_logger()

@@ -1,14 +1,9 @@
-"""Tests for keyboards/category.py — all Phase 12 keyboard builders."""
+"""Tests for keyboards/category.py — category feature keyboard builders."""
 
 from keyboards.category import (
-    admin_broadcast_audience_kb,
-    admin_broadcast_confirm_kb,
-    admin_dashboard_kb,
     description_confirm_kb,
     description_existing_kb,
     description_result_kb,
-    help_back_kb,
-    help_main_kb,
     media_menu_kb,
     price_existing_kb,
     price_method_kb,
@@ -151,59 +146,3 @@ class TestMediaMenuKb:
         assert len(btns) == 2  # no "Очистить"
         texts = [b[0] for b in btns]
         assert "Очистить" not in texts
-
-
-# ---------------------------------------------------------------------------
-# Admin keyboards
-# ---------------------------------------------------------------------------
-
-
-class TestAdminDashboardKb:
-    def test_buttons(self) -> None:
-        btns = _get_buttons(admin_dashboard_kb())
-        assert len(btns) == 4
-        callbacks = [b[1] for b in btns]
-        assert "admin:monitoring" in callbacks
-        assert "admin:broadcast" in callbacks
-        assert "admin:costs" in callbacks
-        assert "menu:main" in callbacks
-
-
-class TestAdminBroadcastAudienceKb:
-    def test_buttons(self) -> None:
-        btns = _get_buttons(admin_broadcast_audience_kb())
-        assert len(btns) == 5
-        callbacks = [b[1] for b in btns]
-        assert "admin:bc:all" in callbacks
-        assert "admin:bc:active_7d" in callbacks
-
-
-class TestAdminBroadcastConfirmKb:
-    def test_count_in_label(self) -> None:
-        btns = _get_buttons(admin_broadcast_confirm_kb(42))
-        assert "42 чел." in btns[0][0]
-
-
-# ---------------------------------------------------------------------------
-# Help keyboards
-# ---------------------------------------------------------------------------
-
-
-class TestHelpMainKb:
-    def test_buttons(self) -> None:
-        btns = _get_buttons(help_main_kb())
-        assert len(btns) == 5
-        callbacks = [b[1] for b in btns]
-        assert "help:connect" in callbacks
-        assert "help:project" in callbacks
-        assert "help:category" in callbacks
-        assert "help:publish" in callbacks
-        assert "menu:main" in callbacks
-
-
-class TestHelpBackKb:
-    def test_buttons(self) -> None:
-        btns = _get_buttons(help_back_kb())
-        assert len(btns) == 2
-        assert btns[0][1] == "help:main"
-        assert btns[1][1] == "menu:main"

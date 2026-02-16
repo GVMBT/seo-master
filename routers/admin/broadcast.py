@@ -13,7 +13,7 @@ from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.users import UsersRepository
-from keyboards.category import admin_broadcast_audience_kb, admin_broadcast_confirm_kb, admin_dashboard_kb
+from keyboards.admin import admin_broadcast_audience_kb, admin_broadcast_confirm_kb, admin_dashboard_kb
 from routers._helpers import guard_callback_message
 
 log = structlog.get_logger()
