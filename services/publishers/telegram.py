@@ -129,9 +129,7 @@ class TelegramPublisher(BasePublisher):
             )
             return PublishResult(success=False, error=str(exc))
 
-    async def delete_post(
-        self, connection: PlatformConnection, post_id: str
-    ) -> bool:
+    async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         creds = connection.credentials
         try:
             await self._api_call(

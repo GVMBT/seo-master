@@ -35,11 +35,11 @@ _SAMPLE_META = [
 _MARKDOWN_3_IMAGES = (
     "# Кухни на заказ\n\n"
     "Введение текст.\n\n"
-    "![Alt 1]({{IMAGE_1}} \"Caption 1\")\n\n"
+    '![Alt 1]({{IMAGE_1}} "Caption 1")\n\n'
     "Раздел 2.\n\n"
-    "![Alt 2]({{IMAGE_2}} \"Caption 2\")\n\n"
+    '![Alt 2]({{IMAGE_2}} "Caption 2")\n\n'
     "Раздел 3.\n\n"
-    "![Alt 3]({{IMAGE_3}} \"Caption 3\")\n\n"
+    '![Alt 3]({{IMAGE_3}} "Caption 3")\n\n'
     "Заключение.\n"
 )
 

@@ -40,6 +40,7 @@ class DescriptionService:
 
         if project is None or category is None:
             from bot.exceptions import AIGenerationError
+
             raise AIGenerationError(message="Project or category not found")
 
         # Build keywords sample (first 10)

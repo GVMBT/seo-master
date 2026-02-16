@@ -34,11 +34,13 @@ def _make_request(
     query_string = "&".join(query_parts)
 
     app = MagicMock()
-    app.__getitem__ = MagicMock(side_effect=lambda key: {
-        "http_client": AsyncMock(),
-        "redis": AsyncMock(),
-        "bot_username": bot_username,
-    }[key])
+    app.__getitem__ = MagicMock(
+        side_effect=lambda key: {
+            "http_client": AsyncMock(),
+            "redis": AsyncMock(),
+            "bot_username": bot_username,
+        }[key]
+    )
 
     request = make_mocked_request(
         "GET",

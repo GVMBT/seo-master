@@ -38,7 +38,10 @@ async def cb_quick_project(callback: CallbackQuery, user: User, db: SupabaseClie
 
 @router.callback_query(F.data.regexp(r"^quick:cat:(\d+):(wp|tg|vk|pi):(\d+)$"))
 async def cb_quick_publish_target(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Legacy: quick publish combo selection (deprecated)."""
     msg = await guard_callback_message(callback)

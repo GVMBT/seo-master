@@ -40,17 +40,11 @@ class ConnectionsRepository(BaseRepository):
     async def get_by_project(self, project_id: int) -> list[PlatformConnection]:
         """Get all connections for a project with decrypted credentials."""
         resp = (
-            await self._table(_TABLE)
-            .select("*")
-            .eq("project_id", project_id)
-            .order("created_at", desc=True)
-            .execute()
+            await self._table(_TABLE).select("*").eq("project_id", project_id).order("created_at", desc=True).execute()
         )
         return [self._to_connection(row) for row in self._rows(resp)]
 
-    async def get_by_project_and_platform(
-        self, project_id: int, platform_type: str
-    ) -> list[PlatformConnection]:
+    async def get_by_project_and_platform(self, project_id: int, platform_type: str) -> list[PlatformConnection]:
         """Get connections filtered by project and platform type."""
         resp = (
             await self._table(_TABLE)
@@ -75,23 +69,13 @@ class ConnectionsRepository(BaseRepository):
     ) -> PlatformConnection | None:
         """Re-encrypt and update credentials."""
         encrypted = self._cm.encrypt(raw_credentials)
-        resp = (
-            await self._table(_TABLE)
-            .update({"credentials": encrypted})
-            .eq("id", connection_id)
-            .execute()
-        )
+        resp = await self._table(_TABLE).update({"credentials": encrypted}).eq("id", connection_id).execute()
         row = self._first(resp)
         return self._to_connection(row) if row else None
 
     async def update_status(self, connection_id: int, status: str) -> PlatformConnection | None:
         """Update connection status (active, error, disconnected)."""
-        resp = (
-            await self._table(_TABLE)
-            .update({"status": status})
-            .eq("id", connection_id)
-            .execute()
-        )
+        resp = await self._table(_TABLE).update({"status": status}).eq("id", connection_id).execute()
         row = self._first(resp)
         return self._to_connection(row) if row else None
 
@@ -118,12 +102,7 @@ class ConnectionsRepository(BaseRepository):
         Joins through projects table to filter by user_id.
         """
         # Get all user's projects first, then check connections
-        projects_resp = (
-            await self._db.table("projects")
-            .select("id")
-            .eq("user_id", user_id)
-            .execute()
-        )
+        projects_resp = await self._db.table("projects").select("id").eq("user_id", user_id).execute()
         project_ids = [row["id"] for row in self._rows(projects_resp)]
         if not project_ids:
             return None

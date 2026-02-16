@@ -43,9 +43,11 @@ def _make_request(
 ) -> MagicMock:
     """Create a mock aiohttp request."""
     app = MagicMock()
-    app.__getitem__ = MagicMock(side_effect=lambda key: {
-        "settings": _make_settings(),
-    }[key])
+    app.__getitem__ = MagicMock(
+        side_effect=lambda key: {
+            "settings": _make_settings(),
+        }[key]
+    )
 
     request = MagicMock()
     request.app = app

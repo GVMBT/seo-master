@@ -22,7 +22,10 @@ async def cb_settings_main(callback: CallbackQuery) -> None:
     msg = await guard_callback_message(callback)
     if msg is None:
         return
-    await msg.edit_text("Настройки:", reply_markup=settings_main_kb().as_markup())
+    await msg.edit_text(
+        "Настройки\n\nУправление уведомлениями, поддержка и информация о боте.",
+        reply_markup=settings_main_kb().as_markup(),
+    )
     await callback.answer()
 
 
@@ -38,7 +41,10 @@ async def cb_notifications(callback: CallbackQuery, user: User) -> None:
     msg = await guard_callback_message(callback)
     if msg is None:
         return
-    await msg.edit_text("Уведомления:", reply_markup=settings_notifications_kb(user).as_markup())
+    await msg.edit_text(
+        "Уведомления\n\nВыберите, о чём хотите получать уведомления.",
+        reply_markup=settings_notifications_kb(user).as_markup(),
+    )
     await callback.answer()
 
 
@@ -74,8 +80,6 @@ async def cb_toggle_notify(callback: CallbackQuery, user: User, db: SupabaseClie
     msg = await guard_callback_message(callback)
     if msg is None:
         return
-    await msg.edit_reply_markup(
-        reply_markup=settings_notifications_kb(updated_user).as_markup()
-    )
+    await msg.edit_reply_markup(reply_markup=settings_notifications_kb(updated_user).as_markup())
     status = "включены" if new_value else "выключены"
     await callback.answer(f"Уведомления {status}.")

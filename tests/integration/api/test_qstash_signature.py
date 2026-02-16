@@ -23,10 +23,12 @@ pytestmark = pytest.mark.integration
 @require_qstash_signature
 async def _echo_handler(request: web.Request) -> web.Response:
     """Echo back the verified body and message ID."""
-    return web.json_response({
-        "body": request["verified_body"],
-        "msg_id": request["qstash_msg_id"],
-    })
+    return web.json_response(
+        {
+            "body": request["verified_body"],
+            "msg_id": request["qstash_msg_id"],
+        }
+    )
 
 
 @pytest.fixture

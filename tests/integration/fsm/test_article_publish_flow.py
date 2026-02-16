@@ -68,24 +68,63 @@ def _setup_article_db(
     mock_db.set_response("projects", MockResponse(data=DEFAULT_PROJECT))
     conn_list = connections if connections is not None else [DEFAULT_CONNECTION_WP]
     mock_db.set_response("platform_connections", MockResponse(data=conn_list))
-    mock_db.set_response("publication_logs", MockResponse(data={
-        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
-        "platform_type": "wordpress", "connection_id": 100, "keyword": "seo guide",
-        "content_type": "article", "images_count": 4, "post_url": "https://blog.example.com/test",
-        "word_count": 2000, "tokens_spent": 320, "created_at": "2025-01-01T00:00:00Z",
-    }))
-    mock_db.set_response("article_previews", MockResponse(data={
-        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
-        "connection_id": 100, "title": "Test Article", "keyword": "seo optimization guide",
-        "word_count": 2000, "images_count": 4, "tokens_charged": 320,
-        "content_html": "<h1>Test</h1>", "images": [], "telegraph_url": "https://telegra.ph/test",
-        "telegraph_path": "test", "regeneration_count": 0, "status": "draft",
-        "created_at": "2025-01-01T00:00:00Z",
-    }))
-    mock_db.set_response("token_expenses", MockResponse(data={
-        "id": 1, "user_id": DEFAULT_USER_ID, "amount": -320, "operation_type": "article",
-        "description": "Article generation", "created_at": "2025-01-01T00:00:00Z",
-    }))
+    mock_db.set_response(
+        "publication_logs",
+        MockResponse(
+            data={
+                "id": 1,
+                "user_id": DEFAULT_USER_ID,
+                "project_id": 1,
+                "category_id": 10,
+                "platform_type": "wordpress",
+                "connection_id": 100,
+                "keyword": "seo guide",
+                "content_type": "article",
+                "images_count": 4,
+                "post_url": "https://blog.example.com/test",
+                "word_count": 2000,
+                "tokens_spent": 320,
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ),
+    )
+    mock_db.set_response(
+        "article_previews",
+        MockResponse(
+            data={
+                "id": 1,
+                "user_id": DEFAULT_USER_ID,
+                "project_id": 1,
+                "category_id": 10,
+                "connection_id": 100,
+                "title": "Test Article",
+                "keyword": "seo optimization guide",
+                "word_count": 2000,
+                "images_count": 4,
+                "tokens_charged": 320,
+                "content_html": "<h1>Test</h1>",
+                "images": [],
+                "telegraph_url": "https://telegra.ph/test",
+                "telegraph_path": "test",
+                "regeneration_count": 0,
+                "status": "draft",
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ),
+    )
+    mock_db.set_response(
+        "token_expenses",
+        MockResponse(
+            data={
+                "id": 1,
+                "user_id": DEFAULT_USER_ID,
+                "amount": -320,
+                "operation_type": "article",
+                "description": "Article generation",
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ),
+    )
     # RPC for charge_balance
     mock_db.set_rpc_response("charge_balance", [{"new_balance": balance - 320}])
     mock_db.set_rpc_response("refund_balance", [{"new_balance": balance}])
@@ -128,7 +167,11 @@ def _get_all_text(mock_bot: Any) -> str:
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_start_selects_category(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """category:{id}:publish:wp -> shows cost confirmation."""
     setup_user()
@@ -143,7 +186,11 @@ async def test_article_start_selects_category(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_category_selected_with_single_wp(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """With single WP connection, goes straight to confirmation."""
     setup_user()
@@ -161,7 +208,11 @@ async def test_article_category_selected_with_single_wp(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_insufficient_balance(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Not enough tokens -> error."""
     low_balance_user = {**DEFAULT_USER, "balance": 10}
@@ -177,7 +228,11 @@ async def test_article_insufficient_balance(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_no_keywords(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Empty keywords -> error E08."""
     setup_user()
@@ -196,7 +251,11 @@ async def test_article_no_keywords(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_no_connections(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """No WP connections -> error E09."""
     setup_user()
@@ -213,7 +272,11 @@ async def test_article_no_connections(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_multiple_wp_connections(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """>1 WP connection -> asks which one (E28)."""
     setup_user()
@@ -229,7 +292,11 @@ async def test_article_multiple_wp_connections(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_confirm_charges_tokens(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Confirm -> charges tokens and starts generation."""
@@ -263,7 +330,11 @@ async def test_article_confirm_charges_tokens(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_cancel_refunds(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Cancel preview -> clears FSM."""
     setup_user()
@@ -284,7 +355,11 @@ async def test_article_cancel_refunds(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_regenerate_within_limit(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Regenerate (2 free max) does not charge extra tokens."""
@@ -292,11 +367,22 @@ async def test_article_regenerate_within_limit(
     _setup_article_db(mock_db)
     # Preview with regeneration_count=0 (first regen is free)
     preview_data = {
-        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
-        "connection_id": 100, "title": "Test", "keyword": "seo guide",
-        "word_count": 2000, "images_count": 4, "tokens_charged": 320,
-        "content_html": "<h1>Test</h1>", "images": [], "telegraph_url": None,
-        "telegraph_path": None, "regeneration_count": 0, "status": "draft",
+        "id": 1,
+        "user_id": DEFAULT_USER_ID,
+        "project_id": 1,
+        "category_id": 10,
+        "connection_id": 100,
+        "title": "Test",
+        "keyword": "seo guide",
+        "word_count": 2000,
+        "images_count": 4,
+        "tokens_charged": 320,
+        "content_html": "<h1>Test</h1>",
+        "images": [],
+        "telegraph_url": None,
+        "telegraph_path": None,
+        "regeneration_count": 0,
+        "status": "draft",
         "created_at": "2025-01-01T00:00:00Z",
     }
     mock_db.set_response("article_previews", MockResponse(data=preview_data))
@@ -324,7 +410,11 @@ async def test_article_regenerate_within_limit(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_regenerate_exceeds_limit(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """3rd regen -> charges tokens (E10)."""
@@ -332,11 +422,22 @@ async def test_article_regenerate_exceeds_limit(
     _setup_article_db(mock_db)
     # Preview with regeneration_count=2 (third regen is paid)
     preview_data = {
-        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
-        "connection_id": 100, "title": "Test", "keyword": "seo guide",
-        "word_count": 2000, "images_count": 4, "tokens_charged": 320,
-        "content_html": "<h1>Test</h1>", "images": [], "telegraph_url": None,
-        "telegraph_path": None, "regeneration_count": 2, "status": "draft",
+        "id": 1,
+        "user_id": DEFAULT_USER_ID,
+        "project_id": 1,
+        "category_id": 10,
+        "connection_id": 100,
+        "title": "Test",
+        "keyword": "seo guide",
+        "word_count": 2000,
+        "images_count": 4,
+        "tokens_charged": 320,
+        "content_html": "<h1>Test</h1>",
+        "images": [],
+        "telegraph_url": None,
+        "telegraph_path": None,
+        "regeneration_count": 2,
+        "status": "draft",
         "created_at": "2025-01-01T00:00:00Z",
     }
     mock_db.set_response("article_previews", MockResponse(data=preview_data))
@@ -364,7 +465,11 @@ async def test_article_regenerate_exceeds_limit(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_publish_guard_e07(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """E07: double-click during publishing -> blocked."""
     setup_user()
@@ -382,7 +487,11 @@ async def test_article_publish_guard_e07(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_regen_guard(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Block callbacks while regeneration is in progress."""
     setup_user()
@@ -400,7 +509,11 @@ async def test_article_regen_guard(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_god_mode_no_charge(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Admin -> tokens shown but not charged (GOD_MODE)."""
@@ -410,20 +523,50 @@ async def test_article_god_mode_no_charge(
     mock_db.set_response("categories", MockResponse(data=_CATEGORY_WITH_KEYWORDS))
     mock_db.set_response("projects", MockResponse(data=admin_project))
     mock_db.set_response("platform_connections", MockResponse(data=[DEFAULT_CONNECTION_WP]))
-    mock_db.set_response("publication_logs", MockResponse(data={
-        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
-        "platform_type": "wordpress", "connection_id": 100, "keyword": "seo guide",
-        "content_type": "article", "images_count": 4, "post_url": "https://blog.example.com/test",
-        "word_count": 2000, "tokens_spent": 320, "created_at": "2025-01-01T00:00:00Z",
-    }))
-    mock_db.set_response("article_previews", MockResponse(data={
-        "id": 1, "user_id": ADMIN_ID, "project_id": 1, "category_id": 10,
-        "connection_id": 100, "title": "Admin Article", "keyword": "seo guide",
-        "word_count": 2000, "images_count": 4, "tokens_charged": 320,
-        "content_html": "<h1>Admin</h1>", "images": [], "telegraph_url": None,
-        "telegraph_path": None, "regeneration_count": 0, "status": "draft",
-        "created_at": "2025-01-01T00:00:00Z",
-    }))
+    mock_db.set_response(
+        "publication_logs",
+        MockResponse(
+            data={
+                "id": 1,
+                "user_id": DEFAULT_USER_ID,
+                "project_id": 1,
+                "category_id": 10,
+                "platform_type": "wordpress",
+                "connection_id": 100,
+                "keyword": "seo guide",
+                "content_type": "article",
+                "images_count": 4,
+                "post_url": "https://blog.example.com/test",
+                "word_count": 2000,
+                "tokens_spent": 320,
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ),
+    )
+    mock_db.set_response(
+        "article_previews",
+        MockResponse(
+            data={
+                "id": 1,
+                "user_id": ADMIN_ID,
+                "project_id": 1,
+                "category_id": 10,
+                "connection_id": 100,
+                "title": "Admin Article",
+                "keyword": "seo guide",
+                "word_count": 2000,
+                "images_count": 4,
+                "tokens_charged": 320,
+                "content_html": "<h1>Admin</h1>",
+                "images": [],
+                "telegraph_url": None,
+                "telegraph_path": None,
+                "regeneration_count": 0,
+                "status": "draft",
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ),
+    )
     mock_db.set_response("token_expenses", MockResponse(data=[]))
     mock_db.set_rpc_response("charge_balance", [{"new_balance": 99999}])
 
@@ -442,7 +585,11 @@ async def test_article_god_mode_no_charge(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_saves_preview_to_db(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """ArticlePreview row created during generation."""
@@ -474,15 +621,24 @@ async def test_article_saves_preview_to_db(
 
 @patch("routers.publishing.preview.get_settings", _mock_settings)
 async def test_article_confirm_publish(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Confirm -> publishes to WP."""
     setup_user()
     _setup_article_db(mock_db)
-    _put_in_article_fsm(mock_redis, "ArticlePublishFSM:preview", {
-        "preview_id": 1, "keyword": "seo guide",
-    })
+    _put_in_article_fsm(
+        mock_redis,
+        "ArticlePublishFSM:preview",
+        {
+            "preview_id": 1,
+            "keyword": "seo guide",
+        },
+    )
 
     mock_pub_result = MagicMock()
     mock_pub_result.success = True

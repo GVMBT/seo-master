@@ -19,6 +19,7 @@ from services.ai.quality_scorer import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _build_article_html(
     *,
     h1_text: str = "Кухни на заказ в Москве",
@@ -69,8 +70,7 @@ def _build_article_html(
 
     # Conclusion with main phrase
     conclusion = (
-        f"<p>В заключение, {main_phrase} остается отличным выбором "
-        "для вашего дома. Цена от 50000 руб. Звоните!</p>"
+        f"<p>В заключение, {main_phrase} остается отличным выбором для вашего дома. Цена от 50000 руб. Звоните!</p>"
     )
     parts.append(conclusion)
 
@@ -106,8 +106,8 @@ class TestHelpers:
 
     def test_count_syllables_ru(self) -> None:
         assert _count_syllables_ru("молоко") == 3  # мо-ло-ко
-        assert _count_syllables_ru("кот") == 1     # кот
-        assert _count_syllables_ru("ёлка") == 2    # ёл-ка
+        assert _count_syllables_ru("кот") == 1  # кот
+        assert _count_syllables_ru("ёлка") == 2  # ёл-ка
 
     def test_count_syllables_empty(self) -> None:
         assert _count_syllables_ru("") == 0

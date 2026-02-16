@@ -78,13 +78,7 @@ class PreviewsRepository(BaseRepository):
         Cleanup service handles: refund tokens, notify user, then mark as expired.
         """
         now = datetime.now(tz=UTC).isoformat()
-        resp = (
-            await self._table(_TABLE)
-            .select("*")
-            .eq("status", "draft")
-            .lt("expires_at", now)
-            .execute()
-        )
+        resp = await self._table(_TABLE).select("*").eq("status", "draft").lt("expires_at", now).execute()
         return [ArticlePreview(**row) for row in self._rows(resp)]
 
     async def mark_expired(self, preview_id: int) -> None:
@@ -97,11 +91,7 @@ class PreviewsRepository(BaseRepository):
         Returns the updated preview, or None if already expired/processed (race condition).
         """
         resp = (
-            await self._table(_TABLE)
-            .update({"status": "expired"})
-            .eq("id", preview_id)
-            .eq("status", "draft")
-            .execute()
+            await self._table(_TABLE).update({"status": "expired"}).eq("id", preview_id).eq("status", "draft").execute()
         )
         row = self._first(resp)
         return ArticlePreview(**row) if row else None

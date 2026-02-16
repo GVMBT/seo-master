@@ -27,12 +27,14 @@ def _make_request(auth_header: str = "", health_token: str = "secret123") -> Mag
     http_mock.get = AsyncMock(return_value=MagicMock(status_code=200))
 
     app = MagicMock()
-    app.__getitem__ = MagicMock(side_effect=lambda key: {
-        "settings": settings_mock,
-        "db": db_mock,
-        "redis": redis_mock,
-        "http_client": http_mock,
-    }[key])
+    app.__getitem__ = MagicMock(
+        side_effect=lambda key: {
+            "settings": settings_mock,
+            "db": db_mock,
+            "redis": redis_mock,
+            "http_client": http_mock,
+        }[key]
+    )
 
     request = MagicMock()
     request.app = app

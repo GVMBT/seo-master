@@ -17,13 +17,7 @@ class ProjectsRepository(BaseRepository):
 
     async def get_by_user(self, user_id: int) -> list[Project]:
         """Get all projects for a user, ordered by creation date (newest first)."""
-        resp = (
-            await self._table(_TABLE)
-            .select("*")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .execute()
-        )
+        resp = await self._table(_TABLE).select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
         return [Project(**row) for row in self._rows(resp)]
 
     async def get_count_by_user(self, user_id: int) -> int:

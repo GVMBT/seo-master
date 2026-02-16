@@ -86,9 +86,11 @@ async def health_handler(request: web.Request) -> web.Response:
         if overall != "down":
             overall = "degraded"
 
-    return web.json_response({
-        "status": overall,
-        "version": _VERSION,
-        "uptime_seconds": round(time.monotonic() - _START_TIME),
-        "checks": checks,
-    })
+    return web.json_response(
+        {
+            "status": overall,
+            "version": _VERSION,
+            "uptime_seconds": round(time.monotonic() - _START_TIME),
+            "checks": checks,
+        }
+    )

@@ -56,8 +56,12 @@ class TestSettings:
     def test_optional_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Clear optional env vars that may leak from host OS
         for var in (
-            "DATAFORSEO_LOGIN", "YOOKASSA_SHOP_ID", "SENTRY_DSN",
-            "RAILWAY_PUBLIC_URL", "PINTEREST_APP_ID", "HEALTH_CHECK_TOKEN",
+            "DATAFORSEO_LOGIN",
+            "YOOKASSA_SHOP_ID",
+            "SENTRY_DSN",
+            "RAILWAY_PUBLIC_URL",
+            "PINTEREST_APP_ID",
+            "HEALTH_CHECK_TOKEN",
             "USD_RUB_RATE",
         ):
             monkeypatch.delenv(var, raising=False)

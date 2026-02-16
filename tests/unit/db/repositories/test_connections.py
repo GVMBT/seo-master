@@ -48,9 +48,7 @@ class TestGetById:
         # credentials is decrypted dict from repository layer
         assert conn.credentials == raw_creds
 
-    async def test_not_found(
-        self, repo: ConnectionsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_not_found(self, repo: ConnectionsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("platform_connections", MockResponse(data=None))
         assert await repo.get_by_id(999) is None
 
@@ -110,9 +108,7 @@ class TestUpdateCredentials:
         conn = await repo.update_credentials(1, new_creds)
         assert conn is not None
 
-    async def test_not_found(
-        self, repo: ConnectionsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_not_found(self, repo: ConnectionsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("platform_connections", MockResponse(data=[]))
         assert await repo.update_credentials(999, {"key": "val"}) is None
 

@@ -25,8 +25,12 @@ def _make_category(**overrides) -> Category:
 
 def _make_connection(**overrides) -> PlatformConnection:
     defaults = {
-        "id": 1, "project_id": 1, "platform_type": "wordpress",
-        "status": "active", "credentials": {}, "identifier": "test.com",
+        "id": 1,
+        "project_id": 1,
+        "platform_type": "wordpress",
+        "status": "active",
+        "credentials": {},
+        "identifier": "test.com",
     }
     defaults.update(overrides)
     return PlatformConnection(**defaults)
@@ -34,8 +38,12 @@ def _make_connection(**overrides) -> PlatformConnection:
 
 def _make_schedule(**overrides) -> PlatformSchedule:
     defaults = {
-        "id": 1, "category_id": 1, "platform_type": "wordpress",
-        "connection_id": 1, "enabled": False, "status": "active",
+        "id": 1,
+        "category_id": 1,
+        "platform_type": "wordpress",
+        "connection_id": 1,
+        "enabled": False,
+        "status": "active",
     }
     defaults.update(overrides)
     return PlatformSchedule(**defaults)

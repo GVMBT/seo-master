@@ -118,9 +118,7 @@ async def test_tg_publish_with_photo() -> None:
 
     async with httpx.AsyncClient() as client:
         publisher = TelegramPublisher(client)
-        result = await publisher.publish(
-            _make_request(content=short_caption, images=[image_data])
-        )
+        result = await publisher.publish(_make_request(content=short_caption, images=[image_data]))
 
     assert result.success is True
     assert result.platform_post_id == "43"
@@ -154,9 +152,7 @@ async def test_tg_publish_long_text_with_photo() -> None:
 
     async with httpx.AsyncClient() as client:
         publisher = TelegramPublisher(client)
-        result = await publisher.publish(
-            _make_request(content=long_content, images=[image_data])
-        )
+        result = await publisher.publish(_make_request(content=long_content, images=[image_data]))
 
     assert result.success is True
     # The message_id comes from the sendMessage call (the second one)

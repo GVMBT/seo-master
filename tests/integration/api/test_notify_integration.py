@@ -52,7 +52,9 @@ async def test_notify_idempotency_duplicate(api_client, app_services):
 
         # First call
         resp1 = await api_client.post(
-            "/api/notify", data=json.dumps(_LOW_BALANCE_PAYLOAD), headers=headers,
+            "/api/notify",
+            data=json.dumps(_LOW_BALANCE_PAYLOAD),
+            headers=headers,
         )
         assert resp1.status == 200
         body1 = await resp1.json()
@@ -60,7 +62,9 @@ async def test_notify_idempotency_duplicate(api_client, app_services):
 
         # Second call with same msg_id
         resp2 = await api_client.post(
-            "/api/notify", data=json.dumps(_LOW_BALANCE_PAYLOAD), headers=headers,
+            "/api/notify",
+            data=json.dumps(_LOW_BALANCE_PAYLOAD),
+            headers=headers,
         )
         assert resp2.status == 200
         body2 = await resp2.json()

@@ -63,9 +63,7 @@ async def test_step02_profile(telethon_client, bot_username: str, clean_state) -
 
     text = (result.text or "").lower()
     # Profile should show user info
-    assert any(
-        w in text for w in ["id:", "баланс", "имя", "роль", "дата"]
-    ), f"Unexpected profile: {result.text!r}"
+    assert any(w in text for w in ["id:", "баланс", "имя", "роль", "дата"]), f"Unexpected profile: {result.text!r}"
 
     _state["profile"] = result
     await asyncio.sleep(1)
@@ -98,9 +96,9 @@ async def test_step04_tariffs(telethon_client, bot_username: str, clean_state) -
 
     text = (result.text or "").lower()
     # Tariffs should show packages with prices or Stars info
-    assert any(
-        w in text for w in ["токен", "цена", "пакет", "stars", "тариф", "подписк", "купить"]
-    ), f"Unexpected tariffs: {result.text!r}"
+    assert any(w in text for w in ["токен", "цена", "пакет", "stars", "тариф", "подписк", "купить"]), (
+        f"Unexpected tariffs: {result.text!r}"
+    )
 
     _state["tariffs"] = result
     await asyncio.sleep(1)
@@ -131,9 +129,9 @@ async def test_step06_settings(telethon_client, bot_username: str, clean_state) 
     assert result is not None, "Bot did not respond to 'Настройки' click"
 
     text = (result.text or "").lower()
-    assert any(
-        w in text for w in ["настройк", "уведомлен", "поддержка", "о боте"]
-    ), f"Unexpected settings: {result.text!r}"
+    assert any(w in text for w in ["настройк", "уведомлен", "поддержка", "о боте"]), (
+        f"Unexpected settings: {result.text!r}"
+    )
 
     _state["settings"] = result
     await asyncio.sleep(1)
@@ -153,9 +151,9 @@ async def test_step07_notifications_toggle(telethon_client, bot_username: str, c
         pytest.skip("No 'Уведомления' button in settings")
 
     text = (result.text or "").lower()
-    assert any(
-        w in text for w in ["уведомлен", "публикац", "баланс", "новости"]
-    ), f"Unexpected notifications screen: {result.text!r}"
+    assert any(w in text for w in ["уведомлен", "публикац", "баланс", "новости"]), (
+        f"Unexpected notifications screen: {result.text!r}"
+    )
 
     # Should have toggle buttons
     assert result.buttons is not None, "Notifications screen has no buttons"

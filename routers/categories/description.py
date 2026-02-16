@@ -227,7 +227,9 @@ async def cb_description_save(callback: CallbackQuery, state: FSMContext, user: 
             reply_markup=category_card_kb(category).as_markup(),
         )
     else:
-        await msg.edit_text("Категория не найдена.")
+        from keyboards.errors import error_not_found_kb
+
+        await msg.edit_text("Категория не найдена.", reply_markup=error_not_found_kb().as_markup())
     await callback.answer()
 
 

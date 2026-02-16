@@ -307,7 +307,7 @@ def package_pay_kb(package_name: str, show_savings: bool = False) -> InlineKeybo
         # For Business/Enterprise, show approximate savings
         savings = int(pkg.price_rub * 0.35)
         yk_label = f"Оплатить картой (~{savings} руб. экономии)"
-    builder.button(text=yk_label, callback_data=f"tariff:{package_name}:yk", style="primary")
+    builder.button(text=yk_label, callback_data=f"tariff:{package_name}:yk")
     builder.button(text="Назад", callback_data="tariffs:topup")
     builder.adjust(1)
     return builder
@@ -322,7 +322,7 @@ def subscription_pay_kb(sub_name: str) -> InlineKeyboardBuilder:
         callback_data=f"sub:{sub_name}:stars",
         style="primary",
     )
-    builder.button(text="Оплатить картой (ЮKassa)", callback_data=f"sub:{sub_name}:yk", style="primary")
+    builder.button(text="Оплатить картой (ЮKassa)", callback_data=f"sub:{sub_name}:yk")
     builder.button(text="Назад", callback_data="tariffs:main")
     builder.adjust(1)
     return builder

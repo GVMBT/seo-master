@@ -22,6 +22,7 @@ from db.credential_manager import CredentialManager
 # Mock PostgREST chain
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MockResponse:
     """Simulated PostgREST response."""
@@ -180,6 +181,7 @@ class MockSupabaseClient:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_response() -> type[MockResponse]:

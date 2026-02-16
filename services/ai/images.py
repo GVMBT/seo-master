@@ -64,7 +64,9 @@ class ImageService:
         # Reserve N rate limit slots ONCE before parallel generation (H14)
         if self._rate_limiter is not None:
             await self._rate_limiter.check_batch(
-                user_id, "image_generation", count,
+                user_id,
+                "image_generation",
+                count,
             )
 
         image_settings = context.get("image_settings", {})

@@ -85,11 +85,14 @@ class TestMaybeRefreshToken:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "oauth/token" in str(request.url):
-                return httpx.Response(200, json={
-                    "access_token": "new_access_token",
-                    "refresh_token": "new_refresh_token",
-                    "expires_in": 2592000,
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "new_access_token",
+                        "refresh_token": "new_refresh_token",
+                        "expires_in": 2592000,
+                    },
+                )
             return httpx.Response(404)
 
         pub = _make_publisher(handler)
@@ -100,10 +103,13 @@ class TestMaybeRefreshToken:
     async def test_expired_token_triggers_refresh(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             if "oauth/token" in str(request.url):
-                return httpx.Response(200, json={
-                    "access_token": "refreshed_token",
-                    "expires_in": 2592000,
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "refreshed_token",
+                        "expires_in": 2592000,
+                    },
+                )
             return httpx.Response(404)
 
         pub = _make_publisher(handler)
@@ -116,10 +122,13 @@ class TestMaybeRefreshToken:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "oauth/token" in str(request.url):
-                return httpx.Response(200, json={
-                    "access_token": "refreshed",
-                    "expires_in": 2592000,
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "refreshed",
+                        "expires_in": 2592000,
+                    },
+                )
             return httpx.Response(404)
 
         pub = _make_publisher(handler)
@@ -135,11 +144,14 @@ class TestMaybeRefreshToken:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "oauth/token" in str(request.url):
-                return httpx.Response(200, json={
-                    "access_token": "new_at",
-                    "refresh_token": "new_rt",
-                    "expires_in": 2592000,
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "new_at",
+                        "refresh_token": "new_rt",
+                        "expires_in": 2592000,
+                    },
+                )
             return httpx.Response(404)
 
         pub = _make_publisher(handler, on_token_refresh=callback)
@@ -157,10 +169,13 @@ class TestMaybeRefreshToken:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "oauth/token" in str(request.url):
-                return httpx.Response(200, json={
-                    "access_token": "new_token",
-                    "expires_in": 2592000,
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "new_token",
+                        "expires_in": 2592000,
+                    },
+                )
             return httpx.Response(404)
 
         pub = _make_publisher(handler, on_token_refresh=None)
@@ -173,11 +188,14 @@ class TestMaybeRefreshToken:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "oauth/token" in str(request.url):
-                return httpx.Response(200, json={
-                    "access_token": "new_at",
-                    # No refresh_token in response -> should keep old one
-                    "expires_in": 2592000,
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "new_at",
+                        # No refresh_token in response -> should keep old one
+                        "expires_in": 2592000,
+                    },
+                )
             return httpx.Response(404)
 
         pub = _make_publisher(handler, on_token_refresh=callback)

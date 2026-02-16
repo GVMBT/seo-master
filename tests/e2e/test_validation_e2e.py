@@ -61,24 +61,20 @@ async def test_step02_invalid_name_rejected(telethon_client, bot_username: str, 
 
     text = (response.text or "").lower()
     # Should get validation error
-    assert any(
-        w in text for w in ["символ", "от 2", "введите", "ошибк", "недопуст"]
-    ), f"Expected validation error: {response.text!r}"
+    assert any(w in text for w in ["символ", "от 2", "введите", "ошибк", "недопуст"]), (
+        f"Expected validation error: {response.text!r}"
+    )
 
     await asyncio.sleep(1)
 
 
 async def test_step03_valid_name_accepted(telethon_client, bot_username: str, clean_state) -> None:
     """Step 3: Send valid name → proceeds to step 2 (company name)."""
-    response = await send_and_wait(
-        telethon_client, bot_username, "Validation Test Project", timeout=15.0
-    )
+    response = await send_and_wait(telethon_client, bot_username, "Validation Test Project", timeout=15.0)
     assert response is not None, "Bot did not respond to valid name"
 
     text = (response.text or "").lower()
-    assert any(
-        w in text for w in ["шаг 2", "компани"]
-    ), f"Expected step 2: {response.text!r}"
+    assert any(w in text for w in ["шаг 2", "компани"]), f"Expected step 2: {response.text!r}"
 
     await asyncio.sleep(1)
 
@@ -89,9 +85,7 @@ async def test_step04_cancel_mid_fsm(telethon_client, bot_username: str, clean_s
     assert response is not None, "Bot did not respond to /cancel"
 
     text = (response.text or "").lower()
-    assert any(
-        w in text for w in ["отменено", "действие отменено"]
-    ), f"Expected cancellation: {response.text!r}"
+    assert any(w in text for w in ["отменено", "действие отменено"]), f"Expected cancellation: {response.text!r}"
 
     await asyncio.sleep(1)
 
@@ -103,8 +97,8 @@ async def test_step05_fsm_cleared_after_cancel(telethon_client, bot_username: st
 
     text = (response.text or "").lower()
     # Should show dashboard, not FSM prompt
-    assert any(
-        w in text for w in ["баланс", "токенов", "проектов", "нет проектов"]
-    ), f"FSM not properly cleared: {response.text!r}"
+    assert any(w in text for w in ["баланс", "токенов", "проектов", "нет проектов"]), (
+        f"FSM not properly cleared: {response.text!r}"
+    )
 
     await asyncio.sleep(1)

@@ -46,11 +46,7 @@ class SchedulerService:
         On partial failure, cleans up already-created schedules before raising.
         """
         schedule_ids: list[str] = []
-        days_cron = (
-            ",".join(_DAY_MAP.get(d, d) for d in schedule.schedule_days)
-            if schedule.schedule_days
-            else "*"
-        )
+        days_cron = ",".join(_DAY_MAP.get(d, d) for d in schedule.schedule_days) if schedule.schedule_days else "*"
 
         for time_slot in schedule.schedule_times:
             hour, minute = time_slot.split(":")

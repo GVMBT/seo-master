@@ -15,8 +15,11 @@ from services.notifications import NotifyService
 
 def _make_user(**overrides) -> User:
     defaults = {
-        "id": 1, "balance": 50, "notify_publications": True,
-        "notify_balance": True, "notify_news": True,
+        "id": 1,
+        "balance": 50,
+        "notify_publications": True,
+        "notify_balance": True,
+        "notify_news": True,
         "last_activity": datetime.now(tz=UTC),
     }
     defaults.update(overrides)
@@ -35,10 +38,12 @@ def _make_service() -> NotifyService:
 async def test_low_balance_returns_users() -> None:
     """Users below threshold with notify_balance=True are included."""
     svc = _make_service()
-    svc._users.get_low_balance_users = AsyncMock(return_value=[
-        _make_user(id=1, balance=50),
-        _make_user(id=2, balance=80),
-    ])
+    svc._users.get_low_balance_users = AsyncMock(
+        return_value=[
+            _make_user(id=1, balance=50),
+            _make_user(id=2, balance=80),
+        ]
+    )
 
     result = await svc.build_low_balance(threshold=100)
 
@@ -65,9 +70,11 @@ async def test_low_balance_empty() -> None:
 async def test_weekly_digest_builds(mock_pubs_cls: MagicMock) -> None:
     """Active users with notify_news get digest."""
     svc = _make_service()
-    svc._users.get_active_users = AsyncMock(return_value=[
-        _make_user(id=1, notify_news=True, balance=500),
-    ])
+    svc._users.get_active_users = AsyncMock(
+        return_value=[
+            _make_user(id=1, notify_news=True, balance=500),
+        ]
+    )
 
     mock_pubs = MagicMock()
     mock_pubs.get_stats_by_user = AsyncMock(return_value={"total_publications": 42})
@@ -84,9 +91,11 @@ async def test_weekly_digest_builds(mock_pubs_cls: MagicMock) -> None:
 async def test_weekly_digest_skips_notify_off(mock_pubs_cls: MagicMock) -> None:
     """Users with notify_news=False are skipped."""
     svc = _make_service()
-    svc._users.get_active_users = AsyncMock(return_value=[
-        _make_user(id=1, notify_news=False),
-    ])
+    svc._users.get_active_users = AsyncMock(
+        return_value=[
+            _make_user(id=1, notify_news=False),
+        ]
+    )
 
     result = await svc.build_weekly_digest()
     assert result == []
@@ -100,9 +109,11 @@ async def test_weekly_digest_skips_notify_off(mock_pubs_cls: MagicMock) -> None:
 async def test_reactivation_returns_inactive() -> None:
     """Inactive users (>14 days) get reactivation message."""
     svc = _make_service()
-    svc._users.get_inactive_users = AsyncMock(return_value=[
-        _make_user(id=1, balance=200, last_activity=datetime.now(tz=UTC) - timedelta(days=20)),
-    ])
+    svc._users.get_inactive_users = AsyncMock(
+        return_value=[
+            _make_user(id=1, balance=200, last_activity=datetime.now(tz=UTC) - timedelta(days=20)),
+        ]
+    )
 
     result = await svc.build_reactivation()
 

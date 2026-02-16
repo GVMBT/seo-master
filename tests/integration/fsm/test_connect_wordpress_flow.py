@@ -69,7 +69,11 @@ def _get_all_text(mock_bot: Any) -> str:
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_wp_connect_starts_fsm(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Callback project:{id}:add:wordpress -> asks for URL."""
     setup_user()
@@ -89,7 +93,11 @@ async def test_wp_connect_starts_fsm(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_wp_step1_valid_url(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """URL accepted -> asks for username."""
     setup_user()
@@ -110,7 +118,11 @@ async def test_wp_step1_valid_url(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_wp_step1_invalid_url(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Bad URL -> retry."""
     setup_user()
@@ -132,7 +144,11 @@ async def test_wp_step1_invalid_url(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_wp_step1_auto_prepend_https(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """URL without scheme -> auto-prepend https://."""
     setup_user()
@@ -149,7 +165,11 @@ async def test_wp_step1_auto_prepend_https(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_wp_step2_username(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Username -> asks for app password."""
     setup_user()
@@ -170,7 +190,11 @@ async def test_wp_step2_username(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_wp_step3_valid_credentials(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Valid app password format -> creates connection."""
     setup_user()
@@ -178,19 +202,31 @@ async def test_wp_step3_valid_credentials(
     # Connection creation response (with encrypted credentials for decryption)
     conn_creds = _test_cm.encrypt({"url": "https://myblog.example.com", "login": "admin", "app_password": "test"})
     conn_data = {
-        "id": 100, "project_id": 1, "platform_type": "wordpress",
-        "status": "active", "identifier": "myblog.example.com",
-        "credentials": conn_creds, "metadata": {}, "created_at": "2025-01-01T00:00:00Z",
+        "id": 100,
+        "project_id": 1,
+        "platform_type": "wordpress",
+        "status": "active",
+        "identifier": "myblog.example.com",
+        "credentials": conn_creds,
+        "metadata": {},
+        "created_at": "2025-01-01T00:00:00Z",
     }
     # First query: get_by_identifier_for_user returns None (no dup), second: insert
-    mock_db.set_responses("platform_connections", [
-        MockResponse(data=None),  # get_by_identifier_for_user: no duplicate
-        MockResponse(data=conn_data),  # create: returns new connection
-    ])
-    _put_in_wp_fsm(mock_redis, "ConnectWordPressFSM:password", {
-        "wp_url": "https://myblog.example.com",
-        "wp_login": "admin",
-    })
+    mock_db.set_responses(
+        "platform_connections",
+        [
+            MockResponse(data=None),  # get_by_identifier_for_user: no duplicate
+            MockResponse(data=conn_data),  # create: returns new connection
+        ],
+    )
+    _put_in_wp_fsm(
+        mock_redis,
+        "ConnectWordPressFSM:password",
+        {
+            "wp_url": "https://myblog.example.com",
+            "wp_login": "admin",
+        },
+    )
 
     # Valid WP Application Password format: xxxx xxxx xxxx xxxx xxxx xxxx
     update = make_update_message("Abcd Efgh Ijkl Mnop Qrst Uvwx")
@@ -208,15 +244,23 @@ async def test_wp_step3_valid_credentials(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_wp_step3_invalid_password_format(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Bad password format -> error, retry."""
     setup_user()
     _setup_wp_db(mock_db)
-    _put_in_wp_fsm(mock_redis, "ConnectWordPressFSM:password", {
-        "wp_url": "https://myblog.example.com",
-        "wp_login": "admin",
-    })
+    _put_in_wp_fsm(
+        mock_redis,
+        "ConnectWordPressFSM:password",
+        {
+            "wp_url": "https://myblog.example.com",
+            "wp_login": "admin",
+        },
+    )
 
     update = make_update_message("wrong-password-format")
     await dispatcher.feed_update(mock_bot, update)
@@ -232,7 +276,11 @@ async def test_wp_step3_invalid_password_format(
 
 
 async def test_wp_cancel_during_connection(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """/cancel during WP connection -> clean exit."""
     setup_user()
@@ -252,22 +300,34 @@ async def test_wp_cancel_during_connection(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_wp_full_flow_end_to_end(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Full 3-step WP connection flow."""
     setup_user()
     _setup_wp_db(mock_db)
     conn_creds = _test_cm.encrypt({"url": "https://blog.example.com", "login": "admin", "app_password": "test"})
     conn_data = {
-        "id": 100, "project_id": 1, "platform_type": "wordpress",
-        "status": "active", "identifier": "blog.example.com",
-        "credentials": conn_creds, "metadata": {}, "created_at": "2025-01-01T00:00:00Z",
+        "id": 100,
+        "project_id": 1,
+        "platform_type": "wordpress",
+        "status": "active",
+        "identifier": "blog.example.com",
+        "credentials": conn_creds,
+        "metadata": {},
+        "created_at": "2025-01-01T00:00:00Z",
     }
     # Set up responses: None for dup check, conn_data for create
-    mock_db.set_responses("platform_connections", [
-        MockResponse(data=None),  # get_by_identifier during step 3
-        MockResponse(data=conn_data),  # create result
-    ])
+    mock_db.set_responses(
+        "platform_connections",
+        [
+            MockResponse(data=None),  # get_by_identifier during step 3
+            MockResponse(data=conn_data),  # create result
+        ],
+    )
 
     # Step 1: start
     update = make_update_callback("project:1:add:wordpress")

@@ -31,9 +31,7 @@ class WordPressRule(PlatformRule):
         if content_type == "article":
             min_len = _WP_LIMITS["min_article"]
             if len(content) < min_len:
-                errors.append(
-                    f"Текст слишком короткий ({len(content)} символов, мин. {min_len})"
-                )
+                errors.append(f"Текст слишком короткий ({len(content)} символов, мин. {min_len})")
 
             if not re.search(r"<h1[^>]*>", content):
                 errors.append("Отсутствует H1-заголовок")

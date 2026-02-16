@@ -136,7 +136,10 @@ async def cb_project_new(callback: CallbackQuery, state: FSMContext, user: User,
 
     await state.set_state(ProjectCreateFSM.name)
     await msg.answer(
-        "Шаг 1/4. Введите название проекта (2-100 символов):",
+        "Шаг 1/4. Как называется ваш проект?\n\n"
+        "Это внутреннее название для навигации в боте — "
+        "клиенты его не увидят.\n"
+        "Например: «Интернет-магазин Комфорт» или «Блог стоматологии»",
         reply_markup=cancel_kb(),
     )
     await callback.answer()
@@ -151,7 +154,11 @@ async def fsm_project_name(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(name=message.text)
     await state.set_state(ProjectCreateFSM.company_name)
-    await message.answer("Шаг 2/4. Введите название компании:")
+    await message.answer(
+        "Шаг 2/4. Название компании или бренда\n\n"
+        "Будет использоваться в текстах статей и постов.\n"
+        "Например: «Мебельная фабрика Комфорт» или «Клиника Здоровье»"
+    )
 
 
 @router.message(ProjectCreateFSM.company_name, F.text)
@@ -163,7 +170,11 @@ async def fsm_project_company(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(company_name=message.text)
     await state.set_state(ProjectCreateFSM.specialization)
-    await message.answer("Шаг 3/4. Опишите специализацию компании (мин. 5 символов):")
+    await message.answer(
+        "Шаг 3/4. Чем занимается компания?\n\n"
+        "AI будет опираться на это при создании контента.\n"
+        "Например: «Производство и продажа мягкой мебели в Москве»"
+    )
 
 
 @router.message(ProjectCreateFSM.specialization, F.text)
@@ -176,7 +187,10 @@ async def fsm_project_spec(message: Message, state: FSMContext) -> None:
     await state.update_data(specialization=message.text)
     await state.set_state(ProjectCreateFSM.website_url)
     await message.answer(
-        "Шаг 4/4. Введите URL сайта или нажмите «Пропустить»:",
+        "Шаг 4/4. Адрес сайта компании\n\n"
+        "Нужен для SEO-аудита и анализа конкурентов. "
+        "Можно добавить позже.\n"
+        "Например: https://comfort-mebel.ru",
         reply_markup=skip_cancel_kb(),
     )
 

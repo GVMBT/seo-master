@@ -217,11 +217,7 @@ class PublicationsRepository(BaseRepository):
         total = self._count(resp)
 
         resp_tokens = (
-            await self._table(_TABLE)
-            .select("tokens_spent")
-            .eq("user_id", user_id)
-            .eq("status", "success")
-            .execute()
+            await self._table(_TABLE).select("tokens_spent").eq("user_id", user_id).eq("status", "success").execute()
         )
         rows: list[dict[str, Any]] = self._rows(resp_tokens)
         total_tokens = sum(row.get("tokens_spent", 0) for row in rows)

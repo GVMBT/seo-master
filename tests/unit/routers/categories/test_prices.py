@@ -250,9 +250,7 @@ class TestCbPriceText:
 
 
 class TestFsmPriceTextInput:
-    async def test_valid_input_shows_preview(
-        self, mock_state: AsyncMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_valid_input_shows_preview(self, mock_state: AsyncMock, user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.text = "Товар 1 — 100\nТовар 2 — 200\nТовар 3 — 300"
@@ -263,9 +261,7 @@ class TestFsmPriceTextInput:
         text = msg.answer.call_args[0][0]
         assert "3 позиций" in text
 
-    async def test_empty_input_rejected(
-        self, mock_state: AsyncMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_empty_input_rejected(self, mock_state: AsyncMock, user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.text = "   "
@@ -274,9 +270,7 @@ class TestFsmPriceTextInput:
 
         msg.answer.assert_called_with("Введите непустой прайс-лист.")
 
-    async def test_e09_too_many_lines(
-        self, mock_state: AsyncMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_e09_too_many_lines(self, mock_state: AsyncMock, user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.text = "\n".join(f"Товар {i} — {i}00" for i in range(1100))
@@ -293,9 +287,7 @@ class TestFsmPriceTextInput:
 
 
 class TestFsmPriceFileUpload:
-    async def test_non_xlsx_rejected(
-        self, mock_state: AsyncMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_non_xlsx_rejected(self, mock_state: AsyncMock, user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.document = MagicMock()
@@ -306,9 +298,7 @@ class TestFsmPriceFileUpload:
 
         msg.answer.assert_called_with("Поддерживается только формат .xlsx.")
 
-    async def test_oversized_file_rejected(
-        self, mock_state: AsyncMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_oversized_file_rejected(self, mock_state: AsyncMock, user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.document = MagicMock()
@@ -320,9 +310,7 @@ class TestFsmPriceFileUpload:
         text = msg.answer.call_args[0][0]
         assert "слишком большой" in text.lower()
 
-    async def test_no_document_rejected(
-        self, mock_state: AsyncMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_no_document_rejected(self, mock_state: AsyncMock, user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.document = None
@@ -351,9 +339,7 @@ class TestFsmPriceSaveText:
         user: User,
         mock_db: MagicMock,
     ) -> None:
-        mock_state.get_data = AsyncMock(
-            return_value={"category_id": 10, "prices_text": "Item — 100"}
-        )
+        mock_state.get_data = AsyncMock(return_value={"category_id": 10, "prices_text": "Item — 100"})
         cat = Category(id=10, project_id=1, name="Test")
         mock_cat_repo_cls.return_value.update = AsyncMock(return_value=cat)
         mock_card_kb.return_value.as_markup.return_value = MagicMock()
@@ -393,9 +379,7 @@ class TestFsmPriceSaveExcel:
         user: User,
         mock_db: MagicMock,
     ) -> None:
-        mock_state.get_data = AsyncMock(
-            return_value={"category_id": 10, "prices_text": "Item — 100"}
-        )
+        mock_state.get_data = AsyncMock(return_value={"category_id": 10, "prices_text": "Item — 100"})
         cat = Category(id=10, project_id=1, name="Test")
         mock_cat_repo_cls.return_value.update = AsyncMock(return_value=cat)
         mock_card_kb.return_value.as_markup.return_value = MagicMock()

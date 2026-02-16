@@ -35,6 +35,7 @@ pytestmark = pytest.mark.integration
 # Helper: feed_update and count bot.send_message calls
 # ---------------------------------------------------------------------------
 
+
 async def _feed(dispatcher: Dispatcher, mock_bot: MagicMock, update: Any) -> None:
     """Feed a single Update through the Dispatcher pipeline."""
     await dispatcher.feed_update(mock_bot, update)
@@ -135,10 +136,13 @@ async def test_middleware_auto_registers_new_user(
 
     # First query: get_by_id returns None (user doesn't exist)
     # Second query: insert returns the new user
-    mock_db.set_responses("users", [
-        MockResponse(data=None),  # get_by_id -> None
-        MockResponse(data=new_user_data),  # insert -> new user
-    ])
+    mock_db.set_responses(
+        "users",
+        [
+            MockResponse(data=None),  # get_by_id -> None
+            MockResponse(data=new_user_data),  # insert -> new user
+        ],
+    )
     mock_db.set_response("projects", MockResponse(data=[], count=0))
     mock_db.set_response("categories", MockResponse(data=[], count=0))
     mock_db.set_response("platform_schedules", MockResponse(data=[], count=0))
@@ -297,9 +301,11 @@ async def test_fsm_inactivity_passes_active(
     data_key = f"fsm:{DEFAULT_USER_ID}:{DEFAULT_USER_ID}:data"
 
     mock_redis._store[state_key] = "ProjectCreateFSM:name"
-    mock_redis._store[data_key] = json.dumps({
-        "last_update_time": time.time(),  # recent = within timeout
-    })
+    mock_redis._store[data_key] = json.dumps(
+        {
+            "last_update_time": time.time(),  # recent = within timeout
+        }
+    )
 
     update = make_update_message("/cancel")
     await _feed(dispatcher, mock_bot, update)
@@ -334,9 +340,11 @@ async def test_fsm_inactivity_clears_stale(
     # Set a stale FSM state (31 minutes ago)
     stale_time = time.time() - 1860  # 31 minutes ago
     mock_redis._store[state_key] = "ProjectCreateFSM:name"
-    mock_redis._store[data_key] = json.dumps({
-        "last_update_time": stale_time,
-    })
+    mock_redis._store[data_key] = json.dumps(
+        {
+            "last_update_time": stale_time,
+        }
+    )
 
     # Send any message while in stale FSM
     update = make_update_message("some text input")

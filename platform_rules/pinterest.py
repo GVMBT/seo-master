@@ -29,16 +29,12 @@ class PinterestRule(PlatformRule):
         # Description length
         max_desc = _PIN_LIMITS["max_description"]
         if len(content) > max_desc:
-            errors.append(
-                f"Описание превышает лимит Pinterest ({len(content)}/{max_desc})"
-            )
+            errors.append(f"Описание превышает лимит Pinterest ({len(content)}/{max_desc})")
 
         # Title length
         max_title = _PIN_LIMITS["max_title"]
         if title and len(title) > max_title:
-            errors.append(
-                f"Заголовок превышает лимит Pinterest ({len(title)}/{max_title})"
-            )
+            errors.append(f"Заголовок превышает лимит Pinterest ({len(title)}/{max_title})")
 
         # Image is required for Pinterest pins
         if not has_image:

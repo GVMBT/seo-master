@@ -51,17 +51,11 @@ class PinterestPublisher(BasePublisher):
     # token refresh
     # ------------------------------------------------------------------
 
-    async def _maybe_refresh_token(
-        self, creds: dict[str, Any]
-    ) -> str:
+    async def _maybe_refresh_token(self, creds: dict[str, Any]) -> str:
         """Return a valid access_token, refreshing if expires_at < now + 1 day."""
         expires_at_raw = creds.get("expires_at")
         if expires_at_raw is not None:
-            expires_at = (
-                datetime.fromisoformat(expires_at_raw)
-                if isinstance(expires_at_raw, str)
-                else expires_at_raw
-            )
+            expires_at = datetime.fromisoformat(expires_at_raw) if isinstance(expires_at_raw, str) else expires_at_raw
 
             # Ensure timezone-aware comparison
             if expires_at.tzinfo is None:
@@ -181,9 +175,7 @@ class PinterestPublisher(BasePublisher):
             log.error("pinterest_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
 
-    async def delete_post(
-        self, connection: PlatformConnection, post_id: str
-    ) -> bool:
+    async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         creds = connection.credentials
         try:
             token = await self._maybe_refresh_token(creds)

@@ -157,11 +157,14 @@ class TestExchangeCode:
             body = request.content.decode()
             assert "authorization_code" in body
             assert "test_code_123" in body
-            return httpx.Response(200, json={
-                "access_token": "pin_at",
-                "refresh_token": "pin_rt",
-                "expires_in": 2592000,
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "pin_at",
+                    "refresh_token": "pin_rt",
+                    "expires_in": 2592000,
+                },
+            )
 
         service = _make_service(handler)
         tokens = await service._exchange_code("test_code_123")
@@ -237,11 +240,14 @@ class TestHandleCallback:
         redis = AsyncMock()
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "access_token": "new_at",
-                "refresh_token": "new_rt",
-                "expires_in": 2592000,
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "new_at",
+                    "refresh_token": "new_rt",
+                    "expires_in": 2592000,
+                },
+            )
 
         service = _make_service(handler, redis=redis)
         state = build_state(12345, "testnonce123", _ENCRYPTION_KEY)

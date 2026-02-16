@@ -35,9 +35,7 @@ class PaymentsRepository(BaseRepository):
 
     async def get_by_id(self, payment_id: int) -> Payment | None:
         """Get payment by ID."""
-        resp = (
-            await self._table(_PAYMENTS_TABLE).select("*").eq("id", payment_id).maybe_single().execute()
-        )
+        resp = await self._table(_PAYMENTS_TABLE).select("*").eq("id", payment_id).maybe_single().execute()
         row = self._single(resp)
         return Payment(**row) if row else None
 
@@ -112,12 +110,7 @@ class PaymentsRepository(BaseRepository):
         from datetime import UTC, datetime, timedelta
 
         cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
-        resp = (
-            await self._table(_EXPENSES_TABLE)
-            .select("operation_type,amount")
-            .gte("created_at", cutoff)
-            .execute()
-        )
+        resp = await self._table(_EXPENSES_TABLE).select("operation_type,amount").gte("created_at", cutoff).execute()
         summary: dict[str, int] = {}
         for row in self._rows(resp):
             op = row.get("operation_type", "unknown")
@@ -133,9 +126,7 @@ class PaymentsRepository(BaseRepository):
         row = self._require_first(resp)
         return TokenExpense(**row)
 
-    async def get_expenses_by_user(
-        self, user_id: int, limit: int = 50, offset: int = 0
-    ) -> list[TokenExpense]:
+    async def get_expenses_by_user(self, user_id: int, limit: int = 50, offset: int = 0) -> list[TokenExpense]:
         """Get token expenses for a user, newest first."""
         resp = (
             await self._table(_EXPENSES_TABLE)

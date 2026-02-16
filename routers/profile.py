@@ -44,27 +44,29 @@ _OP_LABELS: dict[str, str] = {
 
 def _format_expense(exp: TokenExpense) -> str:
     """Format a single expense line for history display."""
-    date_str = exp.created_at.strftime("%d.%m.%Y %H:%M") if exp.created_at else "—"
+    date_str = exp.created_at.strftime("%d.%m %H:%M") if exp.created_at else "—"
     label = _OP_LABELS.get(exp.operation_type, exp.operation_type)
-    sign = "+" if exp.amount > 0 else ""
-    return f"{date_str}  {label}  {sign}{exp.amount} токенов"
+    sign_str = f"+{exp.amount}" if exp.amount > 0 else str(exp.amount)
+    return f"{date_str}  {sign_str} ток.  {label}"
 
 
 def _format_profile(user: User, stats: dict[str, int]) -> str:
     """Build profile display text (USER_FLOWS_AND_UI_MAP.md §Profile, lines 886-905)."""
     reg_date = user.created_at.strftime("%d.%m.%Y") if user.created_at else "—"
-    role_label = "Администратор" if user.role == "admin" else "Пользователь"
+    name = f"{user.first_name or '—'} {user.last_name or ''}".rstrip()
 
     lines = [
-        f"ID: {user.id}",
-        f"Имя: {user.first_name or '—'} {user.last_name or ''}".rstrip(),
-        f"Роль: {role_label}",
         f"Баланс: {user.balance} токенов",
-        f"Дата регистрации: {reg_date}",
         "",
-        f"Проектов: {stats['project_count']}",
-        f"Категорий: {stats['category_count']}",
-        f"Активных расписаний: {stats['schedule_count']}",
+        f"{name} | С нами с {reg_date}",
+    ]
+
+    if user.role == "admin":
+        lines.append(f"ID: {user.id} | Администратор")
+
+    lines += [
+        "",
+        f"Проектов: {stats['project_count']} | Категорий: {stats['category_count']}",
     ]
 
     schedule_count = stats["schedule_count"]
@@ -75,13 +77,14 @@ def _format_profile(user: User, stats: dict[str, int]) -> str:
         weeks_left = round(user.balance / tokens_per_week, 1) if tokens_per_week > 0 else 0
 
         lines += [
+            f"Расписаний: {schedule_count}",
             "",
-            "Прогноз расходов:",
-            f"  Постов в неделю: {posts_per_week}",
-            f"  Токенов в неделю: ~{tokens_per_week}",
-            f"  Токенов в месяц: ~{tokens_per_month}",
-            f"  Хватит на: ~{weeks_left} недели",
+            "Прогноз:",
+            f"  {posts_per_week} пост/нед | ~{tokens_per_week} ток/нед",
+            f"  ~{tokens_per_month} ток/мес | Хватит на ~{weeks_left} нед",
         ]
+    else:
+        lines.append("Расписаний: нет")
 
     return "\n".join(lines)
 

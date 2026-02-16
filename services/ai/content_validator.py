@@ -55,9 +55,7 @@ class ContentValidator:
         # Common: minimum length for articles
         wp_limits = PLATFORM_LIMITS["wordpress"]
         if content_type == "article" and len(content) < wp_limits["min_article"]:
-            errors.append(
-                f"Текст слишком короткий ({len(content)} символов, мин. {wp_limits['min_article']})"
-            )
+            errors.append(f"Текст слишком короткий ({len(content)} символов, мин. {wp_limits['min_article']})")
 
         # WordPress article structure
         if platform == "wordpress" and content_type == "article":
@@ -76,19 +74,13 @@ class ContentValidator:
             pin = PLATFORM_LIMITS["pinterest"]
 
             if platform == "telegram" and len(content) > tg["max_text"]:
-                errors.append(
-                    f"Текст превышает лимит Telegram ({len(content)}/{tg['max_text']})"
-                )
+                errors.append(f"Текст превышает лимит Telegram ({len(content)}/{tg['max_text']})")
 
             if platform == "vk" and len(content) > vk["max_text"]:
-                errors.append(
-                    f"Текст превышает лимит VK ({len(content)}/{vk['max_text']})"
-                )
+                errors.append(f"Текст превышает лимит VK ({len(content)}/{vk['max_text']})")
 
             if platform == "pinterest" and len(content) > pin["max_description"]:
-                errors.append(
-                    f"Описание превышает лимит Pinterest ({len(content)}/{pin['max_description']})"
-                )
+                errors.append(f"Описание превышает лимит Pinterest ({len(content)}/{pin['max_description']})")
 
         # Warnings (non-blocking)
         if content_type == "article" and "faq" not in content.lower():
@@ -111,9 +103,7 @@ class ContentValidator:
         warnings: list[str] = []
 
         if len(images_meta) != expected_count:
-            warnings.append(
-                f"images_meta count ({len(images_meta)}) != expected ({expected_count})"
-            )
+            warnings.append(f"images_meta count ({len(images_meta)}) != expected ({expected_count})")
 
         for i, meta in enumerate(images_meta):
             # alt must not be empty

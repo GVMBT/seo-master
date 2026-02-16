@@ -54,10 +54,13 @@ async def main() -> None:
     url = os.environ["SUPABASE_URL"]
     key = os.environ["SUPABASE_KEY"]
 
-    client = AsyncPostgrestClient(f"{url}/rest/v1", headers={
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-    })
+    client = AsyncPostgrestClient(
+        f"{url}/rest/v1",
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+        },
+    )
 
     prompts_dir = Path(__file__).resolve().parent.parent / "services" / "ai" / "prompts"
     seeded = 0
@@ -76,11 +79,7 @@ async def main() -> None:
         # Upsert: skip if exists
         try:
             resp = await (
-                client.from_("prompt_versions")
-                .select("id")
-                .eq("task_type", task_type)
-                .eq("version", version)
-                .execute()
+                client.from_("prompt_versions").select("id").eq("task_type", task_type).eq("version", version).execute()
             )
             if resp.data:
                 print(f"  EXISTS {task_type}/{version} — skip")
@@ -89,12 +88,14 @@ async def main() -> None:
 
             await (
                 client.from_("prompt_versions")
-                .insert({
-                    "task_type": task_type,
-                    "version": version,
-                    "prompt_yaml": yaml_content,
-                    "is_active": is_active,
-                })
+                .insert(
+                    {
+                        "task_type": task_type,
+                        "version": version,
+                        "prompt_yaml": yaml_content,
+                        "is_active": is_active,
+                    }
+                )
                 .execute()
             )
             label = "ACTIVE" if is_active else "inactive"

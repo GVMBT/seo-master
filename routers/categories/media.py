@@ -75,9 +75,7 @@ async def cb_media_start(callback: CallbackQuery, user: User, db: SupabaseClient
 
 
 @router.callback_query(F.data.regexp(r"^media:cat:(\d+):upload$"))
-async def cb_media_upload_prompt(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_media_upload_prompt(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Prompt user to send media files."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -90,9 +88,7 @@ async def cb_media_upload_prompt(
 
     await state.update_data(awaiting_media_cat=cat_id)
     await msg.edit_text(
-        "Отправьте фото, видео или документ.\n"
-        "Файлы будут добавлены к медиа категории.\n"
-        f"Лимит: {_MAX_MEDIA} файлов.",
+        f"Отправьте фото, видео или документ.\nФайлы будут добавлены к медиа категории.\nЛимит: {_MAX_MEDIA} файлов.",
     )
     await callback.answer()
 
@@ -153,18 +149,19 @@ async def _append_media(
         await state.update_data(awaiting_media_cat=None)
         return
 
-    media.append({
-        "file_id": file_id,
-        "type": file_type,
-        "file_size": file_size,
-        "uploaded_at": datetime.now(tz=UTC).isoformat(),
-    })
+    media.append(
+        {
+            "file_id": file_id,
+            "type": file_type,
+            "file_size": file_size,
+            "uploaded_at": datetime.now(tz=UTC).isoformat(),
+        }
+    )
     await repo.update_media(cat_id, media)
 
     count = len(media)
     await message.answer(
-        f"Файл добавлен ({count}/{_MAX_MEDIA}).\n"
-        "Отправьте ещё или нажмите кнопку ниже.",
+        f"Файл добавлен ({count}/{_MAX_MEDIA}).\nОтправьте ещё или нажмите кнопку ниже.",
         reply_markup=media_menu_kb(cat_id, has_media=True).as_markup(),
     )
 

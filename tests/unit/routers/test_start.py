@@ -58,7 +58,7 @@ class TestBuildDashboardText:
         text = await _build_dashboard_text(user, mock_db, is_new_user=True)
         assert "1500 токенов" in text
         assert "Добро пожаловать" in text
-        assert "Что хотите сделать?" in text
+        assert "Начните с создания проекта" in text
 
     @pytest.mark.asyncio
     async def test_returning_no_projects(self, user: User, mock_db: MagicMock) -> None:

@@ -35,8 +35,10 @@ def _make_redis_mock(cached_data: dict[str, str] | None = None) -> AsyncMock:
     """Create a mock Redis client with optional cached data."""
     redis = AsyncMock()
     if cached_data:
+
         async def get_side_effect(key: str) -> str | None:
             return cached_data.get(key)
+
         redis.get = AsyncMock(side_effect=get_side_effect)
     else:
         redis.get = AsyncMock(return_value=None)
@@ -86,19 +88,22 @@ class TestSearchSuccess:
     async def test_basic_search(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             if "/search" in str(request.url):
-                return httpx.Response(200, json={
-                    "organic": [
-                        {"title": "SEO Guide", "link": "https://example.com/seo", "snippet": "...", "position": 1},
-                        {"title": "SEO Tips", "link": "https://example.com/tips", "snippet": "...", "position": 2},
-                    ],
-                    "peopleAlsoAsk": [
-                        {"question": "What is SEO?", "snippet": "SEO stands for...", "link": "https://example.com"},
-                    ],
-                    "relatedSearches": [
-                        {"query": "seo tools"},
-                        {"query": "seo checklist"},
-                    ],
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "organic": [
+                            {"title": "SEO Guide", "link": "https://example.com/seo", "snippet": "...", "position": 1},
+                            {"title": "SEO Tips", "link": "https://example.com/tips", "snippet": "...", "position": 2},
+                        ],
+                        "peopleAlsoAsk": [
+                            {"question": "What is SEO?", "snippet": "SEO stands for...", "link": "https://example.com"},
+                        ],
+                        "relatedSearches": [
+                            {"query": "seo tools"},
+                            {"query": "seo checklist"},
+                        ],
+                    },
+                )
             return httpx.Response(404)
 
         redis = _make_redis_mock()
@@ -118,11 +123,14 @@ class TestSearchSuccess:
         async def handler(request: httpx.Request) -> httpx.Response:
             nonlocal captured_request
             captured_request = request
-            return httpx.Response(200, json={
-                "organic": [],
-                "peopleAlsoAsk": [],
-                "relatedSearches": [],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [],
+                    "peopleAlsoAsk": [],
+                    "relatedSearches": [],
+                },
+            )
 
         redis = _make_redis_mock()
         client = _make_client(handler, redis=redis)
@@ -135,11 +143,14 @@ class TestSearchSuccess:
         """PAA can come as plain strings (legacy format)."""
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "organic": [],
-                "peopleAlsoAsk": ["What is SEO?", "How to do SEO?"],
-                "relatedSearches": [],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [],
+                    "peopleAlsoAsk": ["What is SEO?", "How to do SEO?"],
+                    "relatedSearches": [],
+                },
+            )
 
         redis = _make_redis_mock()
         client = _make_client(handler, redis=redis)
@@ -150,11 +161,14 @@ class TestSearchSuccess:
 
     async def test_related_searches_string_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "organic": [],
-                "peopleAlsoAsk": [],
-                "relatedSearches": ["seo tips", "seo tools"],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [],
+                    "peopleAlsoAsk": [],
+                    "relatedSearches": ["seo tips", "seo tools"],
+                },
+            )
 
         redis = _make_redis_mock()
         client = _make_client(handler, redis=redis)
@@ -179,11 +193,13 @@ class TestSearchCache:
             return httpx.Response(200, json={"organic": [], "peopleAlsoAsk": [], "relatedSearches": []})
 
         cached_data = {
-            _cache_key("cached query"): json.dumps({
-                "organic": [{"title": "Cached", "link": "https://cached.com"}],
-                "people_also_ask": [],
-                "related_searches": [],
-            }),
+            _cache_key("cached query"): json.dumps(
+                {
+                    "organic": [{"title": "Cached", "link": "https://cached.com"}],
+                    "people_also_ask": [],
+                    "related_searches": [],
+                }
+            ),
         }
         redis = _make_redis_mock(cached_data=cached_data)
         client = _make_client(handler, redis=redis)
@@ -195,11 +211,14 @@ class TestSearchCache:
 
     async def test_cache_miss_triggers_api_call(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "organic": [{"title": "Fresh"}],
-                "peopleAlsoAsk": [],
-                "relatedSearches": [],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [{"title": "Fresh"}],
+                    "peopleAlsoAsk": [],
+                    "relatedSearches": [],
+                },
+            )
 
         redis = _make_redis_mock()
         client = _make_client(handler, redis=redis)
@@ -212,11 +231,14 @@ class TestSearchCache:
 
     async def test_cache_set_on_success(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "organic": [{"title": "Result"}],
-                "peopleAlsoAsk": [],
-                "relatedSearches": [],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [{"title": "Result"}],
+                    "peopleAlsoAsk": [],
+                    "relatedSearches": [],
+                },
+            )
 
         redis = _make_redis_mock()
         client = _make_client(handler, redis=redis)
@@ -230,11 +252,14 @@ class TestSearchCache:
         """Do not cache empty results."""
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "organic": [],
-                "peopleAlsoAsk": [],
-                "relatedSearches": [],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [],
+                    "peopleAlsoAsk": [],
+                    "relatedSearches": [],
+                },
+            )
 
         redis = _make_redis_mock()
         client = _make_client(handler, redis=redis)
@@ -246,11 +271,14 @@ class TestSearchCache:
         """Redis errors should not break search."""
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "organic": [{"title": "Works"}],
-                "peopleAlsoAsk": [],
-                "relatedSearches": [],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [{"title": "Works"}],
+                    "peopleAlsoAsk": [],
+                    "relatedSearches": [],
+                },
+            )
 
         redis = AsyncMock()
         redis.get = AsyncMock(side_effect=Exception("Redis down"))
@@ -264,11 +292,14 @@ class TestSearchCache:
         """Search should work without Redis."""
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "organic": [{"title": "No cache"}],
-                "peopleAlsoAsk": [],
-                "relatedSearches": [],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [{"title": "No cache"}],
+                    "peopleAlsoAsk": [],
+                    "relatedSearches": [],
+                },
+            )
 
         client = _make_client(handler, redis=None)
         result = await client.search("query")
@@ -325,11 +356,14 @@ class TestSearchErrors:
             attempt += 1
             if attempt == 1:
                 return httpx.Response(500, text="Server Error")
-            return httpx.Response(200, json={
-                "organic": [{"title": "Second try"}],
-                "peopleAlsoAsk": [],
-                "relatedSearches": [],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "organic": [{"title": "Second try"}],
+                    "peopleAlsoAsk": [],
+                    "relatedSearches": [],
+                },
+            )
 
         redis = _make_redis_mock()
         client = _make_client(handler, redis=redis)

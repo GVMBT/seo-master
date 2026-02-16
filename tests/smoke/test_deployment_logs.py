@@ -35,14 +35,9 @@ async def test_no_crash_loops_in_response() -> None:
                 "(possible crash loop or service hang)"
             )
         except httpx.ConnectError as exc:
-            pytest.fail(
-                f"Cannot connect to {_BASE_URL}/api/health: {exc} "
-                "(service may be down or URL is incorrect)"
-            )
+            pytest.fail(f"Cannot connect to {_BASE_URL}/api/health: {exc} (service may be down or URL is incorrect)")
 
-    assert response.status_code == 200, (
-        f"Health endpoint returned {response.status_code}: {response.text}"
-    )
+    assert response.status_code == 200, f"Health endpoint returned {response.status_code}: {response.text}"
 
     data = response.json()
     assert "status" in data, f"Health response missing 'status' key: {data}"
@@ -65,6 +60,4 @@ async def test_version_matches_expected() -> None:
 
     data = response.json()
     assert "version" in data, f"Detailed health missing 'version': {data}"
-    assert data["version"] == "2.0.0", (
-        f"Deployed version {data['version']!r} does not match expected '2.0.0'"
-    )
+    assert data["version"] == "2.0.0", f"Deployed version {data['version']!r} does not match expected '2.0.0'"

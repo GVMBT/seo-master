@@ -62,13 +62,9 @@ def check_fabricated_data(
     for price in text_prices:
         if known_prices:
             # Check if the price is within 20% of any known price
-            match_found = any(
-                abs(price - known) / max(known, 1) < 0.2 for known in known_prices
-            )
+            match_found = any(abs(price - known) / max(known, 1) < 0.2 for known in known_prices)
             if not match_found:
-                issues.append(
-                    f"Возможно выдуманная цена: {price} руб. (нет в прайсе)"
-                )
+                issues.append(f"Возможно выдуманная цена: {price} руб. (нет в прайсе)")
         # If no known prices at all, we cannot validate -- skip
 
     # 2. Phone number check: phones in text but not in company data

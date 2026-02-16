@@ -368,10 +368,7 @@ class TestMultipleErrors:
     def test_errors_and_warnings_independent(self) -> None:
         v = _validator()
         # Valid structure but has placeholder + no FAQ
-        content = (
-            "<h1>Title</h1>"
-            "<p>" + "A" * 500 + " [INSERT KEYWORD]</p>"
-        )
+        content = "<h1>Title</h1><p>" + "A" * 500 + " [INSERT KEYWORD]</p>"
         result = v.validate(content, "article", "wordpress")
         assert result.is_valid is False  # has error
         assert len(result.errors) >= 1

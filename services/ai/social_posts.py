@@ -76,6 +76,7 @@ class SocialPostService:
 
         if project is None or category is None:
             from bot.exceptions import AIGenerationError
+
             raise AIGenerationError(message="Project or category not found")
 
         text_settings = overrides or category.text_settings or {}

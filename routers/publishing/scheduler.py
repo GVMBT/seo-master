@@ -53,9 +53,7 @@ class ScheduleSetupFSM(StatesGroup):
 
 
 @router.callback_query(F.data.regexp(r"^project:(\d+):scheduler$"))
-async def cb_scheduler_categories(
-    callback: CallbackQuery, user: User, db: SupabaseClient
-) -> None:
+async def cb_scheduler_categories(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show category list for scheduler."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -79,9 +77,7 @@ async def cb_scheduler_categories(
 
 
 @router.callback_query(F.data.regexp(r"^sched:cat:(\d+)$"))
-async def cb_scheduler_platforms(
-    callback: CallbackQuery, user: User, db: SupabaseClient
-) -> None:
+async def cb_scheduler_platforms(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show platform connections with schedule status for a category."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -119,9 +115,7 @@ async def cb_scheduler_platforms(
 
 
 @router.callback_query(F.data.regexp(r"^sched:cat:(\d+):plt:(\d+)$"))
-async def cb_schedule_start(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_schedule_start(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Start ScheduleSetupFSM: select days."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -350,7 +344,11 @@ async def cb_schedule_toggle(
     new_enabled = not schedule.enabled
     try:
         await scheduler_service.toggle_schedule(
-            schedule_id, new_enabled, user.id, project.id, project.timezone,
+            schedule_id,
+            new_enabled,
+            user.id,
+            project.id,
+            project.timezone,
         )
     except Exception:
         log.exception("schedule_toggle_failed", schedule_id=schedule_id)

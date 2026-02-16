@@ -31,18 +31,14 @@ def repo(mock_db: MockSupabaseClient) -> SchedulesRepository:
 
 
 class TestGetById:
-    async def test_found(
-        self, repo: SchedulesRepository, mock_db: MockSupabaseClient, schedule_row: dict
-    ) -> None:
+    async def test_found(self, repo: SchedulesRepository, mock_db: MockSupabaseClient, schedule_row: dict) -> None:
         mock_db.set_response("platform_schedules", MockResponse(data=schedule_row))
         sched = await repo.get_by_id(1)
         assert sched is not None
         assert isinstance(sched, PlatformSchedule)
         assert sched.posts_per_day == 2
 
-    async def test_not_found(
-        self, repo: SchedulesRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_not_found(self, repo: SchedulesRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("platform_schedules", MockResponse(data=None))
         assert await repo.get_by_id(999) is None
 
@@ -76,13 +72,9 @@ class TestGetEnabled:
 
 
 class TestCreate:
-    async def test_create(
-        self, repo: SchedulesRepository, mock_db: MockSupabaseClient, schedule_row: dict
-    ) -> None:
+    async def test_create(self, repo: SchedulesRepository, mock_db: MockSupabaseClient, schedule_row: dict) -> None:
         mock_db.set_response("platform_schedules", MockResponse(data=[schedule_row]))
-        data = PlatformScheduleCreate(
-            category_id=1, platform_type="wordpress", connection_id=1, posts_per_day=2
-        )
+        data = PlatformScheduleCreate(category_id=1, platform_type="wordpress", connection_id=1, posts_per_day=2)
         sched = await repo.create(data)
         assert isinstance(sched, PlatformSchedule)
 
@@ -115,14 +107,10 @@ class TestGetByProject:
 
 
 class TestDelete:
-    async def test_success(
-        self, repo: SchedulesRepository, mock_db: MockSupabaseClient, schedule_row: dict
-    ) -> None:
+    async def test_success(self, repo: SchedulesRepository, mock_db: MockSupabaseClient, schedule_row: dict) -> None:
         mock_db.set_response("platform_schedules", MockResponse(data=[schedule_row]))
         assert await repo.delete(1) is True
 
-    async def test_not_found(
-        self, repo: SchedulesRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_not_found(self, repo: SchedulesRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("platform_schedules", MockResponse(data=[]))
         assert await repo.delete(999) is False

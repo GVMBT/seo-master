@@ -147,9 +147,7 @@ class PinterestOAuthService:
                 status=resp.status_code,
                 body=resp.text[:500],
             )
-            raise PinterestOAuthError(
-                f"Pinterest token exchange failed: HTTP {resp.status_code}"
-            )
+            raise PinterestOAuthError(f"Pinterest token exchange failed: HTTP {resp.status_code}")
 
         data = resp.json()
         if "access_token" not in data:

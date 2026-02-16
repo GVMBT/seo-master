@@ -117,18 +117,24 @@ class KeywordService:
             phrase_lower = kw.phrase.lower()
             if phrase_lower not in seen:
                 seen.add(phrase_lower)
-                raw.append({
-                    "phrase": kw.phrase,
-                    "volume": kw.volume,
-                    "cpc": kw.cpc,
-                    "ai_suggested": False,
-                })
+                raw.append(
+                    {
+                        "phrase": kw.phrase,
+                        "volume": kw.volume,
+                        "cpc": kw.cpc,
+                        "ai_suggested": False,
+                    }
+                )
 
         # E03 fallback: DataForSEO returned nothing → AI generates phrases
         if not raw:
             log.info("dataforseo_empty_fallback_to_ai", seed=seed)
             raw = await self._ai_fallback_phrases(
-                products, geography, quantity, project_id, user_id,
+                products,
+                geography,
+                quantity,
+                project_id,
+                user_id,
             )
 
         return raw[:quantity]
@@ -268,12 +274,14 @@ class KeywordService:
         phrases: list[dict[str, Any]] = []
         if isinstance(result.content, dict):
             for kw in result.content.get("keywords", []):
-                phrases.append({
-                    "phrase": kw.get("phrase", ""),
-                    "volume": 0,
-                    "cpc": 0.0,
-                    "ai_suggested": True,
-                    "intent": kw.get("intent", "informational"),
-                })
+                phrases.append(
+                    {
+                        "phrase": kw.get("phrase", ""),
+                        "volume": 0,
+                        "cpc": 0.0,
+                        "ai_suggested": True,
+                        "intent": kw.get("intent", "informational"),
+                    }
+                )
 
         return phrases

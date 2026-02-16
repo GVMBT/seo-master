@@ -75,7 +75,11 @@ def _get_all_text(mock_bot: Any) -> str:
 
 
 async def test_active_fsm_not_timed_out(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Recent activity -> handler called normally."""
     setup_user()
@@ -94,7 +98,11 @@ async def test_active_fsm_not_timed_out(
 
 
 async def test_inactive_fsm_cleared(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """31 min old -> FSM cleared, 'Сессия истекла'."""
     setup_user()
@@ -117,7 +125,11 @@ async def test_inactive_fsm_cleared(
 
 
 async def test_inactivity_sends_main_menu(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Expired -> main menu keyboard restored."""
     setup_user()
@@ -137,7 +149,11 @@ async def test_inactivity_sends_main_menu(
 
 
 async def test_no_fsm_no_check(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """No active FSM -> middleware passes through without check."""
     setup_user()
@@ -153,7 +169,11 @@ async def test_no_fsm_no_check(
 
 
 async def test_last_update_time_refreshed(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Each update refreshes the inactivity timer."""
     setup_user()
@@ -179,7 +199,11 @@ async def test_last_update_time_refreshed(
 
 
 async def test_boundary_exactly_30_min(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Exactly 1800s -> not expired (boundary condition)."""
     setup_user()

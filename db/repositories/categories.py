@@ -29,13 +29,7 @@ class CategoriesRepository(BaseRepository):
 
     async def get_by_project(self, project_id: int) -> list[Category]:
         """Get all categories for a project, ordered by name."""
-        resp = (
-            await self._table(_TABLE)
-            .select("*")
-            .eq("project_id", project_id)
-            .order("name")
-            .execute()
-        )
+        resp = await self._table(_TABLE).select("*").eq("project_id", project_id).order("name").execute()
         return [Category(**row) for row in self._rows(resp)]
 
     async def create(self, data: CategoryCreate) -> Category:
@@ -78,9 +72,7 @@ class CategoriesRepository(BaseRepository):
 
     # --- platform_content_overrides (F41 settings inheritance) ---
 
-    async def get_override(
-        self, category_id: int, platform_type: str
-    ) -> PlatformContentOverride | None:
+    async def get_override(self, category_id: int, platform_type: str) -> PlatformContentOverride | None:
         """Get platform-specific override for a category."""
         resp = (
             await self._table(_OVERRIDES_TABLE)
@@ -119,9 +111,7 @@ class CategoriesRepository(BaseRepository):
         resp = await self._table(_OVERRIDES_TABLE).delete().eq("id", override_id).execute()
         return len(self._rows(resp)) > 0
 
-    async def get_content_settings(
-        self, category_id: int, platform_type: str
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    async def get_content_settings(self, category_id: int, platform_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
         """Get merged content settings (image_settings, text_settings).
 
         Override field None -> inherit from category. Category field {} -> service applies defaults.

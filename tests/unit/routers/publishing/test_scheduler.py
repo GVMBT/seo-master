@@ -37,15 +37,23 @@ def _category() -> Category:
 
 def _connection() -> PlatformConnection:
     return PlatformConnection(
-        id=5, project_id=1, platform_type="wordpress",
-        status="active", credentials={}, identifier="test.com",
+        id=5,
+        project_id=1,
+        platform_type="wordpress",
+        status="active",
+        credentials={},
+        identifier="test.com",
     )
 
 
 def _schedule(**overrides) -> PlatformSchedule:
     defaults = {
-        "id": 1, "category_id": 10, "platform_type": "wordpress",
-        "connection_id": 5, "enabled": True, "status": "active",
+        "id": 1,
+        "category_id": 10,
+        "platform_type": "wordpress",
+        "connection_id": 5,
+        "enabled": True,
+        "status": "active",
         "qstash_schedule_ids": ["qs_1"],
     }
     defaults.update(overrides)
@@ -85,7 +93,9 @@ def _state(**data) -> MagicMock:
 @patch("routers.publishing.scheduler.ProjectsRepository")
 @patch("routers.publishing.scheduler.guard_callback_message")
 async def test_scheduler_categories_shows_list(
-    mock_guard: MagicMock, mock_proj_cls: MagicMock, mock_cat_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_proj_cls: MagicMock,
+    mock_cat_cls: MagicMock,
 ) -> None:
     """project:X:scheduler shows category list."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -102,7 +112,9 @@ async def test_scheduler_categories_shows_list(
 @patch("routers.publishing.scheduler.ProjectsRepository")
 @patch("routers.publishing.scheduler.guard_callback_message")
 async def test_scheduler_no_categories(
-    mock_guard: MagicMock, mock_proj_cls: MagicMock, mock_cat_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_proj_cls: MagicMock,
+    mock_cat_cls: MagicMock,
 ) -> None:
     """No categories: show alert."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -214,6 +226,7 @@ async def test_schedule_start_enters_select_days(
     await cb_schedule_start(cb, state, _user(), MagicMock())
 
     from routers.publishing.scheduler import ScheduleSetupFSM
+
     state.set_state.assert_called_with(ScheduleSetupFSM.select_days)
     call_args = mock_guard.return_value.edit_text.call_args
     assert "1/3" in call_args[0][0]
@@ -280,6 +293,7 @@ async def test_days_done_transitions_to_count(mock_guard: MagicMock) -> None:
     await cb_schedule_days_done(cb, state)
 
     from routers.publishing.scheduler import ScheduleSetupFSM
+
     state.set_state.assert_called_with(ScheduleSetupFSM.select_count)
     call_args = mock_guard.return_value.edit_text.call_args
     assert "2/3" in call_args[0][0]
@@ -300,6 +314,7 @@ async def test_count_transitions_to_times(mock_guard: MagicMock) -> None:
     await cb_schedule_count(cb, state)
 
     from routers.publishing.scheduler import ScheduleSetupFSM
+
     state.set_state.assert_called_with(ScheduleSetupFSM.select_times)
     state.update_data.assert_called_once()
     call_kwargs = state.update_data.call_args[1]
@@ -364,7 +379,9 @@ async def test_time_toggle_max_reached_alert(mock_guard: MagicMock) -> None:
 @patch("routers.publishing.scheduler.ProjectsRepository")
 @patch("routers.publishing.scheduler.guard_callback_message")
 async def test_times_done_wrong_count_alert(
-    mock_guard: MagicMock, mock_proj_cls: MagicMock, mock_svc_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_proj_cls: MagicMock,
+    mock_svc_cls: MagicMock,
 ) -> None:
     """Wrong number of time slots: show alert."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -381,7 +398,8 @@ async def test_times_done_wrong_count_alert(
 @patch("routers.publishing.scheduler.ProjectsRepository")
 @patch("routers.publishing.scheduler.guard_callback_message")
 async def test_times_done_creates_schedule(
-    mock_guard: MagicMock, mock_proj_cls: MagicMock,
+    mock_guard: MagicMock,
+    mock_proj_cls: MagicMock,
 ) -> None:
     """Valid times: clears FSM, creates schedule, shows summary."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())

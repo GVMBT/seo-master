@@ -133,7 +133,12 @@ class TestFormatPipelinePreview:
 
 class TestPipelineArticleStart:
     async def test_e49_checkpoint_exists_shows_resume(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, mock_redis: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
         """E49: existing checkpoint -> show resume dialog."""
         mock_callback.data = "pipeline:article:start"
@@ -146,7 +151,12 @@ class TestPipelineArticleStart:
         assert "select_category" in text
 
     async def test_no_projects_redirect(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, mock_redis: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
         """No projects -> redirect to create project."""
         mock_callback.data = "pipeline:article:start"
@@ -181,7 +191,12 @@ class TestPipelineArticleStart:
         mock_wp.assert_awaited_once()
 
     async def test_multiple_projects_shows_list(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, mock_redis: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
         """N projects -> show project selection list."""
         mock_callback.data = "pipeline:article:start"
@@ -202,7 +217,12 @@ class TestPipelineArticleStart:
         assert "проект" in text.lower()
 
     async def test_e49_corrupted_checkpoint_treated_as_empty(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, mock_redis: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
         """E49: corrupted JSON in checkpoint -> treat as no checkpoint."""
         mock_callback.data = "pipeline:article:start"
@@ -256,7 +276,11 @@ class TestPipelineSelectProject:
         assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
 
     async def test_project_not_found_shows_alert(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "pipeline:article:project:999"
         with patch("routers.publishing.pipeline.article.ProjectsRepository") as repo:
@@ -273,7 +297,11 @@ class TestPipelineSelectProject:
 
 class TestShowWpSelection:
     async def test_zero_wp_shows_no_entities(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         """0 WP connections -> no-entities keyboard."""
         msg = mock_callback.message
@@ -289,7 +317,11 @@ class TestShowWpSelection:
         assert "WordPress" in text
 
     async def test_single_wp_auto_selects(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         """1 WP connection -> auto-select, move to category."""
         msg = mock_callback.message
@@ -308,7 +340,11 @@ class TestShowWpSelection:
         mock_cat.assert_awaited_once()
 
     async def test_multiple_wp_shows_list(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         """N WP connections -> show WP list keyboard."""
         msg = mock_callback.message
@@ -325,7 +361,11 @@ class TestShowWpSelection:
         assert "какой сайт" in text.lower()
 
     async def test_inactive_wp_filtered_out(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         """Only active WP connections considered; inactive connections filtered out."""
         msg = mock_callback.message
@@ -347,7 +387,11 @@ class TestShowWpSelection:
 
 class TestPipelineSelectWp:
     async def test_select_wp_connection(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "pipeline:article:wp:5"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
@@ -356,7 +400,11 @@ class TestPipelineSelectWp:
         mock_state.update_data.assert_any_await(connection_id=5, preview_only=False)
 
     async def test_preview_only_selection(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "pipeline:article:wp:preview_only"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
@@ -372,7 +420,12 @@ class TestPipelineSelectWp:
 
 class TestPipelineSelectCategory:
     async def test_valid_category_moves_to_confirm(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        category: Category,
     ) -> None:
         mock_callback.data = f"pipeline:article:cat:{category.id}"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "category_id": category.id})
@@ -386,7 +439,11 @@ class TestPipelineSelectCategory:
         mock_confirm.assert_awaited_once()
 
     async def test_category_not_found(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "pipeline:article:cat:999"
         with patch("routers.publishing.pipeline.article.CategoriesRepository") as cat_repo:
@@ -403,15 +460,22 @@ class TestPipelineSelectCategory:
 
 class TestShowConfirm:
     async def test_god_mode_text(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        mock_db: MagicMock,
     ) -> None:
         """GOD_MODE user sees free label."""
         admin_user = User(id=203473623, balance=99999, role="admin")
         project = Project(id=1, user_id=admin_user.id, name="Admin Proj", company_name="Co", specialization="S")
         category = Category(id=10, project_id=1, name="Cat")
-        mock_state.get_data = AsyncMock(return_value={
-            "project_id": 1, "category_id": 10, "preview_only": False,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "project_id": 1,
+                "category_id": 10,
+                "preview_only": False,
+            }
+        )
         msg = mock_callback.message
         with (
             patch("routers.publishing.pipeline.article.get_settings") as gs,
@@ -423,6 +487,7 @@ class TestShowConfirm:
             cat_repo.return_value.get_by_id = AsyncMock(return_value=category)
 
             from routers.publishing.pipeline.article import _show_confirm
+
             await _show_confirm(msg, admin_user, mock_db, mock_state)
 
         text = msg.edit_text.call_args.args[0]
@@ -430,13 +495,22 @@ class TestShowConfirm:
         assert "бесплатно" in text.lower()
 
     async def test_normal_user_sees_cost_and_balance(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User,
-        mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         """Normal user sees cost and balance."""
-        mock_state.get_data = AsyncMock(return_value={
-            "project_id": project.id, "category_id": category.id, "preview_only": False,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "project_id": project.id,
+                "category_id": category.id,
+                "preview_only": False,
+            }
+        )
         msg = mock_callback.message
         with (
             patch("routers.publishing.pipeline.article.get_settings") as gs,
@@ -448,6 +522,7 @@ class TestShowConfirm:
             cat_repo.return_value.get_by_id = AsyncMock(return_value=category)
 
             from routers.publishing.pipeline.article import _show_confirm
+
             await _show_confirm(msg, user, mock_db, mock_state)
 
         text = msg.edit_text.call_args.args[0]
@@ -455,12 +530,21 @@ class TestShowConfirm:
         assert "GOD_MODE" not in text
 
     async def test_preview_only_shows_telegraph(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User,
-        mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
-        mock_state.get_data = AsyncMock(return_value={
-            "project_id": project.id, "category_id": category.id, "preview_only": True,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "project_id": project.id,
+                "category_id": category.id,
+                "preview_only": True,
+            }
+        )
         msg = mock_callback.message
         with (
             patch("routers.publishing.pipeline.article.get_settings") as gs,
@@ -472,6 +556,7 @@ class TestShowConfirm:
             cat_repo.return_value.get_by_id = AsyncMock(return_value=category)
 
             from routers.publishing.pipeline.article import _show_confirm
+
             await _show_confirm(msg, user, mock_db, mock_state)
 
         text = msg.edit_text.call_args.args[0]
@@ -496,9 +581,13 @@ class TestPipelineGenerate:
         """E01: insufficient balance -> show top-up keyboard."""
         user.balance = 0
         mock_callback.data = "pipeline:article:generate"
-        mock_state.get_data = AsyncMock(return_value={
-            "estimated_cost": 320, "project_id": 1, "category_id": 10,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "estimated_cost": 320,
+                "project_id": 1,
+                "category_id": 10,
+            }
+        )
         with (
             patch("routers.publishing.pipeline.article.get_settings") as gs,
             patch("routers.publishing.pipeline.article.TokenService") as ts_cls,
@@ -508,8 +597,15 @@ class TestPipelineGenerate:
             ts_cls.return_value.get_balance = AsyncMock(return_value=0)
             ts_cls.return_value.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов.")
             await cb_pipeline_generate(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                mock_rate_limiter, MagicMock(), MagicMock(), MagicMock(),
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                mock_rate_limiter,
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
             )
         mock_callback.message.edit_text.assert_awaited()
         text = mock_callback.message.edit_text.call_args.args[0]
@@ -530,8 +626,15 @@ class TestPipelineGenerate:
         with patch("routers.publishing.pipeline.article.get_settings") as gs:
             gs.return_value.admin_ids = []
             await cb_pipeline_generate(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                mock_rate_limiter, MagicMock(), MagicMock(), MagicMock(),
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                mock_rate_limiter,
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
             )
         mock_callback.answer.assert_awaited_once()
         assert "заново" in mock_callback.answer.call_args.args[0].lower()
@@ -554,13 +657,21 @@ class TestPipelinePublish:
     ) -> None:
         """preview_only=True -> show Telegraph link, clear state."""
         mock_callback.data = "pipeline:article:publish"
-        mock_state.get_data = AsyncMock(return_value={
-            "preview_only": True,
-            "telegraph_url": "https://telegra.ph/test",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "preview_only": True,
+                "telegraph_url": "https://telegra.ph/test",
+            }
+        )
         await cb_pipeline_publish(
-            mock_callback, mock_state, user, mock_db, mock_redis,
-            MagicMock(), MagicMock(), MagicMock(),
+            mock_callback,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
         )
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "telegra.ph" in text
@@ -578,8 +689,14 @@ class TestPipelinePublish:
         mock_callback.data = "pipeline:article:publish"
         mock_state.get_data = AsyncMock(return_value={"preview_only": False})
         await cb_pipeline_publish(
-            mock_callback, mock_state, user, mock_db, mock_redis,
-            MagicMock(), MagicMock(), MagicMock(),
+            mock_callback,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
         )
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "не найдено" in text.lower()
@@ -597,15 +714,17 @@ class TestPipelineRegen:
     ) -> None:
         """Free regen (count < max_regenerations_free) does not charge."""
         mock_callback.data = "pipeline:article:regen"
-        mock_state.get_data = AsyncMock(return_value={
-            "regeneration_count": 0,
-            "estimated_cost": 320,
-            "preview_id": 1,
-            "keyword": "seo tips",
-            "project_id": 1,
-            "category_id": 10,
-            "preview_only": False,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "regeneration_count": 0,
+                "estimated_cost": 320,
+                "preview_id": 1,
+                "keyword": "seo tips",
+                "project_id": 1,
+                "category_id": 10,
+                "preview_only": False,
+            }
+        )
 
         # Mock article result
         mock_article = MagicMock()
@@ -628,8 +747,14 @@ class TestPipelineRegen:
             prev_repo.return_value.update = AsyncMock()
             prev_repo.return_value.get_by_id = AsyncMock(return_value=updated_preview)
             await cb_pipeline_regen(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                MagicMock(), MagicMock(), MagicMock(),
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
             )
 
         mock_state.update_data.assert_any_await(regeneration_count=1)
@@ -644,15 +769,17 @@ class TestPipelineRegen:
     ) -> None:
         """Paid regen (count >= max_free) charges tokens."""
         mock_callback.data = "pipeline:article:regen"
-        mock_state.get_data = AsyncMock(return_value={
-            "regeneration_count": 2,  # Already used 2 free
-            "estimated_cost": 320,
-            "preview_id": 1,
-            "keyword": "seo tips",
-            "project_id": 1,
-            "category_id": 10,
-            "preview_only": False,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "regeneration_count": 2,  # Already used 2 free
+                "estimated_cost": 320,
+                "preview_id": 1,
+                "keyword": "seo tips",
+                "project_id": 1,
+                "category_id": 10,
+                "preview_only": False,
+            }
+        )
 
         mock_article = MagicMock()
         mock_article.title = "Regen Article"
@@ -674,8 +801,14 @@ class TestPipelineRegen:
             prev_repo.return_value.update = AsyncMock()
             prev_repo.return_value.get_by_id = AsyncMock(return_value=_make_preview())
             await cb_pipeline_regen(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                MagicMock(), MagicMock(), MagicMock(),
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
             )
 
         ts_cls.return_value.charge.assert_awaited_once()
@@ -692,10 +825,12 @@ class TestPipelineRegen:
         from bot.exceptions import InsufficientBalanceError
 
         mock_callback.data = "pipeline:article:regen"
-        mock_state.get_data = AsyncMock(return_value={
-            "regeneration_count": 2,
-            "estimated_cost": 320,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "regeneration_count": 2,
+                "estimated_cost": 320,
+            }
+        )
         with (
             patch("routers.publishing.pipeline.article.get_settings") as gs,
             patch("routers.publishing.pipeline.article.TokenService") as ts_cls,
@@ -705,8 +840,14 @@ class TestPipelineRegen:
             ts_cls.return_value.charge = AsyncMock(side_effect=InsufficientBalanceError(320, 100))
             ts_cls.return_value.get_balance = AsyncMock(return_value=100)
             await cb_pipeline_regen(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                MagicMock(), MagicMock(), MagicMock(),
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
             )
         mock_callback.answer.assert_awaited_once()
         assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
@@ -731,7 +872,10 @@ class TestPipelineCancelRefund:
             ts_cls.return_value.refund = AsyncMock(return_value=1820)
             await cb_pipeline_cancel_refund(mock_callback, mock_state, user, mock_db, mock_redis)
         ts_cls.return_value.refund.assert_awaited_once_with(
-            user.id, 320, reason="refund", description="Pipeline cancelled by user",
+            user.id,
+            320,
+            reason="refund",
+            description="Pipeline cancelled by user",
         )
         mock_state.clear.assert_awaited_once()
         mock_redis.delete.assert_awaited_once()
@@ -793,7 +937,11 @@ class TestPipelineGuards:
 
 class TestPipelineCancel:
     async def test_cancel_clears_state_and_checkpoint(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_redis: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_redis: MagicMock,
     ) -> None:
         mock_callback.data = "pipeline:article:cancel"
         await cb_pipeline_cancel(mock_callback, mock_state, user, mock_redis)
@@ -805,7 +953,11 @@ class TestPipelineCancel:
 
 class TestPipelineCancelFull:
     async def test_cancel_full_clears_everything(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_redis: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_redis: MagicMock,
     ) -> None:
         mock_callback.data = "pipeline:cancel"
         await cb_pipeline_cancel_full(mock_callback, mock_state, user, mock_redis)
@@ -906,8 +1058,7 @@ class TestPipelinePagination:
     ) -> None:
         mock_callback.data = "page:pipeline_proj:1"
         projects = [
-            Project(id=i, user_id=user.id, name=f"P{i}", company_name="C", specialization="S")
-            for i in range(1, 12)
+            Project(id=i, user_id=user.id, name=f"P{i}", company_name="C", specialization="S") for i in range(1, 12)
         ]
         with (
             patch("routers.publishing.pipeline.article.ProjectsRepository") as proj_repo,
@@ -942,12 +1093,15 @@ class TestPipelinePagination:
 class TestCacheKeysPipelineState:
     def test_format(self) -> None:
         from cache.keys import CacheKeys
+
         assert CacheKeys.pipeline_state(12345) == "pipeline:12345:state"
 
     def test_different_users_different_keys(self) -> None:
         from cache.keys import CacheKeys
+
         assert CacheKeys.pipeline_state(1) != CacheKeys.pipeline_state(2)
 
     def test_ttl_constant(self) -> None:
         from cache.keys import PIPELINE_CHECKPOINT_TTL
+
         assert PIPELINE_CHECKPOINT_TTL == 86400  # 24 hours

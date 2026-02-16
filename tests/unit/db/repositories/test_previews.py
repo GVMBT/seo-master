@@ -38,9 +38,7 @@ def repo(mock_db: MockSupabaseClient) -> PreviewsRepository:
 
 
 class TestCreate:
-    async def test_create(
-        self, repo: PreviewsRepository, mock_db: MockSupabaseClient, preview_row: dict
-    ) -> None:
+    async def test_create(self, repo: PreviewsRepository, mock_db: MockSupabaseClient, preview_row: dict) -> None:
         mock_db.set_response("article_previews", MockResponse(data=[preview_row]))
         data = ArticlePreviewCreate(
             user_id=123456789,
@@ -55,17 +53,13 @@ class TestCreate:
 
 
 class TestGetById:
-    async def test_found(
-        self, repo: PreviewsRepository, mock_db: MockSupabaseClient, preview_row: dict
-    ) -> None:
+    async def test_found(self, repo: PreviewsRepository, mock_db: MockSupabaseClient, preview_row: dict) -> None:
         mock_db.set_response("article_previews", MockResponse(data=preview_row))
         preview = await repo.get_by_id(1)
         assert preview is not None
         assert preview.keyword == "seo tips"
 
-    async def test_not_found(
-        self, repo: PreviewsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_not_found(self, repo: PreviewsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("article_previews", MockResponse(data=None))
         assert await repo.get_by_id(999) is None
 
@@ -79,9 +73,7 @@ class TestGetActiveByUser:
         assert len(previews) == 1
         assert previews[0].status == "draft"
 
-    async def test_empty(
-        self, repo: PreviewsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_empty(self, repo: PreviewsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("article_previews", MockResponse(data=[]))
         assert await repo.get_active_by_user(999) == []
 
@@ -112,8 +104,6 @@ class TestGetExpiredDrafts:
         expired = await repo.get_expired_drafts()
         assert len(expired) == 1
 
-    async def test_empty_when_none_expired(
-        self, repo: PreviewsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_empty_when_none_expired(self, repo: PreviewsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("article_previews", MockResponse(data=[]))
         assert await repo.get_expired_drafts() == []

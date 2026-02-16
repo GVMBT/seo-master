@@ -71,6 +71,7 @@ class ReviewService:
 
         if project is None or category is None:
             from bot.exceptions import AIGenerationError
+
             raise AIGenerationError(message="Project or category not found")
 
         context: dict[str, Any] = {

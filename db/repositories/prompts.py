@@ -37,17 +37,11 @@ class PromptsRepository(BaseRepository):
 
     async def upsert(self, data: PromptVersionCreate) -> PromptVersion:
         """Create or update prompt version (UNIQUE on task_type + version)."""
-        resp = (
-            await self._table(_TABLE)
-            .upsert(data.model_dump(), on_conflict="task_type,version")
-            .execute()
-        )
+        resp = await self._table(_TABLE).upsert(data.model_dump(), on_conflict="task_type,version").execute()
         row = self._require_first(resp)
         return PromptVersion(**row)
 
-    async def update_stats(
-        self, prompt_id: int, data: PromptVersionUpdate
-    ) -> PromptVersion | None:
+    async def update_stats(self, prompt_id: int, data: PromptVersionUpdate) -> PromptVersion | None:
         """Update prompt stats (success_rate, avg_quality, is_active)."""
         payload = data.model_dump(exclude_none=True)
         if not payload:

@@ -16,8 +16,12 @@ class TestStates(StatesGroup):
 
 def _make_key(user_id: int = 123, chat_id: int = 123) -> StorageKey:
     return StorageKey(
-        bot_id=1, chat_id=chat_id, user_id=user_id,
-        thread_id=None, business_connection_id=None, destiny="default",
+        bot_id=1,
+        chat_id=chat_id,
+        user_id=user_id,
+        thread_id=None,
+        business_connection_id=None,
+        destiny="default",
     )
 
 
