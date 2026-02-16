@@ -12,18 +12,22 @@ from services.payments.packages import PACKAGES, SUBSCRIPTIONS
 
 
 def dashboard_kb() -> InlineKeyboardBuilder:
-    """Main menu dashboard: inline navigation to all top-level sections.
-
-    Replaces the old 6-button reply keyboard for navigation.
-    Reply keyboard now only has [Меню] + [Быстрая публикация].
-    """
+    """Dashboard: Pipeline CTA + inline navigation (PIPELINE_UX_PROPOSAL.md)."""
     builder = InlineKeyboardBuilder()
+    # Pipeline CTA (top)
+    builder.button(
+        text="Написать статью на сайт",
+        callback_data="pipeline:article:start",
+        style="primary",
+    )
+    builder.button(text="Опубликовать пост в соцсети", callback_data="pipeline:social:start")
+    # Navigation (bottom)
     builder.button(text="Проекты", callback_data="projects:list")
     builder.button(text="Профиль", callback_data="profile:main")
     builder.button(text="Тарифы", callback_data="tariffs:main")
     builder.button(text="Настройки", callback_data="settings:main")
     builder.button(text="Помощь", callback_data="help:main")
-    builder.adjust(2, 2, 1)
+    builder.adjust(1, 1, 2, 2, 1)  # 2 CTA (1+1) + 2+2+1 nav
     return builder
 
 

@@ -15,10 +15,16 @@ from services.cleanup import CleanupService
 
 def _make_preview(**overrides) -> ArticlePreview:
     defaults = {
-        "id": 1, "user_id": 100, "project_id": 1, "category_id": 10,
-        "status": "draft", "keyword": "test keyword",
-        "tokens_charged": 320, "telegraph_path": None,
-        "images": [], "created_at": datetime.now(tz=UTC),
+        "id": 1,
+        "user_id": 100,
+        "project_id": 1,
+        "category_id": 10,
+        "status": "draft",
+        "keyword": "test keyword",
+        "tokens_charged": 320,
+        "telegraph_path": None,
+        "images": [],
+        "created_at": datetime.now(tz=UTC),
         "expires_at": datetime.now(tz=UTC) - timedelta(hours=1),
     }
     defaults.update(overrides)
@@ -27,8 +33,11 @@ def _make_preview(**overrides) -> ArticlePreview:
 
 def _make_user(**overrides) -> User:
     defaults = {
-        "id": 100, "username": "testuser", "first_name": "Test",
-        "balance": 1500, "notify_balance": True,
+        "id": 100,
+        "username": "testuser",
+        "first_name": "Test",
+        "balance": 1500,
+        "notify_balance": True,
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -39,7 +48,7 @@ def _make_service() -> CleanupService:
         db=MagicMock(),
         http_client=MagicMock(),
         image_storage=MagicMock(),
-        admin_id=999,
+        admin_ids=[999],
     )
 
 
@@ -67,7 +76,10 @@ async def test_cleanup_expired_drafts_happy(mock_users_cls: MagicMock) -> None:
     assert result.refunded[0]["tokens_refunded"] == 200
     assert result.refunded[0]["notify_publications"] is True
     svc._tokens.refund.assert_called_once_with(
-        100, 200, reason="preview_expired", description="Expired preview: test keyword",
+        100,
+        200,
+        reason="preview_expired",
+        description="Expired preview: test keyword",
     )
 
 
@@ -106,9 +118,7 @@ async def test_cleanup_no_tokens_charged() -> None:
 async def test_cleanup_with_images(mock_users_cls: MagicMock) -> None:
     """Preview with images: storage paths cleaned up."""
     svc = _make_service()
-    preview = _make_preview(
-        images=[{"storage_path": "100/1/img_1.webp"}, {"storage_path": "100/1/img_2.webp"}]
-    )
+    preview = _make_preview(images=[{"storage_path": "100/1/img_1.webp"}, {"storage_path": "100/1/img_2.webp"}])
     mock_users_cls.return_value.get_by_id = AsyncMock(return_value=_make_user())
 
     svc._previews.get_expired_drafts = AsyncMock(return_value=[preview])
@@ -119,9 +129,7 @@ async def test_cleanup_with_images(mock_users_cls: MagicMock) -> None:
     result = await svc.execute()
 
     assert result.images_deleted == 2
-    svc._image_storage.cleanup_by_paths.assert_called_once_with(
-        ["100/1/img_1.webp", "100/1/img_2.webp"]
-    )
+    svc._image_storage.cleanup_by_paths.assert_called_once_with(["100/1/img_1.webp", "100/1/img_2.webp"])
 
 
 @patch("services.cleanup.UsersRepository")

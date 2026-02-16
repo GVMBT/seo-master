@@ -38,7 +38,7 @@ async def cleanup_handler(request: web.Request) -> web.Response:
             db=request.app["db"],
             http_client=request.app["http_client"],
             image_storage=request.app["image_storage"],
-            admin_id=request.app["settings"].admin_id,
+            admin_ids=request.app["settings"].admin_ids,
         )
         result = await service.execute()
 
@@ -48,20 +48,19 @@ async def cleanup_handler(request: web.Request) -> web.Response:
             if not entry.get("notify_publications", True):
                 continue
             try:
-                text = (
-                    f"Превью «{entry['keyword']}» истекло.\n"
-                    f"Возвращено {entry['tokens_refunded']} токенов."
-                )
+                text = f"Превью «{entry['keyword']}» истекло.\nВозвращено {entry['tokens_refunded']} токенов."
                 await bot.send_message(entry["user_id"], text)
             except Exception:
                 log.warning("cleanup_notify_failed", user_id=entry["user_id"])
 
-        return web.json_response({
-            "status": "ok",
-            "expired": result.expired_count,
-            "refunds": len(result.refunded),
-            "logs_deleted": result.logs_deleted,
-        })
+        return web.json_response(
+            {
+                "status": "ok",
+                "expired": result.expired_count,
+                "refunds": len(result.refunded),
+                "logs_deleted": result.logs_deleted,
+            }
+        )
 
     except Exception:
         log.exception("cleanup_handler_error")

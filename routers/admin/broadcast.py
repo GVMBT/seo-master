@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
+from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.users import UsersRepository
@@ -89,6 +90,11 @@ async def cb_broadcast_audience(
     repo = UsersRepository(db)
     user_ids = await repo.get_ids_by_audience(audience)
     count = len(user_ids)
+
+    # E26: auto-reset any active FSM before entering BroadcastFSM
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(BroadcastFSM.text)
     await state.update_data(audience=audience, user_count=count)
@@ -173,9 +179,14 @@ async def cb_broadcast_confirm(
     sent = 0
     failed = 0
 
+    # Split text into 4096-char chunks (Telegram API limit)
+    _TG_MSG_LIMIT = 4096
+    chunks = [broadcast_text[i:i + _TG_MSG_LIMIT] for i in range(0, len(broadcast_text), _TG_MSG_LIMIT)]
+
     for uid in user_ids:
         try:
-            await bot.send_message(uid, broadcast_text)
+            for chunk in chunks:
+                await bot.send_message(uid, chunk)
             sent += 1
         except Exception:
             failed += 1

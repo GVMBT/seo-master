@@ -75,7 +75,7 @@ def create_dispatcher(
 
     # Inner middleware (#2-#5) on all event types we handle
     for observer in (dp.message, dp.callback_query, dp.pre_checkout_query):
-        observer.middleware(AuthMiddleware(settings.admin_id))
+        observer.middleware(AuthMiddleware(settings.admin_ids))
         observer.middleware(ThrottlingMiddleware(redis))
         observer.middleware(FSMInactivityMiddleware(settings.fsm_inactivity_timeout))
         observer.middleware(LoggingMiddleware())
@@ -303,14 +303,14 @@ def create_app() -> web.Application:
     from services.payments.stars import StarsPaymentService
     from services.payments.yookassa import YooKassaPaymentService
 
-    stars_service = StarsPaymentService(db=db, admin_id=settings.admin_id)
+    stars_service = StarsPaymentService(db=db, admin_ids=settings.admin_ids)
     yookassa_service = YooKassaPaymentService(
         db=db,
         http_client=http_client,
         shop_id=settings.yookassa_shop_id,
         secret_key=settings.yookassa_secret_key.get_secret_value(),
         return_url=settings.yookassa_return_url,
-        admin_id=settings.admin_id,
+        admin_ids=settings.admin_ids,
     )
 
     # Inject services into dp.workflow_data for Aiogram routers (Phase 8+)

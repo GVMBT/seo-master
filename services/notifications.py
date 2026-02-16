@@ -73,7 +73,7 @@ class NotifyService:
             text = (
                 "<b>Мы скучаем!</b>\n\n"
                 f"Вы не заходили {14}+ дней.\n"
-                f"У вас на балансе: {u.balance} токенов.\n\n"  # noqa: RUF001
+                f"У вас на балансе: {u.balance} токенов.\n\n"
                 "Вернитесь и продолжите публиковать SEO-контент!"
             )
             result.append((u.id, text))

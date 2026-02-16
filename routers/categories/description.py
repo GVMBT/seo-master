@@ -63,7 +63,10 @@ async def _get_cat_with_owner_check(
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):description$"))
 async def cb_description_start(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Show current description or offer to generate."""
     msg = await guard_callback_message(callback)
@@ -81,10 +84,7 @@ async def cb_description_start(
 
     if cat.description:
         preview = cat.description[:500]
-        text = (
-            f"<b>Описание категории «{html.escape(cat.name)}»</b>\n\n"
-            f"{html.escape(preview)}"
-        )
+        text = f"<b>Описание категории «{html.escape(cat.name)}»</b>\n\n{html.escape(preview)}"
         await msg.edit_text(text, reply_markup=description_existing_kb(cat.id).as_markup())
     else:
         interrupted = await ensure_no_active_fsm(state)
@@ -138,7 +138,10 @@ async def cb_description_regen_entry(
 
 @router.callback_query(DescriptionGenerateFSM.confirm, F.data == "desc:confirm")
 async def cb_description_confirm(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
     ai_orchestrator: AIOrchestrator,
 ) -> None:
     """Charge tokens and generate description."""
@@ -155,7 +158,7 @@ async def cb_description_confirm(
         return
 
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
 
     # Check balance (E38)
     if not await token_svc.check_balance(user.id, COST_DESCRIPTION):
@@ -235,7 +238,10 @@ async def cb_description_save(callback: CallbackQuery, state: FSMContext, user: 
 
 @router.callback_query(DescriptionGenerateFSM.review, F.data == "desc:regen")
 async def cb_description_regen(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
     ai_orchestrator: AIOrchestrator,
 ) -> None:
     """Re-generate description. 2 free, then paid."""
@@ -253,7 +259,7 @@ async def cb_description_regen(
         return
 
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
 
     # 2 free regenerations, then paid
     if regen_count > 2 and not await token_svc.check_balance(user.id, COST_DESCRIPTION):
@@ -268,9 +274,7 @@ async def cb_description_regen(
 
     try:
         if regen_count > 2:
-            await token_svc.charge(
-                user.id, COST_DESCRIPTION, "description", description="Description regen (paid)"
-            )
+            await token_svc.charge(user.id, COST_DESCRIPTION, "description", description="Description regen (paid)")
         svc = DescriptionService(ai_orchestrator, db)
         result = await svc.generate(user.id, project_id, cat_id)
         generated_text = str(result.content) if result.content else ""

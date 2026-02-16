@@ -68,14 +68,14 @@ class TokenService:
     """Manages balance checks, charges, refunds, and expense history.
 
     All balance mutations use atomic RPCs via UsersRepository (§5.5).
-    GOD_MODE: admin_id never gets charged but sees the cost.
+    GOD_MODE: admin_ids never get charged but see the cost.
     """
 
-    def __init__(self, db: SupabaseClient, admin_id: int) -> None:
+    def __init__(self, db: SupabaseClient, admin_ids: list[int]) -> None:
         self._db = db
         self._users = UsersRepository(db)
         self._payments = PaymentsRepository(db)
-        self._admin_id = admin_id
+        self._admin_ids = admin_ids
 
     async def check_balance(self, user_id: int, required: int) -> bool:
         """Check if user has enough tokens. Returns True if sufficient."""
@@ -102,13 +102,13 @@ class TokenService:
     ) -> int:
         """Deduct tokens and record expense. Returns new balance.
 
-        GOD_MODE: if user_id == admin_id, records expense but doesn't charge.
+        GOD_MODE: if user_id in admin_ids, records expense but doesn't charge.
         Raises InsufficientBalanceError if balance < amount (E01).
         """
         if amount <= 0:
             return await self.get_balance(user_id)
 
-        is_god_mode = user_id == self._admin_id
+        is_god_mode = user_id in self._admin_ids
 
         if not is_god_mode:
             new_balance = await self._users.charge_balance(user_id, amount)
@@ -196,9 +196,7 @@ class TokenService:
         )
         return new_balance
 
-    async def get_history(
-        self, user_id: int, limit: int = 20, offset: int = 0
-    ) -> list[TokenExpense]:
+    async def get_history(self, user_id: int, limit: int = 20, offset: int = 0) -> list[TokenExpense]:
         """Get expense history for a user, newest first."""
         return await self._payments.get_expenses_by_user(user_id, limit=limit, offset=offset)
 
@@ -256,4 +254,4 @@ class TokenService:
 
     def format_insufficient_msg(self, required: int, balance: int) -> str:
         """Format user-friendly insufficient balance message (E01, E10)."""
-        return f"Недостаточно токенов. Нужно {required}, у вас {balance}."  # noqa: RUF001
+        return f"Недостаточно токенов. Нужно {required}, у вас {balance}."

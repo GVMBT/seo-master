@@ -26,7 +26,7 @@ def make_mock_settings() -> MagicMock:
     Reusable across all FSM integration tests.
     """
     settings = MagicMock()
-    settings.admin_id = ADMIN_ID
+    settings.admin_ids = [ADMIN_ID]
     settings.encryption_key = MagicMock()
     settings.encryption_key.get_secret_value.return_value = TEST_FERNET_KEY
     settings.fsm_ttl_seconds = 86400

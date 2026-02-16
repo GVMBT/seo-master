@@ -41,7 +41,6 @@ from keyboards.publish import (
     article_confirm_kb,
     article_preview_kb,
     insufficient_balance_kb,
-    quick_wp_choice_kb,
 )
 from routers._helpers import guard_callback_message
 from services.ai.orchestrator import AIOrchestrator
@@ -119,7 +118,10 @@ def _format_preview_text(preview: ArticlePreview, cost: int) -> str:
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):publish:wp$"))
 async def cb_article_start(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    state: FSMContext,
 ) -> None:
     """Start article publish flow for a category (single or auto-detected WP connection)."""
     msg = await guard_callback_message(callback)
@@ -158,7 +160,8 @@ async def cb_article_start(
     settings = get_settings()
     cm = CredentialManager(settings.encryption_key.get_secret_value())
     connections = await ConnectionsRepository(db, cm).get_by_project_and_platform(
-        project.id, "wordpress",
+        project.id,
+        "wordpress",
     )
     active_wp = [c for c in connections if c.status == "active"]
 
@@ -168,9 +171,14 @@ async def cb_article_start(
 
     # E28: multiple WP connections — show choice
     if len(active_wp) > 1:
+        wp_kb = InlineKeyboardBuilder()
+        for c in active_wp:
+            wp_kb.button(text=c.identifier, callback_data=f"category:{category_id}:publish:wp:{c.id}")
+        wp_kb.button(text="Назад", callback_data=f"category:{category_id}:card")
+        wp_kb.adjust(1)
         await msg.edit_text(
             "Выберите WordPress-подключение для публикации:",
-            reply_markup=quick_wp_choice_kb(active_wp, category_id).as_markup(),
+            reply_markup=wp_kb.as_markup(),
         )
         await callback.answer()
         return
@@ -178,13 +186,23 @@ async def cb_article_start(
     # Single WP connection — proceed to confirmation
     connection = active_wp[0]
     await _show_article_confirm(
-        callback, msg, user, db, state, category, project, connection.id,
+        callback,
+        msg,
+        user,
+        db,
+        state,
+        category,
+        project,
+        connection.id,
     )
 
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):publish:wp:(\d+)$"))
 async def cb_article_start_with_conn(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    state: FSMContext,
 ) -> None:
     """Start article publish with a specific WP connection (E28 choice or quick publish)."""
     msg = await guard_callback_message(callback)
@@ -227,7 +245,14 @@ async def cb_article_start_with_conn(
         return
 
     await _show_article_confirm(
-        callback, msg, user, db, state, category, project, connection_id,
+        callback,
+        msg,
+        user,
+        db,
+        state,
+        category,
+        project,
+        connection_id,
     )
 
 
@@ -243,7 +268,7 @@ async def _show_article_confirm(
 ) -> None:
     """Common helper to show cost confirmation screen."""
     cost = estimate_article_cost()
-    token_svc = TokenService(db, get_settings().admin_id)
+    token_svc = TokenService(db, get_settings().admin_ids)
 
     has_balance = await token_svc.check_balance(user.id, cost)
     if not has_balance:
@@ -285,7 +310,10 @@ async def _show_article_confirm(
 
 @router.callback_query(ArticlePublishFSM.confirm_cost, F.data == "pub:article:confirm")
 async def cb_article_confirm(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    state: FSMContext,
     rate_limiter: RateLimiter,
     ai_orchestrator: AIOrchestrator,
     image_storage: ImageStorage,
@@ -311,7 +339,7 @@ async def cb_article_confirm(
         return
 
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
 
     # Charge tokens
     try:
@@ -351,7 +379,9 @@ async def cb_article_confirm(
 
     pub_repo = PublicationsRepository(db)
     keyword, low_pool = await pub_repo.get_rotation_keyword(
-        category_id, category.keywords, content_type="article",
+        category_id,
+        category.keywords,
+        content_type="article",
     )
     if not keyword:
         await _refund_and_error(msg, token_svc, user.id, cost, state, "Нет доступных ключевых фраз.")
@@ -465,7 +495,10 @@ async def cb_article_confirm(
 
 @router.callback_query(ArticlePublishFSM.preview, F.data == "pub:article:publish")
 async def cb_article_publish(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    state: FSMContext,
     ai_orchestrator: AIOrchestrator,
     image_storage: ImageStorage,
     http_client: httpx.AsyncClient,
@@ -475,9 +508,9 @@ async def cb_article_publish(
     if msg is None:
         return
 
-    # Guard: transition to publishing (E07)
-    await state.set_state(ArticlePublishFSM.publishing)
+    # E07: answer callback FIRST to prevent double-click race
     await callback.answer()
+    await state.set_state(ArticlePublishFSM.publishing)
 
     data = await state.get_data()
     preview_id = data.get("preview_id")
@@ -547,9 +580,7 @@ async def cb_article_publish(
 
         await state.clear()
         await msg.edit_text(
-            f"Публикация успешна!\n\n"
-            f"Ссылка: {post_url}\n"
-            f"Списано: {cost} токенов",
+            f"Публикация успешна!\n\nСсылка: {post_url}\nСписано: {cost} токенов",
         )
         log.info("article_published", user_id=user.id, preview_id=preview_id, post_url=post_url)
 
@@ -564,7 +595,10 @@ async def cb_article_publish(
 
 @router.callback_query(ArticlePublishFSM.preview, F.data == "pub:article:regen")
 async def cb_article_regen(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    state: FSMContext,
     ai_orchestrator: AIOrchestrator,
     image_storage: ImageStorage,
     http_client: httpx.AsyncClient,
@@ -595,7 +629,7 @@ async def cb_article_regen(
 
     # E10: paid regeneration after free limit
     if preview.regeneration_count >= max_free:
-        token_svc = TokenService(db, settings.admin_id)
+        token_svc = TokenService(db, settings.admin_ids)
         try:
             await token_svc.charge(
                 user_id=user.id,
@@ -615,8 +649,9 @@ async def cb_article_regen(
             await callback.answer("Ошибка. Попробуйте позже.", show_alert=True)
             return
 
-    await state.set_state(ArticlePublishFSM.regenerating)
+    # E07: answer callback FIRST to prevent double-click race
     await callback.answer()
+    await state.set_state(ArticlePublishFSM.regenerating)
 
     await msg.edit_text("Перегенерация статьи...")
 
@@ -677,7 +712,8 @@ async def cb_article_regen(
 
 @router.callback_query(ArticlePublishFSM.preview, F.data == "pub:article:cancel")
 async def cb_article_cancel(
-    callback: CallbackQuery, state: FSMContext,
+    callback: CallbackQuery,
+    state: FSMContext,
 ) -> None:
     """Cancel article generation. Preview stays in DB for 24h cleanup."""
     msg = await guard_callback_message(callback)

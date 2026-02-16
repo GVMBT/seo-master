@@ -4,13 +4,13 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 
 def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
-    """Compact reply keyboard: quick access to Menu and Quick Publish.
+    """Compact reply keyboard: quick access to Menu and Pipeline entry.
 
     Navigation to Projects, Profile, Tariffs, Settings, Help is via
     inline buttons in the dashboard message (dashboard_kb in inline.py).
     """
     rows: list[list[KeyboardButton]] = [
-        [KeyboardButton(text="Меню"), KeyboardButton(text="Быстрая публикация")],
+        [KeyboardButton(text="Меню"), KeyboardButton(text="Написать статью")],
     ]
     if is_admin:
         rows.append([KeyboardButton(text="АДМИНКА")])

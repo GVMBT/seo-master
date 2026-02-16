@@ -22,22 +22,21 @@ permissionMode: default
 
 ## Матрица покрытия
 - 13 таблиц: N/13 реализованы
-- 16 FSM: N/16 реализованы (суффикс *FSM)
-- 7 MODEL_CHAINS: N/7 реализованы
-- 42 edge cases: N/42 имеют тесты
+- 18 FSM: N/18 реализованы (суффикс *FSM)
+- 10 MODEL_CHAINS: N/10 реализованы
+- 52 edge cases: N/52 имеют тесты
 - 6 API endpoints: N/6 реализованы
 - 6 YAML промптов: N/6 существуют
 
 ## Кросс-спек консистентность (проверять при каждом запуске)
-- callback_data quick publish: `quick:` (НЕ `qp:`) — FSM_SPEC:196 устарел
+- Pipeline callback: `pipeline:article:*`, `pipeline:social:*` (Quick Publish заменён Pipeline)
 - VK credentials field: `access_token` (НЕ `token`) — ARCHITECTURE:272 устарел
 - platform_schedules: `status` колонка нужна (не только `enabled`)
 - task_type mapping: GenerationRequest `"article"` ↔ DB/YAML `"seo_article"`
 
-## Нерешённые вопросы (backlog.md)
-При реализации проверять что эти решения приняты:
-- Хранение изображений (Phase 6): Supabase Storage, S3, или Telegram file_id?
-- Стриминг F34 (Phase 6): edge cases для mid-stream errors
+## Ранее нерешённые (ЗАКРЫТЫ)
+- ~~Хранение изображений~~: Решено — Supabase Storage bucket `content-images` (ARCHITECTURE.md §5.9)
+- ~~Стриминг F34~~: Решено — replaced by progress messages, deferred to v3
 
 ## Использование context7
 Используй `mcp__context7` для проверки:

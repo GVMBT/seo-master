@@ -26,10 +26,11 @@ async def project_card(callback: CallbackQuery, user: User, db: SupabaseClient):
 - Фото/видео/стикер вместо текста → "Отправьте текстовое сообщение"
 - Двойное нажатие: FSM-переход preview→publishing одноразовый (E07)
 
-## 15 StatesGroup (полный список → docs/FSM_SPEC.md §1)
+## 18 StatesGroup (полный список → docs/FSM_SPEC.md §1)
 ProjectCreate(4), CategoryCreate(1), ProjectEdit(1),
-KeywordGeneration(4), KeywordUpload(1),
+KeywordGeneration(8), KeywordUpload(4),
 ArticlePublish(5), SocialPostPublish(5),
-ScheduleSetup(3), DescriptionGenerate(2), ReviewGeneration(2),
-CompetitorAnalysis(2), PriceInput(3),
-ConnectWordPress(3), ConnectTelegram(2), ConnectVK(2), ConnectPinterest(2)
+ScheduleSetup(3), DescriptionGenerate(2), ReviewGeneration(4),
+CompetitorAnalysis(4), PriceInput(3),
+ConnectWordPress(3), ConnectTelegram(2), ConnectVK(2), ConnectPinterest(2),
+ArticlePipeline(23), SocialPipeline(10)

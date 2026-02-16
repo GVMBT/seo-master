@@ -39,16 +39,27 @@ _PLATFORM_NAMES: dict[str, str] = {
 
 def _count_filled_fields(project: Project) -> int:
     """Count non-empty fields out of 15 project fields."""
-    return sum(1 for _, fn in [
-        ("name", project.name), ("company_name", project.company_name),
-        ("specialization", project.specialization), ("website_url", project.website_url),
-        ("company_city", project.company_city), ("company_address", project.company_address),
-        ("company_phone", project.company_phone), ("company_email", project.company_email),
-        ("company_instagram", project.company_instagram), ("company_vk", project.company_vk),
-        ("company_pinterest", project.company_pinterest), ("company_telegram", project.company_telegram),
-        ("experience", project.experience), ("advantages", project.advantages),
-        ("description", project.description),
-    ] if fn)
+    return sum(
+        1
+        for _, fn in [
+            ("name", project.name),
+            ("company_name", project.company_name),
+            ("specialization", project.specialization),
+            ("website_url", project.website_url),
+            ("company_city", project.company_city),
+            ("company_address", project.company_address),
+            ("company_phone", project.company_phone),
+            ("company_email", project.company_email),
+            ("company_instagram", project.company_instagram),
+            ("company_vk", project.company_vk),
+            ("company_pinterest", project.company_pinterest),
+            ("company_telegram", project.company_telegram),
+            ("experience", project.experience),
+            ("advantages", project.advantages),
+            ("description", project.description),
+        ]
+        if fn
+    )
 
 
 def _format_project_card(
@@ -152,7 +163,10 @@ async def cb_project_delete(callback: CallbackQuery, user: User, db: SupabaseCli
 
 @router.callback_query(F.data.regexp(r"^project:(\d+):delete:confirm$"))
 async def cb_project_delete_confirm(
-    callback: CallbackQuery, user: User, db: SupabaseClient, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Confirm deletion: delete project and show list."""
     msg = await guard_callback_message(callback)
@@ -172,19 +186,27 @@ async def cb_project_delete_confirm(
     if active_previews:
         from bot.config import get_settings
 
-        tokens_svc = TokenService(db, get_settings().admin_id)
+        tokens_svc = TokenService(db, get_settings().admin_ids)
         for preview in active_previews:
-            tokens = preview.tokens_charged or 0
-            if tokens > 0:
-                try:
-                    await tokens_svc.refund(
-                        preview.user_id, tokens,
-                        reason="project_deleted",
-                        description=f"Project deleted, preview refund: {preview.keyword or 'unknown'}",
-                    )
-                except Exception:
-                    log.warning("e42_refund_failed", preview_id=preview.id, user_id=preview.user_id)
-            await previews_repo.atomic_mark_expired(preview.id)
+            try:
+                tokens = preview.tokens_charged or 0
+                if tokens > 0:
+                    try:
+                        await tokens_svc.refund(
+                            preview.user_id,
+                            tokens,
+                            reason="project_deleted",
+                            description=f"Project deleted, preview refund: {preview.keyword or 'unknown'}",
+                        )
+                    except Exception:
+                        log.warning("e42_refund_failed", preview_id=preview.id, user_id=preview.user_id)
+                await previews_repo.atomic_mark_expired(preview.id)
+            except Exception:
+                log.exception(
+                    "e42_preview_cleanup_failed",
+                    preview_id=preview.id,
+                    user_id=preview.user_id,
+                )
 
     repo = ProjectsRepository(db)
     await repo.delete(project_id)

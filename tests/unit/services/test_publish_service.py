@@ -111,7 +111,7 @@ def _make_service() -> PublishService:
         http_client=MagicMock(),
         ai_orchestrator=MagicMock(),
         image_storage=MagicMock(),
-        admin_id=999,
+        admin_ids=[999],
         scheduler_service=cast(Any, mock_scheduler),
     )
     return svc

@@ -4,7 +4,7 @@
 
 Все FSM-мастера используют Aiogram 3 StatesGroup с хранением в Redis (Upstash).
 
-**Итого: 16 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ArticlePublishFSM, SocialPostPublishFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, ReviewGenerationFSM, DescriptionGenerateFSM, CompetitorAnalysisFSM)
+**Итого: 18 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ArticlePublishFSM, SocialPostPublishFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, ReviewGenerationFSM, DescriptionGenerateFSM, CompetitorAnalysisFSM, ArticlePipelineFSM, SocialPipelineFSM)
 
 ---
 
@@ -107,7 +107,46 @@ class CategoryCreateFSM(StatesGroup):
 class ProjectEditFSM(StatesGroup):
     field_value = State()    # Ввод нового значения поля (field_name в state.data)
 
-# routers/publishing/social.py (вызывается из quick.py и из карточки категории)
+# routers/publishing/pipeline/article.py (Goal-Oriented Pipeline: статьи)
+class ArticlePipelineFSM(StatesGroup):
+    select_project = State()       # Шаг 1: выбор проекта
+    create_project_name = State()  # Inline: создание проекта — название
+    create_project_company = State()  # Inline: создание проекта — компания
+    create_project_spec = State()  # Inline: создание проекта — специализация
+    create_project_url = State()   # Inline: создание проекта — URL
+    select_wp = State()            # Шаг 2: выбор WP-подключения
+    connect_wp_url = State()       # Inline: подключение WP — URL
+    connect_wp_login = State()     # Inline: подключение WP — логин
+    connect_wp_password = State()  # Inline: подключение WP — пароль
+    select_category = State()      # Шаг 3: выбор категории
+    create_category_name = State() # Inline: создание категории — название
+    readiness_check = State()      # Шаг 4: чеклист готовности
+    readiness_keywords_products = State()  # Inline: ключевые фразы — товары
+    readiness_keywords_geo = State()       # Inline: ключевые фразы — география
+    readiness_keywords_qty = State()       # Inline: ключевые фразы — количество
+    readiness_keywords_generating = State() # Inline: генерация ключевиков
+    readiness_description = State()        # Inline: описание категории
+    configure_images = State()     # Шаг 4d: настройка изображений
+    confirm_cost = State()         # Шаг 5: подтверждение стоимости
+    generating = State()           # Шаг 6: генерация
+    preview = State()              # Шаг 7: предпросмотр (Telegraph)
+    publishing = State()           # Шаг 8: публикация
+    regenerating = State()         # Перегенерация
+
+# routers/publishing/pipeline/social.py (Goal-Oriented Pipeline: соц. посты)
+class SocialPipelineFSM(StatesGroup):
+    select_project = State()       # Шаг 1: выбор проекта
+    select_platform = State()      # Шаг 2: выбор платформы
+    select_category = State()      # Шаг 3: выбор категории
+    readiness_check = State()      # Шаг 4: чеклист готовности
+    confirm_cost = State()         # Шаг 5: подтверждение стоимости
+    generating = State()           # Шаг 6: генерация
+    review = State()               # Шаг 7: предпросмотр
+    publishing = State()           # Шаг 8: публикация
+    cross_post_review = State()    # Кросс-постинг: ревью адаптации
+    cross_post_publishing = State() # Кросс-постинг: публикация
+
+# routers/publishing/social.py (вызывается из pipeline и из карточки категории)
 class SocialPostPublishFSM(StatesGroup):
     confirm_cost = State()   # Подтверждение стоимости
     generating = State()     # Генерация (ожидание)
@@ -164,7 +203,7 @@ class KeywordUploadFSM(StatesGroup):
 Следующие фичи реализуются через inline-кнопки (callback_data), НЕ через FSM StatesGroup:
 - **F16/F41 (Настройки текста/изображений):** toggle-кнопки на экране категории. Нет пользовательского ввода — только выбор из предложенных опций
 - **F23 (Медиа-галерея):** загрузка медиа реализуется в рамках существующих FSM (ProjectCreateFSM, CategoryCreateFSM) как опциональный шаг, не отдельный StatesGroup
-- **Quick Publish:** callback-based выбор (категория → платформа → SocialPostPublishFSM). Первые шаги — кнопки, FSM начинается при подтверждении генерации
+- **Pipeline (Goal-Oriented):** Заменяет Quick Publish. ArticlePipelineFSM и SocialPipelineFSM реализуют полный flow с inline handlers для sub-flows (через Service Layer). Callback-based навигация до FSM не используется — pipeline сам управляет состояниями
 
 ### 2.2 Лимиты перегенерации
 
@@ -242,7 +281,7 @@ CLEAR_STATE                     CLEAR_STATE + возврат токенов     
 ### SocialPostPublishFSM (Telegram / VK / Pinterest)
 
 ```
-[Callback: quick:cat:{cat_id}:{plat}:{conn_id}]  # plat = wp|tg|vk|pin
+[Callback: pipeline:social:{conn_id}:confirm или из карточки категории]
   │
   ▼
 confirm_cost ──[Да]──► generating ──[OK]──► review
@@ -360,3 +399,74 @@ url ──[валидный URL]──► confirm ──[Да, анализир�
 4. Сохранение в `categories.keywords` в кластерном формате
 5. При E03 на `enriching` → skip `clustering`, сохранить в legacy-формате (плоский список без volume/difficulty), предупредить: "Данные без объёмов поиска"
 6. При AI error на `clustering` → сохранить как один кластер (все фразы, cluster_name = category_name), volume/difficulty из enrichment
+
+### ArticlePipelineFSM (Goal-Oriented Pipeline: статьи)
+
+> Подробное описание: [PIPELINE_UX_PROPOSAL.md](PIPELINE_UX_PROPOSAL.md) §4.1, §12, §13
+
+```
+[CTA "Написать статью" на Dashboard]
+  │
+  ▼
+select_project ──[выбрал проект]──► select_wp ──[выбрал WP]──► select_category ──[выбрал]──► readiness_check
+  │                                    │                          │                              │
+  [Нет проектов]                      [Нет WP]                  [Нет категорий]                ├──[Всё готово]──► confirm_cost
+  │                                    │                          │                              │
+  ▼                                    ▼                          ▼                              [Нет ключевиков]
+create_project_name                connect_wp_url             create_category_name                │
+  │                                    │                          │                              ▼
+  ▼                                    ▼                          ▼                          readiness_keywords_products
+create_project_company             connect_wp_login            readiness_check                   │
+  │                                    │                                                        ▼
+  ▼                                    ▼                                                    readiness_keywords_geo
+create_project_spec                connect_wp_password                                          │
+  │                                    │                                                        ▼
+  ▼                                    ▼                                                    readiness_keywords_qty
+create_project_url ──► select_wp   validate ──► select_category                                 │
+                                                                                                ▼
+                                                                                            readiness_keywords_generating
+                                                                                                │
+                                                                                                ▼
+                                                                                            readiness_check (обновлён)
+
+confirm_cost ──[Да]──► generating ──[OK]──► preview
+  │                       │                   │
+  [Отмена]              [Ошибка]             ├──[Опубликовать]──► publishing ──► CLEAR_STATE + лог
+  ▼                       ▼                   ├──[Перегенерировать]──► regenerating ──► preview
+CLEAR_STATE         CLEAR_STATE              [Отмена — вернуть токены]──► CLEAR_STATE + refund
+                    + возврат токенов
+```
+
+**Inline handlers:** Pipeline НЕ вызывает существующие FSM (ProjectCreateFSM, ConnectWordPressFSM, etc.) как sub-flows. Вместо этого реализует inline states внутри ArticlePipelineFSM, переиспользуя Service Layer (ProjectRepository, ConnectionService, KeywordService).
+
+**Checkpoint:** Redis ключ `pipeline:{user_id}:state` (TTL 24ч) сохраняет прогресс между сессиями. При возврате на Dashboard — предложение продолжить (E49).
+
+**Exit protection:** На шагах 4-7 кнопка [Назад] требует подтверждения: "Вы уверены? Прогресс сохранится." (E49).
+
+### SocialPipelineFSM (Goal-Oriented Pipeline: соц. посты)
+
+> Подробное описание: [PIPELINE_UX_PROPOSAL.md](PIPELINE_UX_PROPOSAL.md) §5.1, §11
+
+```
+[CTA "Опубликовать пост" на Dashboard]
+  │
+  ▼
+select_project ──[выбрал]──► select_platform ──[TG/VK/Pin]──► select_category ──[выбрал]──► readiness_check
+  │                              │                                │                            │
+  [Нет проектов]                [Нет подключений]               [Нет категорий]              [Готово]
+  ▼                              ▼                                ▼                            ▼
+(переход в                    (предложить                     (предложить                  confirm_cost ──[Да]──► generating ──[OK]──► review
+ArticlePipelineFSM             подключить)                     создать)                       │                       │                │
+или inline create)                                                                            [Отмена]              [Ошибка]          ├──[Опубликовать]──► publishing ──► CLEAR_STATE
+                                                                                              ▼                       ▼                ├──[Перегенерировать]──► review
+                                                                                           CLEAR_STATE          CLEAR_STATE            ├──[Кросс-пост]──► cross_post_review
+                                                                                                                + refund               [Отмена]──► CLEAR_STATE
+
+cross_post_review ──[Подтвердить]──► cross_post_publishing ──► CLEAR_STATE + лог
+  │                                      │
+  [Отмена]                             [Ошибка] ──► CLEAR_STATE + refund cross-post токенов
+  ▼                                    (оригинальный пост уже опубликован — E52)
+CLEAR_STATE
+```
+
+**Кросс-постинг:** После публикации оригинального поста — предложение адаптировать для других подключённых платформ. AI-адаптация: `task_type="cross_post"`, стоимость `ceil(adapted_word_count / 100) * 10` токенов, images = 0. Обязательный ревью перед публикацией (E52).

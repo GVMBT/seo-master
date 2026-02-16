@@ -73,7 +73,7 @@ class ArticleService:
 
 ## services/publish.py (Phase 9)
 - PublishService: auto-publish pipeline triggered by QStash webhook
-- __init__(db, redis, http_client, ai_orchestrator, image_storage, admin_id)
+- __init__(db, redis, http_client, ai_orchestrator, image_storage, admin_ids)
 - execute(PublishPayload) -> PublishOutcome(status, reason, post_url, keyword, tokens_spent, user_id, notify)
 - Pipeline: load user -> load category -> check keywords (E17) -> load connection -> rotate keyword (E22/E23) -> check balance (E01) -> charge -> generate+publish -> log -> return
 - Insufficient balance (E01): sets schedule enabled=False, status="error", deletes QStash crons via SchedulerService; notifies user if user.notify_publications is True
@@ -82,7 +82,7 @@ class ArticleService:
 
 ## services/cleanup.py (Phase 9)
 - CleanupService: daily cleanup triggered by QStash cron
-- __init__(db, http_client, image_storage, admin_id)
+- __init__(db, http_client, image_storage, admin_ids)
 - execute() -> CleanupResult(expired_count, refunded[], logs_deleted, images_deleted)
 - _expire_previews(): find expired draft previews, atomic_mark_expired (prevents double-processing), refund tokens, clean Supabase Storage images, delete Telegraph pages
   - Loads user to read notify_publications preference; each refund entry includes {user_id, keyword, tokens_refunded, notify_publications}

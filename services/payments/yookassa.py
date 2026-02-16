@@ -66,7 +66,7 @@ class YooKassaPaymentService:
         shop_id: str,
         secret_key: str,
         return_url: str,
-        admin_id: int,
+        admin_ids: list[int],
     ) -> None:
         self._db = db
         self._http = http_client
@@ -75,7 +75,7 @@ class YooKassaPaymentService:
         self._return_url = return_url
         self._users = UsersRepository(db)
         self._payments = PaymentsRepository(db)
-        self._admin_id = admin_id
+        self._admin_ids = admin_ids
 
     # ------------------------------------------------------------------
     # Create payment (API_CONTRACTS.md §2.4)
@@ -190,14 +190,16 @@ class YooKassaPaymentService:
 
         # 2. Create payment record
         amount_val = obj.get("amount", {}).get("value", "0")
-        payment = await self._payments.create(PaymentCreate(
-            user_id=user_id,
-            provider="yookassa",
-            tokens_amount=tokens_amount,
-            package_name=package_name,
-            amount_rub=Decimal(amount_val),
-            is_subscription=is_subscription,
-        ))
+        payment = await self._payments.create(
+            PaymentCreate(
+                user_id=user_id,
+                provider="yookassa",
+                tokens_amount=tokens_amount,
+                package_name=package_name,
+                amount_rub=Decimal(amount_val),
+                is_subscription=is_subscription,
+            )
+        )
 
         update = PaymentUpdate(
             status="completed",
@@ -217,12 +219,14 @@ class YooKassaPaymentService:
 
         # 3. Record token expense
         label = "Продление подписки" if is_renewal else ("Подписка" if is_subscription else "Покупка")
-        await self._payments.create_expense(TokenExpenseCreate(
-            user_id=user_id,
-            amount=tokens_amount,
-            operation_type="purchase" if not is_subscription else "subscription",
-            description=f"{label} {package_name.capitalize()} ({tokens_amount} токенов) — ЮKassa",
-        ))
+        await self._payments.create_expense(
+            TokenExpenseCreate(
+                user_id=user_id,
+                amount=tokens_amount,
+                operation_type="purchase" if not is_subscription else "subscription",
+                description=f"{label} {package_name.capitalize()} ({tokens_amount} токенов) — ЮKassa",
+            )
+        )
 
         # 4. Referral bonus
         await credit_referral_bonus(
@@ -253,16 +257,21 @@ class YooKassaPaymentService:
         if existing:
             await self._payments.update(existing.id, PaymentUpdate(status="failed"))
         elif user_id:
-            payment = await self._payments.create(PaymentCreate(
-                user_id=user_id,
-                provider="yookassa",
-                tokens_amount=0,
-                package_name=package_name,
-            ))
-            await self._payments.update(payment.id, PaymentUpdate(
-                status="failed",
-                yookassa_payment_id=yookassa_id,
-            ))
+            payment = await self._payments.create(
+                PaymentCreate(
+                    user_id=user_id,
+                    provider="yookassa",
+                    tokens_amount=0,
+                    package_name=package_name,
+                )
+            )
+            await self._payments.update(
+                payment.id,
+                PaymentUpdate(
+                    status="failed",
+                    yookassa_payment_id=yookassa_id,
+                ),
+            )
         else:
             log.warning("yookassa_canceled_no_user_id", yookassa_id=yookassa_id)
             return None
@@ -282,10 +291,7 @@ class YooKassaPaymentService:
                     f"Обновите способ оплаты или оплатите Stars."
                 )
             else:
-                text = (
-                    "Автопродление подписки не удалось.\n"
-                    "Обновите способ оплаты или оплатите Stars."
-                )
+                text = "Автопродление подписки не удалось.\nОбновите способ оплаты или оплатите Stars."
         else:
             text = "Платёж отклонён. Попробуйте снова или выберите другой способ оплаты."
 
@@ -313,12 +319,14 @@ class YooKassaPaymentService:
         await self._users.force_debit_balance(payment.user_id, tokens_to_debit)
 
         await self._payments.update(payment.id, PaymentUpdate(status="refunded"))
-        await self._payments.create_expense(TokenExpenseCreate(
-            user_id=payment.user_id,
-            amount=-tokens_to_debit,
-            operation_type="refund",
-            description=f"Возврат за {payment.package_name or 'платёж'} — ЮKassa",
-        ))
+        await self._payments.create_expense(
+            TokenExpenseCreate(
+                user_id=payment.user_id,
+                amount=-tokens_to_debit,
+                operation_type="refund",
+                description=f"Возврат за {payment.package_name or 'платёж'} — ЮKassa",
+            )
+        )
 
         log.info("yookassa_refund_processed", user_id=payment.user_id, tokens=tokens_to_debit)
 
@@ -386,9 +394,11 @@ class YooKassaPaymentService:
         if not payment or payment.provider != "yookassa":
             return False
 
-        await self._payments.update(payment.id, PaymentUpdate(
-            subscription_status="cancelled",
-        ))
+        await self._payments.update(
+            payment.id,
+            PaymentUpdate(
+                subscription_status="cancelled",
+            ),
+        )
         log.info("yookassa_subscription_cancelled", user_id=user_id, payment_id=payment.id)
         return True
-

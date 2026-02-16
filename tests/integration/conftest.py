@@ -55,6 +55,7 @@ def _next_update_id() -> int:
 # In-memory Redis mock (deterministic, zero infra)
 # ---------------------------------------------------------------------------
 
+
 class MockRedisClient:
     """Async in-memory Redis that mimics cache.client.RedisClient interface.
 
@@ -188,6 +189,7 @@ ADMIN_USER = {
 # Update factories (create real Aiogram Update objects)
 # ---------------------------------------------------------------------------
 
+
 def make_tg_user(
     user_id: int = DEFAULT_USER_ID,
     first_name: str = "Test",
@@ -279,6 +281,7 @@ def make_update_document(
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_redis() -> MockRedisClient:
@@ -386,7 +389,7 @@ def mock_http_client() -> MagicMock:
 def mock_settings() -> MagicMock:
     """Mock Settings with sensible defaults."""
     settings = MagicMock()
-    settings.admin_id = ADMIN_ID
+    settings.admin_ids = [ADMIN_ID]
     settings.fsm_ttl_seconds = 86400
     settings.fsm_inactivity_timeout = 1800
     settings.telegram_bot_token = MagicMock()
@@ -459,10 +462,18 @@ def _detach_all_routers() -> None:
     from routers.tariffs import router as tariffs_router
 
     all_routers = [
-        admin_router, help_router, start_router, projects_router,
-        categories_router, platforms_router, publishing_router,
-        analysis_router, profile_router, settings_router,
-        tariffs_router, payments_router,
+        admin_router,
+        help_router,
+        start_router,
+        projects_router,
+        categories_router,
+        platforms_router,
+        publishing_router,
+        analysis_router,
+        profile_router,
+        settings_router,
+        tariffs_router,
+        payments_router,
     ]
     for r in all_routers:
         if r._parent_router is not None:
@@ -492,7 +503,7 @@ def dispatcher(
 
     # Inner middleware on all event types (same as bot/main.py)
     for observer in (dp.message, dp.callback_query, dp.pre_checkout_query):
-        observer.middleware(AuthMiddleware(ADMIN_ID))
+        observer.middleware(AuthMiddleware([ADMIN_ID]))
         observer.middleware(ThrottlingMiddleware(mock_redis))
         observer.middleware(FSMInactivityMiddleware(1800))
         observer.middleware(LoggingMiddleware())

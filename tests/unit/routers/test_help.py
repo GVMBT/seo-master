@@ -82,8 +82,8 @@ class TestHelpTextsContent:
     def test_connect_mentions_telegram(self) -> None:
         assert "Telegram" in _HELP_CONNECT
 
-    def test_publish_mentions_quick(self) -> None:
-        assert "Быстрая публикация" in _HELP_PUBLISH
+    def test_publish_mentions_write_article(self) -> None:
+        assert "Написать статью" in _HELP_PUBLISH
 
     def test_category_mentions_keywords(self) -> None:
         assert "Ключевые фразы" in _HELP_CATEGORY

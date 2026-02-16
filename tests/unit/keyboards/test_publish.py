@@ -13,14 +13,9 @@ from keyboards.publish import (
     keyword_results_kb,
     keywords_main_kb,
     publish_platform_choice_kb,
-    quick_combo_list_kb,
-    quick_project_list_kb,
-    quick_wp_choice_kb,
     social_confirm_kb,
     social_review_kb,
 )
-
-from .helpers import make_project
 
 # Max callback_data is 64 bytes
 MAX_CB = 64
@@ -141,88 +136,6 @@ class TestInsufficientBalanceKb:
     def test_topup_callback(self) -> None:
         cbs = _all_callbacks(insufficient_balance_kb())
         assert "tariffs:topup" in cbs
-
-
-# ---------------------------------------------------------------------------
-# Quick publish
-# ---------------------------------------------------------------------------
-
-
-class TestQuickProjectListKb:
-    def test_shows_project_names(self) -> None:
-        projects = [make_project(id=1, name="A"), make_project(id=2, name="B")]
-        texts = _all_texts(quick_project_list_kb(projects))
-        assert "A" in texts
-        assert "B" in texts
-
-    def test_callback_format(self) -> None:
-        projects = [make_project(id=5)]
-        cbs = _all_callbacks(quick_project_list_kb(projects))
-        assert "quick:project:5" in cbs
-
-    def test_pagination_with_many_projects(self) -> None:
-        projects = [make_project(id=i, name=f"P{i}") for i in range(10)]
-        cbs = _all_callbacks(quick_project_list_kb(projects, page=0))
-        assert any("page:quick_proj:1" in c for c in cbs)
-
-
-class TestQuickComboListKb:
-    def test_shows_combos(self) -> None:
-        combos = [
-            {"cat_id": 1, "cat_name": "SEO", "platform": "wordpress", "conn_id": 5, "conn_name": "site.com"},
-        ]
-        texts = _all_texts(quick_combo_list_kb(combos, project_id=1))
-        assert any("SEO" in t and "WP" in t for t in texts)
-
-    def test_has_back_button(self) -> None:
-        combos = [{"cat_id": 1, "cat_name": "A", "platform": "telegram", "conn_id": 2, "conn_name": "ch"}]
-        cbs = _all_callbacks(quick_combo_list_kb(combos, project_id=1))
-        assert "menu:main" in cbs
-
-    def test_wordpress_callback_uses_wp_code(self) -> None:
-        combos = [{"cat_id": 1, "cat_name": "A", "platform": "wordpress", "conn_id": 5, "conn_name": "x"}]
-        cbs = _all_callbacks(quick_combo_list_kb(combos, project_id=1))
-        assert "quick:cat:1:wp:5" in cbs
-
-    def test_telegram_callback_uses_tg_code(self) -> None:
-        combos = [{"cat_id": 2, "cat_name": "B", "platform": "telegram", "conn_id": 3, "conn_name": "x"}]
-        cbs = _all_callbacks(quick_combo_list_kb(combos, project_id=1))
-        assert "quick:cat:2:tg:3" in cbs
-
-    def test_vk_callback_uses_vk_code(self) -> None:
-        combos = [{"cat_id": 3, "cat_name": "C", "platform": "vk", "conn_id": 4, "conn_name": "x"}]
-        cbs = _all_callbacks(quick_combo_list_kb(combos, project_id=1))
-        assert "quick:cat:3:vk:4" in cbs
-
-    def test_pinterest_callback_uses_pi_code(self) -> None:
-        combos = [{"cat_id": 4, "cat_name": "D", "platform": "pinterest", "conn_id": 6, "conn_name": "x"}]
-        cbs = _all_callbacks(quick_combo_list_kb(combos, project_id=1))
-        assert "quick:cat:4:pi:6" in cbs
-
-    def test_callback_within_64_bytes(self) -> None:
-        combos = [{"cat_id": 999, "cat_name": "A", "platform": "wordpress", "conn_id": 999, "conn_name": "x"}]
-        for cb in _all_callbacks(quick_combo_list_kb(combos, project_id=999)):
-            assert len(cb.encode("utf-8")) <= MAX_CB
-
-
-class TestQuickWpChoiceKb:
-    def test_shows_connection_identifiers(self) -> None:
-        from db.models import PlatformConnection
-
-        conns = [
-            PlatformConnection(id=1, project_id=1, platform_type="wordpress", identifier="site1.com", credentials={}),
-            PlatformConnection(id=2, project_id=1, platform_type="wordpress", identifier="site2.com", credentials={}),
-        ]
-        texts = _all_texts(quick_wp_choice_kb(conns, category_id=5))
-        assert "site1.com" in texts
-        assert "site2.com" in texts
-
-    def test_callback_format(self) -> None:
-        from db.models import PlatformConnection
-
-        conns = [PlatformConnection(id=7, project_id=1, platform_type="wordpress", identifier="x", credentials={})]
-        cbs = _all_callbacks(quick_wp_choice_kb(conns, category_id=5))
-        assert "quick:cat:5:wp:7" in cbs
 
 
 # ---------------------------------------------------------------------------

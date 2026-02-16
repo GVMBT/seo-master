@@ -78,12 +78,16 @@ async def _get_cat_with_owner_check(
 
 def _make_token_service(db: SupabaseClient) -> TokenService:
     """Create TokenService with admin_id from settings."""
-    return TokenService(db, get_settings().admin_id)
+    return TokenService(db, get_settings().admin_ids)
 
 
 async def _run_generation(
-    ai_orchestrator: AIOrchestrator, db: SupabaseClient,
-    user_id: int, project_id: int, category_id: int, quantity: int,
+    ai_orchestrator: AIOrchestrator,
+    db: SupabaseClient,
+    user_id: int,
+    project_id: int,
+    category_id: int,
+    quantity: int,
 ) -> list[dict]:  # type: ignore[type-arg]
     """Delegate review generation to ReviewService. Returns list of reviews."""
     svc = ReviewService(ai_orchestrator, db)
@@ -108,9 +112,7 @@ def _truncate_review_text(text: str, limit: int = 4000) -> str:
 
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):reviews$"))
-async def cb_reviews_start(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_reviews_start(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Show existing reviews or offer to generate."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -145,9 +147,7 @@ async def cb_reviews_start(
 
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):reviews:regen$"))
-async def cb_reviews_regen_entry(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_reviews_regen_entry(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Start review regeneration for a category that already has reviews."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -212,7 +212,10 @@ async def cb_review_quantity(callback: CallbackQuery, state: FSMContext, user: U
 
 @router.callback_query(ReviewGenerationFSM.confirm_cost, F.data == "review:confirm")
 async def cb_review_confirm(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
     ai_orchestrator: AIOrchestrator,
 ) -> None:
     """Charge tokens and generate reviews via ReviewService."""
@@ -312,7 +315,10 @@ async def cb_review_save(callback: CallbackQuery, state: FSMContext, user: User,
 
 @router.callback_query(ReviewGenerationFSM.review, F.data == "review:regen")
 async def cb_review_regen(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
     ai_orchestrator: AIOrchestrator,
 ) -> None:
     """Re-generate reviews. 2 free, then paid."""

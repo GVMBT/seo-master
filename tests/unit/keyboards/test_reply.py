@@ -20,7 +20,7 @@ class TestMainMenu:
         kb = main_menu()
         buttons = [btn.text for row in kb.keyboard for btn in row]
         assert "Меню" in buttons
-        assert "Быстрая публикация" in buttons
+        assert "Написать статью" in buttons
 
     def test_resize_keyboard_enabled(self) -> None:
         kb = main_menu()

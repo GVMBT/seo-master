@@ -21,8 +21,8 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/PRD.md — фичи F01-F46, токеномика, роадмап
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
-- docs/FSM_SPEC.md — 16 FSM StatesGroup, валидация, переходы
-- docs/EDGE_CASES.md — E01-E48, обработка ошибок
+- docs/FSM_SPEC.md — 18 FSM StatesGroup, валидация, переходы
+- docs/EDGE_CASES.md — E01-E52, обработка ошибок
 - docs/USER_FLOWS_AND_UI_MAP.md — все экраны, навигация
 
 ПЕРЕД реализацией любого модуля — ПРОЧИТАЙ соответствующие секции спеков.
@@ -52,7 +52,7 @@ tests/          — зеркалит top-level: unit/bot/, unit/db/, unit/router
 `{entity}:{id}:{action}` или `{entity}:{id}:{sub}:{sub_id}:{action}`
 Максимум 64 байта. Числовые ID. Примеры:
 - `project:5:card`, `category:12:edit`
-- `tariff:pro:stars`, `quick:cat:12:wp:7`
+- `tariff:pro:stars`, `pipeline:article:5:wp:7`
 - `page:projects:2`
 
 ## Токеновая экономика
@@ -96,7 +96,7 @@ uv run vulture bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules
 
 ## Известные расхождения в спеках (audit.md + февр. 2026)
 Спеки — source of truth. Конфликты (из аудита Part 1):
-1. **Quick publish callback_data**: FSM_SPEC (`qp:`) vs ARCHITECTURE/API_CONTRACTS (`quick:`) — использовать `quick:`
+1. **~~Quick publish callback_data~~**: Заменено Pipeline — `pipeline:article:*`, `pipeline:social:*` (PIPELINE_UX_PROPOSAL.md v1.7)
 2. ~~**VK credentials field**~~: РЕШЕНО — оба файла используют `"access_token"`
 3. **platform_schedules.status**: колонка `status` ДОБАВЛЕНА в схему (ARCHITECTURE.md §3.2), active | error
 
@@ -145,8 +145,18 @@ uv run vulture bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules
 
 Нерешённые вопросы:
 - QStash Pro plan limits (#23) — проверить при росте числа расписаний (schedule limits не документированы публично)
-- F34 streaming edge cases (mid-stream error, rate limits) — не описаны
-- F34 альтернатива: `sendMessageDraft` (Bot API 9.3) — нативный стриминг, но требует forum topics в приватном чате
+- ~~F34 streaming edge cases~~ — Закрыто: F34 replaced by progress messages (PIPELINE_UX_PROPOSAL §16.26), deferred to v3 via sendMessageDraft
+
+Goal-Oriented Pipeline (Phase 13 — PIPELINE_UX_PROPOSAL.md v1.7):
+- Pipeline заменяет Quick Publish: воронка "Написать статью" / "Пост в соцсети" (2-3 клика для returning users)
+- ArticlePipelineFSM (23 состояния), SocialPipelineFSM (10 состояний) — итого 18 StatesGroup
+- Inline handlers (NOT FSM delegation): pipeline реализует sub-flows внутри себя, переиспользуя Service Layer
+- ReadinessService: чеклист готовности (keywords обяз., description обяз. для новичков, prices/media опциональны)
+- ButtonStyle (Bot API 9.4): PRIMARY/SUCCESS/DANGER семантика, макс. 1 PRIMARY на экране
+- Checkpoint: Redis `pipeline:{user_id}:state` (TTL 24h), возобновление с Dashboard (E49)
+- Кросс-постинг: AI-адаптация (cross_post task_type), обязательный ревью (E52)
+- Фазирование: A (Core Pipeline) → B (Readiness + inline sub-flows) → C (Social + кросс-пост) → D (Presets + batch)
+- Checklist UX: editMessageText для простых sub-flows, deleteMessage+send для сложных (3+ промежуточных сообщений)
 
 AI Pipeline Rework (Phase 10):
 - article_v6→v7: multi-step (outline→expand→critique), Markdown output, anti-slop, niche specialization
@@ -260,8 +270,9 @@ Phase N:
 - `python-style.md` → `**/*.py` (ruff, mypy, type hints)
 - `security.md` → `**/*.py` (Fernet, SQL injection, rate limits)
 - `testing.md` → `tests/**/*.py` (pytest-asyncio, httpx.MockTransport, naming)
-- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E42 чеклист)
+- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E52 чеклист)
 - `aiohttp-handlers.md` → `api/**/*.py` (thin handlers, shared http_client, Service Layer)
+- `pipeline.md` → `routers/publishing/pipeline/**/*.py` (inline handlers, checkpoint, ButtonStyle, exit protection)
 
 ## MCP-серверы (настроены в settings.json)
 - **supabase** — управление БД, миграции, SQL через MCP

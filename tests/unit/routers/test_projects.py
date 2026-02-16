@@ -112,9 +112,7 @@ class TestFormatProjectCard:
 
 class TestCbProjectList:
     @pytest.mark.asyncio
-    async def test_shows_empty_list(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_shows_empty_list(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         with patch("routers.projects.list.ProjectsRepository") as repo_cls:
             repo_cls.return_value.get_by_user = AsyncMock(return_value=[])
             await cb_project_list(mock_callback, user, mock_db)
@@ -133,9 +131,7 @@ class TestCbProjectList:
 
 class TestCbProjectPage:
     @pytest.mark.asyncio
-    async def test_handles_pagination(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_handles_pagination(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "page:projects:1"
         with patch("routers.projects.list.ProjectsRepository") as repo_cls:
             repo_cls.return_value.get_by_user = AsyncMock(return_value=[])
@@ -145,9 +141,7 @@ class TestCbProjectPage:
 
 class TestCbProjectCard:
     @pytest.mark.asyncio
-    async def test_shows_card(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project
-    ) -> None:
+    async def test_shows_card(self, mock_callback: MagicMock, user: User, mock_db: MagicMock, project: Project) -> None:
         mock_callback.data = f"project:{project.id}:card"
         with (
             patch("routers.projects.card.ProjectsRepository") as repo_cls,
@@ -164,9 +158,7 @@ class TestCbProjectCard:
             mock_callback.message.edit_text.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_not_found_shows_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_not_found_shows_alert(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "project:999:card"
         with patch("routers.projects.card.ProjectsRepository") as repo_cls:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=None)
@@ -183,8 +175,7 @@ class TestCbProjectCard:
 class TestProjectCreateFSM:
     @pytest.mark.asyncio
     async def test_new_starts_fsm(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock
+        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
     ) -> None:
         mock_callback.data = "projects:new"
         mock_state.get_state = AsyncMock(return_value=None)
@@ -194,35 +185,27 @@ class TestProjectCreateFSM:
             mock_state.set_state.assert_awaited_once_with(ProjectCreateFSM.name)
 
     @pytest.mark.asyncio
-    async def test_name_valid_advances(
-        self, mock_message: MagicMock, mock_state: AsyncMock
-    ) -> None:
+    async def test_name_valid_advances(self, mock_message: MagicMock, mock_state: AsyncMock) -> None:
         mock_message.text = "My Project"
         await fsm_project_name(mock_message, mock_state)
         mock_state.update_data.assert_awaited_once()
         mock_state.set_state.assert_awaited_once_with(ProjectCreateFSM.company_name)
 
     @pytest.mark.asyncio
-    async def test_name_invalid_repeats(
-        self, mock_message: MagicMock, mock_state: AsyncMock
-    ) -> None:
+    async def test_name_invalid_repeats(self, mock_message: MagicMock, mock_state: AsyncMock) -> None:
         mock_message.text = "X"
         await fsm_project_name(mock_message, mock_state)
         mock_state.update_data.assert_not_awaited()
         mock_message.answer.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_company_advances(
-        self, mock_message: MagicMock, mock_state: AsyncMock
-    ) -> None:
+    async def test_company_advances(self, mock_message: MagicMock, mock_state: AsyncMock) -> None:
         mock_message.text = "Test Company"
         await fsm_project_company(mock_message, mock_state)
         mock_state.set_state.assert_awaited_once_with(ProjectCreateFSM.specialization)
 
     @pytest.mark.asyncio
-    async def test_spec_advances(
-        self, mock_message: MagicMock, mock_state: AsyncMock
-    ) -> None:
+    async def test_spec_advances(self, mock_message: MagicMock, mock_state: AsyncMock) -> None:
         mock_message.text = "Web development services"
         await fsm_project_spec(mock_message, mock_state)
         mock_state.set_state.assert_awaited_once_with(ProjectCreateFSM.website_url)
@@ -232,14 +215,15 @@ class TestProjectCreateFSM:
         self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
     ) -> None:
         mock_message.text = "https://example.com"
-        mock_state.get_data.return_value = {
-            "name": "Test", "company_name": "Co", "specialization": "Testing things"
-        }
+        mock_state.get_data.return_value = {"name": "Test", "company_name": "Co", "specialization": "Testing things"}
         with patch("routers.projects.create.ProjectsRepository") as repo_cls:
             repo_cls.return_value.create = AsyncMock(
                 return_value=Project(
-                    id=1, user_id=user.id, name="Test",
-                    company_name="Co", specialization="Testing things",
+                    id=1,
+                    user_id=user.id,
+                    name="Test",
+                    company_name="Co",
+                    specialization="Testing things",
                     website_url="https://example.com",
                 )
             )
@@ -252,14 +236,15 @@ class TestProjectCreateFSM:
         self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock
     ) -> None:
         mock_message.text = "Пропустить"
-        mock_state.get_data.return_value = {
-            "name": "Test", "company_name": "Co", "specialization": "Testing things"
-        }
+        mock_state.get_data.return_value = {"name": "Test", "company_name": "Co", "specialization": "Testing things"}
         with patch("routers.projects.create.ProjectsRepository") as repo_cls:
             repo_cls.return_value.create = AsyncMock(
                 return_value=Project(
-                    id=1, user_id=user.id, name="Test",
-                    company_name="Co", specialization="Testing things",
+                    id=1,
+                    user_id=user.id,
+                    name="Test",
+                    company_name="Co",
+                    specialization="Testing things",
                 )
             )
             await fsm_project_url(mock_message, mock_state, user, mock_db)
@@ -285,8 +270,7 @@ class TestProjectEditFSM:
 
     @pytest.mark.asyncio
     async def test_field_starts_fsm(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User,
-        mock_db: MagicMock, project: Project
+        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, project: Project
     ) -> None:
         mock_callback.data = f"project:{project.id}:field:company_city"
         with patch("routers.projects.card.ProjectsRepository") as repo_cls:
@@ -296,13 +280,10 @@ class TestProjectEditFSM:
 
     @pytest.mark.asyncio
     async def test_field_value_saves(
-        self, mock_message: MagicMock, mock_state: AsyncMock, user: User,
-        mock_db: MagicMock, project: Project
+        self, mock_message: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, project: Project
     ) -> None:
         mock_message.text = "Moscow"
-        mock_state.get_data.return_value = {
-            "project_id": project.id, "field_name": "company_city"
-        }
+        mock_state.get_data.return_value = {"project_id": project.id, "field_name": "company_city"}
         with patch("routers.projects.create.ProjectsRepository") as repo_cls:
             updated = Project(**{**project.model_dump(), "company_city": "Moscow"})
             repo_cls.return_value.update = AsyncMock(return_value=updated)
@@ -368,13 +349,11 @@ class TestProjectDelete:
             patch("routers.projects.card.TokenService") as token_cls,
             patch("bot.config.get_settings") as mock_settings,
         ):
-            mock_settings.return_value = MagicMock(admin_id=999)
+            mock_settings.return_value = MagicMock(admin_ids=[999])
             repo_cls.return_value.get_by_id = AsyncMock(return_value=project)
             repo_cls.return_value.delete = AsyncMock(return_value=True)
             repo_cls.return_value.get_by_user = AsyncMock(return_value=[])
-            previews_cls.return_value.get_active_drafts_by_project = AsyncMock(
-                return_value=[mock_preview]
-            )
+            previews_cls.return_value.get_active_drafts_by_project = AsyncMock(return_value=[mock_preview])
             previews_cls.return_value.atomic_mark_expired = AsyncMock(return_value=None)
             token_cls.return_value.refund = AsyncMock(return_value=1320)
 
@@ -382,7 +361,8 @@ class TestProjectDelete:
 
             # Verify refund was called for the preview
             token_cls.return_value.refund.assert_awaited_once_with(
-                user.id, 320,
+                user.id,
+                320,
                 reason="project_deleted",
                 description="Project deleted, preview refund: seo tips",
             )

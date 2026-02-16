@@ -1,9 +1,10 @@
 """Application configuration via Pydantic Settings v2."""
 
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
 
     # === Required ===
     telegram_bot_token: SecretStr
-    admin_id: int
+    admin_ids: Annotated[list[int], NoDecode]
     supabase_url: str
     supabase_key: SecretStr
     upstash_redis_url: str
@@ -51,6 +52,13 @@ class Settings(BaseSettings):
     preview_ttl_seconds: int = 86400
     max_regenerations_free: int = 2
     railway_graceful_shutdown_timeout: int = 120
+
+    @field_validator("admin_ids", mode="before")
+    @classmethod
+    def _parse_admin_ids(cls, v: str | list[int]) -> list[int]:
+        if isinstance(v, list):
+            return v
+        return [int(x.strip()) for x in str(v).split(",") if x.strip()]
 
     @field_validator("supabase_url")
     @classmethod

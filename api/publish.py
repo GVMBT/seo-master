@@ -81,7 +81,7 @@ async def publish_handler(request: web.Request) -> web.Response:
                     http_client=request.app["http_client"],
                     ai_orchestrator=request.app["ai_orchestrator"],
                     image_storage=request.app["image_storage"],
-                    admin_id=request.app["settings"].admin_id,
+                    admin_ids=request.app["settings"].admin_ids,
                     scheduler_service=request.app.get("scheduler_service"),
                 )
                 result = await service.execute(payload)

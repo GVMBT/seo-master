@@ -13,7 +13,7 @@ PLACEHOLDER_PATTERNS: list[str] = [
     r"\[YOUR",
     r"<placeholder>",
     r"\{заполнить\}",
-    r"ПРИМЕР ТЕКСТА",  # noqa: RUF001
+    r"ПРИМЕР ТЕКСТА",
 ]
 
 # Platform-specific limits

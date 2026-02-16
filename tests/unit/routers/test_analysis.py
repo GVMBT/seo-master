@@ -139,7 +139,9 @@ class TestFormatAuditResults:
 
     def test_limits_recommendations_to_5(self) -> None:
         audit = SiteAudit(
-            id=1, project_id=1, url="https://example.com",
+            id=1,
+            project_id=1,
+            url="https://example.com",
             recommendations=[{"title": f"Rec {i}"} for i in range(10)],
         )
         text = _format_audit_results(audit)
@@ -239,7 +241,10 @@ class TestCbProjectAudit:
 
     @pytest.mark.asyncio
     async def test_ownership_check(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "project:999:audit"
         with patch("routers.analysis.ProjectsRepository") as repo_cls:
@@ -287,7 +292,7 @@ class TestCbAuditRun:
             patch("routers.analysis.TokenService") as token_cls,
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=project_with_url)
-            settings_mock.return_value.admin_id = 999
+            settings_mock.return_value.admin_ids = [999]
             token_cls.return_value.check_balance = AsyncMock(return_value=False)
             token_cls.return_value.format_insufficient_msg = MagicMock(return_value="Недостаточно")
             await cb_audit_run(mock_callback, poor_user, mock_db, mock_http_client)
@@ -310,10 +315,19 @@ class TestCbAuditRun:
         from services.external.pagespeed import AuditResult
 
         audit_result = AuditResult(
-            performance_score=85, accessibility_score=92, best_practices_score=78,
-            seo_score=90, fcp_ms=1200, lcp_ms=2100, cls=0.05, tbt_ms=300,
-            inp_ms=81, ttfb_ms=320, speed_index=3000,
-            recommendations=[{"title": "Optimize images"}], full_report={},
+            performance_score=85,
+            accessibility_score=92,
+            best_practices_score=78,
+            seo_score=90,
+            fcp_ms=1200,
+            lcp_ms=2100,
+            cls=0.05,
+            tbt_ms=300,
+            inp_ms=81,
+            ttfb_ms=320,
+            speed_index=3000,
+            recommendations=[{"title": "Optimize images"}],
+            full_report={},
         )
 
         with (
@@ -324,7 +338,7 @@ class TestCbAuditRun:
             patch("routers.analysis.AuditsRepository") as audit_repo_cls,
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=project_with_url)
-            settings_mock.return_value.admin_id = 999
+            settings_mock.return_value.admin_ids = [999]
             token_cls.return_value.check_balance = AsyncMock(return_value=True)
             token_cls.return_value.charge = AsyncMock(return_value=1450)
             psi_cls.return_value.audit = AsyncMock(return_value=audit_result)
@@ -355,7 +369,7 @@ class TestCbAuditRun:
             patch("routers.analysis.PageSpeedClient") as psi_cls,
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=project_with_url)
-            settings_mock.return_value.admin_id = 999
+            settings_mock.return_value.admin_ids = [999]
             token_cls.return_value.check_balance = AsyncMock(return_value=True)
             token_cls.return_value.charge = AsyncMock(return_value=1450)
             psi_cls.return_value.audit = AsyncMock(return_value=None)
@@ -376,7 +390,11 @@ class TestCbAuditRun:
 class TestCbCompetitorStart:
     @pytest.mark.asyncio
     async def test_ownership_check(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, mock_state: AsyncMock,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_state: AsyncMock,
     ) -> None:
         mock_callback.data = "project:999:competitor"
         with patch("routers.analysis.ProjectsRepository") as repo_cls:
@@ -387,7 +405,11 @@ class TestCbCompetitorStart:
 
     @pytest.mark.asyncio
     async def test_e38_insufficient_balance(
-        self, mock_callback: MagicMock, mock_db: MagicMock, mock_state: AsyncMock, project: Project,
+        self,
+        mock_callback: MagicMock,
+        mock_db: MagicMock,
+        mock_state: AsyncMock,
+        project: Project,
     ) -> None:
         poor_user = User(id=123456789, balance=10, role="user")
         mock_callback.data = "project:1:competitor"
@@ -397,7 +419,7 @@ class TestCbCompetitorStart:
             patch("routers.analysis.TokenService") as token_cls,
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=project)
-            settings_mock.return_value.admin_id = 999
+            settings_mock.return_value.admin_ids = [999]
             token_cls.return_value.check_balance = AsyncMock(return_value=False)
             token_cls.return_value.format_insufficient_msg = MagicMock(return_value="Недостаточно")
             await cb_competitor_start(mock_callback, poor_user, mock_db, mock_state)
@@ -406,7 +428,12 @@ class TestCbCompetitorStart:
 
     @pytest.mark.asyncio
     async def test_sets_fsm_state(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, mock_state: AsyncMock, project: Project,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_state: AsyncMock,
+        project: Project,
     ) -> None:
         mock_callback.data = "project:1:competitor"
         with (
@@ -416,7 +443,7 @@ class TestCbCompetitorStart:
             patch("routers.analysis.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None),
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=project)
-            settings_mock.return_value.admin_id = 999
+            settings_mock.return_value.admin_ids = [999]
             token_cls.return_value.check_balance = AsyncMock(return_value=True)
             await cb_competitor_start(mock_callback, user, mock_db, mock_state)
             mock_state.set_state.assert_awaited_once_with(CompetitorAnalysisFSM.url)
@@ -424,7 +451,12 @@ class TestCbCompetitorStart:
 
     @pytest.mark.asyncio
     async def test_interrupts_active_fsm(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock, mock_state: AsyncMock, project: Project,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_state: AsyncMock,
+        project: Project,
     ) -> None:
         mock_callback.data = "project:1:competitor"
         with (
@@ -434,7 +466,7 @@ class TestCbCompetitorStart:
             patch("routers.analysis.ensure_no_active_fsm", new_callable=AsyncMock, return_value="создание проекта"),
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=project)
-            settings_mock.return_value.admin_id = 999
+            settings_mock.return_value.admin_ids = [999]
             token_cls.return_value.check_balance = AsyncMock(return_value=True)
             await cb_competitor_start(mock_callback, user, mock_db, mock_state)
             # Should notify about interrupted process
@@ -450,7 +482,10 @@ class TestCbCompetitorStart:
 class TestFsmCompetitorUrl:
     @pytest.mark.asyncio
     async def test_valid_url_advances(
-        self, mock_message: MagicMock, user: User, mock_state: AsyncMock,
+        self,
+        mock_message: MagicMock,
+        user: User,
+        mock_state: AsyncMock,
     ) -> None:
         mock_message.text = "https://competitor.com"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
@@ -460,7 +495,10 @@ class TestFsmCompetitorUrl:
 
     @pytest.mark.asyncio
     async def test_invalid_url_repeats(
-        self, mock_message: MagicMock, user: User, mock_state: AsyncMock,
+        self,
+        mock_message: MagicMock,
+        user: User,
+        mock_state: AsyncMock,
     ) -> None:
         mock_message.text = "not-a-url"
         await fsm_competitor_url(mock_message, user, mock_state)
@@ -470,7 +508,10 @@ class TestFsmCompetitorUrl:
 
     @pytest.mark.asyncio
     async def test_empty_text_repeats(
-        self, mock_message: MagicMock, user: User, mock_state: AsyncMock,
+        self,
+        mock_message: MagicMock,
+        user: User,
+        mock_state: AsyncMock,
     ) -> None:
         mock_message.text = ""
         await fsm_competitor_url(mock_message, user, mock_state)
@@ -478,7 +519,10 @@ class TestFsmCompetitorUrl:
 
     @pytest.mark.asyncio
     async def test_shows_cost_in_confirm(
-        self, mock_message: MagicMock, user: User, mock_state: AsyncMock,
+        self,
+        mock_message: MagicMock,
+        user: User,
+        mock_state: AsyncMock,
     ) -> None:
         mock_message.text = "https://competitor.com"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
@@ -506,10 +550,12 @@ class TestCbCompetitorConfirm:
         competitor_data: dict,
     ) -> None:
         mock_callback.data = "comp:confirm"
-        mock_state.get_data = AsyncMock(return_value={
-            "competitor_url": "https://competitor.com",
-            "project_id": 1,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "competitor_url": "https://competitor.com",
+                "project_id": 1,
+            }
+        )
 
         from services.external.firecrawl import ExtractResult
 
@@ -520,7 +566,7 @@ class TestCbCompetitorConfirm:
             patch("routers.analysis.TokenService") as token_cls,
             patch("routers.analysis.FirecrawlClient") as fc_cls,
         ):
-            settings_mock.return_value.admin_id = 999
+            settings_mock.return_value.admin_ids = [999]
             settings_mock.return_value.firecrawl_api_key.get_secret_value.return_value = "fc-key"
             token_cls.return_value.charge = AsyncMock(return_value=1450)
             fc_cls.return_value.extract_competitor = AsyncMock(return_value=extract_result)
@@ -543,16 +589,18 @@ class TestCbCompetitorConfirm:
         mock_rate_limiter: MagicMock,
     ) -> None:
         mock_callback.data = "comp:confirm"
-        mock_state.get_data = AsyncMock(return_value={
-            "competitor_url": "https://competitor.com",
-            "project_id": 1,
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "competitor_url": "https://competitor.com",
+                "project_id": 1,
+            }
+        )
         with (
             patch("routers.analysis.get_settings") as settings_mock,
             patch("routers.analysis.TokenService") as token_cls,
             patch("routers.analysis.FirecrawlClient") as fc_cls,
         ):
-            settings_mock.return_value.admin_id = 999
+            settings_mock.return_value.admin_ids = [999]
             settings_mock.return_value.firecrawl_api_key.get_secret_value.return_value = "fc-key"
             token_cls.return_value.charge = AsyncMock(return_value=1450)
             token_cls.return_value.refund = AsyncMock(return_value=1500)

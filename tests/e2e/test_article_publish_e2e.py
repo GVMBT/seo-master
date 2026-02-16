@@ -1,12 +1,18 @@
-"""E2E tests: article publish flow (start, cancel midway, no-projects error).
+"""E2E tests: article publish flow (navigate to projects, check state, cancel).
 
 Uses Telethon to send real messages to a staging bot via Telegram.
 All tests are skipped if TELETHON_API_ID is not set.
+
+Design: ONE sequential flow. Tests are ordered steps that share state.
+Total messages sent: 3 (/cancel from clean_state + /start + /cancel).
+The inline "Проекты" click does not count as a user message (callback query).
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
+from typing import Any
 
 import pytest
 
@@ -18,36 +24,27 @@ pytestmark = [
         not os.environ.get("TELETHON_API_ID"),
         reason="E2E: Telethon credentials not configured",
     ),
+    pytest.mark.asyncio(loop_scope="module"),
 ]
 
-
-async def _reset_state(client, bot_username: str) -> None:
-    """Send /cancel to ensure clean FSM state before each test."""
-    await send_and_wait(client, bot_username, "/cancel", timeout=10.0)
+# Module-level shared state between sequential tests
+_state: dict[str, Any] = {}
 
 
-async def _navigate_to_projects(client, bot_username: str):
-    """Navigate to projects list from dashboard. Returns the response message."""
-    dashboard = await send_and_wait(client, bot_username, "/start", timeout=20.0)
-    if dashboard is None:
-        return None
-    return await click_inline_button(client, dashboard, "Проекты")
+async def test_step1_navigate_to_projects(telethon_client, bot_username: str, clean_state) -> None:
+    """Step 1: /start -> click Проекты -> check projects list or empty state."""
+    dashboard = await send_and_wait(telethon_client, bot_username, "/start", timeout=20.0, wait_all=True)
+    assert dashboard is not None, "Bot did not respond to /start"
 
+    _state["dashboard"] = dashboard
+    await asyncio.sleep(1)
 
-async def test_article_flow_starts(telethon_client, bot_username: str) -> None:
-    """Navigate toward article publish and verify the first step is shown.
+    # Click "Проекты" inline button
+    projects_msg = await click_inline_button(telethon_client, dashboard, "Проекты")
+    _state["projects_msg"] = projects_msg
 
-    If the user has projects and categories with WP connections, the article
-    flow should begin. If not, an appropriate error/empty state is shown.
-    Either way, the bot should respond.
-    """
-    await _reset_state(telethon_client, bot_username)
-
-    projects_msg = await _navigate_to_projects(telethon_client, bot_username)
-    # Regardless of whether user has projects, bot must have responded
     if projects_msg is not None:
         text = (projects_msg.text or "").lower()
-        # Should contain project-related content
         assert any(
             fragment in text
             for fragment in [
@@ -59,44 +56,40 @@ async def test_article_flow_starts(telethon_client, bot_username: str) -> None:
             ]
         ), f"Unexpected projects response: {projects_msg.text!r}"
 
+    await asyncio.sleep(1)
 
-async def test_article_cancel_midway(telethon_client, bot_username: str) -> None:
-    """Start an article flow, then /cancel -> verify cancellation confirmed."""
-    await _reset_state(telethon_client, bot_username)
 
-    # Navigate to projects
-    await _navigate_to_projects(telethon_client, bot_username)
+async def test_step2_projects_has_valid_content(telethon_client, bot_username: str, clean_state) -> None:
+    """Step 2: Verify the projects response from step 1 has meaningful content.
 
-    # Cancel whatever state we are in
+    If user has projects, should list them. If not, shows empty state.
+    No new messages sent -- this test inspects the state from step 1.
+    """
+    projects_msg = _state.get("projects_msg")
+    if projects_msg is None:
+        pytest.skip("No projects response from step 1 (bot may not have Проекты button)")
+
+    text = (projects_msg.text or "").lower()
+    # Either "no projects" message or a list of projects
+    assert any(
+        fragment in text
+        for fragment in [
+            "нет проектов",
+            "проект",
+            "создать",
+            "выберите",
+        ]
+    ), f"Unexpected projects content: {projects_msg.text!r}"
+
+
+async def test_step3_cancel_returns_cleanly(telethon_client, bot_username: str, clean_state) -> None:
+    """Step 3: /cancel after navigating to projects -> confirms cancellation."""
     response = await send_and_wait(telethon_client, bot_username, "/cancel", timeout=15.0)
     assert response is not None, "Bot did not respond to /cancel"
 
     text = (response.text or "").lower()
-    assert any(
-        fragment in text
-        for fragment in ["отменено", "нет активного"]
-    ), f"Cancel response did not confirm cancellation: {response.text!r}"
+    assert any(fragment in text for fragment in ["отменено", "нет активного"]), (
+        f"Cancel response did not confirm cancellation: {response.text!r}"
+    )
 
-
-async def test_article_no_projects_error(telethon_client, bot_username: str) -> None:
-    """Try article publish flow with no projects -> shows appropriate message.
-
-    Note: this test is meaningful only if the test user has no projects.
-    If the user has projects, the test still passes (checks for valid response).
-    """
-    await _reset_state(telethon_client, bot_username)
-
-    projects_msg = await _navigate_to_projects(telethon_client, bot_username)
-
-    if projects_msg is not None:
-        text = (projects_msg.text or "").lower()
-        # Valid responses: either "no projects" or a project list
-        assert any(
-            fragment in text
-            for fragment in [
-                "нет проектов",
-                "проект",
-                "создать",
-                "выберите",
-            ]
-        ), f"Unexpected response when checking projects: {projects_msg.text!r}"
+    await asyncio.sleep(1)

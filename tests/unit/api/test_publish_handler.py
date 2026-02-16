@@ -20,8 +20,12 @@ def _make_request(
     """Create mock request with verified_body and qstash_msg_id pre-set."""
     if body is None:
         body = {
-            "schedule_id": 1, "category_id": 10, "connection_id": 5,
-            "platform_type": "wordpress", "user_id": 1, "project_id": 1,
+            "schedule_id": 1,
+            "category_id": 10,
+            "connection_id": 5,
+            "platform_type": "wordpress",
+            "user_id": 1,
+            "project_id": 1,
             "idempotency_key": "pub_1_09:00",
         }
 
@@ -31,7 +35,7 @@ def _make_request(
     redis_mock.delete = AsyncMock(return_value=1)
 
     settings_mock = MagicMock()
-    settings_mock.admin_id = 999
+    settings_mock.admin_ids = [999]
 
     bot_mock = MagicMock()
     bot_mock.send_message = AsyncMock()
@@ -54,10 +58,12 @@ def _make_request(
 
     request = MagicMock()
     request.app = app
-    request.__getitem__ = MagicMock(side_effect=lambda k: {
-        "verified_body": body,
-        "qstash_msg_id": msg_id,
-    }[k])
+    request.__getitem__ = MagicMock(
+        side_effect=lambda k: {
+            "verified_body": body,
+            "qstash_msg_id": msg_id,
+        }[k]
+    )
 
     return request
 
@@ -78,9 +84,14 @@ async def test_publish_happy_path(
     from services.publish import PublishOutcome
 
     mock_svc = MagicMock()
-    mock_svc.execute = AsyncMock(return_value=PublishOutcome(
-        status="ok", keyword="test", user_id=1, notify=False,
-    ))
+    mock_svc.execute = AsyncMock(
+        return_value=PublishOutcome(
+            status="ok",
+            keyword="test",
+            user_id=1,
+            notify=False,
+        )
+    )
     mock_svc_cls.return_value = mock_svc
 
     request = _make_request()

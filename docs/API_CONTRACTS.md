@@ -527,6 +527,7 @@ MODEL_CHAINS = {
     "review":               ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "description":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "competitor_analysis":  ["openai/gpt-5.2", "anthropic/claude-sonnet-4.5"],
+    "cross_post":           ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],           # Text adaptation between platforms (budget)
     "image":                ["google/gemini-3-pro-image-preview", "google/gemini-2.5-flash-image"],
 }
 
@@ -1206,19 +1207,21 @@ def check_fabricated_data(html: str, prices_excerpt: str, advantages: str) -> li
     return issues
 ```
 
-### 3.8 Быстрая публикация (F42) — callback-based flow
+### 3.8 ~~Быстрая публикация (F42)~~ → Goal-Oriented Pipeline
 
-Быстрая публикация реализуется через **callback_data** (не FSM), т.к. не требует пользовательского ввода — только нажатие кнопок.
+> **Замена:** Quick Publish заменён на Goal-Oriented Pipeline (см. [PIPELINE_UX_PROPOSAL.md](PIPELINE_UX_PROPOSAL.md) v1.7).
+> Новые FSM: `ArticlePipelineFSM` (23 состояния), `SocialPipelineFSM` (10 состояний).
+> Новые callback_data: `pipeline:article:*`, `pipeline:social:*`.
+
+Pipeline использует FSM (не callback-based), т.к. включает inline sub-flows с пользовательским вводом (readiness check).
 
 ```
-Шаг 1 (если проектов >1): callback_data = "quick:project:{id}"
-Шаг 2: callback_data = "quick:cat:{cat_id}:{plat}:{conn_id}"
-  plat = short platform code: wp | tg | vk | pin (экономия байт, макс 64)
+ArticlePipelineFSM: select_project → select_wp → select_category → readiness_check → confirm_cost → generating → preview → publishing
+SocialPipelineFSM: select_project → select_platform → select_category → readiness_check → confirm_cost → generating → review → publishing
 ```
 
-После нажатия кнопки шага 2:
-- Для WordPress → переход в FSM `ArticlePublish` (с Telegraph-превью)
-- Для TG/VK/Pinterest → переход в FSM `SocialPostPublish` (подтверждение → генерация → публикация)
+- ArticlePipeline: WordPress → Telegraph-превью → публикация
+- SocialPipeline: TG/VK/Pinterest → ревью → публикация (+опциональный кросс-постинг)
 
 Формат callback_data — см. ARCHITECTURE.md §5.2.
 

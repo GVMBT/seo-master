@@ -21,6 +21,8 @@ _FSM_NAMES: dict[str, str] = {
     "DescriptionGenerateFSM": "генерация описания",
     "CompetitorAnalysisFSM": "анализ конкурентов",
     "BroadcastFSM": "рассылка сообщений",
+    "ArticlePipelineFSM": "создание статьи (pipeline)",
+    "SocialPipelineFSM": "публикация поста (pipeline)",
 }
 
 

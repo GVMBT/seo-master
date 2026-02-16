@@ -181,13 +181,12 @@ def test_format_preview_text_no_content():
 # ---------------------------------------------------------------------------
 
 
-@patch("routers.publishing.preview.quick_wp_choice_kb")
 @patch("routers.publishing.preview.ConnectionsRepository")
 @patch("routers.publishing.preview.CategoriesRepository")
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_ownership_check(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls, mock_wp_kb,
+    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls,
 ):
     """cb_article_start rejects if project.user_id != user.id."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())

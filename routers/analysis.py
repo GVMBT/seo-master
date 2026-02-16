@@ -124,7 +124,10 @@ def _format_competitor_results(data: dict[str, Any]) -> str:
 
 
 async def _get_project_or_notify(
-    project_id: int, user_id: int, db: SupabaseClient, callback: CallbackQuery,
+    project_id: int,
+    user_id: int,
+    db: SupabaseClient,
+    callback: CallbackQuery,
 ) -> Project | None:
     """Fetch project and verify ownership. Answers callback on failure."""
     project = await ProjectsRepository(db).get_by_id(project_id)
@@ -170,7 +173,10 @@ async def cb_project_audit(callback: CallbackQuery, user: User, db: SupabaseClie
 
 @router.callback_query(F.data.regexp(r"^project:(\d+):audit:run$"))
 async def cb_audit_run(
-    callback: CallbackQuery, user: User, db: SupabaseClient, http_client: httpx.AsyncClient,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Run PageSpeed audit, charge tokens, save results."""
     msg = await guard_callback_message(callback)
@@ -183,12 +189,13 @@ async def cb_audit_run(
 
     if not project.website_url:
         await callback.answer(
-            "Укажите URL сайта в настройках проекта.", show_alert=True,
+            "Укажите URL сайта в настройках проекта.",
+            show_alert=True,
         )
         return
 
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
 
     # Check balance before charging
     if not await token_svc.check_balance(user.id, COST_AUDIT):
@@ -201,7 +208,8 @@ async def cb_audit_run(
 
     # Charge tokens
     await token_svc.charge(
-        user.id, COST_AUDIT,
+        user.id,
+        COST_AUDIT,
         operation_type="audit",
         description=f"Site audit: {project.website_url}",
     )
@@ -215,7 +223,8 @@ async def cb_audit_run(
     if result is None:
         # Refund on failure
         await token_svc.refund(
-            user.id, COST_AUDIT,
+            user.id,
+            COST_AUDIT,
             reason="audit_failed",
             description="PageSpeed audit failed",
         )
@@ -252,7 +261,10 @@ async def cb_audit_run(
 
 @router.callback_query(F.data.regexp(r"^project:(\d+):competitor$"))
 async def cb_competitor_start(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext,
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    state: FSMContext,
 ) -> None:
     """Start competitor analysis FSM. Check balance (E38)."""
     msg = await guard_callback_message(callback)
@@ -265,7 +277,7 @@ async def cb_competitor_start(
 
     # E38: check balance
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
     if not await token_svc.check_balance(user.id, COST_COMPETITOR):
         await msg.edit_text(
             token_svc.format_insufficient_msg(COST_COMPETITOR, user.balance),
@@ -295,7 +307,9 @@ async def cb_competitor_start(
 
 @router.message(CompetitorAnalysisFSM.url, F.text)
 async def fsm_competitor_url(
-    message: Message, user: User, state: FSMContext,
+    message: Message,
+    user: User,
+    state: FSMContext,
 ) -> None:
     """Validate competitor URL and ask for confirmation."""
     text = (message.text or "").strip()
@@ -313,9 +327,7 @@ async def fsm_competitor_url(
     await state.set_state(CompetitorAnalysisFSM.confirm)
 
     await message.answer(
-        f"Анализ сайта {text}\n"
-        f"Стоимость: {COST_COMPETITOR} токенов\n"
-        f"Баланс: {user.balance}",
+        f"Анализ сайта {text}\nСтоимость: {COST_COMPETITOR} токенов\nБаланс: {user.balance}",
         reply_markup=competitor_confirm_kb(project_id, COST_COMPETITOR).as_markup(),
     )
 
@@ -347,11 +359,12 @@ async def cb_competitor_confirm(
     project_id: int = data["project_id"]
 
     settings = get_settings()
-    token_svc = TokenService(db, settings.admin_id)
+    token_svc = TokenService(db, settings.admin_ids)
 
     # Charge tokens
     await token_svc.charge(
-        user.id, COST_COMPETITOR,
+        user.id,
+        COST_COMPETITOR,
         operation_type="competitor_analysis",
         description=f"Competitor analysis: {competitor_url}",
     )
@@ -370,7 +383,8 @@ async def cb_competitor_confirm(
     if result is None:
         # E31: Firecrawl failed -> refund tokens, clear FSM
         await token_svc.refund(
-            user.id, COST_COMPETITOR,
+            user.id,
+            COST_COMPETITOR,
             reason="competitor_analysis_failed",
             description=f"Firecrawl unavailable for {competitor_url}",
         )

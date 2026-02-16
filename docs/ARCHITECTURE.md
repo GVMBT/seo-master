@@ -45,6 +45,7 @@ seo-master-bot-v2/
 ├── keyboards/                      # Клавиатуры Telegram
 │   ├── inline.py                   # Inline-клавиатуры (проекты, категории, настройки)
 │   ├── reply.py                    # Reply-клавиатуры (главное меню, cancel, skip)
+│   ├── pipeline.py                # Pipeline-клавиатуры (CTA, readiness, confirmation, preview)
 │   └── pagination.py              # Generic paginator (PAGE_SIZE=8)
 │
 ├── routers/                        # Роутеры Aiogram (~25 роутеров вместо 382 обработчиков)
@@ -66,7 +67,11 @@ seo-master-bot-v2/
 │   │   ├── preview.py              # Telegraph-предпросмотр + подтверждение
 │   │   ├── social.py               # SocialPostPublishFSM (TG/VK/Pinterest генерация + публикация)
 │   │   ├── scheduler.py            # Настройка расписания (FSM)
-│   │   └── quick.py                # Быстрая публикация (callback → SocialPostPublishFSM)
+│   │   └── pipeline/               # Goal-Oriented Pipeline (замена Quick Publish)
+│   │       ├── __init__.py          # Регистрация роутеров
+│   │       ├── article.py           # ArticlePipelineFSM (23 состояния, шаги 1-8 + inline sub-flows)
+│   │       ├── social.py            # SocialPipelineFSM (10 состояний, соц. посты + кросс-постинг)
+│   │       └── readiness.py         # Inline readiness handlers (sub-flows через Service Layer)
 │   ├── profile.py                  # Профиль, расходы, реферал
 │   ├── tariffs.py                  # Пакеты + Telegram Stars
 │   ├── settings.py                 # Пользовательские настройки
@@ -103,7 +108,8 @@ seo-master-bot-v2/
 │   │       ├── image_v1.yaml            # v1: image generation prompts (+ niche styles, negatives)
 │   │       ├── review_v1.yaml           # v1: review generation
 │   │       ├── description_v1.yaml      # v1: category description generation
-│   │       └── competitor_analysis_v1.yaml  # v1: standalone F39 competitor analysis
+│   │       ├── competitor_analysis_v1.yaml  # v1: standalone F39 competitor analysis
+│   │       └── cross_post_v1.yaml          # v1: text adaptation between platforms (Pipeline кросс-постинг)
 │   ├── publishers/
 │   │   ├── base.py                 # BasePublisher (валидация -> публикация -> отчет)
 │   │   ├── wordpress.py            # WP REST API
@@ -119,6 +125,7 @@ seo-master-bot-v2/
 │   ├── tokens.py                   # Токеновая экономика (проверка, списание, возврат)
 │   ├── storage.py                  # ImageStorage: Supabase Storage upload/cleanup (§5.9)
 │   ├── notifications.py            # Автоуведомления
+│   ├── readiness.py               # ReadinessService: чеклист готовности для Pipeline
 │   └── payments/                   # Платежи
 │       ├── packages.py             # Пакеты и тарифы
 │       ├── stars.py                # Telegram Stars
@@ -509,7 +516,7 @@ CREATE TABLE token_expenses (
     id              SERIAL PRIMARY KEY,
     user_id         BIGINT NOT NULL REFERENCES users(id),  -- NO ACTION: финансовые записи не удаляются при удалении пользователя (аудит)
     amount          INTEGER NOT NULL,          -- Отрицательное = списание, положительное = пополнение/возврат
-    operation_type  VARCHAR(50) NOT NULL,      -- text_generation (статьи И соц. посты), image_generation, keyword_generation, audit, review, description, competitor_analysis, purchase, refund, referral_bonus, api_openrouter, api_dataforseo, api_firecrawl, api_pagespeed
+    operation_type  VARCHAR(50) NOT NULL,      -- text_generation (статьи И соц. посты), image_generation, keyword_generation, audit, review, description, competitor_analysis, cross_post, purchase, refund, referral_bonus, api_openrouter, api_dataforseo, api_firecrawl, api_pagespeed
     description     TEXT,
     ai_model        VARCHAR(100),
     input_tokens    INTEGER,                   -- Токены LLM (входящие)
@@ -743,8 +750,8 @@ category:12:platform:wordpress:publish — публикация
 schedule:42:toggle                    — вкл/выкл расписания
 tariff:pro:stars                      — оплата Stars
 tariff:pro:yookassa                   — оплата ЮKassa
-quick:project:5                       — быстрая публикация: выбор проекта
-quick:cat:12:wp:7                     — быстрая публикация: категория+платформа
+pipeline:article:start                — Pipeline: начать статью
+pipeline:social:confirm               — Pipeline: подтверждение соц. поста
 page:projects:2                       — пагинация: страница 2
 ```
 

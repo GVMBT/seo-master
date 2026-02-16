@@ -7,15 +7,23 @@ Requires environment variables:
 - STAGING_BOT_USERNAME     (e.g. @seo_master_staging_bot)
 
 All E2E tests are skipped if these are not set.
+
+Design: one /cancel per module (clean_state fixture), NOT per test.
+Tests within a module are sequential steps sharing state via module-level dict.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from dotenv import load_dotenv
+
+# Load .env so E2E tests pick up Telethon credentials.
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=False)
 
 # Skip entire module if Telethon credentials not configured
 _TELETHON_API_ID = os.environ.get("TELETHON_API_ID")
@@ -43,7 +51,7 @@ async def telethon_client():
 
     client = TelegramClient(
         StringSession(_TELETHON_SESSION),
-        int(_TELETHON_API_ID),
+        int(_TELETHON_API_ID),  # type: ignore[arg-type]
         _TELETHON_API_HASH,
     )
     await client.connect()
@@ -60,8 +68,20 @@ def bot_username() -> str:
     return _BOT_USERNAME.lstrip("@")
 
 
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def clean_state(telethon_client, bot_username):
+    """Reset FSM state once per module, not per test.
+
+    Sends /cancel and waits, then yields. Each module gets exactly ONE reset.
+    Inter-module delay of 3 seconds prevents rate limiting.
+    """
+    await send_and_wait(telethon_client, bot_username, "/cancel", timeout=10.0)
+    await asyncio.sleep(10)  # 10s gap between modules to avoid 30 msg/min rate limit
+    yield
+
+
 # ---------------------------------------------------------------------------
-# Helper functions
+# Helper functions (importable by test modules)
 # ---------------------------------------------------------------------------
 
 
@@ -70,26 +90,57 @@ async def send_and_wait(
     bot_username: str,
     text: str,
     timeout: float = 15.0,
+    wait_all: bool = False,
 ):
     """Send a message to the bot and wait for a response.
 
+    Args:
+        wait_all: If True, waits extra time and returns the LAST bot message
+                  (useful for commands like /start that send multiple messages).
+                  If False, returns the first bot message detected.
+
     Returns the bot's reply Message or None on timeout.
     """
-    entity = await client.get_entity(bot_username)
-    await client.send_message(entity, text)
+    import time as _time
 
-    # Wait for bot response
-    end = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < end:
-        messages = await client.get_messages(entity, limit=3)
-        for msg in messages:
-            # Bot messages have from_id pointing to bot
-            if msg.from_id and hasattr(msg.from_id, "user_id"):
-                bot_entity = await client.get_entity(bot_username)
-                if msg.from_id.user_id == bot_entity.id and msg.date.timestamp() > (
-                    asyncio.get_event_loop().time() - timeout
-                ):
+    entity = await client.get_entity(bot_username)
+
+    # Remember last bot message ID to detect NEW responses only
+    prev_messages = await client.get_messages(entity, limit=1)
+    last_seen_id = prev_messages[0].id if prev_messages else 0  # noqa: F841
+
+    sent_msg = await client.send_message(entity, text)
+
+    if wait_all:
+        # Wait for all responses to arrive, then return the last one
+        # (or the one with inline buttons if multiple exist)
+        await asyncio.sleep(min(timeout * 0.6, 5.0))
+        messages = await client.get_messages(entity, limit=10)
+        bot_msgs = [m for m in messages if not m.out and m.id > sent_msg.id]
+        if bot_msgs:
+            # Prefer message with inline buttons (dashboard/card), else last
+            for m in bot_msgs:
+                if m.buttons:
+                    return m
+            return bot_msgs[0]  # newest first (Telethon default order)
+        # Fallback: keep polling
+        deadline = _time.time() + timeout * 0.4
+        while _time.time() < deadline:
+            messages = await client.get_messages(entity, limit=10)
+            for msg in messages:
+                if not msg.out and msg.id > sent_msg.id:
                     return msg
+            await asyncio.sleep(0.5)
+        return None
+
+    # Default: return first bot response
+    deadline = _time.time() + timeout
+    while _time.time() < deadline:
+        messages = await client.get_messages(entity, limit=5)
+        for msg in messages:
+            # Bot messages: not outgoing, with ID greater than our sent message
+            if not msg.out and msg.id > sent_msg.id:
+                return msg
         await asyncio.sleep(0.5)
     return None
 
@@ -98,32 +149,38 @@ async def click_inline_button(
     client,
     message,
     button_text: str,
+    timeout: float = 10.0,
 ):
     """Find and click an inline button by text.
 
     Returns the bot's response after clicking, or None.
     """
+    import time as _time
+
     if not message or not message.buttons:
         return None
 
     for row in message.buttons:
         for btn in row:
             if button_text.lower() in (btn.text or "").lower():
-                await btn.click()
-                await asyncio.sleep(1.5)
-                # Get latest messages to find the response
+                # Remember message ID before clicking
                 entity = await message.get_input_chat()
-                messages = await client.get_messages(entity, limit=3)
-                return messages[0] if messages else None
+                prev_messages = await client.get_messages(entity, limit=1)
+                prev_id = prev_messages[0].id if prev_messages else 0
+
+                await btn.click()
+
+                # Wait for a new or edited message
+                deadline = _time.time() + timeout
+                while _time.time() < deadline:
+                    messages = await client.get_messages(entity, limit=3)
+                    for msg in messages:
+                        # New message from bot, or the original message was edited
+                        if not msg.out and msg.id > prev_id:
+                            return msg
+                    # Also check if the clicked message itself was edited
+                    if messages and messages[0].id == message.id and messages[0].edit_date:
+                        return messages[0]
+                    await asyncio.sleep(0.5)
+                return None
     return None
-
-
-async def assert_bot_replied(
-    client,
-    bot_username: str,
-    fragment: str,
-    timeout: float = 10.0,
-) -> bool:
-    """Assert the bot replied with a message containing the fragment."""
-    msg = await send_and_wait(client, bot_username, "", timeout)
-    return bool(msg and fragment.lower() in (msg.text or "").lower())

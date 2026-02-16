@@ -1,12 +1,17 @@
-"""E2E tests: quick publish flow.
+"""E2E tests: pipeline entry flow (replaced quick publish).
 
 Uses Telethon to send real messages to a staging bot via Telegram.
 All tests are skipped if TELETHON_API_ID is not set.
+
+Design: ONE sequential flow. Tests are ordered steps that share state.
+Total messages sent: 3 (/cancel from clean_state + "Написать статью" + /cancel).
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
+from typing import Any
 
 import pytest
 
@@ -18,93 +23,70 @@ pytestmark = [
         not os.environ.get("TELETHON_API_ID"),
         reason="E2E: Telethon credentials not configured",
     ),
+    pytest.mark.asyncio(loop_scope="module"),
 ]
 
-
-async def _reset_state(client, bot_username: str) -> None:
-    """Send /cancel to ensure clean FSM state before each test."""
-    await send_and_wait(client, bot_username, "/cancel", timeout=10.0)
+# Module-level shared state between sequential tests
+_state: dict[str, Any] = {}
 
 
-async def test_quick_publish_button_works(telethon_client, bot_username: str) -> None:
-    """Send 'Быстрая публикация' text -> bot responds with quick publish menu or empty state."""
-    await _reset_state(telethon_client, bot_username)
-
-    # Ensure reply keyboard is active
-    await send_and_wait(telethon_client, bot_username, "/start", timeout=15.0)
-
+async def test_step1_write_article_response(telethon_client, bot_username: str, clean_state) -> None:
+    """Step 1: Send 'Написать статью' -> bot responds with dashboard or pipeline entry."""
     response = await send_and_wait(
-        telethon_client, bot_username, "Быстрая публикация", timeout=15.0,
+        telethon_client,
+        bot_username,
+        "Написать статью",
+        timeout=15.0,
     )
-    assert response is not None, "Bot did not respond to 'Быстрая публикация'"
+    assert response is not None, "Bot did not respond to 'Написать статью'"
 
     text = (response.text or "").lower()
-    # Should show either quick publish options or a message about no projects/platforms
     assert any(
         fragment in text
         for fragment in [
-            "публикация",
-            "платформ",
+            "статью",
             "проект",
-            "нет подключ",
-            "выберите",
-            "категори",
+            "баланс",
+            "токен",
+            "написать",
+            "опубликовать",
         ]
-    ), f"Unexpected quick publish response: {response.text!r}"
+    ), f"Unexpected write article response: {response.text!r}"
+
+    _state["write_article_msg"] = response
+    await asyncio.sleep(1)
 
 
-async def test_quick_publish_no_projects(telethon_client, bot_username: str) -> None:
-    """Quick publish with no projects -> appropriate message.
+async def test_step2_write_article_content_valid(telethon_client, bot_username: str, clean_state) -> None:
+    """Step 2: Verify write article response has valid content.
 
-    Note: if the test user has projects, the test still validates the response.
+    No new messages sent -- inspects state from step 1.
     """
-    await _reset_state(telethon_client, bot_username)
+    msg = _state.get("write_article_msg")
+    if msg is None:
+        pytest.skip("No write article response from step 1")
 
-    await send_and_wait(telethon_client, bot_username, "/start", timeout=15.0)
-
-    response = await send_and_wait(
-        telethon_client, bot_username, "Быстрая публикация", timeout=15.0,
-    )
-    assert response is not None, "Bot did not respond to quick publish"
-
-    text = (response.text or "").lower()
-    # Valid responses: either no projects/platforms or quick publish menu
+    text = (msg.text or "").lower()
     assert any(
         fragment in text
         for fragment in [
-            "нет проектов",
-            "нет подключ",
             "проект",
-            "платформ",
-            "категори",
-            "публикация",
-            "выберите",
+            "баланс",
+            "токен",
+            "статью",
+            "написать",
         ]
-    ), f"Unexpected response: {response.text!r}"
+    ), f"Unexpected write article content: {msg.text!r}"
 
 
-async def test_quick_publish_navigation(telethon_client, bot_username: str) -> None:
-    """Navigate through quick publish menu and verify responses are valid.
+async def test_step3_cancel_after_write_article(telethon_client, bot_username: str, clean_state) -> None:
+    """Step 3: /cancel after write article -> confirms cancellation."""
+    response = await send_and_wait(telethon_client, bot_username, "/cancel", timeout=15.0)
+    assert response is not None, "Bot did not respond to /cancel after write article"
 
-    Sends quick publish, then /cancel to return. Validates both responses.
-    """
-    await _reset_state(telethon_client, bot_username)
-
-    await send_and_wait(telethon_client, bot_username, "/start", timeout=15.0)
-
-    response = await send_and_wait(
-        telethon_client, bot_username, "Быстрая публикация", timeout=15.0,
+    text = (response.text or "").lower()
+    assert any(fragment in text for fragment in ["отменено", "нет активного"]), (
+        f"Unexpected cancel response: {response.text!r}"
     )
-    assert response is not None, "Bot did not respond to quick publish"
 
-    # Return to main menu via /cancel
-    cancel_response = await send_and_wait(
-        telethon_client, bot_username, "/cancel", timeout=15.0,
-    )
-    assert cancel_response is not None, "Bot did not respond to /cancel after quick publish"
-
-    text = (cancel_response.text or "").lower()
-    assert any(
-        fragment in text
-        for fragment in ["отменено", "нет активного"]
-    ), f"Unexpected cancel response: {cancel_response.text!r}"
+    await asyncio.sleep(1)

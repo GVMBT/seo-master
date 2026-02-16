@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import ast
 import re
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -166,11 +165,10 @@ def _detect_callback_data_filter(args: list[ast.expr]) -> tuple[str | None, str 
             continue
 
         # Case 1: F.data == "exact_string" — Compare node
-        if isinstance(arg, ast.Compare):
-            if arg.ops and isinstance(arg.ops[0], ast.Eq) and arg.comparators:
-                comp = arg.comparators[0]
-                if isinstance(comp, ast.Constant) and isinstance(comp.value, str):
-                    return (unparsed, comp.value, None, None)
+        if isinstance(arg, ast.Compare) and arg.ops and isinstance(arg.ops[0], ast.Eq) and arg.comparators:
+            comp = arg.comparators[0]
+            if isinstance(comp, ast.Constant) and isinstance(comp.value, str):
+                return (unparsed, comp.value, None, None)
 
         # Case 2: F.data.regexp(r"pattern") — Call node
         if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Attribute):
@@ -230,11 +228,11 @@ def parse_file(filepath: Path, root: Path) -> tuple[list[FSMGroup], list[Handler
                 )
 
         # 2) Handler functions (top-level or in module)
-        if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             _parse_handler(node, rel, handlers)
 
         # 3) Keyboard builder functions
-        if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             _parse_keyboard(node, rel, keyboards)
 
     return fsm_groups, handlers, keyboards
@@ -381,7 +379,7 @@ def generate_report(
     """Generate Markdown report."""
     lines: list[str] = []
     lines.append("# UI Map Report — SEO Master Bot\n")
-    lines.append(f"Auto-generated from AST analysis.\n")
+    lines.append("Auto-generated from AST analysis.\n")
 
     # --- FSM Groups ---
     lines.append("## 1. FSM StatesGroup Classes\n")
@@ -480,9 +478,8 @@ def _find_handler_for_callback(callback_data: str, handlers: list[HandlerInfo]) 
             continue
 
         # Case 1: exact match — F.data == "value"
-        if h.cb_exact is not None:
-            if h.cb_exact == callback_data or h.cb_exact == test_str:
-                return h
+        if h.cb_exact is not None and (h.cb_exact == callback_data or h.cb_exact == test_str):
+            return h
 
         # Case 2: regex match — F.data.regexp(r"^pattern$")
         if h.cb_regex is not None:
@@ -624,7 +621,6 @@ def generate_mermaid(
             if len(parts) == 2:
                 fsm_class = parts[0].replace("FSM", "")
                 state_name = parts[1]
-                target_id = f"{fsm_class}_{state_name}"
                 # Only draw entry if this is the first state of that FSM
                 for fsm in fsm_groups:
                     if fsm.class_name.replace("FSM", "") == fsm_class:
@@ -878,11 +874,11 @@ def main() -> None:
     for fsm in fsm_groups:
         print(f"  {fsm.class_name} ({len(fsm.states)} states): {', '.join(fsm.states)}")
 
-    print(f"\n--- Handler Summary ---")
+    print("\n--- Handler Summary ---")
     print(f"  callback_query: {sum(1 for h in handlers if h.handler_type == 'callback_query')}")
     print(f"  message: {sum(1 for h in handlers if h.handler_type == 'message')}")
 
-    print(f"\n--- Keyboard Summary ---")
+    print("\n--- Keyboard Summary ---")
     total_buttons = sum(len(kb.buttons) for kb in keyboards)
     print(f"  {len(keyboards)} keyboards, {total_buttons} total buttons")
 
