@@ -72,7 +72,7 @@ class TestUpdatePayment:
         assert payment is not None
         assert payment.status == "completed"
 
-    async def test_empty_update_returns_none(self, repo: PaymentsRepository, mock_db: MockSupabaseClient) -> None:
+    async def test_empty_update_returns_none(self, repo: PaymentsRepository) -> None:
         result = await repo.update(1, PaymentUpdate())
         assert result is None
 

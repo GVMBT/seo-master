@@ -228,6 +228,20 @@ async def fsm_project_url(message: Message, state: FSMContext, user: User, db: S
 
 
 # ---------------------------------------------------------------------------
+# Non-text message handler for all create FSM states
+# ---------------------------------------------------------------------------
+
+
+@router.message(ProjectCreateFSM.name, ~F.text)
+@router.message(ProjectCreateFSM.company_name, ~F.text)
+@router.message(ProjectCreateFSM.specialization, ~F.text)
+@router.message(ProjectCreateFSM.website_url, ~F.text)
+async def fsm_project_non_text(message: Message) -> None:
+    """Reject photos/stickers/etc during project creation."""
+    await message.answer("Отправьте текстовое сообщение.")
+
+
+# ---------------------------------------------------------------------------
 # Edit project fields
 # ---------------------------------------------------------------------------
 

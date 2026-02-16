@@ -9,9 +9,21 @@ NOTE: ``insufficient_balance_kb()`` lives in ``keyboards/publish.py`` (E01).
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+# Max callback_data size per Telegram Bot API
+_MAX_CALLBACK_BYTES = 64
+
+
+def _validate_callback_data(value: str, param_name: str) -> None:
+    """Validate callback_data length (Telegram Bot API: max 64 bytes)."""
+    byte_len = len(value.encode("utf-8"))
+    if byte_len > _MAX_CALLBACK_BYTES:
+        msg = f"{param_name} exceeds 64 bytes ({byte_len}): {value!r}"
+        raise ValueError(msg)
+
 
 def error_not_found_kb(back_callback: str = "menu:main") -> InlineKeyboardBuilder:
     """Entity not found -- [Назад] [Главное меню]."""
+    _validate_callback_data(back_callback, "back_callback")
     builder = InlineKeyboardBuilder()
     if back_callback != "menu:main":
         builder.button(text="Назад", callback_data=back_callback)
@@ -22,6 +34,8 @@ def error_not_found_kb(back_callback: str = "menu:main") -> InlineKeyboardBuilde
 
 def error_retry_kb(retry_callback: str, cancel_callback: str = "menu:main") -> InlineKeyboardBuilder:
     """Generic recoverable error -- [Повторить] [Отмена]."""
+    _validate_callback_data(retry_callback, "retry_callback")
+    _validate_callback_data(cancel_callback, "cancel_callback")
     builder = InlineKeyboardBuilder()
     builder.button(text="Повторить", callback_data=retry_callback)
     builder.button(text="Отмена", callback_data=cancel_callback)

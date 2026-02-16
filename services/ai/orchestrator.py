@@ -515,7 +515,7 @@ class AIOrchestrator:
             result = json.loads(text)
             if isinstance(result, (dict, list)):
                 return result
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             pass
         return None
 

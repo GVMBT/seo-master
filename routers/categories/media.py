@@ -126,6 +126,20 @@ async def on_document_received(message: Message, state: FSMContext, user: User, 
     await _append_media(message, state, db, cat_id, doc.file_id, "document", doc.file_size or 0)
 
 
+@router.message(F.video)
+async def on_video_received(message: Message, state: FSMContext, user: User, db: SupabaseClient) -> None:
+    """Handle video upload to media gallery."""
+    data = await state.get_data()
+    cat_id = data.get("awaiting_media_cat")
+    if not cat_id:
+        return  # not in media upload mode
+
+    video = message.video
+    if not video:
+        return
+    await _append_media(message, state, db, cat_id, video.file_id, "video", video.file_size or 0)
+
+
 async def _append_media(
     message: Message,
     state: FSMContext,

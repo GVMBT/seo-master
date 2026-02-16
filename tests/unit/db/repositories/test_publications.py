@@ -98,7 +98,7 @@ class TestGetLruKeyword:
 class TestGetRotationKeywordLegacy:
     """Legacy flat-keyword rotation algorithm (API_CONTRACTS.md §6, E36 fallback)."""
 
-    async def test_empty_pool_returns_none(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
+    async def test_empty_pool_returns_none(self, repo: PublicationsRepository) -> None:
         kw, warning = await repo.get_rotation_keyword(1, [])
         assert kw is None
         assert warning is True

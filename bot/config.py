@@ -56,10 +56,7 @@ class Settings(BaseSettings):
     @field_validator("admin_ids", mode="before")
     @classmethod
     def _parse_admin_ids(cls, v: str | list[int]) -> list[int]:
-        if isinstance(v, list):
-            ids = v
-        else:
-            ids = [int(x.strip()) for x in str(v).split(",") if x.strip()]
+        ids = v if isinstance(v, list) else [int(x.strip()) for x in str(v).split(",") if x.strip()]
         if not ids:
             msg = "ADMIN_IDS must contain at least one admin ID"
             raise ValueError(msg)
