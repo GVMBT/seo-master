@@ -85,8 +85,8 @@ class ArticleService:
 - __init__(db, http_client, image_storage, admin_ids)
 - execute() -> CleanupResult(expired_count, refunded[], logs_deleted, images_deleted)
 - _expire_previews(): find expired draft previews, atomic_mark_expired (prevents double-processing), refund tokens, clean Supabase Storage images, delete Telegraph pages
-  - Loads user to read notify_publications preference; each refund entry includes {user_id, keyword, tokens_refunded, notify_publications}
-  - Cleanup handler in api/cleanup.py respects notify_publications before sending notification
+  - Loads user to read notify_balance preference; each refund entry includes {user_id, keyword, tokens_refunded, notify_balance}
+  - Cleanup handler in api/cleanup.py respects notify_balance before sending notification
 - _delete_old_logs(): delegates to PublicationsRepository.delete_old_logs(cutoff_iso) (not inline SQL)
 
 ## services/notifications.py (Phase 9)
