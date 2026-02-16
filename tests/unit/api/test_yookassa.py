@@ -33,12 +33,14 @@ def _make_request(
     mock_bot.send_message = AsyncMock()
 
     app = MagicMock()
-    app.__getitem__ = MagicMock(side_effect=lambda key: {
-        "db": MagicMock(),
-        "http_client": MagicMock(),
-        "yookassa_service": mock_service,
-        "bot": mock_bot,
-    }[key])
+    app.__getitem__ = MagicMock(
+        side_effect=lambda key: {
+            "db": MagicMock(),
+            "http_client": MagicMock(),
+            "yookassa_service": mock_service,
+            "bot": mock_bot,
+        }[key]
+    )
 
     headers = {}
     if x_forwarded_for:

@@ -50,8 +50,6 @@ class BasePublisher(ABC):
         ...
 
     @abstractmethod
-    async def delete_post(
-        self, connection: PlatformConnection, post_id: str
-    ) -> bool:
+    async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         """Delete a previously published post. Returns True on success."""
         ...

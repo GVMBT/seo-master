@@ -636,7 +636,7 @@ class TestTryParseJson:
         assert result == {"a": 1}
 
     def test_valid_list(self) -> None:
-        result = AIOrchestrator._try_parse_json('[1, 2, 3]')
+        result = AIOrchestrator._try_parse_json("[1, 2, 3]")
 
         assert result == [1, 2, 3]
 
@@ -676,9 +676,15 @@ class TestTryParseJson:
 class TestModelChains:
     def test_all_tasks_present(self) -> None:
         expected_tasks = {
-            "article", "social_post", "keywords", "review",
-            "description", "competitor_analysis", "image",
-            "article_outline", "article_critique",
+            "article",
+            "social_post",
+            "keywords",
+            "review",
+            "description",
+            "competitor_analysis",
+            "image",
+            "article_outline",
+            "article_critique",
         }
         assert set(MODEL_CHAINS.keys()) == expected_tasks
 

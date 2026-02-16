@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # 1. users
 # ---------------------------------------------------------------------------
 
+
 class User(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -62,6 +63,7 @@ class UserUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # 2. projects
 # ---------------------------------------------------------------------------
+
 
 class Project(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -118,6 +120,7 @@ class ProjectUpdate(BaseModel):
 # 3. platform_connections
 # ---------------------------------------------------------------------------
 
+
 class PlatformConnection(BaseModel):
     """Read model for platform_connections table.
 
@@ -163,6 +166,7 @@ class PlatformConnectionUpdate(BaseModel):
 # 4. categories
 # ---------------------------------------------------------------------------
 
+
 class Category(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -202,6 +206,7 @@ class CategoryUpdate(BaseModel):
 # 5. platform_content_overrides
 # ---------------------------------------------------------------------------
 
+
 class PlatformContentOverride(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -227,6 +232,7 @@ class PlatformContentOverrideUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # 6. platform_schedules
 # ---------------------------------------------------------------------------
+
 
 class PlatformSchedule(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -267,6 +273,7 @@ class PlatformScheduleUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # 7. publication_logs
 # ---------------------------------------------------------------------------
+
 
 class PublicationLog(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -326,6 +333,7 @@ class PublicationLogUpdate(BaseModel):
 # 8. token_expenses
 # ---------------------------------------------------------------------------
 
+
 class TokenExpense(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -355,6 +363,7 @@ class TokenExpenseCreate(BaseModel):
 # ---------------------------------------------------------------------------
 # 9. payments
 # ---------------------------------------------------------------------------
+
 
 class Payment(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -405,6 +414,7 @@ class PaymentUpdate(BaseModel):
 # 10. site_audits
 # ---------------------------------------------------------------------------
 
+
 class SiteAudit(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -443,6 +453,7 @@ class SiteAuditCreate(BaseModel):
 # 11. site_brandings
 # ---------------------------------------------------------------------------
 
+
 class SiteBranding(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -466,6 +477,7 @@ class SiteBrandingCreate(BaseModel):
 # ---------------------------------------------------------------------------
 # 12. article_previews
 # ---------------------------------------------------------------------------
+
 
 class ArticlePreview(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -523,6 +535,7 @@ class ArticlePreviewUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # 13. prompt_versions
 # ---------------------------------------------------------------------------
+
 
 class PromptVersion(BaseModel):
     model_config = ConfigDict(from_attributes=True)

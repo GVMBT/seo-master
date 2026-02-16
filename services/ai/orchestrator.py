@@ -23,9 +23,15 @@ log = structlog.get_logger()
 
 # Task type literal
 TaskType = Literal[
-    "article", "article_outline", "article_critique",
-    "social_post", "keywords", "review",
-    "image", "description", "competitor_analysis",
+    "article",
+    "article_outline",
+    "article_critique",
+    "social_post",
+    "keywords",
+    "review",
+    "image",
+    "description",
+    "competitor_analysis",
 ]
 
 # Model chains (API_CONTRACTS.md §3.1)
@@ -74,14 +80,23 @@ BUDGET_TASKS: set[str] = {"social_post", "keywords", "review", "description", "a
 
 # JSON schema responses (API_CONTRACTS.md structured outputs table)
 STRUCTURED_TASKS: set[str] = {
-    "article", "article_outline", "article_critique",
-    "social_post", "keywords", "review", "competitor_analysis",
+    "article",
+    "article_outline",
+    "article_critique",
+    "social_post",
+    "keywords",
+    "review",
+    "competitor_analysis",
 }
 
 # Tasks that use response-healing plugin
 HEALING_TASKS: set[str] = {
-    "article", "article_outline", "article_critique",
-    "social_post", "keywords", "review",
+    "article",
+    "article_outline",
+    "article_critique",
+    "social_post",
+    "keywords",
+    "review",
 }
 
 # Budget model for heal_response fallback
@@ -164,9 +179,17 @@ class GenerationContext:
 
         # Optional scalar fields — skip if None
         for field_name in (
-            "words_min", "words_max", "images_count", "city", "advantages",
-            "prices_excerpt", "serper_questions", "lsi_keywords",
-            "internal_links", "text_color", "accent_color",
+            "words_min",
+            "words_max",
+            "images_count",
+            "city",
+            "advantages",
+            "prices_excerpt",
+            "serper_questions",
+            "lsi_keywords",
+            "internal_links",
+            "text_color",
+            "accent_color",
         ):
             value = getattr(self, field_name)
             if value is not None:

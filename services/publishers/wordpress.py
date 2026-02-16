@@ -99,23 +99,15 @@ class WordPressPublisher(BasePublisher):
                 "status": "publish",
                 "featured_media": attachment_ids[0] if attachment_ids else 0,
                 "meta": {
-                    "_yoast_wpseo_title": request.metadata.get(
-                        "seo_title", request.title or ""
-                    ),
-                    "_yoast_wpseo_metadesc": request.metadata.get(
-                        "seo_description", ""
-                    ),
-                    "_yoast_wpseo_focuskw": request.metadata.get(
-                        "focus_keyword", ""
-                    ),
+                    "_yoast_wpseo_title": request.metadata.get("seo_title", request.title or ""),
+                    "_yoast_wpseo_metadesc": request.metadata.get("seo_description", ""),
+                    "_yoast_wpseo_focuskw": request.metadata.get("focus_keyword", ""),
                 },
             }
             if wp_cat := request.metadata.get("wp_category_id"):
                 post_data["categories"] = [wp_cat]
 
-            resp = await self._client.post(
-                f"{base}/posts", json=post_data, auth=auth, timeout=30
-            )
+            resp = await self._client.post(f"{base}/posts", json=post_data, auth=auth, timeout=30)
             resp.raise_for_status()
             post = resp.json()
 
@@ -135,9 +127,7 @@ class WordPressPublisher(BasePublisher):
             log.error("wordpress_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
 
-    async def delete_post(
-        self, connection: PlatformConnection, post_id: str
-    ) -> bool:
+    async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         creds = connection.credentials
         base = self._base_url(creds)
         try:

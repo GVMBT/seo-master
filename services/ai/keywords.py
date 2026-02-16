@@ -68,6 +68,7 @@ class KeywordService:
 
         if project is None:
             from bot.exceptions import AIGenerationError
+
             raise AIGenerationError(message="Project not found")
 
         context: dict[str, Any] = {

@@ -83,7 +83,11 @@ def _get_all_text(mock_bot: Any) -> str:
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_starts_with_days(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """sched:cat:{id}:plt:{id} -> shows day selection."""
     setup_user()
@@ -103,7 +107,11 @@ async def test_schedule_starts_with_days(
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_toggle_day(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Toggle day selection."""
     setup_user()
@@ -123,7 +131,11 @@ async def test_schedule_toggle_day(
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_days_done_no_selection(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Confirm days with none selected -> alert."""
     setup_user()
@@ -141,7 +153,11 @@ async def test_schedule_days_done_no_selection(
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_days_selected_moves_to_count(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Days confirmed -> asks for posts_per_day."""
     setup_user()
@@ -162,14 +178,22 @@ async def test_schedule_days_selected_moves_to_count(
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_count_selected_moves_to_times(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Count selected -> asks for time slots."""
     setup_user()
     _setup_schedule_db(mock_db)
-    _put_in_schedule_fsm(mock_redis, "ScheduleSetupFSM:select_count", {
-        "selected_days": ["mon", "wed"],
-    })
+    _put_in_schedule_fsm(
+        mock_redis,
+        "ScheduleSetupFSM:select_count",
+        {
+            "selected_days": ["mon", "wed"],
+        },
+    )
 
     update = make_update_callback("sched:count:1")
     await dispatcher.feed_update(mock_bot, update)
@@ -185,17 +209,25 @@ async def test_schedule_count_selected_moves_to_times(
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_creates_with_qstash(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Times confirmed -> creates QStash cron jobs."""
     setup_user()
     _setup_schedule_db(mock_db)
-    _put_in_schedule_fsm(mock_redis, "ScheduleSetupFSM:select_times", {
-        "selected_days": ["mon", "wed"],
-        "posts_per_day": 1,
-        "selected_times": ["09:00"],
-    })
+    _put_in_schedule_fsm(
+        mock_redis,
+        "ScheduleSetupFSM:select_times",
+        {
+            "selected_days": ["mon", "wed"],
+            "posts_per_day": 1,
+            "selected_times": ["09:00"],
+        },
+    )
 
     # Mock scheduler_service.create_schedule
     mock_schedule = MagicMock()
@@ -219,16 +251,24 @@ async def test_schedule_creates_with_qstash(
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_times_mismatch(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Times count does not match posts_per_day -> alert."""
     setup_user()
     _setup_schedule_db(mock_db)
-    _put_in_schedule_fsm(mock_redis, "ScheduleSetupFSM:select_times", {
-        "selected_days": ["mon"],
-        "posts_per_day": 2,
-        "selected_times": ["09:00"],  # Only 1 but need 2
-    })
+    _put_in_schedule_fsm(
+        mock_redis,
+        "ScheduleSetupFSM:select_times",
+        {
+            "selected_days": ["mon"],
+            "posts_per_day": 2,
+            "selected_times": ["09:00"],  # Only 1 but need 2
+        },
+    )
 
     update = make_update_callback("sched:times:done")
     await dispatcher.feed_update(mock_bot, update)
@@ -241,7 +281,11 @@ async def test_schedule_times_mismatch(
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_toggle_enabled(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Enable/disable schedule toggle."""
@@ -259,7 +303,11 @@ async def test_schedule_toggle_enabled(
 
 @patch("routers.publishing.scheduler.get_settings", _mock_settings)
 async def test_schedule_delete_removes_qstash(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Delete -> removes QStash schedules first."""

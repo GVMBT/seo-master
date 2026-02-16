@@ -103,7 +103,9 @@ async def test_publish_idempotency_duplicate(api_client, app_services):
 
         # First call: should process
         resp1 = await api_client.post(
-            "/api/publish", data=json.dumps(_VALID_PAYLOAD), headers=headers,
+            "/api/publish",
+            data=json.dumps(_VALID_PAYLOAD),
+            headers=headers,
         )
         assert resp1.status == 200
         body1 = await resp1.json()
@@ -111,7 +113,9 @@ async def test_publish_idempotency_duplicate(api_client, app_services):
 
         # Second call with same msg_id: duplicate
         resp2 = await api_client.post(
-            "/api/publish", data=json.dumps(_VALID_PAYLOAD), headers=headers,
+            "/api/publish",
+            data=json.dumps(_VALID_PAYLOAD),
+            headers=headers,
         )
         assert resp2.status == 200
         body2 = await resp2.json()

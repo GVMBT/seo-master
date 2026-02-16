@@ -187,9 +187,7 @@ class TestCbReviewConfirm:
         user: User,
         mock_db: MagicMock,
     ) -> None:
-        mock_state.get_data = AsyncMock(
-            return_value={"category_id": 10, "project_id": 1, "quantity": 3, "cost": 30}
-        )
+        mock_state.get_data = AsyncMock(return_value={"category_id": 10, "project_id": 1, "quantity": 3, "cost": 30})
         mock_make_ts.return_value.charge = AsyncMock()
         mock_run_gen.return_value = _SAMPLE_REVIEWS
 
@@ -221,9 +219,7 @@ class TestCbReviewConfirm:
         user: User,
         mock_db: MagicMock,
     ) -> None:
-        mock_state.get_data = AsyncMock(
-            return_value={"category_id": 10, "project_id": 1, "quantity": 3, "cost": 30}
-        )
+        mock_state.get_data = AsyncMock(return_value={"category_id": 10, "project_id": 1, "quantity": 3, "cost": 30})
         mock_make_ts.return_value.charge = AsyncMock()
         mock_make_ts.return_value.refund = AsyncMock()
         mock_run_gen.side_effect = RuntimeError("AI error")
@@ -266,9 +262,7 @@ class TestCbReviewSave:
         user: User,
         mock_db: MagicMock,
     ) -> None:
-        mock_state.get_data = AsyncMock(
-            return_value={"category_id": 10, "generated_reviews": _SAMPLE_REVIEWS}
-        )
+        mock_state.get_data = AsyncMock(return_value={"category_id": 10, "generated_reviews": _SAMPLE_REVIEWS})
         cat = Category(id=10, project_id=1, name="Test")
         mock_cat_repo_cls.return_value.update_reviews = AsyncMock(return_value=cat)
         mock_card_kb.return_value.as_markup.return_value = MagicMock()

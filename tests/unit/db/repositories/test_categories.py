@@ -48,18 +48,14 @@ def repo(mock_db: MockSupabaseClient) -> CategoriesRepository:
 
 
 class TestGetById:
-    async def test_found(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict
-    ) -> None:
+    async def test_found(self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict) -> None:
         mock_db.set_response("categories", MockResponse(data=category_row))
         cat = await repo.get_by_id(1)
         assert cat is not None
         assert isinstance(cat, Category)
         assert cat.name == "SEO Tips"
 
-    async def test_not_found(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_not_found(self, repo: CategoriesRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("categories", MockResponse(data=None))
         assert await repo.get_by_id(999) is None
 
@@ -72,17 +68,13 @@ class TestGetByProject:
         cats = await repo.get_by_project(1)
         assert len(cats) == 1
 
-    async def test_empty(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_empty(self, repo: CategoriesRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("categories", MockResponse(data=[]))
         assert await repo.get_by_project(1) == []
 
 
 class TestCreate:
-    async def test_create(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict
-    ) -> None:
+    async def test_create(self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict) -> None:
         mock_db.set_response("categories", MockResponse(data=[category_row]))
         cat = await repo.create(CategoryCreate(project_id=1, name="SEO Tips"))
         assert isinstance(cat, Category)
@@ -112,9 +104,7 @@ class TestUpdateKeywords:
 
 
 class TestDelete:
-    async def test_success(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict
-    ) -> None:
+    async def test_success(self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict) -> None:
         mock_db.set_response("categories", MockResponse(data=[category_row]))
         assert await repo.delete(1) is True
 
@@ -152,9 +142,7 @@ class TestContentSettingsInheritance:
 
 
 class TestUpsertOverride:
-    async def test_upsert(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient, override_row: dict
-    ) -> None:
+    async def test_upsert(self, repo: CategoriesRepository, mock_db: MockSupabaseClient, override_row: dict) -> None:
         mock_db.set_response("platform_content_overrides", MockResponse(data=[override_row]))
         result = await repo.upsert_override(
             PlatformContentOverrideCreate(

@@ -71,9 +71,7 @@ class UsersRepository(BaseRepository):
         Fallback (RPC unavailable only): retry loop with re-read to handle concurrent updates.
         """
         try:
-            result = await self._db.rpc(
-                "charge_balance", {"p_user_id": user_id, "p_amount": amount}
-            )
+            result = await self._db.rpc("charge_balance", {"p_user_id": user_id, "p_amount": amount})
             return self._extract_balance(result)
         except InsufficientBalanceError:
             raise
@@ -93,9 +91,7 @@ class UsersRepository(BaseRepository):
                 msg = f"Недостаточно токенов. Нужно {amount}, у вас {user.balance}."
                 raise InsufficientBalanceError(user_message=msg)
             new_balance = user.balance - amount
-            rows = self._rows(
-                await self._force_update_balance(user_id, user.balance, new_balance)
-            )
+            rows = self._rows(await self._force_update_balance(user_id, user.balance, new_balance))
             if rows:
                 return int(rows[0]["balance"])
             log.info(
@@ -105,9 +101,7 @@ class UsersRepository(BaseRepository):
                 max_retries=_MAX_RETRIES,
             )
         # All retries exhausted — balance may have been drained concurrently
-        raise InsufficientBalanceError(
-            user_message=f"Не удалось списать {amount} токенов. Попробуйте ещё раз."
-        )
+        raise InsufficientBalanceError(user_message=f"Не удалось списать {amount} токенов. Попробуйте ещё раз.")
 
     async def refund_balance(self, user_id: int, amount: int) -> int:
         """Atomically return tokens (error recovery, cancellation).
@@ -142,9 +136,7 @@ class UsersRepository(BaseRepository):
             if not user:
                 raise AppError(f"User {user_id} not found")
             new_balance = user.balance - amount
-            rows = self._rows(
-                await self._force_update_balance(user_id, user.balance, new_balance)
-            )
+            rows = self._rows(await self._force_update_balance(user_id, user.balance, new_balance))
             if rows:
                 return int(rows[0]["balance"])
             log.info("force_debit_retry", user_id=user_id, attempt=attempt + 1)
@@ -169,9 +161,7 @@ class UsersRepository(BaseRepository):
             if not user:
                 raise AppError(f"User {user_id} not found")
             new_balance = user.balance + amount
-            rows = self._rows(
-                await self._force_update_balance(user_id, user.balance, new_balance)
-            )
+            rows = self._rows(await self._force_update_balance(user_id, user.balance, new_balance))
             if rows:
                 return int(rows[0]["balance"])
             log.info(
@@ -183,9 +173,7 @@ class UsersRepository(BaseRepository):
             )
         raise AppError(f"Balance update conflict after {_MAX_RETRIES} retries")
 
-    async def _force_update_balance(
-        self, user_id: int, expected_balance: int, new_balance: int
-    ) -> Any:
+    async def _force_update_balance(self, user_id: int, expected_balance: int, new_balance: int) -> Any:
         """Low-level CAS update for balance, bypassing UserUpdate model.
 
         This is intentionally private. All public balance mutations go through
@@ -228,35 +216,19 @@ class UsersRepository(BaseRepository):
 
     async def get_low_balance_users(self, threshold: int = 100) -> list[User]:
         """Get users with balance below threshold and notify_balance=True."""
-        resp = (
-            await self._table(_TABLE)
-            .select("*")
-            .lt("balance", threshold)
-            .eq("notify_balance", True)
-            .execute()
-        )
+        resp = await self._table(_TABLE).select("*").lt("balance", threshold).eq("notify_balance", True).execute()
         return [User(**row) for row in self._rows(resp)]
 
     async def get_inactive_users(self, days: int = 14) -> list[User]:
         """Get users inactive for more than N days."""
         cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
-        resp = (
-            await self._table(_TABLE)
-            .select("*")
-            .lt("last_activity", cutoff)
-            .execute()
-        )
+        resp = await self._table(_TABLE).select("*").lt("last_activity", cutoff).execute()
         return [User(**row) for row in self._rows(resp)]
 
     async def get_active_users(self, days: int = 30) -> list[User]:
         """Get users active within the last N days."""
         cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
-        resp = (
-            await self._table(_TABLE)
-            .select("*")
-            .gte("last_activity", cutoff)
-            .execute()
-        )
+        resp = await self._table(_TABLE).select("*").gte("last_activity", cutoff).execute()
         return [User(**row) for row in self._rows(resp)]
 
     async def count_all(self) -> int:
@@ -292,12 +264,7 @@ class UsersRepository(BaseRepository):
             return [u.id for u in users]
         if audience == "paid":
             # Users who have at least one payment
-            resp = (
-                await self._db.table("payments")
-                .select("user_id")
-                .eq("status", "completed")
-                .execute()
-            )
+            resp = await self._db.table("payments").select("user_id").eq("status", "completed").execute()
             rows = self._rows(resp)
             return sorted({int(row["user_id"]) for row in rows})
         # "all"

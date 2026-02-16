@@ -57,8 +57,7 @@ async def renew_handler(request: web.Request) -> web.Response:
         try:
             await bot.send_message(
                 payload.user_id,
-                "Не удалось продлить подписку. Проверьте способ оплаты.\n"
-                "[Управление подпиской → /start]",
+                "Не удалось продлить подписку. Проверьте способ оплаты.\n[Управление подпиской → /start]",
             )
         except Exception:
             log.warning("renew_notify_failed", user_id=payload.user_id)

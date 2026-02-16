@@ -47,12 +47,23 @@ def _setup_keyword_db(
     mock_db.set_response("categories", MockResponse(data=category or DEFAULT_CATEGORY))
     mock_db.set_response("projects", MockResponse(data=DEFAULT_PROJECT))
     # token_expenses needs a valid record for insert (create_expense calls _require_first)
-    mock_db.set_response("token_expenses", MockResponse(data={
-        "id": 1, "user_id": DEFAULT_USER["id"], "amount": -50,
-        "operation_type": "keyword_generation", "description": "Keywords",
-        "ai_model": None, "input_tokens": None, "output_tokens": None,
-        "cost_usd": None, "created_at": "2025-01-01T00:00:00Z",
-    }))
+    mock_db.set_response(
+        "token_expenses",
+        MockResponse(
+            data={
+                "id": 1,
+                "user_id": DEFAULT_USER["id"],
+                "amount": -50,
+                "operation_type": "keyword_generation",
+                "description": "Keywords",
+                "ai_model": None,
+                "input_tokens": None,
+                "output_tokens": None,
+                "cost_usd": None,
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ),
+    )
     mock_db.set_rpc_response("charge_balance", [{"new_balance": balance - 50}])
     mock_db.set_rpc_response("refund_balance", [{"new_balance": balance}])
 
@@ -87,7 +98,11 @@ def _get_all_text(mock_bot: Any) -> str:
 
 
 async def test_keyword_gen_starts_with_category(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Callback category:{id}:kw:generate -> starts generation, asks about products."""
     setup_user()
@@ -106,7 +121,11 @@ async def test_keyword_gen_starts_with_category(
 
 
 async def test_keyword_gen_products_step(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Products input -> advances to geography."""
     setup_user()
@@ -121,7 +140,11 @@ async def test_keyword_gen_products_step(
 
 
 async def test_keyword_gen_geography_step(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Geography input -> advances to quantity selection."""
     setup_user()
@@ -137,14 +160,23 @@ async def test_keyword_gen_geography_step(
 
 @patch("routers.categories.keywords.get_settings", _mock_settings)
 async def test_keyword_gen_quantity_selection(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Quantity callback -> shows cost confirmation."""
     setup_user()
     _setup_keyword_db(mock_db)
-    _put_in_kw_fsm(mock_redis, "KeywordGenerationFSM:quantity", {
-        "products": "SEO", "geography": "Moscow",
-    })
+    _put_in_kw_fsm(
+        mock_redis,
+        "KeywordGenerationFSM:quantity",
+        {
+            "products": "SEO",
+            "geography": "Moscow",
+        },
+    )
 
     update = make_update_callback("kw:qty:10:50")
     await dispatcher.feed_update(mock_bot, update)
@@ -155,15 +187,24 @@ async def test_keyword_gen_quantity_selection(
 
 @patch("routers.categories.keywords.get_settings", _mock_settings)
 async def test_keyword_gen_insufficient_balance(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Balance check fails -> insufficient balance message."""
     low_user = {**DEFAULT_USER, "balance": 5}
     setup_user(user_data=low_user)
     _setup_keyword_db(mock_db, balance=5)
-    _put_in_kw_fsm(mock_redis, "KeywordGenerationFSM:quantity", {
-        "products": "SEO", "geography": "Moscow",
-    })
+    _put_in_kw_fsm(
+        mock_redis,
+        "KeywordGenerationFSM:quantity",
+        {
+            "products": "SEO",
+            "geography": "Moscow",
+        },
+    )
 
     update = make_update_callback("kw:qty:10:200")
     await dispatcher.feed_update(mock_bot, update)
@@ -174,20 +215,36 @@ async def test_keyword_gen_insufficient_balance(
 
 @patch("routers.categories.keywords.get_settings", _mock_settings)
 async def test_keyword_gen_confirm_runs_pipeline(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Confirm -> charges tokens and runs data-first pipeline."""
     setup_user()
     _setup_keyword_db(mock_db)
-    _put_in_kw_fsm(mock_redis, "KeywordGenerationFSM:confirm", {
-        "products": "SEO", "geography": "Moscow", "quantity": 50, "cost": 50,
-    })
+    _put_in_kw_fsm(
+        mock_redis,
+        "KeywordGenerationFSM:confirm",
+        {
+            "products": "SEO",
+            "geography": "Moscow",
+            "quantity": 50,
+            "cost": 50,
+        },
+    )
     mock_services["rate_limiter"].check = AsyncMock()
 
     mock_clusters = [
-        {"cluster_name": "SEO basics", "cluster_type": "article", "main_phrase": "seo guide",
-         "total_volume": 1000, "phrases": [{"phrase": "seo guide", "volume": 1000}]},
+        {
+            "cluster_name": "SEO basics",
+            "cluster_type": "article",
+            "main_phrase": "seo guide",
+            "total_volume": 1000,
+            "phrases": [{"phrase": "seo guide", "volume": 1000}],
+        },
     ]
 
     with patch("services.keywords.KeywordService") as mock_kw_svc_cls:
@@ -207,13 +264,24 @@ async def test_keyword_gen_confirm_runs_pipeline(
 
 @patch("routers.categories.keywords.get_settings", _mock_settings)
 async def test_keyword_gen_save_results(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Save generated clusters to category.keywords."""
     setup_user()
     _setup_keyword_db(mock_db)
-    clusters = [{"cluster_name": "SEO", "cluster_type": "article", "main_phrase": "seo guide",
-                 "total_volume": 1000, "phrases": []}]
+    clusters = [
+        {
+            "cluster_name": "SEO",
+            "cluster_type": "article",
+            "main_phrase": "seo guide",
+            "total_volume": 1000,
+            "phrases": [],
+        }
+    ]
     _put_in_kw_fsm(mock_redis, "KeywordGenerationFSM:results", {"clusters": clusters})
 
     update = make_update_callback("kw:save")
@@ -230,15 +298,26 @@ async def test_keyword_gen_save_results(
 
 @patch("routers.categories.keywords.get_settings", _mock_settings)
 async def test_keyword_gen_pipeline_error_refunds(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """DataForSEO API error -> graceful fallback, refund."""
     setup_user()
     _setup_keyword_db(mock_db)
-    _put_in_kw_fsm(mock_redis, "KeywordGenerationFSM:confirm", {
-        "products": "SEO", "geography": "Moscow", "quantity": 50, "cost": 50,
-    })
+    _put_in_kw_fsm(
+        mock_redis,
+        "KeywordGenerationFSM:confirm",
+        {
+            "products": "SEO",
+            "geography": "Moscow",
+            "quantity": 50,
+            "cost": 50,
+        },
+    )
     mock_services["rate_limiter"].check = AsyncMock()
 
     with patch("services.keywords.KeywordService") as mock_kw_svc_cls:
@@ -254,7 +333,11 @@ async def test_keyword_gen_pipeline_error_refunds(
 
 
 async def test_keyword_gen_cancel_midway(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """/cancel during keyword generation -> clears FSM."""
     setup_user()
@@ -273,7 +356,11 @@ async def test_keyword_gen_cancel_midway(
 
 
 async def test_keyword_gen_products_too_short(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Products input too short -> validation error."""
     setup_user()
@@ -299,7 +386,11 @@ async def test_keyword_gen_products_too_short(
 
 
 async def test_keyword_upload_starts(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Callback category:{id}:kw:upload -> starts upload FSM."""
     setup_user()
@@ -318,7 +409,11 @@ async def test_keyword_upload_starts(
 
 
 async def test_keyword_upload_invalid_format(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Wrong file format -> error message."""
     setup_user()
@@ -334,7 +429,11 @@ async def test_keyword_upload_invalid_format(
 
 
 async def test_keyword_upload_txt_file(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Upload TXT file -> processes keywords."""
     setup_user()
@@ -346,6 +445,7 @@ async def test_keyword_upload_txt_file(
 
     # Mock bot.download to return file content
     import io
+
     content = "seo optimization\nweb development\ncontent marketing\n"
     buf = io.BytesIO(content.encode("utf-8"))
 

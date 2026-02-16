@@ -75,9 +75,7 @@ class TestPlatformConnectionModel:
         assert c.metadata == {}
 
     def test_create(self) -> None:
-        cc = PlatformConnectionCreate(
-            project_id=1, platform_type="telegram", identifier="-100123"
-        )
+        cc = PlatformConnectionCreate(project_id=1, platform_type="telegram", identifier="-100123")
         assert cc.platform_type == "telegram"
 
 
@@ -103,9 +101,7 @@ class TestPlatformContentOverrideModel:
         assert o.text_settings is None
 
     def test_create(self) -> None:
-        oc = PlatformContentOverrideCreate(
-            category_id=1, platform_type="vk", image_settings={"count": 2}
-        )
+        oc = PlatformContentOverrideCreate(category_id=1, platform_type="vk", image_settings={"count": 2})
         assert oc.image_settings == {"count": 2}
 
 
@@ -146,9 +142,7 @@ class TestTokenExpenseModel:
         assert te.cost_usd is None
 
     def test_create_with_cost(self) -> None:
-        tec = TokenExpenseCreate(
-            user_id=1, amount=-50, operation_type="api_openrouter", cost_usd=Decimal("0.0025")
-        )
+        tec = TokenExpenseCreate(user_id=1, amount=-50, operation_type="api_openrouter", cost_usd=Decimal("0.0025"))
         assert tec.cost_usd == Decimal("0.0025")
 
 
@@ -185,9 +179,7 @@ class TestSiteBrandingModel:
         assert sb.logo_url is None
 
     def test_create(self) -> None:
-        sbc = SiteBrandingCreate(
-            project_id=1, url="https://example.com", colors={"primary": "#333"}
-        )
+        sbc = SiteBrandingCreate(project_id=1, url="https://example.com", colors={"primary": "#333"})
         assert sbc.colors == {"primary": "#333"}
 
 

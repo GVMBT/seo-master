@@ -66,17 +66,13 @@ def mock_callback() -> MagicMock:
 
 
 class TestCbBroadcastStart:
-    async def test_admin_sees_audience_selection(
-        self, mock_callback: MagicMock, admin_user: User
-    ) -> None:
+    async def test_admin_sees_audience_selection(self, mock_callback: MagicMock, admin_user: User) -> None:
         await cb_broadcast_start(mock_callback, admin_user)
 
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "аудиторию" in text.lower()
 
-    async def test_non_admin_rejected(
-        self, mock_callback: MagicMock, regular_user: User
-    ) -> None:
+    async def test_non_admin_rejected(self, mock_callback: MagicMock, regular_user: User) -> None:
         await cb_broadcast_start(mock_callback, regular_user)
 
         mock_callback.answer.assert_called_with("Нет доступа.", show_alert=True)
@@ -144,9 +140,7 @@ class TestCbBroadcastAudience:
 
 
 class TestFsmBroadcastText:
-    async def test_valid_text_shows_preview(
-        self, mock_state: AsyncMock, admin_user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_valid_text_shows_preview(self, mock_state: AsyncMock, admin_user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.text = "Привет! Это рассылка."
@@ -158,9 +152,7 @@ class TestFsmBroadcastText:
         text = msg.answer.call_args[0][0]
         assert "Превью рассылки" in text
 
-    async def test_empty_text_rejected(
-        self, mock_state: AsyncMock, admin_user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_empty_text_rejected(self, mock_state: AsyncMock, admin_user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.text = "   "
@@ -169,9 +161,7 @@ class TestFsmBroadcastText:
 
         msg.answer.assert_called_with("Введите непустое сообщение.")
 
-    async def test_too_long_text_rejected(
-        self, mock_state: AsyncMock, admin_user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_too_long_text_rejected(self, mock_state: AsyncMock, admin_user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.text = "x" * 5000
@@ -181,9 +171,7 @@ class TestFsmBroadcastText:
         text = msg.answer.call_args[0][0]
         assert "4000" in text
 
-    async def test_non_admin_clears_state(
-        self, mock_state: AsyncMock, regular_user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_non_admin_clears_state(self, mock_state: AsyncMock, regular_user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
         msg.text = "test"
@@ -208,9 +196,7 @@ class TestCbBroadcastConfirm:
         admin_user: User,
         mock_db: MagicMock,
     ) -> None:
-        mock_state.get_data = AsyncMock(
-            return_value={"broadcast_text": "Hello!", "audience": "all"}
-        )
+        mock_state.get_data = AsyncMock(return_value={"broadcast_text": "Hello!", "audience": "all"})
         mock_users_cls.return_value.get_ids_by_audience = AsyncMock(return_value=[1, 2, 3])
 
         await cb_broadcast_confirm(mock_callback, mock_state, admin_user, mock_db)
@@ -227,9 +213,7 @@ class TestCbBroadcastConfirm:
         admin_user: User,
         mock_db: MagicMock,
     ) -> None:
-        mock_state.get_data = AsyncMock(
-            return_value={"broadcast_text": "Hello!", "audience": "all"}
-        )
+        mock_state.get_data = AsyncMock(return_value={"broadcast_text": "Hello!", "audience": "all"})
         mock_users_cls.return_value.get_ids_by_audience = AsyncMock(return_value=[1, 2])
         mock_callback.bot.send_message = AsyncMock(side_effect=[None, Exception("blocked")])
 

@@ -98,7 +98,11 @@ def _get_all_text(mock_bot: Any) -> str:
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_new_fsm_clears_old(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """User in ProjectCreateFSM, starts WP connect -> old FSM cleared."""
     setup_user()
@@ -123,7 +127,11 @@ async def test_new_fsm_clears_old(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_fsm_conflict_warning_sent(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Notification about auto-reset is sent."""
     setup_user()
@@ -143,7 +151,11 @@ async def test_fsm_conflict_warning_sent(
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_start_clears_any_fsm(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """/start always clears any active FSM."""
     setup_user()
@@ -160,16 +172,25 @@ async def test_start_clears_any_fsm(
 
 
 async def test_cancel_clears_any_fsm(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """/cancel always clears any FSM."""
     setup_user()
     _setup_db(mock_db)
 
     # Put user in SocialPostPublishFSM
-    _put_in_fsm(mock_redis, "SocialPostPublishFSM:review", {
-        "generated_content": "test", "category_id": 10,
-    })
+    _put_in_fsm(
+        mock_redis,
+        "SocialPostPublishFSM:review",
+        {
+            "generated_content": "test",
+            "category_id": 10,
+        },
+    )
 
     update = make_update_message("/cancel")
     await dispatcher.feed_update(mock_bot, update)
@@ -180,7 +201,11 @@ async def test_cancel_clears_any_fsm(
 
 @patch("routers.platforms.connections.get_settings", _mock_settings)
 async def test_multiple_fsm_switches(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Switch 3 times, only last one active."""
     setup_user()
@@ -213,17 +238,25 @@ async def test_multiple_fsm_switches(
 
 
 async def test_fsm_state_data_cleared(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Old FSM's state.data is gone after conflict resolution."""
     setup_user()
     _setup_db(mock_db)
 
     # Put user in ProjectCreate with some data
-    _put_in_fsm(mock_redis, "ProjectCreateFSM:company_name", {
-        "name": "My Draft",
-        "sensitive_data": "should_be_cleared",
-    })
+    _put_in_fsm(
+        mock_redis,
+        "ProjectCreateFSM:company_name",
+        {
+            "name": "My Draft",
+            "sensitive_data": "should_be_cleared",
+        },
+    )
 
     # Start a new FSM (projects:new will clear and start fresh)
     update = make_update_callback("projects:new")
@@ -239,7 +272,11 @@ async def test_fsm_state_data_cleared(
 
 
 async def test_callback_during_wrong_fsm(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Callback for FSM A while in FSM B -> FSM A callback should not trigger."""
     setup_user()
@@ -261,7 +298,11 @@ async def test_callback_during_wrong_fsm(
 
 
 async def test_concurrent_updates_safe(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Two rapid updates, last one wins."""
     setup_user()

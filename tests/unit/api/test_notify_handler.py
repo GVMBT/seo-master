@@ -19,19 +19,23 @@ def _make_request(notify_type: str = "low_balance", msg_id: str = "msg_1") -> Ma
     bot_mock = MagicMock()
     bot_mock.send_message = AsyncMock()
 
-    app.__getitem__ = MagicMock(side_effect=lambda key: {
-        "db": MagicMock(),
-        "redis": redis_mock,
-        "bot": bot_mock,
-        "settings": MagicMock(),
-    }[key])
+    app.__getitem__ = MagicMock(
+        side_effect=lambda key: {
+            "db": MagicMock(),
+            "redis": redis_mock,
+            "bot": bot_mock,
+            "settings": MagicMock(),
+        }[key]
+    )
 
     request = MagicMock()
     request.app = app
-    request.__getitem__ = MagicMock(side_effect=lambda k: {
-        "verified_body": {"action": "notify", "type": notify_type},
-        "qstash_msg_id": msg_id,
-    }[k])
+    request.__getitem__ = MagicMock(
+        side_effect=lambda k: {
+            "verified_body": {"action": "notify", "type": notify_type},
+            "qstash_msg_id": msg_id,
+        }[k]
+    )
 
     return request
 

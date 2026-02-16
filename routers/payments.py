@@ -79,7 +79,5 @@ async def on_successful_payment(
     tokens = result["tokens_credited"]
     balance = result["new_balance"]
     await message.answer(
-        f"Оплата прошла успешно!\n"
-        f"Начислено: <b>{tokens}</b> токенов\n"
-        f"Баланс: <b>{balance}</b> токенов"
+        f"Оплата прошла успешно!\nНачислено: <b>{tokens}</b> токенов\nБаланс: <b>{balance}</b> токенов"
     )

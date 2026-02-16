@@ -65,32 +65,24 @@ class TestRateLimitsConfig:
 
 
 class TestCheckUnderLimit:
-    async def test_check_first_request_no_exception(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_first_request_no_exception(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """First request (incr returns 1) should pass without raising."""
         mock_redis.incr.return_value = 1
         await limiter.check(123, "text_generation")
         # No exception raised
 
-    async def test_check_at_exact_limit_no_exception(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_at_exact_limit_no_exception(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Request at exact max (e.g. 10th for text_generation) should pass."""
         mock_redis.incr.return_value = 10  # text_generation max = 10
         await limiter.check(123, "text_generation")
 
-    async def test_check_midway_no_exception(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_midway_no_exception(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Midway through the limit window (5/20 for image_generation) should pass."""
         mock_redis.incr.return_value = 5
         await limiter.check(123, "image_generation")
         # No exception raised — under limit
 
-    async def test_check_incr_called_with_correct_key(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_incr_called_with_correct_key(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Verifies the Redis key matches CacheKeys.rate_limit format."""
         mock_redis.incr.return_value = 1
         await limiter.check(42, "keyword_generation")
@@ -103,18 +95,14 @@ class TestCheckUnderLimit:
 
 
 class TestCheckOverLimit:
-    async def test_check_over_limit_raises_rate_limit_error(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_over_limit_raises_rate_limit_error(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """11th text_generation request should raise RateLimitError."""
         mock_redis.incr.return_value = 11
         mock_redis.ttl.return_value = 2400
         with pytest.raises(RateLimitError):
             await limiter.check(123, "text_generation")
 
-    async def test_check_over_limit_calls_decr(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_over_limit_calls_decr(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """When over limit, counter must be decremented back (H13 fix)."""
         mock_redis.incr.return_value = 11
         mock_redis.ttl.return_value = 2400
@@ -140,9 +128,7 @@ class TestCheckOverLimit:
         with pytest.raises(RateLimitError, match="21/20"):
             await limiter.check(123, "image_generation")
 
-    async def test_check_over_limit_queries_ttl(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_over_limit_queries_ttl(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """When over limit, check() should query TTL for logging."""
         mock_redis.incr.return_value = 11
         mock_redis.ttl.return_value = 1234
@@ -160,9 +146,7 @@ class TestCheckOverLimit:
         with pytest.raises(RateLimitError):
             await limiter.check(123, "text_generation")
 
-    async def test_check_token_purchase_over_limit(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_token_purchase_over_limit(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """token_purchase has a 5/600s window; 6th request should raise."""
         mock_redis.incr.return_value = 6
         mock_redis.ttl.return_value = 400
@@ -176,23 +160,17 @@ class TestCheckOverLimit:
 
 
 class TestCheckUnknownAction:
-    async def test_check_unknown_action_no_exception(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_unknown_action_no_exception(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Unknown action should pass without touching Redis."""
         await limiter.check(123, "nonexistent_action")
 
-    async def test_check_unknown_action_does_not_raise(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_unknown_action_does_not_raise(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Even calling multiple times with unknown action should never raise."""
         await limiter.check(123, "some_other_action")
         await limiter.check(123, "some_other_action")
         await limiter.check(123, "some_other_action")
 
-    async def test_check_unknown_action_no_redis_calls(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_unknown_action_no_redis_calls(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Redis should not be called at all for unconfigured actions."""
         await limiter.check(123, "unknown")
         mock_redis.incr.assert_not_awaited()
@@ -206,9 +184,7 @@ class TestCheckUnknownAction:
 
 
 class TestTTLLifecycle:
-    async def test_check_sets_ttl_on_first_call(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_sets_ttl_on_first_call(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """When incr returns 1 (first call), expire() must be called with the window."""
         mock_redis.incr.return_value = 1
         await limiter.check(123, "text_generation")
@@ -222,25 +198,19 @@ class TestTTLLifecycle:
         await limiter.check(77, "token_purchase")
         mock_redis.expire.assert_awaited_once_with("rate:77:token_purchase", 600)
 
-    async def test_check_does_not_reset_ttl_on_second_call(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_does_not_reset_ttl_on_second_call(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """When incr returns 2 (subsequent call), expire() must NOT be called."""
         mock_redis.incr.return_value = 2
         await limiter.check(123, "text_generation")
         mock_redis.expire.assert_not_awaited()
 
-    async def test_check_does_not_reset_ttl_on_tenth_call(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_does_not_reset_ttl_on_tenth_call(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """At the 10th call (still within limit), expire should not be called."""
         mock_redis.incr.return_value = 10
         await limiter.check(123, "text_generation")
         mock_redis.expire.assert_not_awaited()
 
-    async def test_check_does_not_reset_ttl_on_over_limit(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_check_does_not_reset_ttl_on_over_limit(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Even when over limit, expire() should NOT be called (only on incr==1)."""
         mock_redis.incr.return_value = 11
         mock_redis.ttl.return_value = 2000
@@ -255,9 +225,7 @@ class TestTTLLifecycle:
 
 
 class TestUserIsolation:
-    async def test_different_users_independent_counters(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_different_users_independent_counters(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Two different users should use different Redis keys."""
         mock_redis.incr.return_value = 1
         await limiter.check(100, "text_generation")
@@ -283,9 +251,7 @@ class TestUserIsolation:
         await limiter.check(200, "text_generation")
         # No exception for user B
 
-    async def test_different_actions_independent_counters(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_different_actions_independent_counters(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Same user, different actions should use different Redis keys."""
         mock_redis.incr.return_value = 1
         await limiter.check(123, "text_generation")
@@ -303,9 +269,7 @@ class TestUserIsolation:
 
 
 class TestRateLimitErrorProperties:
-    async def test_rate_limit_error_is_app_error(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_rate_limit_error_is_app_error(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """RateLimitError should be an AppError subclass."""
         from bot.exceptions import AppError
 
@@ -314,9 +278,7 @@ class TestRateLimitErrorProperties:
         with pytest.raises(AppError):
             await limiter.check(123, "text_generation")
 
-    async def test_rate_limit_error_has_user_message(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_rate_limit_error_has_user_message(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """RateLimitError should have a Russian user_message."""
         mock_redis.incr.return_value = 6
         mock_redis.ttl.return_value = 500
@@ -331,27 +293,21 @@ class TestRateLimitErrorProperties:
 
 
 class TestCheckBatch:
-    async def test_batch_under_limit_passes(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_batch_under_limit_passes(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Batch of 4 images when 0 used (max 20) should pass."""
         mock_redis.get.return_value = None  # key doesn't exist
         mock_redis.incrby.return_value = 4
         await limiter.check_batch(123, "image_generation", 4)
         mock_redis.incrby.assert_awaited_once_with("rate:123:image_generation", 4)
 
-    async def test_batch_at_exact_limit_passes(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_batch_at_exact_limit_passes(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Batch that exactly fills remaining slots should pass."""
         mock_redis.get.return_value = "16"
         mock_redis.incrby.return_value = 20  # 16 + 4 = 20 = max
         await limiter.check_batch(123, "image_generation", 4)
         # No exception
 
-    async def test_batch_over_limit_raises_and_undoes(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_batch_over_limit_raises_and_undoes(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Batch that would exceed limit should raise and DECRBY."""
         mock_redis.get.return_value = "18"
         mock_redis.incrby.return_value = 22  # 18 + 4 = 22 > 20
@@ -360,34 +316,26 @@ class TestCheckBatch:
             await limiter.check_batch(123, "image_generation", 4)
         mock_redis.decrby.assert_awaited_once_with("rate:123:image_generation", 4)
 
-    async def test_batch_sets_ttl_on_new_key(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_batch_sets_ttl_on_new_key(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """TTL should be set when key was just created (first batch)."""
         mock_redis.get.return_value = None  # key doesn't exist
         mock_redis.incrby.return_value = 4
         await limiter.check_batch(123, "image_generation", 4)
         mock_redis.expire.assert_awaited_once_with("rate:123:image_generation", 3600)
 
-    async def test_batch_does_not_reset_ttl_on_existing_key(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_batch_does_not_reset_ttl_on_existing_key(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """TTL should NOT be reset when key already exists."""
         mock_redis.get.return_value = "5"
         mock_redis.incrby.return_value = 9
         await limiter.check_batch(123, "image_generation", 4)
         mock_redis.expire.assert_not_awaited()
 
-    async def test_batch_unknown_action_no_effect(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_batch_unknown_action_no_effect(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """Unknown action should not touch Redis."""
         await limiter.check_batch(123, "nonexistent_action", 5)
         mock_redis.incrby.assert_not_awaited()
 
-    async def test_batch_zero_count_no_effect(
-        self, limiter: RateLimiter, mock_redis: AsyncMock
-    ) -> None:
+    async def test_batch_zero_count_no_effect(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """count=0 should not touch Redis."""
         await limiter.check_batch(123, "image_generation", 0)
         mock_redis.incrby.assert_not_awaited()

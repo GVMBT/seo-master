@@ -41,23 +41,31 @@ def _project(user_id: int = 1) -> Project:
 
 
 def _category(keywords: list | None = None) -> Category:
-    kw = keywords if keywords is not None else [
-        {
-            "cluster_name": "Test cluster",
-            "cluster_type": "article",
-            "main_phrase": "test phrase",
-            "total_volume": 1000,
-            "avg_difficulty": 30,
-            "phrases": [{"phrase": "test phrase", "volume": 1000}],
-        },
-    ]
+    kw = (
+        keywords
+        if keywords is not None
+        else [
+            {
+                "cluster_name": "Test cluster",
+                "cluster_type": "article",
+                "main_phrase": "test phrase",
+                "total_volume": 1000,
+                "avg_difficulty": 30,
+                "phrases": [{"phrase": "test phrase", "volume": 1000}],
+            },
+        ]
+    )
     return Category(id=10, project_id=1, name="Test Category", keywords=kw)
 
 
 def _connection(conn_id: int = 5, platform: str = "wordpress") -> PlatformConnection:
     return PlatformConnection(
-        id=conn_id, project_id=1, platform_type=platform,
-        status="active", credentials={}, identifier="test.com",
+        id=conn_id,
+        project_id=1,
+        platform_type=platform,
+        status="active",
+        credentials={},
+        identifier="test.com",
     )
 
 
@@ -169,8 +177,14 @@ def test_format_preview_text_without_telegraph_e05():
 
 def test_format_preview_text_no_content():
     preview = ArticlePreview(
-        id=1, user_id=1, project_id=1, category_id=10,
-        title=None, keyword=None, telegraph_url=None, content_html=None,
+        id=1,
+        user_id=1,
+        project_id=1,
+        category_id=10,
+        title=None,
+        keyword=None,
+        telegraph_url=None,
+        content_html=None,
     )
     text = _format_preview_text(preview, 100)
     assert "100" in text
@@ -186,7 +200,10 @@ def test_format_preview_text_no_content():
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_ownership_check(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
 ):
     """cb_article_start rejects if project.user_id != user.id."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -204,7 +221,10 @@ async def test_article_start_ownership_check(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_no_keywords_e16(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
 ):
     """E16: category with no keywords blocks publish."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -224,7 +244,10 @@ async def test_article_start_no_keywords_e16(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_no_article_clusters_e40(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
 ):
     """E40: category with only product_page clusters blocks publish."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -245,7 +268,11 @@ async def test_article_start_no_article_clusters_e40(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_no_wp_connections(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls, mock_confirm,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
+    mock_confirm,
 ):
     """No active WP connections -> alert."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -266,7 +293,11 @@ async def test_article_start_no_wp_connections(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_multiple_wp_e28(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls, mock_confirm,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
+    mock_confirm,
 ):
     """E28: >1 WP connections shows choice keyboard."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -291,7 +322,11 @@ async def test_article_start_multiple_wp_e28(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_single_wp_happy(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls, mock_confirm,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
+    mock_confirm,
 ):
     """Single WP connection goes straight to confirmation."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -315,7 +350,11 @@ async def test_article_start_single_wp_happy(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_insufficient_balance(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls, mock_token_cls,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
+    mock_token_cls,
 ):
     """Insufficient balance shows topup keyboard."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock(), answer=AsyncMock())
@@ -348,7 +387,11 @@ async def test_article_start_insufficient_balance(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_with_conn_happy(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls, mock_confirm,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
+    mock_confirm,
 ):
     """cb_article_start_with_conn with valid connection proceeds."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -368,7 +411,10 @@ async def test_article_start_with_conn_happy(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_with_conn_bad_connection(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
 ):
     """Connection not found -> alert."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -387,7 +433,10 @@ async def test_article_start_with_conn_bad_connection(
 @patch("routers.publishing.preview.ProjectsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_start_with_conn_ownership_check(
-    mock_guard, mock_proj_cls, mock_cat_cls, mock_conn_cls,
+    mock_guard,
+    mock_proj_cls,
+    mock_cat_cls,
+    mock_conn_cls,
 ):
     """cb_article_start_with_conn rejects wrong owner."""
     mock_guard.return_value = MagicMock(edit_text=AsyncMock())
@@ -412,7 +461,11 @@ async def test_article_start_with_conn_ownership_check(
 @patch("routers.publishing.preview.TokenService")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_confirm_happy(
-    mock_guard, mock_token_cls, mock_cat_cls, mock_pub_cls, mock_prev_cls,
+    mock_guard,
+    mock_token_cls,
+    mock_cat_cls,
+    mock_pub_cls,
+    mock_prev_cls,
     mock_preview_svc_cls,
 ):
     """Confirm charges tokens and creates preview."""
@@ -426,8 +479,11 @@ async def test_article_confirm_happy(
     # Mock PreviewService.generate_article_content
     mock_preview_svc_cls.return_value.generate_article_content = AsyncMock(
         return_value=MagicMock(
-            title="Test Article", content_html="<p>Content</p>",
-            word_count=2000, images_count=4, stored_images=[],
+            title="Test Article",
+            content_html="<p>Content</p>",
+            word_count=2000,
+            images_count=4,
+            stored_images=[],
         ),
     )
 
@@ -482,7 +538,9 @@ async def test_article_confirm_insufficient_balance(mock_guard, mock_token_cls):
 @patch("routers.publishing.preview.TokenService")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_confirm_no_keyword_refunds(
-    mock_guard, mock_token_cls, mock_cat_cls,
+    mock_guard,
+    mock_token_cls,
+    mock_cat_cls,
 ):
     """If category not found during generation, refund tokens."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -529,8 +587,13 @@ async def test_article_confirm_session_lost(mock_guard):
 @patch("routers.publishing.preview.PreviewsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_publish_success(
-    mock_guard, mock_prev_cls, mock_pub_cls, mock_settings,
-    mock_conn_cls, mock_cm_cls, mock_preview_svc_cls,
+    mock_guard,
+    mock_prev_cls,
+    mock_pub_cls,
+    mock_settings,
+    mock_conn_cls,
+    mock_cm_cls,
+    mock_preview_svc_cls,
 ):
     """Publish creates log and clears FSM."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -550,8 +613,12 @@ async def test_article_publish_success(
 
     cb = _callback("pub:article:publish")
     st = _state(
-        preview_id=1, connection_id=5, category_id=10, project_id=1,
-        keyword="test phrase", cost=320,
+        preview_id=1,
+        connection_id=5,
+        category_id=10,
+        project_id=1,
+        keyword="test phrase",
+        cost=320,
     )
 
     await cb_article_publish(cb, _user(), MagicMock(), st, *_ai_deps())
@@ -623,8 +690,11 @@ async def test_article_regen_free(mock_guard, mock_prev_cls, mock_svc_cls):
     mock_prev_cls.return_value.update = AsyncMock()
     mock_svc_cls.return_value.generate_article_content = AsyncMock(
         return_value=MagicMock(
-            title="Regen", content_html="<p>New</p>",
-            word_count=2000, images_count=4, stored_images=[],
+            title="Regen",
+            content_html="<p>New</p>",
+            word_count=2000,
+            images_count=4,
+            stored_images=[],
         ),
     )
 
@@ -656,8 +726,11 @@ async def test_article_regen_paid_e10(mock_guard, mock_prev_cls, mock_token_cls,
     mock_token_cls.return_value.charge = AsyncMock(return_value=860)
     mock_svc_cls.return_value.generate_article_content = AsyncMock(
         return_value=MagicMock(
-            title="Regen", content_html="<p>New</p>",
-            word_count=2000, images_count=4, stored_images=[],
+            title="Regen",
+            content_html="<p>New</p>",
+            word_count=2000,
+            images_count=4,
+            stored_images=[],
         ),
     )
 
@@ -790,7 +863,11 @@ async def test_regen_guard():
 @patch("routers.publishing.preview.TokenService")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_confirm_no_keywords_refunds(
-    mock_guard, mock_token_cls, mock_cat_cls, mock_pub_cls, mock_prev_cls,
+    mock_guard,
+    mock_token_cls,
+    mock_cat_cls,
+    mock_pub_cls,
+    mock_prev_cls,
 ):
     """No available keywords after charge -> refund."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -818,7 +895,11 @@ async def test_article_confirm_no_keywords_refunds(
 @patch("routers.publishing.preview.TokenService")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_confirm_preview_create_fails_refunds(
-    mock_guard, mock_token_cls, mock_cat_cls, mock_pub_cls, mock_prev_cls,
+    mock_guard,
+    mock_token_cls,
+    mock_cat_cls,
+    mock_pub_cls,
+    mock_prev_cls,
     mock_preview_svc_cls,
 ):
     """Preview creation failure -> refund."""
@@ -832,8 +913,11 @@ async def test_article_confirm_preview_create_fails_refunds(
     mock_pub_cls.return_value.get_rotation_keyword = AsyncMock(return_value=("test phrase", False))
     mock_preview_svc_cls.return_value.generate_article_content = AsyncMock(
         return_value=MagicMock(
-            title="Test", content_html="<p>T</p>",
-            word_count=200, images_count=0, stored_images=[],
+            title="Test",
+            content_html="<p>T</p>",
+            word_count=200,
+            images_count=0,
+            stored_images=[],
         ),
     )
     mock_prev_cls.return_value.create = AsyncMock(side_effect=Exception("DB error"))
@@ -858,7 +942,11 @@ async def test_article_confirm_preview_create_fails_refunds(
 @patch("routers.publishing.preview.PreviewsRepository")
 @patch("routers.publishing.preview.guard_callback_message")
 async def test_article_publish_error_returns_to_preview(
-    mock_guard, mock_prev_cls, mock_pub_cls, mock_settings, mock_cm,
+    mock_guard,
+    mock_prev_cls,
+    mock_pub_cls,
+    mock_settings,
+    mock_cm,
 ):
     """Publish error returns to preview state (connection lookup fails)."""
     msg = MagicMock(spec=Message, edit_text=AsyncMock())
@@ -873,8 +961,12 @@ async def test_article_publish_error_returns_to_preview(
 
     cb = _callback("pub:article:publish")
     st = _state(
-        preview_id=1, connection_id=5, category_id=10,
-        project_id=1, keyword="test", cost=320,
+        preview_id=1,
+        connection_id=5,
+        category_id=10,
+        project_id=1,
+        keyword="test",
+        cost=320,
     )
 
     # ConnectionsRepository(db, cm).get_by_id uses real code with MagicMock db

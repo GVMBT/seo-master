@@ -38,9 +38,7 @@ def repo(mock_db: MockSupabaseClient) -> PublicationsRepository:
 
 
 class TestCreateLog:
-    async def test_create(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient, pub_row: dict
-    ) -> None:
+    async def test_create(self, repo: PublicationsRepository, mock_db: MockSupabaseClient, pub_row: dict) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[pub_row]))
         data = PublicationLogCreate(
             user_id=123456789,
@@ -56,33 +54,25 @@ class TestCreateLog:
 
 
 class TestGetByUser:
-    async def test_returns_list(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient, pub_row: dict
-    ) -> None:
+    async def test_returns_list(self, repo: PublicationsRepository, mock_db: MockSupabaseClient, pub_row: dict) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[pub_row]))
         logs = await repo.get_by_user(123456789)
         assert len(logs) == 1
 
-    async def test_empty(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_empty(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[]))
         assert await repo.get_by_user(999) == []
 
 
 class TestGetByProject:
-    async def test_returns_list(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient, pub_row: dict
-    ) -> None:
+    async def test_returns_list(self, repo: PublicationsRepository, mock_db: MockSupabaseClient, pub_row: dict) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[pub_row]))
         logs = await repo.get_by_project(1)
         assert len(logs) == 1
 
 
 class TestGetRecentlyUsedKeywords:
-    async def test_returns_keywords(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_returns_keywords(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response(
             "publication_logs",
             MockResponse(data=[{"keyword": "seo tips"}, {"keyword": "seo guide"}]),
@@ -90,23 +80,17 @@ class TestGetRecentlyUsedKeywords:
         keywords = await repo.get_recently_used_keywords(1)
         assert keywords == ["seo tips", "seo guide"]
 
-    async def test_empty(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_empty(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[]))
         assert await repo.get_recently_used_keywords(1) == []
 
 
 class TestGetLruKeyword:
-    async def test_returns_oldest(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_returns_oldest(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[{"keyword": "oldest kw"}]))
         assert await repo.get_lru_keyword(1) == "oldest kw"
 
-    async def test_none_when_empty(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_none_when_empty(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[]))
         assert await repo.get_lru_keyword(1) is None
 
@@ -114,16 +98,12 @@ class TestGetLruKeyword:
 class TestGetRotationKeywordLegacy:
     """Legacy flat-keyword rotation algorithm (API_CONTRACTS.md §6, E36 fallback)."""
 
-    async def test_empty_pool_returns_none(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_empty_pool_returns_none(self, repo: PublicationsRepository) -> None:
         kw, warning = await repo.get_rotation_keyword(1, [])
         assert kw is None
         assert warning is True
 
-    async def test_picks_highest_volume_first(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_picks_highest_volume_first(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[]))
         keywords = [
             {"phrase": "low vol", "volume": 100, "difficulty": 10},
@@ -144,12 +124,8 @@ class TestGetRotationKeywordLegacy:
         kw, _ = await repo.get_rotation_keyword(1, keywords)
         assert kw == "easy"
 
-    async def test_skips_recently_used(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
-        mock_db.set_response(
-            "publication_logs", MockResponse(data=[{"keyword": "high vol"}])
-        )
+    async def test_skips_recently_used(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
+        mock_db.set_response("publication_logs", MockResponse(data=[{"keyword": "high vol"}]))
         keywords = [
             {"phrase": "high vol", "volume": 1000, "difficulty": 20},
             {"phrase": "next best", "volume": 500, "difficulty": 10},
@@ -168,9 +144,7 @@ class TestGetRotationKeywordLegacy:
         _, warning = await repo.get_rotation_keyword(1, keywords)
         assert warning is True
 
-    async def test_no_warning_when_3_or_more(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_no_warning_when_3_or_more(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("publication_logs", MockResponse(data=[]))
         keywords = [{"phrase": f"kw{i}", "volume": i * 100, "difficulty": i} for i in range(3)]
         _, warning = await repo.get_rotation_keyword(1, keywords)
@@ -196,6 +170,7 @@ class TestGetRotationKeywordLegacy:
 # ---------------------------------------------------------------------------
 # Cluster-based rotation (API_CONTRACTS.md §6)
 # ---------------------------------------------------------------------------
+
 
 def _make_cluster(
     name: str,
@@ -255,12 +230,8 @@ class TestGetRotationKeywordCluster:
         # product_page cluster has highest volume → picked first
         assert kw == "buy now"
 
-    async def test_skips_recently_used_cluster(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
-        mock_db.set_response(
-            "publication_logs", MockResponse(data=[{"keyword": "top phrase"}])
-        )
+    async def test_skips_recently_used_cluster(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
+        mock_db.set_response("publication_logs", MockResponse(data=[{"keyword": "top phrase"}]))
         clusters = [
             _make_cluster("top", "top phrase", total_volume=5000),
             _make_cluster("next", "next phrase", total_volume=2000),
@@ -350,9 +321,7 @@ class TestContentTypeCooldown:
 
 
 class TestGetStatsByUser:
-    async def test_aggregated_stats(
-        self, repo: PublicationsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_aggregated_stats(self, repo: PublicationsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response(
             "publication_logs",
             MockResponse(

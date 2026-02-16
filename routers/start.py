@@ -33,12 +33,15 @@ router = Router(name="start")
 # ---------------------------------------------------------------------------
 
 _HELP_TEXT = (
-    "SEO Master Bot — AI-генерация контента.\n\n"
+    "SEO Master Bot — AI-генерация контента для вашего сайта.\n\n"
+    "Как начать:\n"
+    "1. Создайте проект (название, компания, сайт)\n"
+    "2. Добавьте категорию и ключевые фразы\n"
+    "3. Нажмите «Написать статью»\n\n"
     "Команды:\n"
     "/start — главное меню\n"
     "/cancel — отменить текущее действие\n"
-    "/help — эта справка\n\n"
-    "Используйте кнопки меню для навигации."
+    "/help — эта справка"
 )
 
 
@@ -58,8 +61,10 @@ async def _build_dashboard_text(user: User, db: SupabaseClient, is_new_user: boo
     if is_new_user:
         return (
             "Добро пожаловать в SEO Master Bot!\n\n"
-            "Вам начислено 1500 токенов (~5 статей на сайт).\n"
-            "Что хотите сделать?"
+            "Я создаю SEO-статьи и посты для вашего бизнеса "
+            "с помощью AI и публикую на сайт.\n\n"
+            "Вам начислено 1500 токенов (~5 статей).\n"
+            "Начните с создания проекта."
         )
 
     service = TokenService(db, admin_ids=get_settings().admin_ids)
@@ -130,9 +135,7 @@ async def _send_dashboard(
             if project_name:
                 current_step = checkpoint.get("current_step", "?")
                 await message.answer(
-                    f"У вас есть незавершённая статья:\n"
-                    f"Проект: {project_name}\n"
-                    f"Остановились на: {current_step}\n",
+                    f"У вас есть незавершённая статья:\nПроект: {project_name}\nОстановились на: {current_step}\n",
                     reply_markup=pipeline_resume_kb().as_markup(),
                 )
 
@@ -407,8 +410,7 @@ async def btn_write_article(
         checkpoint: dict[str, object] = json.loads(existing)
         current_step = checkpoint.get("current_step", "?")
         await message.answer(
-            f"У вас есть незавершённая статья:\n"
-            f"Остановились на: {current_step}\n",
+            f"У вас есть незавершённая статья:\nОстановились на: {current_step}\n",
             reply_markup=pipeline_resume_kb().as_markup(),
         )
         return
@@ -422,8 +424,7 @@ async def btn_write_article(
     projects = await ProjectsRepository(db).get_by_user(user.id)
     if not projects:
         await message.answer(
-            "Статья > Шаг 1: проект\n\n"
-            "У вас нет проектов. Создайте первый проект.",
+            "Статья (1/5) — Проект\n\nУ вас нет проектов. Создайте первый проект.",
             reply_markup=pipeline_no_entities_kb("project").as_markup(),
         )
         return
@@ -434,7 +435,7 @@ async def btn_write_article(
 
         await state.set_state(ArticlePipelineFSM.select_wp)
         await state.update_data(project_id=projects[0].id)
-        sent = await message.answer("Статья > WordPress\n\nПроверяю подключения...")
+        sent = await message.answer("Статья (2/5) — WordPress\n\nПроверяю подключения...")
         await show_wp_selection(sent, user, db, projects[0].id, state)
         return
 
@@ -447,7 +448,7 @@ async def btn_write_article(
 
     await state.set_state(ArticlePipelineFSM.select_project)
     await message.answer(
-        "Статья > Шаг 1: проект\n\nДля какого проекта?",
+        "Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_project_list_kb(projects, last_used_id=last_project_id).as_markup(),
     )
 

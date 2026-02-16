@@ -53,7 +53,10 @@ def _setup_dashboard_db(mock_db: Any, user: dict[str, Any] | None = None) -> Non
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_start_new_user_welcome(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
 ) -> None:
     """New user /start -> welcome text with 1500 tokens."""
     _setup_dashboard_db(mock_db)
@@ -63,10 +66,13 @@ async def test_start_new_user_welcome(
     new_user = {**DEFAULT_USER, "balance": 1500}
     mock_db.set_response("users", MockResponse(data=new_user))
     # Insert response for get_or_create
-    mock_db.set_responses("users", [
-        MockResponse(data=None),  # get_by_id returns None (new user)
-        MockResponse(data=new_user),  # insert returns user
-    ])
+    mock_db.set_responses(
+        "users",
+        [
+            MockResponse(data=None),  # get_by_id returns None (new user)
+            MockResponse(data=new_user),  # insert returns user
+        ],
+    )
 
     update = make_update_message("/start")
     await dispatcher.feed_update(mock_bot, update)
@@ -80,7 +86,10 @@ async def test_start_new_user_welcome(
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_start_existing_user_dashboard(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    setup_user: Any,
 ) -> None:
     """Existing user /start -> dashboard with balance."""
     setup_user()
@@ -91,16 +100,17 @@ async def test_start_existing_user_dashboard(
 
     assert mock_bot.send_message.called
     calls = mock_bot.send_message.call_args_list
-    all_text = " ".join(
-        str(c.kwargs.get("text", ""))
-        for c in calls
-    )
+    all_text = " ".join(str(c.kwargs.get("text", "")) for c in calls)
     assert "Баланс" in all_text or "1500" in all_text or "Используйте кнопки" in all_text
 
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_start_clears_fsm(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """If user was in FSM state, /start clears it."""
     setup_user()
@@ -121,7 +131,11 @@ async def test_start_clears_fsm(
 
 
 async def test_cancel_during_fsm(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Cancel command during active FSM clears state."""
     setup_user()
@@ -147,7 +161,10 @@ async def test_cancel_during_fsm(
 
 
 async def test_cancel_no_active_fsm(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    setup_user: Any,
 ) -> None:
     """Cancel without FSM -> 'Нет активного действия' (via reply button handler)."""
     setup_user()
@@ -165,7 +182,10 @@ async def test_cancel_no_active_fsm(
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_menu_button_shows_dashboard(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    setup_user: Any,
 ) -> None:
     """'Меню' reply text -> dashboard with inline navigation."""
     setup_user()
@@ -181,7 +201,10 @@ async def test_menu_button_shows_dashboard(
 
 
 async def test_help_command(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    setup_user: Any,
 ) -> None:
     """/help -> help text."""
     setup_user()
@@ -197,7 +220,10 @@ async def test_help_command(
 
 
 async def test_help_inline_button(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    setup_user: Any,
 ) -> None:
     """Callback 'help:main' -> help sections menu."""
     setup_user()
@@ -212,7 +238,10 @@ async def test_help_inline_button(
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_main_menu_callback(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    setup_user: Any,
 ) -> None:
     """Callback 'menu:main' -> dashboard edit."""
     setup_user()
@@ -226,7 +255,11 @@ async def test_main_menu_callback(
 
 
 async def test_non_text_in_fsm_rejected(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Photo during FSM -> 'отправьте текстовое'."""
     setup_user()
@@ -261,7 +294,10 @@ async def test_non_text_in_fsm_rejected(
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_start_deep_link_referral(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    setup_user: Any,
 ) -> None:
     """/start ref_12345 -> sets referrer_id (mock UsersRepository)."""
     user_data = {**DEFAULT_USER, "referrer_id": None}
@@ -270,12 +306,15 @@ async def test_start_deep_link_referral(
 
     # The referrer user must exist
     referrer = {**DEFAULT_USER, "id": 12345, "username": "referrer"}
-    mock_db.set_responses("users", [
-        MockResponse(data=user_data),  # get_by_id for current user (TokenService)
-        MockResponse(data=referrer),  # get_by_id for referrer
-        MockResponse(data=user_data),  # update referrer_id
-        MockResponse(data=user_data),  # get_profile_stats queries
-    ])
+    mock_db.set_responses(
+        "users",
+        [
+            MockResponse(data=user_data),  # get_by_id for current user (TokenService)
+            MockResponse(data=referrer),  # get_by_id for referrer
+            MockResponse(data=user_data),  # update referrer_id
+            MockResponse(data=user_data),  # get_profile_stats queries
+        ],
+    )
 
     update = make_update_message("/start ref_12345")
     await dispatcher.feed_update(mock_bot, update)
@@ -287,7 +326,10 @@ async def test_start_deep_link_referral(
 
 @patch("routers.start.get_settings", _mock_settings)
 async def test_admin_button_visible(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    setup_user: Any,
 ) -> None:
     """Admin user -> 'АДМИНКА' button handling."""
     setup_user(user_data=ADMIN_USER)

@@ -82,16 +82,39 @@ def _setup_social_db(
     mock_db.set_response("categories", MockResponse(data=category or _CATEGORY_WITH_KEYWORDS))
     mock_db.set_response("projects", MockResponse(data=DEFAULT_PROJECT))
     mock_db.set_response("platform_connections", MockResponse(data=connection or _CONNECTION_TG))
-    mock_db.set_response("publication_logs", MockResponse(data={
-        "id": 1, "user_id": DEFAULT_USER_ID, "project_id": 1, "category_id": 10,
-        "platform_type": "telegram", "connection_id": 200, "keyword": "test",
-        "content_type": "social_post", "images_count": 0, "post_url": "",
-        "word_count": 100, "tokens_spent": 40, "created_at": "2025-01-01T00:00:00Z",
-    }))
-    mock_db.set_response("token_expenses", MockResponse(data={
-        "id": 1, "user_id": DEFAULT_USER_ID, "amount": -40, "operation_type": "social_post",
-        "description": "Social post generation", "created_at": "2025-01-01T00:00:00Z",
-    }))
+    mock_db.set_response(
+        "publication_logs",
+        MockResponse(
+            data={
+                "id": 1,
+                "user_id": DEFAULT_USER_ID,
+                "project_id": 1,
+                "category_id": 10,
+                "platform_type": "telegram",
+                "connection_id": 200,
+                "keyword": "test",
+                "content_type": "social_post",
+                "images_count": 0,
+                "post_url": "",
+                "word_count": 100,
+                "tokens_spent": 40,
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ),
+    )
+    mock_db.set_response(
+        "token_expenses",
+        MockResponse(
+            data={
+                "id": 1,
+                "user_id": DEFAULT_USER_ID,
+                "amount": -40,
+                "operation_type": "social_post",
+                "description": "Social post generation",
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ),
+    )
     mock_db.set_rpc_response("charge_balance", [{"new_balance": balance - 40}])
     mock_db.set_rpc_response("refund_balance", [{"new_balance": balance}])
 
@@ -135,7 +158,11 @@ def _get_all_text(mock_bot: Any) -> str:
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_start_shows_cost_confirmation(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """category:{id}:publish:tg:{conn_id} -> shows cost confirmation."""
     setup_user()
@@ -156,7 +183,11 @@ async def test_social_start_shows_cost_confirmation(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_tg_post_generated(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Confirm generates Telegram post."""
@@ -174,7 +205,11 @@ async def test_social_tg_post_generated(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_vk_post_generated(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """VK post generation."""
@@ -192,16 +227,24 @@ async def test_social_vk_post_generated(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_confirm_publish(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Confirm -> publishes post."""
     setup_user()
     _setup_social_db(mock_db, connection=_CONNECTION_TG)
-    _put_in_social_fsm(mock_redis, "SocialPostPublishFSM:review", {
-        "generated_content": "Test social post content",
-        "keyword": "telegram tips",
-        "regeneration_count": 0,
-    })
+    _put_in_social_fsm(
+        mock_redis,
+        "SocialPostPublishFSM:review",
+        {
+            "generated_content": "Test social post content",
+            "keyword": "telegram tips",
+            "regeneration_count": 0,
+        },
+    )
 
     update = make_update_callback("pub:social:publish")
     await dispatcher.feed_update(mock_bot, update)
@@ -217,15 +260,23 @@ async def test_social_confirm_publish(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_cancel_flow(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Cancel -> no publish."""
     setup_user()
     _setup_social_db(mock_db)
-    _put_in_social_fsm(mock_redis, "SocialPostPublishFSM:review", {
-        "generated_content": "Test content",
-        "regeneration_count": 0,
-    })
+    _put_in_social_fsm(
+        mock_redis,
+        "SocialPostPublishFSM:review",
+        {
+            "generated_content": "Test content",
+            "regeneration_count": 0,
+        },
+    )
 
     update = make_update_callback("pub:social:cancel")
     await dispatcher.feed_update(mock_bot, update)
@@ -240,16 +291,24 @@ async def test_social_cancel_flow(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_regenerate(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Regenerate post (free attempt)."""
     setup_user()
     _setup_social_db(mock_db, connection=_CONNECTION_TG)
-    _put_in_social_fsm(mock_redis, "SocialPostPublishFSM:review", {
-        "generated_content": "Original content",
-        "keyword": "telegram tips",
-        "regeneration_count": 0,
-    })
+    _put_in_social_fsm(
+        mock_redis,
+        "SocialPostPublishFSM:review",
+        {
+            "generated_content": "Original content",
+            "keyword": "telegram tips",
+            "regeneration_count": 0,
+        },
+    )
 
     update = make_update_callback("pub:social:regen")
     await dispatcher.feed_update(mock_bot, update)
@@ -260,7 +319,11 @@ async def test_social_regenerate(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_insufficient_balance(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Not enough tokens for social post."""
     low_user = {**DEFAULT_USER, "balance": 5}
@@ -276,7 +339,11 @@ async def test_social_insufficient_balance(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_no_connections(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """No platform connected -> alert."""
     setup_user()
@@ -298,7 +365,11 @@ async def test_social_no_connections(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_stores_in_fsm_data(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
     mock_services: dict[str, Any],
 ) -> None:
     """Post content stored in state.data (not DB)."""
@@ -320,7 +391,11 @@ async def test_social_stores_in_fsm_data(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_publishing_guard_e07(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """E07: Prevent double-click during publishing."""
     setup_user()
@@ -338,7 +413,11 @@ async def test_social_publishing_guard_e07(
 
 @patch("routers.publishing.social.get_settings", _mock_settings)
 async def test_social_no_keywords(
-    dispatcher: Any, mock_bot: Any, mock_db: Any, mock_redis: Any, setup_user: Any,
+    dispatcher: Any,
+    mock_bot: Any,
+    mock_db: Any,
+    mock_redis: Any,
+    setup_user: Any,
 ) -> None:
     """Category without keywords -> error."""
     setup_user()

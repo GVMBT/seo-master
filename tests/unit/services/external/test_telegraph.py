@@ -50,10 +50,13 @@ class TestEnsureAccount:
     async def test_creates_account_on_first_call(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok_test", "short_name": "SEO Master Bot"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok_test", "short_name": "SEO Master Bot"},
+                    },
+                )
             return httpx.Response(404)
 
         client = _make_client(handler)
@@ -68,10 +71,13 @@ class TestEnsureAccount:
             nonlocal call_count
             if "createAccount" in str(request.url):
                 call_count += 1
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "cached_token"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "cached_token"},
+                    },
+                )
             return httpx.Response(404)
 
         client = _make_client(handler)
@@ -127,18 +133,24 @@ class TestCreatePage:
     async def test_success(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok_123"},
-                })
-            if "createPage" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {
-                        "url": "https://telegra.ph/SEO-Guide-02-11",
-                        "path": "SEO-Guide-02-11",
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok_123"},
                     },
-                })
+                )
+            if "createPage" in str(request.url):
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {
+                            "url": "https://telegra.ph/SEO-Guide-02-11",
+                            "path": "SEO-Guide-02-11",
+                        },
+                    },
+                )
             return httpx.Response(404)
 
         client = _make_client(handler)
@@ -152,10 +164,13 @@ class TestCreatePage:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok_x"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok_x"},
+                    },
+                )
             if "createPage" in str(request.url):
                 # Parse form data
                 body = request.content.decode()
@@ -163,10 +178,13 @@ class TestCreatePage:
                     if "=" in pair:
                         k, v = pair.split("=", 1)
                         captured_data[k] = v
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"url": "https://telegra.ph/x", "path": "x"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"url": "https://telegra.ph/x", "path": "x"},
+                    },
+                )
             return httpx.Response(404)
 
         client = _make_client(handler)
@@ -180,10 +198,13 @@ class TestCreatePage:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok_x"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok_x"},
+                    },
+                )
             if "createPage" in str(request.url):
                 return httpx.Response(200, json={"ok": False, "error": "PAGE_SAVE_FAILED"})
             return httpx.Response(404)
@@ -198,10 +219,13 @@ class TestCreatePage:
         async def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok_x"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok_x"},
+                    },
+                )
             call_count += 1
             raise httpx.ConnectError("Down")
 
@@ -224,17 +248,23 @@ class TestCreatePage:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok"},
+                    },
+                )
             if "createPage" in str(request.url):
                 body = request.content.decode()
                 assert "SEO+Master+Bot" in body or "SEO%20Master%20Bot" in body or "author_name" in body
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"url": "https://telegra.ph/x", "path": "x"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"url": "https://telegra.ph/x", "path": "x"},
+                    },
+                )
             return httpx.Response(404)
 
         client = _make_client(handler)
@@ -251,10 +281,13 @@ class TestDeletePage:
     async def test_success(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok_del"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok_del"},
+                    },
+                )
             if "editPage" in str(request.url):
                 return httpx.Response(200, json={"ok": True, "result": {"path": "deleted-page"}})
             return httpx.Response(404)
@@ -269,10 +302,13 @@ class TestDeletePage:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok"},
+                    },
+                )
             if "editPage" in str(request.url):
                 body = request.content.decode()
                 for pair in body.split("&"):
@@ -289,10 +325,13 @@ class TestDeletePage:
     async def test_api_error_returns_false(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok"},
+                    },
+                )
             if "editPage" in str(request.url):
                 return httpx.Response(200, json={"ok": False, "error": "PAGE_NOT_FOUND"})
             return httpx.Response(404)
@@ -304,10 +343,13 @@ class TestDeletePage:
     async def test_network_error_returns_false(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             if "createAccount" in str(request.url):
-                return httpx.Response(200, json={
-                    "ok": True,
-                    "result": {"access_token": "tok"},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {"access_token": "tok"},
+                    },
+                )
             raise httpx.ConnectError("Down")
 
         client = _make_client(handler)

@@ -65,9 +65,11 @@ async def test_health_detailed_db_down(api_client, app_services):
 
     def _broken_table(name):
         builder = original_table(name)
+
         # Override execute to raise
         async def _raise():
             raise ConnectionError("DB connection refused")
+
         builder.execute = _raise
         return builder
 

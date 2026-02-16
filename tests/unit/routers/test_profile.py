@@ -70,7 +70,7 @@ class TestFormatExpense:
         result = _format_expense(exp)
         assert "-200" in result
         assert "Генерация текста" in result
-        assert "01.02.2026 14:30" in result
+        assert "01.02 14:30" in result
 
     def test_positive_amount_has_plus(self) -> None:
         exp = _make_expense(amount=3500, operation_type="purchase")
@@ -99,7 +99,6 @@ class TestFormatProfile:
         user = _make_user()
         stats = _make_stats(schedule_count=0)
         text = _format_profile(user, stats)
-        assert "ID: 123456789" in text
         assert "Test User" in text
         assert "1500" in text
         assert "01.01.2026" in text
@@ -107,16 +106,20 @@ class TestFormatProfile:
         assert "Категорий: 8" in text
         # No forecast when schedule_count == 0
         assert "Прогноз" not in text
+        # ID not shown for non-admin
+        assert "ID:" not in text
 
     def test_profile_with_schedules(self) -> None:
         user = _make_user(balance=2000)
         stats = _make_stats(
-            schedule_count=5, posts_per_week=17,
-            tokens_per_week=1400, tokens_per_month=5600,
+            schedule_count=5,
+            posts_per_week=17,
+            tokens_per_week=1400,
+            tokens_per_month=5600,
         )
         text = _format_profile(user, stats)
-        assert "Прогноз расходов:" in text
-        assert "Постов в неделю: 17" in text
+        assert "Прогноз:" in text
+        assert "17 пост/нед" in text
         assert "~1400" in text
         assert "~5600" in text
 
@@ -125,6 +128,7 @@ class TestFormatProfile:
         stats = _make_stats(schedule_count=0)
         text = _format_profile(user, stats)
         assert "Администратор" in text
+        assert "ID:" in text
 
     def test_no_created_at(self) -> None:
         user = _make_user(created_at=None)
@@ -157,7 +161,8 @@ class TestCbProfile:
 
         callback.message.edit_text.assert_awaited_once()
         text_arg = callback.message.edit_text.call_args[0][0]
-        assert "ID: 123456789" in text_arg
+        assert "1500" in text_arg  # Balance shown
+        assert "Test User" in text_arg
         callback.answer.assert_awaited_once()
 
     async def test_inaccessible_message(self) -> None:

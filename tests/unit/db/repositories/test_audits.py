@@ -50,38 +50,28 @@ def repo(mock_db: MockSupabaseClient) -> AuditsRepository:
 
 
 class TestUpsertAudit:
-    async def test_upsert(
-        self, repo: AuditsRepository, mock_db: MockSupabaseClient, audit_row: dict
-    ) -> None:
+    async def test_upsert(self, repo: AuditsRepository, mock_db: MockSupabaseClient, audit_row: dict) -> None:
         mock_db.set_response("site_audits", MockResponse(data=[audit_row]))
-        data = SiteAuditCreate(
-            project_id=1, url="https://example.com", performance=85, seo_score=88
-        )
+        data = SiteAuditCreate(project_id=1, url="https://example.com", performance=85, seo_score=88)
         audit = await repo.upsert_audit(data)
         assert isinstance(audit, SiteAudit)
         assert audit.performance == 85
 
 
 class TestGetAuditByProject:
-    async def test_found(
-        self, repo: AuditsRepository, mock_db: MockSupabaseClient, audit_row: dict
-    ) -> None:
+    async def test_found(self, repo: AuditsRepository, mock_db: MockSupabaseClient, audit_row: dict) -> None:
         mock_db.set_response("site_audits", MockResponse(data=audit_row))
         audit = await repo.get_audit_by_project(1)
         assert audit is not None
         assert audit.seo_score == 88
 
-    async def test_not_found(
-        self, repo: AuditsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_not_found(self, repo: AuditsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("site_audits", MockResponse(data=None))
         assert await repo.get_audit_by_project(999) is None
 
 
 class TestUpsertBranding:
-    async def test_upsert(
-        self, repo: AuditsRepository, mock_db: MockSupabaseClient, branding_row: dict
-    ) -> None:
+    async def test_upsert(self, repo: AuditsRepository, mock_db: MockSupabaseClient, branding_row: dict) -> None:
         mock_db.set_response("site_brandings", MockResponse(data=[branding_row]))
         data = SiteBrandingCreate(
             project_id=1,
@@ -93,16 +83,12 @@ class TestUpsertBranding:
 
 
 class TestGetBrandingByProject:
-    async def test_found(
-        self, repo: AuditsRepository, mock_db: MockSupabaseClient, branding_row: dict
-    ) -> None:
+    async def test_found(self, repo: AuditsRepository, mock_db: MockSupabaseClient, branding_row: dict) -> None:
         mock_db.set_response("site_brandings", MockResponse(data=branding_row))
         branding = await repo.get_branding_by_project(1)
         assert branding is not None
         assert branding.logo_url == "https://example.com/logo.png"
 
-    async def test_not_found(
-        self, repo: AuditsRepository, mock_db: MockSupabaseClient
-    ) -> None:
+    async def test_not_found(self, repo: AuditsRepository, mock_db: MockSupabaseClient) -> None:
         mock_db.set_response("site_brandings", MockResponse(data=None))
         assert await repo.get_branding_by_project(999) is None

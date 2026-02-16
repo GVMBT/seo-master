@@ -38,13 +38,7 @@ class SchedulesRepository(BaseRepository):
 
     async def get_enabled(self) -> list[PlatformSchedule]:
         """Get all enabled schedules (for QStash sync)."""
-        resp = (
-            await self._table(_TABLE)
-            .select("*")
-            .eq("enabled", True)
-            .order("created_at")
-            .execute()
-        )
+        resp = await self._table(_TABLE).select("*").eq("enabled", True).order("created_at").execute()
         return [PlatformSchedule(**row) for row in self._rows(resp)]
 
     async def create(self, data: PlatformScheduleCreate) -> PlatformSchedule:

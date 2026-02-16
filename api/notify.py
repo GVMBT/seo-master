@@ -50,12 +50,14 @@ async def notify_handler(request: web.Request) -> web.Response:
 
         sent, failed = await _send_notifications(request.app["bot"], recipients)
 
-        return web.json_response({
-            "status": "ok",
-            "type": payload.type,
-            "sent": sent,
-            "failed": failed,
-        })
+        return web.json_response(
+            {
+                "status": "ok",
+                "type": payload.type,
+                "sent": sent,
+                "failed": failed,
+            }
+        )
 
     except Exception:
         log.exception("notify_handler_error")

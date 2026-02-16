@@ -145,9 +145,7 @@ class VKPublisher(BasePublisher):
             log.error("vk_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
 
-    async def delete_post(
-        self, connection: PlatformConnection, post_id: str
-    ) -> bool:
+    async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         creds = connection.credentials
         try:
             resp = await self._client.post(

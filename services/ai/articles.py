@@ -134,8 +134,12 @@ CRITIQUE_SCHEMA: dict[str, Any] = {
             "changes_summary": {"type": "string"},
         },
         "required": [
-            "title", "meta_description", "content_markdown",
-            "faq_schema", "images_meta", "changes_summary",
+            "title",
+            "meta_description",
+            "content_markdown",
+            "faq_schema",
+            "images_meta",
+            "changes_summary",
         ],
         "additionalProperties": False,
     },
@@ -144,11 +148,38 @@ CRITIQUE_SCHEMA: dict[str, Any] = {
 # --- nh3 sanitization config ---
 
 NH3_TAGS: set[str] = {
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "p", "a", "b", "strong", "i", "em", "u", "s",
-    "ul", "ol", "li", "br", "hr", "span", "div", "blockquote", "img",
-    "table", "thead", "tbody", "tr", "th", "td",
-    "figure", "figcaption", "nav",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "a",
+    "b",
+    "strong",
+    "i",
+    "em",
+    "u",
+    "s",
+    "ul",
+    "ol",
+    "li",
+    "br",
+    "hr",
+    "span",
+    "div",
+    "blockquote",
+    "img",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "figure",
+    "figcaption",
+    "nav",
 }
 NH3_ATTRS: dict[str, set[str]] = {
     "span": {"style"},
@@ -156,7 +187,10 @@ NH3_ATTRS: dict[str, set[str]] = {
     "img": {"src", "alt", "width", "height", "loading"},
     "td": {"colspan", "rowspan"},
     "th": {"colspan", "rowspan"},
-    "h1": {"id"}, "h2": {"id"}, "h3": {"id"}, "h4": {"id"},
+    "h1": {"id"},
+    "h2": {"id"},
+    "h3": {"id"},
+    "h4": {"id"},
     "li": {"class"},
     "nav": {"class"},
 }
@@ -235,6 +269,7 @@ def _detect_niche_safe(specialization: str) -> str:
     """Detect niche with graceful fallback."""
     try:
         from services.ai.niche_detector import detect_niche
+
         return detect_niche(specialization)
     except ImportError:
         return "general"
@@ -268,7 +303,7 @@ def _extract_keyword_data(
                 main_difficulty = str(p.get("difficulty", "неизвестно"))
                 break
     else:
-        for kw in (category.keywords or []):
+        for kw in category.keywords or []:
             if kw.get("phrase", "").lower() == keyword.lower():
                 main_volume = str(kw.get("volume", "неизвестно"))
                 main_difficulty = str(kw.get("difficulty", "неизвестно"))
@@ -345,11 +380,18 @@ class ArticleService:
 
         # Build context
         context, main_phrase, secondary_phrases, branding_dict = self._build_context(
-            project, category, keyword,
-            cluster=cluster, branding=branding, overrides=overrides,
-            serper_data=serper_data, competitor_pages=competitor_pages,
-            competitor_analysis=competitor_analysis, competitor_gaps=competitor_gaps,
-            internal_links=internal_links, lsi_keywords=lsi_keywords,
+            project,
+            category,
+            keyword,
+            cluster=cluster,
+            branding=branding,
+            overrides=overrides,
+            serper_data=serper_data,
+            competitor_pages=competitor_pages,
+            competitor_analysis=competitor_analysis,
+            competitor_gaps=competitor_gaps,
+            internal_links=internal_links,
+            lsi_keywords=lsi_keywords,
         )
 
         # Step 1: OUTLINE → Step 2: EXPAND
@@ -357,8 +399,14 @@ class ArticleService:
 
         # Step 3-5: Render → Score → Critique
         result, content_html = await self._quality_pipeline(
-            user_id, result, content_markdown, context,
-            main_phrase, secondary_phrases, branding_dict, keyword,
+            user_id,
+            result,
+            content_markdown,
+            context,
+            main_phrase,
+            secondary_phrases,
+            branding_dict,
+            keyword,
         )
 
         # Step 6: nh3 sanitization
@@ -406,8 +454,8 @@ class ArticleService:
                 words_min, words_max = calculate_target_length(word_counts, text_settings)
 
         niche_type = _detect_niche_safe(project.specialization or "")
-        main_phrase, secondary_phrases, main_volume, main_difficulty, cluster_volume = (
-            _extract_keyword_data(keyword, cluster, category)
+        main_phrase, secondary_phrases, main_volume, main_difficulty, cluster_volume = _extract_keyword_data(
+            keyword, cluster, category
         )
         serper_questions = _extract_serper_questions(serper_data)
 
@@ -449,7 +497,10 @@ class ArticleService:
         return context, main_phrase, secondary_phrases, branding_dict
 
     async def _generate_steps(
-        self, user_id: int, context: dict[str, Any], keyword: str,
+        self,
+        user_id: int,
+        context: dict[str, Any],
+        keyword: str,
     ) -> tuple[GenerationResult, str]:
         """Steps 1-2: Generate outline then expand to full article."""
         outline_text = ""
@@ -490,8 +541,16 @@ class ArticleService:
             if quality_score is not None and CRITIQUE_MIN <= quality_score.total < CRITIQUE_THRESHOLD:
                 log.info("critique_triggered", score=quality_score.total, keyword=keyword)
                 result, content_markdown, content_html, quality_score = await self._try_critique(
-                    user_id, result, context, content_markdown, content_html,
-                    quality_score, branding_dict, main_phrase, secondary_phrases, keyword,
+                    user_id,
+                    result,
+                    context,
+                    content_markdown,
+                    content_html,
+                    quality_score,
+                    branding_dict,
+                    main_phrase,
+                    secondary_phrases,
+                    keyword,
                 )
 
         if quality_score is not None and quality_score.total < BLOCK_THRESHOLD:
@@ -521,7 +580,10 @@ class ArticleService:
         """Attempt critique rewrite if quality is below threshold."""
         try:
             critique_result = await self._generate_critique(
-                user_id, context, content_markdown, quality_score.issues,
+                user_id,
+                context,
+                content_markdown,
+                quality_score.issues,
             )
             if isinstance(critique_result.content, dict):
                 new_md = critique_result.content.get("content_markdown", "")
@@ -592,6 +654,7 @@ class ArticleService:
             return ""
         try:
             from services.ai.markdown_renderer import render_markdown
+
             return render_markdown(
                 markdown_text,
                 branding=branding,
@@ -608,6 +671,7 @@ class ArticleService:
         """Run anti-hallucination checks (E48: warnings only, does NOT block)."""
         try:
             from services.ai.anti_hallucination import check_fabricated_data
+
             issues = check_fabricated_data(
                 html=content_html,
                 prices_excerpt=context.get("prices_excerpt", ""),
@@ -629,6 +693,7 @@ class ArticleService:
         """Score article quality programmatically on rendered HTML. Returns QualityScore or None."""
         try:
             from services.ai.quality_scorer import ContentQualityScorer
+
             scorer = ContentQualityScorer()
             phrases_list = [p.strip().split(" (")[0] for p in secondary_phrases.split(",") if p.strip()]
             return scorer.score(content_html, main_phrase, phrases_list)

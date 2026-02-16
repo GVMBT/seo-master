@@ -100,7 +100,9 @@ class PreviewService:
             count=image_count,
         )
         text_result, image_result = await asyncio.gather(
-            text_task, image_task, return_exceptions=True,
+            text_task,
+            image_task,
+            return_exceptions=True,
         )
 
         if isinstance(text_result, BaseException):
@@ -136,15 +138,20 @@ class PreviewService:
         for i, upload in enumerate(uploads):
             try:
                 stored = await self._image_storage.upload(
-                    upload.data, user_id, project_id, i,
+                    upload.data,
+                    user_id,
+                    project_id,
+                    i,
                 )
-                stored_images.append({
-                    "url": stored.signed_url,
-                    "storage_path": stored.path,
-                    "alt_text": upload.alt_text,
-                    "filename": upload.filename,
-                    "caption": upload.caption,
-                })
+                stored_images.append(
+                    {
+                        "url": stored.signed_url,
+                        "storage_path": stored.path,
+                        "alt_text": upload.alt_text,
+                        "filename": upload.filename,
+                        "caption": upload.caption,
+                    }
+                )
             except Exception:
                 log.warning("image_upload_failed", index=i)
 
@@ -178,11 +185,13 @@ class PreviewService:
                 try:
                     img_data = await self._image_storage.download(storage_path)
                     image_bytes_list.append(img_data)
-                    images_meta_list.append({
-                        "alt": img_info.get("alt_text", ""),
-                        "filename": img_info.get("filename", ""),
-                        "figcaption": img_info.get("caption", ""),
-                    })
+                    images_meta_list.append(
+                        {
+                            "alt": img_info.get("alt_text", ""),
+                            "filename": img_info.get("filename", ""),
+                            "figcaption": img_info.get("caption", ""),
+                        }
+                    )
                 except Exception:
                     log.warning("image_download_failed", path=storage_path)
 

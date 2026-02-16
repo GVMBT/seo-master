@@ -74,9 +74,7 @@ _AUDIENCE_LABELS: dict[str, str] = {
 
 
 @router.callback_query(F.data.regexp(r"^admin:bc:(all|active_7d|active_30d|paid)$"))
-async def cb_broadcast_audience(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_broadcast_audience(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Store audience type and prompt for message text."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -134,9 +132,7 @@ async def fsm_broadcast_text(message: Message, state: FSMContext, user: User, db
 
     preview = html.escape(text[:500])
     await message.answer(
-        f"<b>Превью рассылки:</b>\n\n{preview}\n\n"
-        f"Аудитория: {audience} ({count} чел.)\n"
-        "Отправить?",
+        f"<b>Превью рассылки:</b>\n\n{preview}\n\nАудитория: {audience} ({count} чел.)\nОтправить?",
         reply_markup=admin_broadcast_confirm_kb(count).as_markup(),
     )
 
@@ -147,9 +143,7 @@ async def fsm_broadcast_text(message: Message, state: FSMContext, user: User, db
 
 
 @router.callback_query(BroadcastFSM.confirm, F.data == "admin:bc:confirm")
-async def cb_broadcast_confirm(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient
-) -> None:
+async def cb_broadcast_confirm(callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient) -> None:
     """Send broadcast to all target users."""
     msg = await guard_callback_message(callback)
     if msg is None:
@@ -181,7 +175,7 @@ async def cb_broadcast_confirm(
 
     # Split text into 4096-char chunks (Telegram API limit)
     _TG_MSG_LIMIT = 4096
-    chunks = [broadcast_text[i:i + _TG_MSG_LIMIT] for i in range(0, len(broadcast_text), _TG_MSG_LIMIT)]
+    chunks = [broadcast_text[i : i + _TG_MSG_LIMIT] for i in range(0, len(broadcast_text), _TG_MSG_LIMIT)]
 
     for uid in user_ids:
         try:

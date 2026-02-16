@@ -33,9 +33,7 @@ class VKRule(PlatformRule):
 
         max_len = _VK_LIMITS["max_text"]
         if len(content) > max_len:
-            errors.append(
-                f"Текст превышает лимит VK ({len(content)}/{max_len})"
-            )
+            errors.append(f"Текст превышает лимит VK ({len(content)}/{max_len})")
 
         # Warn if HTML tags are present (VK does not render them)
         if _HTML_TAG_RE.search(content):

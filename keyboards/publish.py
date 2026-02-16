@@ -38,7 +38,10 @@ def article_preview_kb(preview_id: int, regen_count: int) -> InlineKeyboardBuild
 
 
 def social_confirm_kb(
-    category_id: int, platform: str, connection_id: int, cost: int,
+    category_id: int,
+    platform: str,
+    connection_id: int,
+    cost: int,
 ) -> InlineKeyboardBuilder:
     """Cost confirmation before social post generation."""
     builder = InlineKeyboardBuilder()

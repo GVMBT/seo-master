@@ -21,16 +21,24 @@ from routers.publishing.quick import (
 @pytest.fixture
 def wp_connection() -> PlatformConnection:
     return PlatformConnection(
-        id=5, project_id=1, platform_type="wordpress",
-        identifier="blog.example.com", credentials={}, status="active",
+        id=5,
+        project_id=1,
+        platform_type="wordpress",
+        identifier="blog.example.com",
+        credentials={},
+        status="active",
     )
 
 
 @pytest.fixture
 def tg_connection() -> PlatformConnection:
     return PlatformConnection(
-        id=6, project_id=1, platform_type="telegram",
-        identifier="@mychannel", credentials={}, status="active",
+        id=6,
+        project_id=1,
+        platform_type="telegram",
+        identifier="@mychannel",
+        credentials={},
+        status="active",
     )
 
 
@@ -43,8 +51,13 @@ class TestCbPublishDispatch:
     """Tests for category:{id}:publish -> platform dispatch."""
 
     async def test_no_connections_shows_alert(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"category:{category.id}:publish"
         with (
@@ -63,8 +76,13 @@ class TestCbPublishDispatch:
             assert "платформу" in mock_callback.answer.call_args.args[0].lower()
 
     async def test_single_wp_delegates_to_article(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
         wp_connection: PlatformConnection,
     ) -> None:
         mock_callback.data = f"category:{category.id}:publish"
@@ -84,8 +102,13 @@ class TestCbPublishDispatch:
             delegate.assert_awaited_once()
 
     async def test_single_social_delegates_to_social(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
         tg_connection: PlatformConnection,
     ) -> None:
         mock_callback.data = f"category:{category.id}:publish"
@@ -105,9 +128,15 @@ class TestCbPublishDispatch:
             delegate.assert_awaited_once()
 
     async def test_multiple_connections_shows_platform_choice(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
-        wp_connection: PlatformConnection, tg_connection: PlatformConnection,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
+        wp_connection: PlatformConnection,
+        tg_connection: PlatformConnection,
     ) -> None:
         mock_callback.data = f"category:{category.id}:publish"
         with (
@@ -126,8 +155,11 @@ class TestCbPublishDispatch:
             assert "платформу" in mock_callback.message.edit_text.call_args.args[0].lower()
 
     async def test_unauthorized_category_shows_alert(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "category:999:publish"
         with patch("routers.publishing.dispatch.CategoriesRepository") as cat_cls:
@@ -144,7 +176,10 @@ class TestCbPublishDispatch:
 
 class TestLegacyQuickProject:
     async def test_shows_deprecation_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "quick:project:1"
         await cb_quick_project(mock_callback, user, mock_db)
@@ -154,8 +189,13 @@ class TestLegacyQuickProject:
 
 class TestLegacyQuickPublishTarget:
     async def test_wp_delegates_to_article(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"quick:cat:{category.id}:wp:5"
         with (
@@ -169,8 +209,13 @@ class TestLegacyQuickPublishTarget:
             delegate.assert_awaited_once()
 
     async def test_tg_delegates_to_social(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock, project: Project, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        project: Project,
+        category: Category,
     ) -> None:
         mock_callback.data = f"quick:cat:{category.id}:tg:6"
         with (
@@ -184,8 +229,11 @@ class TestLegacyQuickPublishTarget:
             delegate.assert_awaited_once()
 
     async def test_unauthorized_category(
-        self, mock_callback: MagicMock, mock_state: AsyncMock,
-        user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "quick:cat:999:wp:5"
         with patch("routers.publishing.quick.CategoriesRepository") as cat_cls:
@@ -197,7 +245,8 @@ class TestLegacyQuickPublishTarget:
 
 class TestLegacyPagination:
     async def test_project_pagination_shows_deprecation(
-        self, mock_callback: MagicMock,
+        self,
+        mock_callback: MagicMock,
     ) -> None:
         mock_callback.data = "page:quick_proj:1"
         await cb_quick_proj_page(mock_callback)
@@ -205,7 +254,8 @@ class TestLegacyPagination:
         assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
 
     async def test_combo_pagination_shows_deprecation(
-        self, mock_callback: MagicMock,
+        self,
+        mock_callback: MagicMock,
     ) -> None:
         mock_callback.data = "page:quick_combo:1:0"
         await cb_quick_combo_page(mock_callback)

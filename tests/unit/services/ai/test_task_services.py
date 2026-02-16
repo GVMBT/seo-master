@@ -94,9 +94,7 @@ def _make_image_result(**overrides: Any) -> GenerationResult:
 
 def _make_v7_article_mocks(keyword: str = "test keyword") -> list[GenerationResult]:
     """Create outline + article + critique mock results for v7 pipeline."""
-    sentences = " ".join(
-        f"TestCo delivers {keyword} services since {yr}." for yr in range(2018, 2026)
-    )
+    sentences = " ".join(f"TestCo delivers {keyword} services since {yr}." for yr in range(2018, 2026))
     md = (
         f"# Complete guide to {keyword} for business\n\n"
         f"TestCo helps with {keyword} for over 10 years. {sentences}\n\n"
@@ -107,12 +105,18 @@ def _make_v7_article_mocks(keyword: str = "test keyword") -> list[GenerationResu
         f"## Conclusion\n\nTestCo is your partner for {keyword}. {sentences}\n"
     )
     outline = {
-        "h1": f"Guide to {keyword}", "sections": [], "faq_questions": [],
-        "target_word_count": 2000, "suggested_images": [],
+        "h1": f"Guide to {keyword}",
+        "sections": [],
+        "faq_questions": [],
+        "target_word_count": 2000,
+        "suggested_images": [],
     }
     article = {
-        "title": f"Guide to {keyword}", "meta_description": "Desc",
-        "content_markdown": md, "faq_schema": [], "images_meta": [],
+        "title": f"Guide to {keyword}",
+        "meta_description": "Desc",
+        "content_markdown": md,
+        "faq_schema": [],
+        "images_meta": [],
     }
     critique = {**article, "changes_summary": "Improved"}
     return [
@@ -166,8 +170,7 @@ class TestArticleService:
         # - main phrase in H1, first para, conclusion
         # - 1500+ words, multiple sections, FAQ, numbers for factual density
         sentences = " ".join(
-            f"Компания TestCo предоставляет услуги по test keyword с {i} года."
-            for i in range(2018, 2026)
+            f"Компания TestCo предоставляет услуги по test keyword с {i} года." for i in range(2018, 2026)
         )
         section_text = (
             f"Наши специалисты выполнили более 500 проектов в Москве. {sentences}\n\n"
@@ -298,8 +301,11 @@ class TestArticleService:
     ) -> None:
         """Invalid content (too short, no H1) should raise ContentValidationError (H10)."""
         outline_content = {
-            "h1": "Title", "sections": [], "faq_questions": [],
-            "target_word_count": 2000, "suggested_images": [],
+            "h1": "Title",
+            "sections": [],
+            "faq_questions": [],
+            "target_word_count": 2000,
+            "suggested_images": [],
         }
         article_content = {
             "title": "Short",
@@ -345,11 +351,11 @@ class TestArticleService:
         from services.ai.articles import sanitize_html
 
         malicious = (
-            '<h1>Title</h1>'
-            '<p>Good content paragraph with enough text to pass validation check</p>'
+            "<h1>Title</h1>"
+            "<p>Good content paragraph with enough text to pass validation check</p>"
             '<script>alert("xss")</script>'
             '<a href="javascript:void(0)">link</a>'
-            '<p>More content</p>'
+            "<p>More content</p>"
         )
         html = sanitize_html(malicious)
         assert "<script>" not in html
@@ -378,7 +384,10 @@ class TestArticleService:
             svc._categories = MockCatRepo.return_value
 
             await svc.generate(
-                user_id=123, project_id=1, category_id=1, keyword="test keyword",
+                user_id=123,
+                project_id=1,
+                category_id=1,
+                keyword="test keyword",
                 branding={"colors": {"text": "#111111", "accent": "#FF0000"}},
             )
 
@@ -408,7 +417,10 @@ class TestArticleService:
             svc._categories = MockCatRepo.return_value
 
             await svc.generate(
-                user_id=123, project_id=1, category_id=1, keyword="test keyword",
+                user_id=123,
+                project_id=1,
+                category_id=1,
+                keyword="test keyword",
             )
 
         # Article is the 2nd generate call (index 1)
@@ -672,9 +684,7 @@ class TestImageService:
     and does batch rate limiting via its own rate_limiter parameter.
     """
 
-    async def test_image_generate_single_success(
-        self, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_image_generate_single_success(self, mock_orchestrator: AsyncMock) -> None:
         """Single image generation returns list with one GeneratedImage."""
         mock_orchestrator.generate_without_rate_limit.return_value = _make_image_result()
 
@@ -693,9 +703,7 @@ class TestImageService:
         assert result[0].mime == "image/png"
         mock_orchestrator.generate_without_rate_limit.assert_awaited_once()
 
-    async def test_image_generate_multi_success(
-        self, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_image_generate_multi_success(self, mock_orchestrator: AsyncMock) -> None:
         """Multi-image generation (count=3) returns 3 GeneratedImage objects."""
         mock_orchestrator.generate_without_rate_limit.return_value = _make_image_result()
 
@@ -713,9 +721,7 @@ class TestImageService:
         assert all(isinstance(img, GeneratedImage) for img in result)
         assert mock_orchestrator.generate_without_rate_limit.await_count == 3
 
-    async def test_image_generate_multi_partial_failure(
-        self, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_image_generate_multi_partial_failure(self, mock_orchestrator: AsyncMock) -> None:
         """Partial failure: 2 succeed, 1 fails. Returns 2 images (K>=1 OK)."""
         success_result = _make_image_result()
         fail_error = AIGenerationError(message="Model overloaded")
@@ -740,9 +746,7 @@ class TestImageService:
         assert len(result) == 2
         assert all(isinstance(img, GeneratedImage) for img in result)
 
-    async def test_image_generate_all_fail_raises_error(
-        self, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_image_generate_all_fail_raises_error(self, mock_orchestrator: AsyncMock) -> None:
         """All images fail raises AIGenerationError."""
         mock_orchestrator.generate_without_rate_limit.side_effect = AIGenerationError(
             message="Model unavailable",
@@ -759,9 +763,7 @@ class TestImageService:
                 count=3,
             )
 
-    async def test_image_generate_no_image_data_in_response_raises_error(
-        self, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_image_generate_no_image_data_in_response_raises_error(self, mock_orchestrator: AsyncMock) -> None:
         """If response content has no extractable image, raise AIGenerationError."""
         mock_orchestrator.generate_without_rate_limit.return_value = _make_generation_result(
             content="This is just plain text, no image",
@@ -778,9 +780,7 @@ class TestImageService:
                 count=1,
             )
 
-    async def test_image_generate_variation_hints_applied(
-        self, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_image_generate_variation_hints_applied(self, mock_orchestrator: AsyncMock) -> None:
         """Multi-image should inject variation_hint and image_number into context."""
         mock_orchestrator.generate_without_rate_limit.return_value = _make_image_result()
 
@@ -806,9 +806,7 @@ class TestImageService:
         req_1 = calls[1].args[0]
         assert req_1.context["image_number"] == "2"
 
-    async def test_image_generate_single_no_variation_hint(
-        self, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_image_generate_single_no_variation_hint(self, mock_orchestrator: AsyncMock) -> None:
         """Single image (count=1) should NOT have variation_hint / image_number."""
         mock_orchestrator.generate_without_rate_limit.return_value = _make_image_result()
 
@@ -826,9 +824,7 @@ class TestImageService:
         assert "image_number" not in req.context
         assert "variation_hint" not in req.context
 
-    async def test_image_generate_calls_batch_rate_limit(
-        self, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_image_generate_calls_batch_rate_limit(self, mock_orchestrator: AsyncMock) -> None:
         """ImageService should call check_batch on rate_limiter before generation (H14)."""
         mock_orchestrator.generate_without_rate_limit.return_value = _make_image_result()
         mock_rate_limiter = AsyncMock()

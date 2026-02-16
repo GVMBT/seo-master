@@ -28,7 +28,10 @@ router = Router(name="publishing_dispatch")
 
 @router.callback_query(F.data.regexp(r"^category:(\d+):publish$"))
 async def cb_publish_dispatch(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Dispatch [Опубликовать] from category card to the right publish flow.
 
@@ -69,10 +72,12 @@ async def cb_publish_dispatch(
         if conn.platform_type == "wordpress":
             callback.data = f"category:{category_id}:publish:wp:{conn.id}"  # type: ignore[assignment]
             from routers.publishing.preview import cb_article_start_with_conn
+
             await cb_article_start_with_conn(callback, user, db, state)
         else:
             callback.data = f"category:{category_id}:publish:{ps}:{conn.id}"  # type: ignore[assignment]
             from routers.publishing.social import cb_social_start
+
             await cb_social_start(callback, state, user, db)
         return
 

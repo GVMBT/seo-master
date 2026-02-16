@@ -14,17 +14,26 @@ from services.ai.content_validator import PLATFORM_LIMITS, ValidationResult
 _TG_LIMITS = PLATFORM_LIMITS["telegram"]
 
 # Telegram Bot API supports only these HTML tags
-_TG_ALLOWED_TAGS = frozenset({
-    "b", "strong",
-    "i", "em",
-    "u", "ins",
-    "s", "strike", "del",
-    "a",
-    "code", "pre",
-    "span",
-    "tg-spoiler", "tg-emoji",
-    "blockquote",
-})
+_TG_ALLOWED_TAGS = frozenset(
+    {
+        "b",
+        "strong",
+        "i",
+        "em",
+        "u",
+        "ins",
+        "s",
+        "strike",
+        "del",
+        "a",
+        "code",
+        "pre",
+        "span",
+        "tg-spoiler",
+        "tg-emoji",
+        "blockquote",
+    }
+)
 
 # Regex to find HTML tags (opening or self-closing)
 _TAG_RE = re.compile(r"</?(\w[\w-]*)[^>]*>")
@@ -53,9 +62,7 @@ class TelegramRule(PlatformRule):
             label = "text"
 
         if len(content) > max_len:
-            errors.append(
-                f"Текст превышает лимит Telegram {label} ({len(content)}/{max_len})"
-            )
+            errors.append(f"Текст превышает лимит Telegram {label} ({len(content)}/{max_len})")
 
         # HTML tag whitelist
         unsupported = self._find_unsupported_tags(content)

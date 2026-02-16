@@ -310,7 +310,9 @@ async def fsm_price_save_text(callback: CallbackQuery, state: FSMContext, user: 
             reply_markup=category_card_kb(category).as_markup(),
         )
     else:
-        await msg.edit_text("Категория не найдена.")
+        from keyboards.errors import error_not_found_kb
+
+        await msg.edit_text("Категория не найдена.", reply_markup=error_not_found_kb().as_markup())
     await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
     await callback.answer()
 
@@ -341,7 +343,9 @@ async def fsm_price_save_excel(callback: CallbackQuery, state: FSMContext, user:
             reply_markup=category_card_kb(category).as_markup(),
         )
     else:
-        await msg.edit_text("Категория не найдена.")
+        from keyboards.errors import error_not_found_kb
+
+        await msg.edit_text("Категория не найдена.", reply_markup=error_not_found_kb().as_markup())
     await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
     await callback.answer()
 

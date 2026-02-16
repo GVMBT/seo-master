@@ -96,9 +96,7 @@ async def test_create_qstash_body_contains_stable_idempotency_key() -> None:
     schedule = _make_schedule(id=42, schedule_times=["14:30"])
     await svc.create_qstash_schedules(schedule, user_id=1, project_id=1, timezone="UTC")
 
-    body_str = mock_q.schedule.create.call_args.kwargs.get(
-        "body", mock_q.schedule.create.call_args[1].get("body", "")
-    )
+    body_str = mock_q.schedule.create.call_args.kwargs.get("body", mock_q.schedule.create.call_args[1].get("body", ""))
     body = json.loads(body_str)
     assert body["idempotency_key"] == "pub_42_14:30"
 
@@ -170,9 +168,7 @@ async def test_toggle_enable(mock_repo_cls: MagicMock) -> None:
 async def test_toggle_disable(mock_repo_cls: MagicMock) -> None:
     """Disabling an enabled schedule deletes QStash and updates DB."""
     mock_repo = MagicMock()
-    mock_repo.get_by_id = AsyncMock(
-        return_value=_make_schedule(enabled=True, qstash_schedule_ids=["qs_1"])
-    )
+    mock_repo.get_by_id = AsyncMock(return_value=_make_schedule(enabled=True, qstash_schedule_ids=["qs_1"]))
     mock_repo.update = AsyncMock(return_value=_make_schedule(enabled=False))
     mock_repo_cls.return_value = mock_repo
 
@@ -194,9 +190,7 @@ async def test_cancel_for_category() -> None:
     """Cancels all QStash schedules for a category (E24)."""
     svc, mock_q = _make_service()
     mock_repo = MagicMock()
-    mock_repo.get_by_category = AsyncMock(
-        return_value=[_make_schedule(id=1, qstash_schedule_ids=["qs_a", "qs_b"])]
-    )
+    mock_repo.get_by_category = AsyncMock(return_value=[_make_schedule(id=1, qstash_schedule_ids=["qs_a", "qs_b"])])
     mock_repo.update = AsyncMock(return_value=None)
     svc._schedules = mock_repo
 
@@ -216,9 +210,7 @@ async def test_cancel_for_project(mock_cat_cls: MagicMock) -> None:
 
     svc, mock_q = _make_service()
     mock_repo = MagicMock()
-    mock_repo.get_by_project = AsyncMock(
-        return_value=[_make_schedule(qstash_schedule_ids=["qs_x"])]
-    )
+    mock_repo.get_by_project = AsyncMock(return_value=[_make_schedule(qstash_schedule_ids=["qs_x"])])
     mock_repo.update = AsyncMock(return_value=None)
     svc._schedules = mock_repo
 
@@ -260,9 +252,15 @@ async def test_create_schedule_full_flow() -> None:
     svc._schedules = mock_repo
 
     result = await svc.create_schedule(
-        category_id=10, connection_id=5, platform_type="wordpress",
-        days=["mon"], times=["10:00"], posts_per_day=1,
-        user_id=1, project_id=1, timezone="UTC",
+        category_id=10,
+        connection_id=5,
+        platform_type="wordpress",
+        days=["mon"],
+        times=["10:00"],
+        posts_per_day=1,
+        user_id=1,
+        project_id=1,
+        timezone="UTC",
     )
 
     assert result.enabled is True
@@ -279,9 +277,7 @@ async def test_delete_schedule_cancels_qstash() -> None:
     """delete_schedule cancels QStash before DB delete."""
     svc, mock_q = _make_service()
     mock_repo = MagicMock()
-    mock_repo.get_by_id = AsyncMock(
-        return_value=_make_schedule(qstash_schedule_ids=["qs_1"])
-    )
+    mock_repo.get_by_id = AsyncMock(return_value=_make_schedule(qstash_schedule_ids=["qs_1"]))
     mock_repo.delete = AsyncMock(return_value=True)
     svc._schedules = mock_repo
 

@@ -26,7 +26,6 @@ def _make_conn(
     )
 
 
-
 # ---------------------------------------------------------------------------
 # cb_publish_dispatch
 # ---------------------------------------------------------------------------
@@ -34,7 +33,11 @@ def _make_conn(
 
 class TestCbPublishDispatch:
     async def test_category_not_found_shows_alert(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
     ) -> None:
         mock_callback.data = "category:99:publish"
         with patch("routers.publishing.dispatch.CategoriesRepository") as cat_repo:
@@ -44,7 +47,12 @@ class TestCbPublishDispatch:
         assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
 
     async def test_project_ownership_check_rejects_other_user(
-        self, mock_callback: MagicMock, mock_state: AsyncMock, user: User, mock_db: MagicMock, category: Category,
+        self,
+        mock_callback: MagicMock,
+        mock_state: AsyncMock,
+        user: User,
+        mock_db: MagicMock,
+        category: Category,
     ) -> None:
         """Security: callback_data tampering -- user cannot dispatch for another user's project."""
         mock_callback.data = f"category:{category.id}:publish"

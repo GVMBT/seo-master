@@ -100,9 +100,7 @@ class TestBuildAdminStats:
 
 class TestBtnAdminMain:
     @patch("routers.admin.dashboard._build_admin_stats", new_callable=AsyncMock, return_value="Stats text")
-    async def test_admin_sees_dashboard(
-        self, mock_stats: AsyncMock, admin_user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_admin_sees_dashboard(self, mock_stats: AsyncMock, admin_user: User, mock_db: MagicMock) -> None:
         msg = MagicMock()
         msg.answer = AsyncMock()
 
@@ -134,9 +132,7 @@ class TestCbAdminMain:
 
         mock_callback.message.edit_text.assert_called_once()
 
-    async def test_non_admin_rejected(
-        self, mock_callback: MagicMock, regular_user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_non_admin_rejected(self, mock_callback: MagicMock, regular_user: User, mock_db: MagicMock) -> None:
         await cb_admin_main(mock_callback, regular_user, mock_db)
 
         mock_callback.answer.assert_called_with("Нет доступа.", show_alert=True)
@@ -209,9 +205,7 @@ class TestCbAdminCosts:
         admin_user: User,
         mock_db: MagicMock,
     ) -> None:
-        mock_pay_cls.return_value.get_expenses_summary = AsyncMock(
-            return_value={"article": 500, "review": 100}
-        )
+        mock_pay_cls.return_value.get_expenses_summary = AsyncMock(return_value={"article": 500, "review": 100})
 
         await cb_admin_costs(mock_callback, admin_user, mock_db)
 

@@ -75,9 +75,7 @@ def reconcile_images(
         Tuple of (processed_markdown, list_of_image_uploads).
     """
     # Filter out failed images (keep only bytes)
-    valid_images: list[bytes] = [
-        img for img in generated_images if isinstance(img, bytes)
-    ]
+    valid_images: list[bytes] = [img for img in generated_images if isinstance(img, bytes)]
 
     uploads: list[ImageUpload] = []
 

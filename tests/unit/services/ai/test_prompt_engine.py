@@ -295,9 +295,7 @@ class TestRenderErrors:
         ):
             await engine.render("nonexistent_type", {"keyword": "test"})
 
-    async def test_render_missing_required_variable_no_default_raises(
-        self, engine: PromptEngine
-    ) -> None:
+    async def test_render_missing_required_variable_no_default_raises(self, engine: PromptEngine) -> None:
         """When a required variable without default is missing from context, raise."""
         pv = _make_prompt_version()
         with (
@@ -306,9 +304,7 @@ class TestRenderErrors:
         ):
             await engine.render("article", {"language": "en", "company_name": "Acme"})
 
-    async def test_render_missing_required_variable_with_default_ok(
-        self, engine: PromptEngine
-    ) -> None:
+    async def test_render_missing_required_variable_with_default_ok(self, engine: PromptEngine) -> None:
         """Required variable WITH default should not raise when missing."""
         pv = _make_prompt_version()
         with patch.object(engine._prompts_repo, "get_active", new_callable=AsyncMock, return_value=pv):
@@ -319,9 +315,7 @@ class TestRenderErrors:
             )
         assert "ru" in result.system
 
-    async def test_render_multiple_missing_required_raises_on_first(
-        self, engine: PromptEngine
-    ) -> None:
+    async def test_render_multiple_missing_required_raises_on_first(self, engine: PromptEngine) -> None:
         """When multiple required variables are missing, raises on the first one found."""
         pv = _make_prompt_version()
         with (
@@ -453,9 +447,7 @@ class TestRenderModulePatch:
     async def test_render_via_module_patch(self, mock_db: AsyncMock) -> None:
         """Patch PromptsRepository at module import location."""
         pv = _make_prompt_version()
-        with patch(
-            "services.ai.prompt_engine.PromptsRepository"
-        ) as mock_repo_cls:
+        with patch("services.ai.prompt_engine.PromptsRepository") as mock_repo_cls:
             mock_repo_instance = AsyncMock()
             mock_repo_instance.get_active.return_value = pv
             mock_repo_cls.return_value = mock_repo_instance

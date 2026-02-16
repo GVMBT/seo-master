@@ -13,11 +13,11 @@ log = structlog.get_logger()
 
 # {action: (max_requests, window_seconds)}
 RATE_LIMITS: dict[str, tuple[int, int]] = {
-    "text_generation": (10, 3600),       # 10/hour
-    "image_generation": (20, 3600),      # 20/hour
-    "keyword_generation": (5, 3600),     # 5/hour
-    "token_purchase": (5, 600),          # 5/10min
-    "platform_connection": (10, 3600),   # 10/hour
+    "text_generation": (10, 3600),  # 10/hour
+    "image_generation": (20, 3600),  # 20/hour
+    "keyword_generation": (5, 3600),  # 5/hour
+    "token_purchase": (5, 600),  # 5/10min
+    "platform_connection": (10, 3600),  # 10/hour
 }
 
 

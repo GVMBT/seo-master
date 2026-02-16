@@ -215,12 +215,18 @@ class TestConnectionListKb:
     def test_connections_shown_as_buttons(self) -> None:
         conns = [
             PlatformConnection(
-                id=10, project_id=1, platform_type="wordpress",
-                identifier="site.com", credentials={},
+                id=10,
+                project_id=1,
+                platform_type="wordpress",
+                identifier="site.com",
+                credentials={},
             ),
             PlatformConnection(
-                id=11, project_id=1, platform_type="telegram",
-                identifier="@chan", credentials={},
+                id=11,
+                project_id=1,
+                platform_type="telegram",
+                identifier="@chan",
+                credentials={},
             ),
         ]
         kb = _connection_list_kb(conns, project_id=1)
@@ -235,8 +241,12 @@ class TestConnectionListKb:
     def test_error_status_shows_indicator(self) -> None:
         conns = [
             PlatformConnection(
-                id=10, project_id=1, platform_type="wordpress",
-                identifier="site.com", status="error", credentials={},
+                id=10,
+                project_id=1,
+                platform_type="wordpress",
+                identifier="site.com",
+                status="error",
+                credentials={},
             ),
         ]
         kb = _connection_list_kb(conns, project_id=1)
@@ -247,8 +257,11 @@ class TestConnectionListKb:
     def test_long_name_truncated(self) -> None:
         conns = [
             PlatformConnection(
-                id=10, project_id=1, platform_type="wordpress",
-                identifier="a" * 100, credentials={},
+                id=10,
+                project_id=1,
+                platform_type="wordpress",
+                identifier="a" * 100,
+                credentials={},
             ),
         ]
         kb = _connection_list_kb(conns, project_id=1)
@@ -271,9 +284,7 @@ class TestConnectionListKb:
 
 
 class TestCbConnectionList:
-    async def test_empty_connections(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_empty_connections(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "project:1:connections"
         mock_project = Project(id=1, user_id=user.id, name="P", company_name="C", specialization="S")
 
@@ -291,9 +302,7 @@ class TestCbConnectionList:
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "Нет подключенных" in text
 
-    async def test_with_connections(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_with_connections(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "project:1:connections"
         mock_project = Project(id=1, user_id=user.id, name="P", company_name="C", specialization="S")
         conns = [
@@ -313,9 +322,7 @@ class TestCbConnectionList:
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "(1)" in text
 
-    async def test_wrong_owner_blocked(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_wrong_owner_blocked(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         """Ownership check: user cannot view another user's project connections."""
         mock_callback.data = "project:1:connections"
         other_project = Project(id=1, user_id=999, name="P", company_name="C", specialization="S")
@@ -358,9 +365,7 @@ class TestCbConnectionCard:
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "WordPress" in text
 
-    async def test_not_found_shows_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_not_found_shows_alert(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "conn:999:card"
 
         with (
@@ -421,9 +426,7 @@ class TestCbConnectionDelete:
         assert "Удалить" in text
         assert "расписания" in text
 
-    async def test_not_found_shows_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_not_found_shows_alert(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "conn:999:delete"
 
         with (
@@ -469,9 +472,7 @@ class TestCbConnectionDeleteConfirm:
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "удалено" in text.lower()
 
-    async def test_not_found_shows_alert(
-        self, mock_callback: MagicMock, user: User, mock_db: MagicMock
-    ) -> None:
+    async def test_not_found_shows_alert(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         mock_callback.data = "conn:999:delete:confirm"
         mock_scheduler = MagicMock()
 

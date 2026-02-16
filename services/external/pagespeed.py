@@ -131,11 +131,13 @@ def _extract_recommendations(lighthouse: dict[str, Any]) -> list[dict[str, str]]
                 priority = "medium"
             else:
                 priority = "low"
-            recommendations.append({
-                "title": title,
-                "description": description,
-                "priority": priority,
-            })
+            recommendations.append(
+                {
+                    "title": title,
+                    "description": description,
+                    "priority": priority,
+                }
+            )
 
     return recommendations
 
