@@ -28,7 +28,7 @@ from db.models import PlatformConnection, PlatformConnectionCreate, User
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.reply import cancel_kb, main_menu
-from routers._helpers import guard_callback_message
+from routers._helpers import guard_callback_message, restore_reply_kb
 from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
@@ -420,7 +420,7 @@ async def fsm_wp_password(message: Message, state: FSMContext, user: User, db: S
         reply_markup=_connection_card_kb(conn, project_id).as_markup(),
     )
     # Restore reply keyboard (I3 pattern)
-    await message.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(message, is_admin=user.role == "admin")
 
 
 # ===========================================================================
@@ -559,7 +559,7 @@ async def fsm_telegram_token(message: Message, state: FSMContext, user: User, db
         f"Канал подключен!\n\n{_format_connection_card(conn)}",
         reply_markup=_connection_card_kb(conn, project_id).as_markup(),
     )
-    await message.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(message, is_admin=user.role == "admin")
 
 
 # ===========================================================================
@@ -717,7 +717,7 @@ async def cb_vk_select_group(callback: CallbackQuery, state: FSMContext, user: U
         await msg.edit_text(
             "Не удалось сохранить подключение. Возможно, группа уже подключена.",
         )
-        await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+        await restore_reply_kb(msg, is_admin=user.role == "admin")
         await callback.answer()
         return
 
@@ -725,7 +725,7 @@ async def cb_vk_select_group(callback: CallbackQuery, state: FSMContext, user: U
         f"VK подключен!\n\n{_format_connection_card(conn)}",
         reply_markup=_connection_card_kb(conn, project_id).as_markup(),
     )
-    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(msg, is_admin=user.role == "admin")
     await callback.answer()
 
 
@@ -832,7 +832,7 @@ async def cb_pinterest_select_board(callback: CallbackQuery, state: FSMContext, 
     except Exception:
         log.exception("pinterest_connection_create_error", project_id=project_id)
         await msg.edit_text("Не удалось сохранить подключение Pinterest.")
-        await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+        await restore_reply_kb(msg, is_admin=user.role == "admin")
         await callback.answer()
         return
 
@@ -840,5 +840,5 @@ async def cb_pinterest_select_board(callback: CallbackQuery, state: FSMContext, 
         f"Pinterest подключен!\n\n{_format_connection_card(conn)}",
         reply_markup=_connection_card_kb(conn, project_id).as_markup(),
     )
-    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(msg, is_admin=user.role == "admin")
     await callback.answer()

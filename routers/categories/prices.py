@@ -16,8 +16,8 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.category import price_existing_kb, price_method_kb, price_result_kb
 from keyboards.inline import category_card_kb
-from keyboards.reply import cancel_kb, main_menu
-from routers._helpers import guard_callback_message
+from keyboards.reply import cancel_kb
+from routers._helpers import guard_callback_message, restore_reply_kb
 
 log = structlog.get_logger()
 
@@ -313,7 +313,7 @@ async def fsm_price_save_text(callback: CallbackQuery, state: FSMContext, user: 
         from keyboards.errors import error_not_found_kb
 
         await msg.edit_text("Категория не найдена.", reply_markup=error_not_found_kb().as_markup())
-    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(msg, is_admin=user.role == "admin")
     await callback.answer()
 
 
@@ -346,7 +346,7 @@ async def fsm_price_save_excel(callback: CallbackQuery, state: FSMContext, user:
         from keyboards.errors import error_not_found_kb
 
         await msg.edit_text("Категория не найдена.", reply_markup=error_not_found_kb().as_markup())
-    await msg.answer("\u200b", reply_markup=main_menu(is_admin=user.role == "admin"))
+    await restore_reply_kb(msg, is_admin=user.role == "admin")
     await callback.answer()
 
 

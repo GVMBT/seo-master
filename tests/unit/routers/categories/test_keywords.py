@@ -641,7 +641,7 @@ class TestCbKwSave:
             # Should have answer calls: edit_text + category card + main menu
             answer_calls = mock_callback.message.answer.call_args_list
             last_call = answer_calls[-1]
-            assert last_call.args[0] == "\u200b"
+            assert last_call.args[0] == "\u2800"
 
 
 # ---------------------------------------------------------------------------
