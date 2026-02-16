@@ -42,6 +42,7 @@ from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from keyboards.errors import error_generic_kb, error_no_keywords_kb, error_not_found_kb
 from keyboards.pipeline import (
+    pipeline_back_to_readiness_kb,
     pipeline_category_list_kb,
     pipeline_confirm_kb,
     pipeline_keywords_geo_kb,
@@ -171,7 +172,7 @@ async def _start_pipeline_fresh(
     projects = await ProjectsRepository(db).get_by_user(user.id)
     if not projects:
         await msg.edit_text(
-            "Статья (1/5) — Проект\n\nУ вас нет проектов. Создайте первый проект.",
+            "Статья > Шаг 1: проект\n\nУ вас нет проектов. Создайте первый проект.",
             reply_markup=pipeline_no_entities_kb("project").as_markup(),
         )
         return
@@ -185,7 +186,7 @@ async def _start_pipeline_fresh(
     last_project_id = await _get_last_project_id(db, user.id)
     await state.set_state(ArticlePipelineFSM.select_project)
     await msg.edit_text(
-        "Статья (1/5) — Проект\n\nДля какого проекта?",
+        "Статья > Шаг 1: проект\n\nДля какого проекта?",
         reply_markup=pipeline_project_list_kb(projects, last_used_id=last_project_id).as_markup(),
     )
 
@@ -213,7 +214,7 @@ async def cb_pipeline_article_start(
             checkpoint = {}
         step = checkpoint.get("current_step", "?")
         await msg.edit_text(
-            f"У вас есть незавершённый pipeline.\nОстановились на: {step}\n",
+            f"Статья > Продолжить?\n\nУ вас есть незавершённая статья.\nОстановились на: {step}",
             reply_markup=pipeline_resume_kb().as_markup(),
         )
         await callback.answer()
@@ -273,7 +274,7 @@ async def show_wp_selection(
 
     if not wp_connections:
         await msg.edit_text(
-            "Статья (2/5) — WordPress\n\nДля публикации нужен WordPress-сайт.",
+            "Статья > WordPress\n\nДля публикации нужен WordPress-сайт.",
             reply_markup=pipeline_no_entities_kb("wp", project_id=project_id).as_markup(),
         )
         return
@@ -288,7 +289,7 @@ async def show_wp_selection(
 
     # Multiple WP connections (E28)
     await msg.edit_text(
-        "Статья (2/5) — WordPress\n\nНа какой сайт?",
+        "Статья > WordPress\n\nНа какой сайт?",
         reply_markup=pipeline_wp_list_kb(wp_connections, project_id).as_markup(),
     )
 
@@ -337,7 +338,7 @@ async def _show_category_selection(
 
     if not categories:
         await msg.edit_text(
-            "Статья (3/5) — Тема\n\nВ проекте нет категорий.",
+            "Статья > Шаг 3: тема\n\nВ проекте нет категорий.",
             reply_markup=pipeline_no_entities_kb("category", project_id=project_id).as_markup(),
         )
         return
@@ -350,7 +351,7 @@ async def _show_category_selection(
         return
 
     await msg.edit_text(
-        "Статья (3/5) — Тема\n\nКакая тема?",
+        "Статья > Шаг 3: тема\n\nКакая тема?",
         reply_markup=pipeline_category_list_kb(categories).as_markup(),
     )
 
@@ -423,7 +424,10 @@ async def _show_readiness(msg: Message, db: SupabaseClient, data: dict[str, Any]
     F.data == "pipeline:article:ready:proceed",
 )
 async def cb_readiness_proceed(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """User clicked 'Proceed' on readiness checklist -> move to cost confirmation."""
     msg = await guard_callback_message(callback)
@@ -439,7 +443,8 @@ async def cb_readiness_proceed(
     F.data == "pipeline:article:ready:keywords",
 )
 async def cb_readiness_keywords(
-    callback: CallbackQuery, state: FSMContext,
+    callback: CallbackQuery,
+    state: FSMContext,
 ) -> None:
     """User wants to fill keywords -> show keyword options."""
     msg = await guard_callback_message(callback)
@@ -447,8 +452,7 @@ async def cb_readiness_keywords(
         return
     cost = estimate_keywords_cost(100)
     await msg.edit_text(
-        "Статья > Ключевые фразы\n\n"
-        "Как получить ключевые фразы?",
+        "Статья > Ключевые фразы\n\nКак получить ключевые фразы?",
         reply_markup=pipeline_keywords_options_kb(auto_cost=cost).as_markup(),
     )
     await callback.answer()
@@ -464,7 +468,10 @@ async def cb_readiness_keywords(
     F.data == "pipeline:article:kw:auto",
 )
 async def cb_kw_auto(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Auto-generate keywords using project data. Ask geo if missing."""
     msg = await guard_callback_message(callback)
@@ -489,8 +496,7 @@ async def cb_kw_auto(
     else:
         # Ask geography
         await msg.edit_text(
-            "Статья > Ключевые фразы\n\n"
-            "В каком городе ваш бизнес? (для точных SEO-фраз)",
+            "Статья > Ключевые фразы\n\nВ каком городе ваш бизнес? (для точных SEO-фраз)",
             reply_markup=pipeline_keywords_geo_kb().as_markup(),
         )
         await callback.answer()
@@ -501,7 +507,8 @@ async def cb_kw_auto(
     F.data == "pipeline:article:kw:custom",
 )
 async def cb_kw_custom(
-    callback: CallbackQuery, state: FSMContext,
+    callback: CallbackQuery,
+    state: FSMContext,
 ) -> None:
     """Custom keyword params -> ask products first."""
     msg = await guard_callback_message(callback)
@@ -509,9 +516,7 @@ async def cb_kw_custom(
         return
     await state.set_state(ArticlePipelineFSM.readiness_keywords_products)
     await msg.edit_text(
-        "Статья > Ключевые фразы\n\n"
-        "Какие товары/услуги продвигаем?\n"
-        "Введите через запятую:",
+        "Статья > Ключевые фразы\n\nКакие товары/услуги продвигаем?\nВведите через запятую:",
     )
     await callback.answer()
 
@@ -521,7 +526,9 @@ async def cb_kw_custom(
     F.data == "pipeline:article:kw:back",
 )
 async def cb_kw_back(
-    callback: CallbackQuery, state: FSMContext, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: SupabaseClient,
 ) -> None:
     """Back to readiness checklist from keyword options."""
     msg = await guard_callback_message(callback)
@@ -534,7 +541,8 @@ async def cb_kw_back(
 
 @router.message(ArticlePipelineFSM.readiness_keywords_products)
 async def msg_kw_products(
-    message: Message, state: FSMContext,
+    message: Message,
+    state: FSMContext,
 ) -> None:
     """User entered products text -> ask geography."""
     text = (message.text or "").strip()
@@ -547,8 +555,7 @@ async def msg_kw_products(
     await state.update_data(kw_products=text, kw_mode="custom")
     await state.set_state(ArticlePipelineFSM.readiness_keywords_geo)
     await message.answer(
-        "Статья > Ключевые фразы\n\n"
-        "Укажите географию (город или регион):",
+        "Статья > Ключевые фразы\n\nУкажите географию (город или регион):",
         reply_markup=pipeline_keywords_geo_kb().as_markup(),
     )
 
@@ -558,7 +565,10 @@ async def msg_kw_products(
     F.data.regexp(r"^pipeline:article:kw:geo:(msk|spb|ru|custom)$"),
 )
 async def cb_kw_geo_from_readiness(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Geo selected from readiness state (auto flow without company_city)."""
     msg = await guard_callback_message(callback)
@@ -569,8 +579,7 @@ async def cb_kw_geo_from_readiness(
     if geo_code == "custom":
         await state.set_state(ArticlePipelineFSM.readiness_keywords_geo)
         await msg.edit_text(
-            "Статья > Ключевые фразы\n\n"
-            "Введите город или регион:",
+            "Статья > Ключевые фразы\n\nВведите город или регион:",
         )
         await callback.answer()
         return
@@ -596,7 +605,10 @@ async def cb_kw_geo_from_readiness(
     F.data.regexp(r"^pipeline:article:kw:geo:(msk|spb|ru|custom)$"),
 )
 async def cb_kw_geo_from_geo_state(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Geo selected from geo state (custom flow)."""
     msg = await guard_callback_message(callback)
@@ -606,8 +618,7 @@ async def cb_kw_geo_from_geo_state(
 
     if geo_code == "custom":
         await msg.edit_text(
-            "Статья > Ключевые фразы\n\n"
-            "Введите город или регион:",
+            "Статья > Ключевые фразы\n\nВведите город или регион:",
         )
         await callback.answer()
         return
@@ -628,8 +639,7 @@ async def cb_kw_geo_from_geo_state(
         # Custom flow -> ask quantity
         await state.set_state(ArticlePipelineFSM.readiness_keywords_qty)
         await msg.edit_text(
-            "Статья > Ключевые фразы\n\n"
-            "Сколько фраз подобрать?",
+            "Статья > Ключевые фразы\n\nСколько фраз подобрать?",
             reply_markup=pipeline_keywords_qty_kb().as_markup(),
         )
         await callback.answer()
@@ -637,7 +647,10 @@ async def cb_kw_geo_from_geo_state(
 
 @router.message(ArticlePipelineFSM.readiness_keywords_geo)
 async def msg_kw_geo(
-    message: Message, state: FSMContext, user: User, db: SupabaseClient,
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """User typed custom geography."""
     text = (message.text or "").strip()
@@ -659,8 +672,7 @@ async def msg_kw_geo(
     else:
         await state.set_state(ArticlePipelineFSM.readiness_keywords_qty)
         await message.answer(
-            "Статья > Ключевые фразы\n\n"
-            "Сколько фраз подобрать?",
+            "Статья > Ключевые фразы\n\nСколько фраз подобрать?",
             reply_markup=pipeline_keywords_qty_kb().as_markup(),
         )
 
@@ -670,7 +682,10 @@ async def msg_kw_geo(
     F.data.regexp(r"^pipeline:article:kw:qty:(\d+)$"),
 )
 async def cb_kw_qty(
-    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """User selected keyword quantity -> generate."""
     msg = await guard_callback_message(callback)
@@ -691,7 +706,10 @@ async def cb_kw_generating_guard(callback: CallbackQuery) -> None:
 
 
 async def _generate_keywords_inline(
-    msg: Message, state: FSMContext, user: User, db: SupabaseClient,
+    msg: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Generate keywords inline and save to category. Return to readiness checklist."""
     data = await state.get_data()
@@ -712,8 +730,7 @@ async def _generate_keywords_inline(
         if not has_balance:
             balance = await token_svc.get_balance(user.id)
             await msg.edit_text(
-                f"Недостаточно токенов для подбора фраз.\n"
-                f"Нужно: {cost} ток. | Баланс: {balance}",
+                f"Статья > Ключевые фразы\n\nНедостаточно токенов.\nНужно: {cost} ток. | Баланс: {balance}",
             )
             await state.set_state(ArticlePipelineFSM.readiness_check)
             data = await state.get_data()
@@ -730,7 +747,7 @@ async def _generate_keywords_inline(
                 description=f"Pipeline keywords ({quantity} phrases) for category {category_id}",
             )
         except InsufficientBalanceError:
-            await msg.edit_text("Недостаточно токенов.")
+            await msg.edit_text("Статья > Ключевые фразы\n\nНедостаточно токенов.")
             await state.set_state(ArticlePipelineFSM.readiness_check)
             return
 
@@ -774,11 +791,14 @@ async def _generate_keywords_inline(
         if not is_god:
             try:
                 await token_svc.refund(
-                    user.id, cost, reason="refund", description="Pipeline keyword generation failed",
+                    user.id,
+                    cost,
+                    reason="refund",
+                    description="Pipeline keyword generation failed",
                 )
             except Exception:
                 log.exception("pipeline_keyword_refund_failed", user_id=user.id)
-        await msg.edit_text("Ошибка при подборе фраз. Токены возвращены.")
+        await msg.edit_text("Статья > Ключевые фразы\n\nОшибка при подборе фраз. Токены возвращены.")
         await state.set_state(ArticlePipelineFSM.readiness_check)
         data = await state.get_data()
         await _show_readiness(msg, db, data)
@@ -817,6 +837,150 @@ async def _generate_keywords_inline(
         lines.append(f"{icon} {item.label} \u2014 {status}")
 
     await msg.edit_text(
+        "\n".join(lines),
+        reply_markup=pipeline_readiness_kb(result.items, result.all_ready).as_markup(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Step 4b: inline description sub-flow (PROPOSAL section 4.1 step 4b)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data == "pipeline:article:ready:description",
+)
+async def cb_readiness_description(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """User wants to add/edit description -> ask for text input."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    await state.set_state(ArticlePipelineFSM.readiness_description)
+    await msg.edit_text(
+        "Статья > Описание компании\n\n"
+        "Введите описание компании/категории.\n"
+        "AI будет использовать его для точности контекста.\n\n"
+        "Отправьте текст (до 2000 символов):",
+        reply_markup=pipeline_back_to_readiness_kb().as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_description,
+    F.data == "pipeline:article:ready:back",
+)
+async def cb_description_back(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: SupabaseClient,
+) -> None:
+    """Back to readiness checklist from description sub-flow."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    await state.set_state(ArticlePipelineFSM.readiness_check)
+    data = await state.get_data()
+    await _show_readiness(msg, db, data)
+    await callback.answer()
+
+
+@router.message(ArticlePipelineFSM.readiness_description)
+async def msg_description_or_prices_input(
+    message: Message,
+    state: FSMContext,
+    db: SupabaseClient,
+) -> None:
+    """User sent text for description or prices -> save and return to readiness."""
+    data = await state.get_data()
+    is_prices = data.get("readiness_subflow") == "prices"
+    max_len = 5000 if is_prices else 2000
+    label = "цены" if is_prices else "описание"
+
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer(f"Отправьте текстовое сообщение ({label}).")
+        return
+    if len(text) > max_len:
+        await message.answer(f"Слишком длинный текст. Максимум {max_len} символов.")
+        return
+
+    category_id = data["category_id"]
+    cat_repo = CategoriesRepository(db)
+
+    if is_prices:
+        await cat_repo.update_prices(category_id, text)
+        log.info("pipeline_prices_saved", category_id=category_id, length=len(text))
+        success_text = "Цены сохранены."
+    else:
+        await cat_repo.update_description(category_id, text)
+        log.info("pipeline_description_saved", category_id=category_id, length=len(text))
+        success_text = "Описание сохранено."
+
+    await state.update_data(readiness_subflow=None)
+    await state.set_state(ArticlePipelineFSM.readiness_check)
+    data = await state.get_data()
+    await _show_readiness_with_success(message, db, data, success_text)
+
+
+# ---------------------------------------------------------------------------
+# Step 4c: inline prices sub-flow (PROPOSAL section 4.1 step 4c)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(
+    ArticlePipelineFSM.readiness_check,
+    F.data == "pipeline:article:ready:prices",
+)
+async def cb_readiness_prices(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """User wants to add prices -> ask for text input."""
+    msg = await guard_callback_message(callback)
+    if msg is None:
+        return
+    # Reuse readiness_description state conceptually -- prices use a simple text input
+    # We store a marker to distinguish description vs prices in the same flow
+    await state.update_data(readiness_subflow="prices")
+    await state.set_state(ArticlePipelineFSM.readiness_description)
+    await msg.edit_text(
+        "Статья > Цены\n\n"
+        "Введите прайс-лист текстом.\n"
+        "Например: Кухня от 50 000 руб., Шкаф-купе от 30 000 руб.\n\n"
+        "Отправьте текст (до 5000 символов):",
+        reply_markup=pipeline_back_to_readiness_kb().as_markup(),
+    )
+    await callback.answer()
+
+
+async def _show_readiness_with_success(
+    message: Message,
+    db: SupabaseClient,
+    data: dict[str, Any],
+    success_text: str,
+) -> None:
+    """Show readiness checklist with a success prefix after returning from sub-flow."""
+    category_id = data["category_id"]
+    project_id = data["project_id"]
+
+    svc = ReadinessService(db)
+    result = await svc.check(category_id, project_id)
+
+    lines = [
+        "Статья > Подготовка данных\n",
+        f"\u2705 {success_text} Что ещё?\n",
+    ]
+    for item in result.items:
+        icon = "\u2705" if item.ready else "\u2b1c"
+        status = "заполнено" if item.ready else item.hint
+        lines.append(f"{icon} {item.label} \u2014 {status}")
+
+    await message.answer(
         "\n".join(lines),
         reply_markup=pipeline_readiness_kb(result.items, result.all_ready).as_markup(),
     )
@@ -949,10 +1113,7 @@ async def cb_pipeline_generate(
         return
     except Exception:
         log.exception("pipeline_charge_failed", user_id=user.id)
-        await msg.edit_text(
-            "Ошибка списания токенов. Попробуйте позже.",
-            reply_markup=error_generic_kb().as_markup(),
-        )
+        await msg.edit_text("Статья > Ошибка\n\nОшибка списания токенов. Попробуйте позже.")
         await state.clear()
         await redis.delete(CacheKeys.pipeline_state(user.id))
         return
@@ -1166,10 +1327,7 @@ async def cb_pipeline_publish(
     if not preview_id:
         await state.clear()
         await redis.delete(CacheKeys.pipeline_state(user.id))
-        await msg.edit_text(
-            "Превью не найдено. Начните заново.",
-            reply_markup=error_generic_kb().as_markup(),
-        )
+        await msg.edit_text("Статья > Ошибка\n\nПревью не найдено. Начните заново.")
         return
 
     # Publish to WordPress
@@ -1180,10 +1338,7 @@ async def cb_pipeline_publish(
     if not preview or preview.status != "draft":
         await state.clear()
         await redis.delete(CacheKeys.pipeline_state(user.id))
-        await msg.edit_text(
-            "Превью устарело. Сгенерируйте статью заново.",
-            reply_markup=error_generic_kb().as_markup(),
-        )
+        await msg.edit_text("Статья > Ошибка\n\nПревью устарело. Сгенерируйте статью заново.")
         return
 
     try:
@@ -1249,7 +1404,7 @@ async def cb_pipeline_publish(
         await state.set_state(ArticlePipelineFSM.preview)
         regen_count = data.get("regeneration_count", 0)
         await msg.edit_text(
-            "Статья — Ошибка публикации\n\nНе удалось опубликовать на WordPress. Попробуйте ещё раз.",
+            "Статья > Ошибка публикации\n\nНе удалось опубликовать на WordPress. Попробуйте ещё раз.",
             reply_markup=pipeline_preview_kb(regen_count, has_wp=True).as_markup(),
         )
 
@@ -1327,7 +1482,7 @@ async def cb_pipeline_regen(
         await state.set_state(ArticlePipelineFSM.preview)
         has_wp = not data.get("preview_only", False)
         await msg.edit_text(
-            "Перегенерация не удалась.",
+            "Статья > Ошибка\n\nПерегенерация не удалась. Попробуйте ещё раз.",
             reply_markup=pipeline_preview_kb(new_count, has_wp=has_wp).as_markup(),
         )
         return
@@ -1376,7 +1531,7 @@ async def cb_pipeline_regen(
         await state.set_state(ArticlePipelineFSM.preview)
         has_wp = not data.get("preview_only", False)
         await msg.edit_text(
-            "Перегенерация не удалась.",
+            "Статья > Ошибка\n\nПерегенерация не удалась. Попробуйте ещё раз.",
             reply_markup=pipeline_preview_kb(new_count, has_wp=has_wp).as_markup(),
         )
         return
@@ -1434,7 +1589,7 @@ async def cb_pipeline_cancel_refund(
 
     await state.clear()
     await redis.delete(CacheKeys.pipeline_state(user.id))
-    await msg.edit_text(f"Статья отменена. Возвращено {tokens} токенов.")
+    await msg.edit_text(f"Статья > Отменено\n\nВозвращено {tokens} токенов.")
     await callback.answer()
 
 
@@ -1456,7 +1611,7 @@ async def cb_pipeline_cancel(
         return
     await state.clear()
     await redis.delete(CacheKeys.pipeline_state(user.id))
-    await msg.edit_text("Pipeline отменён.")
+    await msg.edit_text("Отменено.")
     await callback.answer()
 
 
@@ -1474,20 +1629,14 @@ async def cb_pipeline_resume(
         return
     checkpoint_raw = await redis.get(CacheKeys.pipeline_state(user.id))
     if not checkpoint_raw:
-        await msg.edit_text(
-            "Сохранённый прогресс не найден. Начните заново.",
-            reply_markup=error_generic_kb().as_markup(),
-        )
+        await msg.edit_text("Статья > Ошибка\n\nСессия не найдена. Начните заново.")
         await callback.answer()
         return
 
     try:
         checkpoint = json.loads(checkpoint_raw)
-    except (json.JSONDecodeError, TypeError):
-        await msg.edit_text(
-            "Сохранённый прогресс повреждён. Начните заново.",
-            reply_markup=error_generic_kb().as_markup(),
-        )
+    except json.JSONDecodeError, TypeError:
+        await msg.edit_text("Статья > Ошибка\n\nСессия повреждена. Начните заново.")
         await redis.delete(CacheKeys.pipeline_state(user.id))
         await callback.answer()
         return
@@ -1532,7 +1681,7 @@ async def cb_pipeline_cancel_full(
         return
     await state.clear()
     await redis.delete(CacheKeys.pipeline_state(user.id))
-    await msg.edit_text("Pipeline отменён.")
+    await msg.edit_text("Отменено.")
     await callback.answer()
 
 

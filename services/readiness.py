@@ -109,7 +109,6 @@ class ReadinessService:
         has_keywords = bool(category.keywords)
         has_description = bool(category.description)
         has_prices = bool(category.prices)
-        has_media = bool(category.media)
 
         items: list[ReadinessItem] = [
             ReadinessItem(
@@ -133,13 +132,8 @@ class ReadinessService:
                 ready=has_prices,
                 cost=0,  # free manual input
             ),
-            ReadinessItem(
-                key="media",
-                label="Фото",
-                hint="4 AI-изображения",
-                ready=has_media,
-                cost=0,  # included in article generation cost
-            ),
+            # media (Phase D): AI generates 4 images automatically,
+            # user photo upload sub-flow is deferred to Phase D.
         ]
 
         result = ReadinessResult(items=items)

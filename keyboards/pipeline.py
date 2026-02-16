@@ -181,6 +181,14 @@ def pipeline_readiness_kb(
     return builder
 
 
+def pipeline_back_to_readiness_kb() -> InlineKeyboardBuilder:
+    """Back button for description/prices sub-flows."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад к чеклисту", callback_data="pipeline:article:ready:back")
+    builder.adjust(1)
+    return builder
+
+
 def pipeline_keywords_options_kb(auto_cost: int = 100) -> InlineKeyboardBuilder:
     """Keyword generation options (PROPOSAL section 4.1 step 4a)."""
     builder = InlineKeyboardBuilder()

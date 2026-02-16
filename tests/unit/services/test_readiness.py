@@ -116,16 +116,16 @@ class TestReadinessServiceCheck:
         ):
             await service.check(category_id=999, project_id=10)
 
-    async def test_all_empty_returns_four_unready_items(self, service: ReadinessService) -> None:
+    async def test_all_empty_returns_three_unready_items(self, service: ReadinessService) -> None:
         category = _make_category()
         with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
             result = await service.check(category_id=1, project_id=10)
 
-        assert len(result.items) == 4
+        assert len(result.items) == 3
         assert result.all_ready is False
 
         keys = [item.key for item in result.items]
-        assert keys == ["keywords", "description", "prices", "media"]
+        assert keys == ["keywords", "description", "prices"]
 
         for item in result.items:
             assert item.ready is False
@@ -135,7 +135,6 @@ class TestReadinessServiceCheck:
             keywords=[{"phrase": "test", "volume": 100}],
             description="Company description",
             prices="Product: 1000 RUB",
-            media=[{"file_id": "abc", "type": "photo"}],
         )
         with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
             result = await service.check(category_id=1, project_id=10)
@@ -176,15 +175,6 @@ class TestReadinessServiceCheck:
         prices_item = next(i for i in result.items if i.key == "prices")
         assert prices_item.cost == 0
 
-    async def test_media_cost_always_zero(self, service: ReadinessService) -> None:
-        """Media cost is 0 (included in article generation cost)."""
-        category = _make_category()
-        with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
-            result = await service.check(category_id=1, project_id=10)
-
-        media_item = next(i for i in result.items if i.key == "media")
-        assert media_item.cost == 0
-
     async def test_partial_fill_keywords_only(self, service: ReadinessService) -> None:
         category = _make_category(keywords=[{"phrase": "seo"}])
         with patch.object(service._categories, "get_by_id", new_callable=AsyncMock, return_value=category):
@@ -194,7 +184,6 @@ class TestReadinessServiceCheck:
         assert "keywords" not in result.optional_missing
         assert "description" in result.optional_missing
         assert "prices" in result.optional_missing
-        assert "media" in result.optional_missing
 
     async def test_partial_fill_description_and_prices(self, service: ReadinessService) -> None:
         category = _make_category(description="desc", prices="100 RUB")
@@ -202,7 +191,7 @@ class TestReadinessServiceCheck:
             result = await service.check(category_id=1, project_id=10)
 
         assert result.all_ready is False
-        assert result.optional_missing == ["keywords", "media"]
+        assert result.optional_missing == ["keywords"]
 
     async def test_labels_are_russian(self, service: ReadinessService) -> None:
         category = _make_category()
@@ -213,7 +202,6 @@ class TestReadinessServiceCheck:
         assert labels["keywords"] == "Ключевые фразы"
         assert labels["description"] == "Описание компании"
         assert labels["prices"] == "Цены"
-        assert labels["media"] == "Фото"
 
     async def test_hints_match_spec(self, service: ReadinessService) -> None:
         category = _make_category()
@@ -224,7 +212,6 @@ class TestReadinessServiceCheck:
         assert hints["keywords"] == "SEO-оптимизация"
         assert hints["description"] == "точность контекста"
         assert hints["prices"] == "реальные цены в статье"
-        assert hints["media"] == "4 AI-изображения"
 
     async def test_frozen_dataclass_immutable(self, service: ReadinessService) -> None:
         """ReadinessItem is frozen -- cannot be mutated after creation."""

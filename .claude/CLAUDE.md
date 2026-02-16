@@ -69,6 +69,13 @@ uv run ruff format .                       # форматирование
 uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # проверка типов
 uv run bandit -r bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules/ -ll  # безопасность (Medium+)
 uv run vulture bot/ routers/ services/ db/ api/ cache/ keyboards/ platform_rules/ --min-confidence 80  # мёртвый код
+
+# Context7 Skill Wizard (интерактивный CLI, запускать вручную в терминале)
+npx ctx7 skills suggest                    # рекомендации skills по pyproject.toml
+npx ctx7 skills search "aiogram"           # поиск в реестре
+npx ctx7 skills generate                   # генерация кастомного skill из актуальных docs
+npx ctx7 skills list                       # список установленных skills
+# На Windows/MSYS2 для install: MSYS_NO_PATHCONV=1 npx ctx7 skills install /owner/repo skill --claude
 ```
 
 ## Stop hooks (выполняются автоматически при завершении)
@@ -241,6 +248,7 @@ Phase N:
 Когда обновляется API библиотеки (Firecrawl, Bot API, OpenRouter, etc.):
 ```
   1. /enrich-specs <library>  → обновить спеки актуальной документацией
+  1b. npx ctx7 skills suggest → проверить новые skills в реестре (ВРУЧНУЮ, интерактивный TUI)
   2. /find-gaps               → проверить что код и спеки синхронизированы
   3. Исправить код/спеки если нужно
 ```
