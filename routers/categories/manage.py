@@ -392,9 +392,12 @@ async def execute_category_delete(
 
     if deleted:
         safe_name = html.escape(category.name)
+        # Reload remaining categories to show correct keyboard
+        remaining = await cats_repo.get_by_project(project_id)
+        kb = category_list_kb(remaining, project_id) if remaining else category_list_empty_kb(project_id)
         await callback.message.edit_text(
             f"Категория «{safe_name}» удалена.",
-            reply_markup=category_list_empty_kb(project_id),
+            reply_markup=kb,
         )
         log.info("category_deleted", category_id=category_id, user_id=user.id)
     else:

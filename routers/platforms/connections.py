@@ -369,16 +369,16 @@ async def wp_process_password(
     """WP step 3: Application Password — validate and create connection."""
     text = (message.text or "").strip()
 
-    # Delete message with password for security
-    try:
-        await message.delete()
-    except Exception:
-        log.warning("failed_to_delete_password_message")
-
     if text == "Отмена":
         await state.clear()
         await message.answer("Подключение отменено.")
         return
+
+    # Delete message with password for security (after cancel check)
+    try:
+        await message.delete()
+    except Exception:
+        log.warning("failed_to_delete_password_message")
 
     if len(text) < 10:
         await message.answer("Application Password слишком короткий. Попробуйте ещё раз.")
@@ -410,19 +410,24 @@ async def wp_process_password(
         await message.answer("Не удалось подключиться к сайту. Проверьте URL.")
         return
 
-    await state.clear()
-
-    # E41: Check duplicate
+    # E41: Check duplicate — warn but allow (same site in multiple projects is valid)
     conn_repo = _make_conn_repo(db)
     # Extract domain as identifier
     identifier = wp_url.replace("https://", "").replace("http://", "").rstrip("/")
     existing = await conn_repo.get_by_identifier_for_user(identifier, "wordpress", user.id)
-    if existing:
-        await message.answer(
-            f"WordPress-сайт {html.escape(identifier)} уже подключён к другому проекту.\n"
-            "Используйте существующее подключение.",
-        )
+    if existing and existing.project_id != project_id:
+        # Same site in different project — allowed by design (E41), just warn
+        log.info("wp_cross_project_connection", identifier=identifier, existing_project=existing.project_id)
+
+    # Re-validate ownership before creating connection (I7)
+    projects_repo = ProjectsRepository(db)
+    project = await projects_repo.get_by_id(project_id)
+    if not project or project.user_id != user.id:
+        await state.clear()
+        await message.answer("Проект не найден.")
         return
+
+    await state.clear()
 
     # Create connection
     conn = await conn_repo.create(
@@ -523,16 +528,16 @@ async def tg_process_token(
     """TG step 2: bot token — validate and create connection."""
     text = (message.text or "").strip()
 
-    # Delete message with token for security
-    try:
-        await message.delete()
-    except Exception:
-        log.warning("failed_to_delete_token_message")
-
     if text == "Отмена":
         await state.clear()
         await message.answer("Подключение отменено.")
         return
+
+    # Delete message with token for security (after cancel check)
+    try:
+        await message.delete()
+    except Exception:
+        log.warning("failed_to_delete_token_message")
 
     # Validate bot token format (roughly: digits:alphanumeric)
     if ":" not in text or len(text) < 30:
@@ -573,14 +578,16 @@ async def tg_process_token(
     finally:
         await temp_bot.session.close()
 
-    await state.clear()
-
-    # Check global uniqueness
+    # E41: Check duplicate — warn but allow cross-project (same channel in multiple projects is valid)
     conn_repo = _make_conn_repo(db)
     existing = await conn_repo.get_by_identifier_for_user(channel_id, "telegram", user.id)
-    if existing:
-        await message.answer(f"Канал {channel_id} уже подключён.")
+    if existing and existing.project_id == project_id:
+        await message.answer(f"Канал {channel_id} уже подключён к этому проекту.")
         return
+    if existing:
+        log.info("tg_cross_project_connection", channel=channel_id, existing_project=existing.project_id)
+
+    await state.clear()
 
     conn = await conn_repo.create(
         PlatformConnectionCreate(
@@ -656,16 +663,16 @@ async def vk_process_token(
     """VK step 1: validate token and show group selection."""
     text = (message.text or "").strip()
 
-    # Delete message with token for security
-    try:
-        await message.delete()
-    except Exception:
-        log.warning("failed_to_delete_vk_token_message")
-
     if text == "Отмена":
         await state.clear()
         await message.answer("Подключение отменено.")
         return
+
+    # Delete message with token for security (after cancel check)
+    try:
+        await message.delete()
+    except Exception:
+        log.warning("failed_to_delete_vk_token_message")
 
     if len(text) < 20:
         await message.answer("Токен слишком короткий. Попробуйте ещё раз.")
@@ -712,7 +719,9 @@ async def vk_process_token(
 
     fsm_data = await state.get_data()
     project_id = int(fsm_data["connect_project_id"])
-    await state.update_data(vk_token=text, vk_groups=groups)
+    # Store only id+name to minimize Redis FSM data size (I6)
+    compact_groups = [{"id": g["id"], "name": g.get("name", "")} for g in groups]
+    await state.update_data(vk_token=text, vk_groups=compact_groups)
     await state.set_state(ConnectVKFSM.select_group)
     await message.answer(
         "Выберите группу для публикации:",
@@ -750,12 +759,14 @@ async def vk_select_group(
     conn_repo = _make_conn_repo(db)
     identifier = f"club{group_id}"
 
-    # Check duplicate
+    # E41: Check duplicate — same-project block, cross-project allow
     existing = await conn_repo.get_by_identifier_for_user(identifier, "vk", user.id)
-    if existing:
-        await callback.message.edit_text(f"Группа {html.escape(group_name)} уже подключена.")
+    if existing and existing.project_id == project_id:
+        await callback.message.edit_text(f"Группа {html.escape(group_name)} уже подключена к этому проекту.")
         await callback.answer()
         return
+    if existing:
+        log.info("vk_cross_project_connection", group=identifier, existing_project=existing.project_id)
 
     conn = await conn_repo.create(
         PlatformConnectionCreate(
