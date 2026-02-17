@@ -1708,6 +1708,15 @@ def calculate_target_length(
 "Статья похожа на ранее опубликованную. Рекомендуем переформулировать."
 Хранение: `publication_logs.content_hash BIGINT` (simhash).
 
+**P2 (Phase 11+):** AI Web Search fact-checking на этапе Critique.
+Модели OpenRouter с plugin `web_search` (или Perplexity) могут проверять факты из статьи в реальном времени.
+Применение: только на шаге Critique (~30% статей, score < 80) — критик получает доступ к интернету
+для верификации цен, дат, законов, статистики. Особенно ценно для YMYL-ниш (медицина, юриспруденция, финансы).
+Стоимость: ~$0.01-0.05 за запрос с web search. Не заменяет Serper+Firecrawl pipeline
+(PAA, конкуренты, гэпы по-прежнему собираются заранее), а дополняет его на этапе проверки качества.
+Реализация: `article_critique` chain → модель с web search plugin, промпт включает инструкцию
+"Проверь ключевые факты, цены и даты из статьи через поиск. Укажи найденные расхождения."
+
 #### Image SEO
 
 Google Images = 20-30% трафика для коммерческих ниш. Без alt-тегов с ключевыми фразами этот трафик теряется.
@@ -2670,16 +2679,22 @@ class KeywordSuggestion:
     competition: float   # 0.0-1.0
 
 class DataForSEOClient:
+    # Default location: Ukraine (2804). Russia (2643) is banned from all
+    # DataForSEO services. Ukraine supports language_code="ru" and provides
+    # the closest Russian-language keyword data.
+    # Kazakhstan (2398) is an alternative with fewer results.
+    _DEFAULT_LOCATION: int = 2804
+
     async def keyword_suggestions(
-        self, seed: str, location: str = "Russia", language: str = "ru", limit: int = 200,
+        self, seed: str, location_code: int = _DEFAULT_LOCATION, language_code: str = "ru", limit: int = 200,
     ) -> list[KeywordSuggestion]: ...
 
     async def related_keywords(
-        self, seed: str, location: str = "Russia", language: str = "ru", limit: int = 100,
+        self, seed: str, location_code: int = _DEFAULT_LOCATION, language_code: str = "ru", limit: int = 100,
     ) -> list[KeywordSuggestion]: ...
 
     async def enrich_keywords(
-        self, phrases: list[str], location: str = "Russia", language: str = "ru",
+        self, phrases: list[str], location_code: int = _DEFAULT_LOCATION, language_code: str = "ru",
     ) -> list[KeywordData]: ...
 ```
 
@@ -2726,7 +2741,9 @@ class DataForSEOClient:
     # ... existing methods ...
 
     async def check_rank(
-        self, keyword: str, domain: str, location: str = "Russia", language: str = "ru",
+        self, keyword: str, domain: str,
+        location_code: int = _DEFAULT_LOCATION,  # 2804 = Ukraine
+        language_code: str = "ru",
     ) -> RankResult: ...
 ```
 
@@ -2748,13 +2765,13 @@ class DataForSEOClient:
 
 ```python
 @dataclass
-class SearchResult:
-    organic: list[dict]      # [{title, link, snippet}]
-    people_also_ask: list[str]
+class SerperResult:
+    organic: list[dict]                  # [{title, link, snippet}]
+    people_also_ask: list[dict[str, Any]]  # [{question, snippet, link}] — objects, NOT strings
     related_searches: list[str]
 
 class SerperClient:
-    async def search(self, query: str, location: str = "Russia", language: str = "ru") -> SearchResult: ...
+    async def search(self, query: str, num: int = 10, gl: str = "ru", hl: str = "ru") -> SerperResult: ...
 ```
 
 **Кеширование:** Результат поиска в Redis на 24 часа (ключ: `serper:{md5(query)}`).

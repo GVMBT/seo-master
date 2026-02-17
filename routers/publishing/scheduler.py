@@ -320,19 +320,31 @@ async def scheduler_disable(
 
 
 @router.callback_query(F.data.regexp(r"^sched:\d+:\d+:manual$"))
-async def scheduler_manual(callback: CallbackQuery, user: User, state: FSMContext) -> None:
+async def scheduler_manual(
+    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext
+) -> None:
     """Enter manual schedule setup FSM."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
 
-    interrupted = await ensure_no_active_fsm(state)
-    if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
-
     parts = callback.data.split(":")  # type: ignore[union-attr]
     cat_id = int(parts[1])
     conn_id = int(parts[2])
+
+    # Verify ownership (callback_data tampering protection)
+    cat = await CategoriesRepository(db).get_by_id(cat_id)
+    if not cat:
+        await callback.answer("Категория не найдена", show_alert=True)
+        return
+    project = await ProjectsRepository(db).get_by_id(cat.project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.update_data(sched_cat_id=cat_id, sched_conn_id=conn_id, sched_days=[])
     await state.set_state(ScheduleSetupFSM.select_days)

@@ -1,9 +1,6 @@
 """Admin panel: stats, monitoring, API costs, broadcast (UX_TOOLBOX section 16)."""
 
 import asyncio
-from datetime import UTC, datetime, timedelta
-from decimal import Decimal
-from typing import Any
 
 import structlog
 from aiogram import F, Router
@@ -20,6 +17,7 @@ from aiogram.types import (
 from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
 from db.models import User
+from db.repositories.payments import PaymentsRepository
 from db.repositories.users import UsersRepository
 from keyboards.inline import admin_panel_kb, broadcast_audience_kb, broadcast_confirm_kb
 
@@ -130,31 +128,10 @@ async def admin_api_costs(
         await callback.answer()
         return
 
-    async def _sum_costs(days: int) -> Decimal:
-        """Sum API costs for last N days via token_expenses table."""
-        cutoff = datetime.now(UTC) - timedelta(days=days)
-        try:
-            resp = (
-                await db.table("token_expenses")
-                .select("cost_usd")
-                .gte("created_at", cutoff.isoformat())
-                .not_.is_("cost_usd", "null")
-                .execute()
-            )
-            rows: list[dict[str, Any]] = resp.data if resp.data else []  # type: ignore[assignment]
-            total = Decimal(0)
-            for r in rows:
-                cost_val = r.get("cost_usd")
-                if cost_val:
-                    total += Decimal(str(cost_val))
-            return total
-        except Exception:
-            log.exception("admin_api_costs_query_failed", days=days)
-            return Decimal(0)
-
-    cost_7d = await _sum_costs(7)
-    cost_30d = await _sum_costs(30)
-    cost_90d = await _sum_costs(90)
+    repo = PaymentsRepository(db)
+    cost_7d = await repo.sum_api_costs(7)
+    cost_30d = await repo.sum_api_costs(30)
+    cost_90d = await repo.sum_api_costs(90)
 
     text = (
         "<b>Затраты API</b>\n\n"

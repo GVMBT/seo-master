@@ -4,7 +4,7 @@
 
 Все FSM-мастера используют Aiogram 3 StatesGroup с хранением в Redis (Upstash).
 
-**Итого: 15 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, DescriptionGenerateFSM, ContentSettingsFSM, ArticlePipelineFSM, SocialPipelineFSM)
+**Итого: 16 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, DescriptionGenerateFSM, ContentSettingsFSM, ArticlePipelineFSM, SocialPipelineFSM, BroadcastFSM)
 
 > **Убраны в v2:** ArticlePublishFSM, SocialPostPublishFSM (заменены Pipeline FSM), ReviewGenerationFSM (F17 deferred to v3), CompetitorAnalysisFSM (F39 deferred to v3).
 
@@ -163,6 +163,13 @@ class KeywordUploadFSM(StatesGroup):
 # Callback сохраняет токен в Redis и отправляет deep link:
 # tg://resolve?domain=BOT_USERNAME&start=pinterest_auth_{nonce}
 # При получении /start pinterest_auth_{nonce} → FSM переходит к select_board
+
+# routers/admin/broadcast.py (F20/F21: рассылка сообщений)
+class BroadcastFSM(StatesGroup):
+    audience = State()       # Выбор аудитории: all / active_7d / active_30d / paid
+    text = State()           # Ввод текста рассылки
+    confirm = State()        # Подтверждение: показ текста + количество получателей
+    sending = State()        # Процесс отправки (progress: sent/total)
 ```
 
 ---

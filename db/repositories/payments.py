@@ -137,3 +137,23 @@ class PaymentsRepository(BaseRepository):
             .execute()
         )
         return [TokenExpense(**row) for row in self._rows(resp)]
+
+    async def sum_api_costs(self, days: int) -> float:
+        """Sum API costs (cost_usd) for last N days. Admin use."""
+        from datetime import UTC, datetime, timedelta
+        from decimal import Decimal
+
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        resp = (
+            await self._table(_EXPENSES_TABLE)
+            .select("cost_usd")
+            .gte("created_at", cutoff)
+            .not_.is_("cost_usd", "null")
+            .execute()
+        )
+        total = Decimal(0)
+        for row in self._rows(resp):
+            cost_val = row.get("cost_usd")
+            if cost_val:
+                total += Decimal(str(cost_val))
+        return float(total)
