@@ -179,7 +179,7 @@ _EDIT_FIELDS: list[tuple[str, str]] = [
     ("company_city", "Город"),
     ("company_address", "Адрес"),
     ("company_phone", "Телефон"),
-    ("company_email", "Email"),
+    ("company_email", "Эл. почта"),
     ("timezone", "Часовой пояс"),
 ]
 
@@ -430,7 +430,7 @@ def vk_group_select_kb(groups: list[dict[str, Any]], project_id: int) -> InlineK
     for group in groups:
         gid = group.get("id", 0)
         name = str(group.get("name", f"Group {gid}"))
-        rows.append([InlineKeyboardButton(text=name, callback_data=f"vk:group:{gid}")])
+        rows.append([InlineKeyboardButton(text=name, callback_data=f"vk:group:{gid}:select")])
     rows.append([InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:list")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

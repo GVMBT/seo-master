@@ -431,7 +431,7 @@ async def wp_process_password(
             platform_type="wordpress",
             identifier=identifier,
         ),
-        raw_credentials={"login": wp_login, "password": text},
+        raw_credentials={"url": wp_url, "login": wp_login, "app_password": text},
     )
 
     log.info("wordpress_connected", conn_id=conn.id, project_id=project_id, identifier=identifier)
@@ -589,7 +589,7 @@ async def tg_process_token(
             identifier=channel_id,
             metadata={"bot_username": bot_info.username or ""},
         ),
-        raw_credentials={"bot_token": text},
+        raw_credentials={"bot_token": text, "channel_id": channel_id},
     )
 
     log.info("telegram_connected", conn_id=conn.id, project_id=project_id, channel=channel_id)
@@ -720,7 +720,7 @@ async def vk_process_token(
     )
 
 
-@router.callback_query(ConnectVKFSM.select_group, F.data.regexp(r"^vk:group:\d+$"))
+@router.callback_query(ConnectVKFSM.select_group, F.data.regexp(r"^vk:group:\d+:select$"))
 async def vk_select_group(
     callback: CallbackQuery,
     state: FSMContext,
@@ -764,7 +764,7 @@ async def vk_select_group(
             identifier=identifier,
             metadata={"group_name": group_name},
         ),
-        raw_credentials={"access_token": vk_token},
+        raw_credentials={"access_token": vk_token, "group_id": str(group_id)},
     )
 
     log.info("vk_connected", conn_id=conn.id, project_id=project_id, group_id=group_id)
