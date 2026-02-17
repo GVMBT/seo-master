@@ -548,33 +548,41 @@ async def tg_process_token(
     channel_id = data["tg_channel"]
     project_id = int(data["connect_project_id"])
 
-    # Validate via getMe
+    # Validate via getMe + check admin status (single try/finally for session cleanup)
     temp_bot = Bot(token=text)
     try:
-        bot_info = await temp_bot.get_me()
-    except Exception:
-        await temp_bot.session.close()
-        await message.answer("Недействительный токен. Проверьте и попробуйте ещё раз.")
-        return
+        try:
+            bot_info = await temp_bot.get_me()
+        except Exception as exc:
+            log.warning("tg_connect_invalid_token", error=str(exc))
+            await message.answer("Недействительный токен. Проверьте и попробуйте ещё раз.")
+            return
 
-    # Check bot is admin of the channel
-    try:
-        admins = await temp_bot.get_chat_administrators(channel_id)
+        # Check bot is admin of the channel
+        try:
+            admins = await temp_bot.get_chat_administrators(channel_id)
+        except TelegramBadRequest as exc:
+            log.warning("tg_connect_channel_error", channel=channel_id, error=str(exc))
+            await message.answer(
+                f"Не удалось проверить канал {channel_id}.\n"
+                "Убедитесь, что канал существует и бот добавлен как администратор."
+            )
+            return
+        except Exception as exc:
+            log.warning("tg_connect_admin_check_failed", channel=channel_id, error=str(exc))
+            await message.answer(
+                f"Не удалось проверить канал {channel_id}.\n"
+                "Убедитесь, что канал существует и бот добавлен как администратор."
+            )
+            return
+
         bot_is_admin = any(a.user.id == bot_info.id for a in admins)
         if not bot_is_admin:
-            await temp_bot.session.close()
             await message.answer(
                 f"Бот @{bot_info.username} не является администратором канала {channel_id}.\n"
                 "Добавьте бота в канал и назначьте администратором."
             )
             return
-    except Exception:
-        await temp_bot.session.close()
-        await message.answer(
-            f"Не удалось проверить канал {channel_id}.\n"
-            "Убедитесь, что канал существует и бот добавлен как администратор."
-        )
-        return
     finally:
         await temp_bot.session.close()
 
