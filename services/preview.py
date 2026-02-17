@@ -329,7 +329,7 @@ def _is_own_site(url: str, project_url: str | None) -> bool:
         own_domain = urlparse(project_url).netloc.lower().replace("www.", "")
         url_domain = urlparse(url).netloc.lower().replace("www.", "")
         return own_domain == url_domain
-    except ValueError, AttributeError:
+    except (ValueError, AttributeError):
         return False
 
 
