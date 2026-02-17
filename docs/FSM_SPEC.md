@@ -113,7 +113,8 @@ class ArticlePipelineFSM(StatesGroup):
     confirm_cost = State()         # Шаг 5: подтверждение стоимости
     generating = State()           # Шаг 6: генерация
     preview = State()              # Шаг 7: предпросмотр (Telegraph)
-    publishing = State()           # Шаг 8: публикация
+    publishing = State()           # Публикация (промежуточный)
+    result = State()               # Шаг 8: результат (URL, "ещё статью", автопубликация)
     regenerating = State()         # Перегенерация
 
 # routers/publishing/pipeline/social.py (Goal-Oriented Pipeline: соц. посты)

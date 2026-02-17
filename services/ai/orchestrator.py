@@ -32,6 +32,7 @@ TaskType = Literal[
     "review",
     "image",
     "description",
+    "cross_post",
     "competitor_analysis",
 ]
 
@@ -70,6 +71,10 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "deepseek/deepseek-v3.2",
         "anthropic/claude-sonnet-4.5",
     ],
+    "cross_post": [
+        "deepseek/deepseek-v3.2",
+        "openai/gpt-5.2",
+    ],
     "competitor_analysis": [
         "openai/gpt-5.2",
         "anthropic/claude-sonnet-4.5",
@@ -87,6 +92,7 @@ BUDGET_TASKS: set[str] = {
     "keywords_fallback",
     "review",
     "description",
+    "cross_post",
     "article_outline",
     "article_critique",
 }
