@@ -28,6 +28,7 @@ TaskType = Literal[
     "article_critique",
     "social_post",
     "keywords",
+    "keywords_fallback",
     "review",
     "image",
     "description",
@@ -57,6 +58,10 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "deepseek/deepseek-v3.2",
         "openai/gpt-5.2",
     ],
+    "keywords_fallback": [
+        "deepseek/deepseek-v3.2",
+        "openai/gpt-5.2",
+    ],
     "review": [
         "deepseek/deepseek-v3.2",
         "anthropic/claude-sonnet-4.5",
@@ -76,7 +81,15 @@ MODEL_CHAINS: dict[str, list[str]] = {
 }
 
 # Tasks that use budget provider routing (sort: price)
-BUDGET_TASKS: set[str] = {"social_post", "keywords", "review", "description", "article_outline", "article_critique"}
+BUDGET_TASKS: set[str] = {
+    "social_post",
+    "keywords",
+    "keywords_fallback",
+    "review",
+    "description",
+    "article_outline",
+    "article_critique",
+}
 
 # JSON schema responses (API_CONTRACTS.md structured outputs table)
 STRUCTURED_TASKS: set[str] = {
@@ -85,6 +98,7 @@ STRUCTURED_TASKS: set[str] = {
     "article_critique",
     "social_post",
     "keywords",
+    "keywords_fallback",
     "review",
     "competitor_analysis",
 }
@@ -96,6 +110,7 @@ HEALING_TASKS: set[str] = {
     "article_critique",
     "social_post",
     "keywords",
+    "keywords_fallback",
     "review",
 }
 
@@ -229,6 +244,7 @@ _RATE_ACTION: dict[str, str] = {
     "article": "text_generation",
     "social_post": "text_generation",
     "keywords": "keyword_generation",
+    "keywords_fallback": "keyword_generation",
     "review": "text_generation",
     "description": "text_generation",
     "competitor_analysis": "text_generation",
@@ -515,7 +531,7 @@ class AIOrchestrator:
             result = json.loads(text)
             if isinstance(result, (dict, list)):
                 return result
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             pass
         return None
 

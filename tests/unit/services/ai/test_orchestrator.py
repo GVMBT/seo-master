@@ -679,6 +679,7 @@ class TestModelChains:
             "article",
             "social_post",
             "keywords",
+            "keywords_fallback",
             "review",
             "description",
             "competitor_analysis",

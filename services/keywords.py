@@ -250,14 +250,18 @@ class KeywordService:
         project_id: int,
         user_id: int,
     ) -> list[dict[str, Any]]:
-        """AI fallback when DataForSEO is empty (E03)."""
+        """AI fallback when DataForSEO is empty (E03).
+
+        Uses separate 'keywords_fallback' prompt (v2-style) that generates
+        phrases from scratch, unlike 'keywords' (v3) which clusters DataForSEO data.
+        """
         project = await ProjectsRepository(self._db).get_by_id(project_id)
         company_name = (project.company_name or "") if project else ""
         specialization = (project.specialization or "") if project else ""
 
         result = await self._orchestrator.generate(
             GenerationRequest(
-                task="keywords",
+                task="keywords_fallback",
                 context={
                     "quantity": quantity,
                     "products": products,
