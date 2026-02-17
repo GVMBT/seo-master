@@ -1,0 +1,315 @@
+"""Admin panel: stats, monitoring, API costs, broadcast (UX_TOOLBOX section 16)."""
+
+import asyncio
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+
+import structlog
+from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import (
+    CallbackQuery,
+    InaccessibleMessage,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
+
+from bot.fsm_utils import ensure_no_active_fsm
+from db.client import SupabaseClient
+from db.models import User
+from db.repositories.users import UsersRepository
+from keyboards.inline import admin_panel_kb, broadcast_audience_kb, broadcast_confirm_kb
+
+log = structlog.get_logger()
+router = Router()
+
+
+class BroadcastFSM(StatesGroup):
+    audience = State()
+    text = State()
+    confirm = State()
+
+
+# ---------------------------------------------------------------------------
+# Admin guard helper
+# ---------------------------------------------------------------------------
+
+
+def _is_admin(user: User) -> bool:
+    """Check if user has admin role."""
+    return user.role == "admin"
+
+
+# ---------------------------------------------------------------------------
+# Admin panel
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "admin:panel")
+async def admin_panel(
+    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext
+) -> None:
+    """Show admin panel with stats."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    # Clear any active FSM (like broadcast)
+    await state.clear()
+
+    users_repo = UsersRepository(db)
+    total_users = await users_repo.count_all()
+
+    text = (
+        "<b>Админ-панель</b>\n\n"
+        f"Пользователей: {total_users}\n"
+    )
+
+    await callback.message.edit_text(text, reply_markup=admin_panel_kb())
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Monitoring
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "admin:monitoring")
+async def admin_monitoring(
+    callback: CallbackQuery, user: User, db: SupabaseClient
+) -> None:
+    """Show service health status."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    # Quick health check: try DB query
+    try:
+        users_repo = UsersRepository(db)
+        await users_repo.count_all()
+        db_status = "OK"
+    except Exception:
+        log.exception("admin_monitoring_db_check_failed")
+        db_status = "ERROR"
+
+    text = (
+        "<b>Мониторинг</b>\n\n"
+        f"Database: {db_status}\n"
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+    ])
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# API costs
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "admin:api_costs")
+async def admin_api_costs(
+    callback: CallbackQuery, user: User, db: SupabaseClient
+) -> None:
+    """Show API cost summary for 7/30/90 days."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    async def _sum_costs(days: int) -> Decimal:
+        """Sum API costs for last N days via token_expenses table."""
+        cutoff = datetime.now(UTC) - timedelta(days=days)
+        try:
+            resp = (
+                await db.table("token_expenses")
+                .select("cost_usd")
+                .gte("created_at", cutoff.isoformat())
+                .not_.is_("cost_usd", "null")
+                .execute()
+            )
+            rows: list[dict[str, Any]] = resp.data if resp.data else []  # type: ignore[assignment]
+            total = Decimal(0)
+            for r in rows:
+                cost_val = r.get("cost_usd")
+                if cost_val:
+                    total += Decimal(str(cost_val))
+            return total
+        except Exception:
+            log.exception("admin_api_costs_query_failed", days=days)
+            return Decimal(0)
+
+    cost_7d = await _sum_costs(7)
+    cost_30d = await _sum_costs(30)
+    cost_90d = await _sum_costs(90)
+
+    text = (
+        "<b>Затраты API</b>\n\n"
+        f"7 дней: ${cost_7d:.2f}\n"
+        f"30 дней: ${cost_30d:.2f}\n"
+        f"90 дней: ${cost_90d:.2f}\n"
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+    ])
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Broadcast FSM
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "admin:broadcast")
+async def broadcast_start(
+    callback: CallbackQuery, user: User, state: FSMContext
+) -> None:
+    """Start broadcast FSM."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+
+    await state.set_state(BroadcastFSM.audience)
+    await callback.message.edit_text(
+        "<b>Рассылка</b>\n\nВыберите аудиторию:",
+        reply_markup=broadcast_audience_kb(),
+    )
+    await callback.answer()
+
+
+_AUDIENCE_LABELS: dict[str, str] = {
+    "all": "Все пользователи",
+    "active_7d": "Активные 7 дней",
+    "active_30d": "Активные 30 дней",
+    "paid": "Оплатившие",
+}
+
+
+@router.callback_query(
+    BroadcastFSM.audience,
+    F.data.regexp(r"^broadcast:audience:(all|active_7d|active_30d|paid)$"),
+)
+async def broadcast_audience(
+    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext
+) -> None:
+    """Select audience, show count, ask for text."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    audience_key = str(callback.data).split(":")[-1]
+    users_repo = UsersRepository(db)
+
+    # Count audience using get_ids_by_audience
+    user_ids = await users_repo.get_ids_by_audience(audience_key)
+    count = len(user_ids)
+
+    await state.update_data(broadcast_audience=audience_key, broadcast_count=count)
+    await state.set_state(BroadcastFSM.text)
+
+    await callback.message.edit_text(
+        f"<b>Рассылка</b>\n\n"
+        f"Аудитория: {_AUDIENCE_LABELS.get(audience_key, audience_key)}\n"
+        f"Получателей: ~{count}\n\n"
+        f"Отправьте текст сообщения:"
+    )
+    await callback.answer()
+
+
+@router.message(BroadcastFSM.text)
+async def broadcast_text(message: Message, user: User, state: FSMContext) -> None:
+    """Receive broadcast text, show preview."""
+    if not _is_admin(user):
+        return
+    if not message.text:
+        await message.answer("Отправьте текст сообщения (не файл/стикер).")
+        return
+
+    await state.update_data(broadcast_text=message.text)
+    await state.set_state(BroadcastFSM.confirm)
+
+    data = await state.get_data()
+
+    await message.answer(
+        f"<b>Предпросмотр рассылки</b>\n\n"
+        f"Получателей: ~{data['broadcast_count']}\n\n"
+        f"--- Текст ---\n{message.text}\n--- Конец ---\n\n"
+        f"Отправить?",
+        reply_markup=broadcast_confirm_kb(),
+    )
+
+
+@router.callback_query(BroadcastFSM.confirm, F.data == "broadcast:send")
+async def broadcast_confirm(
+    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext
+) -> None:
+    """Execute broadcast with rate limiting."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    text = data.get("broadcast_text", "")
+    audience_key = data.get("broadcast_audience", "all")
+
+    await state.clear()
+
+    users_repo = UsersRepository(db)
+    user_ids = await users_repo.get_ids_by_audience(audience_key)
+
+    await callback.message.edit_text(
+        f"Рассылка запущена... (0/{len(user_ids)})"
+    )
+
+    sent = 0
+    failed = 0
+    bot = callback.bot
+
+    for uid in user_ids:
+        try:
+            if bot is not None:
+                await bot.send_message(uid, text)
+            sent += 1
+        except Exception:
+            log.warning("broadcast_send_failed", user_id=uid)
+            failed += 1
+        await asyncio.sleep(0.05)  # 50ms rate limit
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+    ])
+    await callback.message.edit_text(
+        f"<b>Рассылка завершена</b>\n\n"
+        f"Отправлено: {sent}\n"
+        f"Ошибок: {failed}",
+        reply_markup=kb,
+    )
+    await callback.answer()

@@ -30,7 +30,7 @@ def service(mock_db: MagicMock) -> StarsPaymentService:
 
 class TestBuildInvoiceParams:
     def test_returns_required_keys(self, service: StarsPaymentService) -> None:
-        params = service.build_invoice_params(user_id=123, package_name="mini")
+        params = service.build_invoice_params(user_id=123, package_name="start")
         assert "title" in params
         assert "description" in params
         assert "payload" in params
@@ -38,12 +38,12 @@ class TestBuildInvoiceParams:
         assert params["provider_token"] == ""
 
     def test_payload_format(self, service: StarsPaymentService) -> None:
-        params = service.build_invoice_params(user_id=42, package_name="starter")
-        assert params["payload"] == "purchase:starter:user_42"
+        params = service.build_invoice_params(user_id=42, package_name="standard")
+        assert params["payload"] == "purchase:standard:user_42"
 
     def test_stars_amount_matches_package(self, service: StarsPaymentService) -> None:
         params = service.build_invoice_params(user_id=1, package_name="pro")
-        assert params["prices"][0]["amount"] == 390
+        assert params["prices"][0]["amount"] == 195
 
 
 class TestBuildSubscriptionParams:
@@ -67,7 +67,7 @@ class TestBuildSubscriptionParams:
 
 class TestValidatePreCheckout:
     def test_valid_purchase(self, service: StarsPaymentService) -> None:
-        ok, msg = service.validate_pre_checkout(42, "purchase:mini:user_42")
+        ok, msg = service.validate_pre_checkout(42, "purchase:start:user_42")
         assert ok is True
         assert msg == ""
 
@@ -76,7 +76,7 @@ class TestValidatePreCheckout:
         assert ok is True
 
     def test_wrong_user_id(self, service: StarsPaymentService) -> None:
-        ok, msg = service.validate_pre_checkout(42, "purchase:mini:user_99")
+        ok, msg = service.validate_pre_checkout(42, "purchase:start:user_99")
         assert ok is False
         assert "идентификации" in msg.lower() or msg != ""
 
@@ -93,7 +93,7 @@ class TestValidatePreCheckout:
         assert ok is False
 
     def test_unknown_action(self, service: StarsPaymentService) -> None:
-        ok, _msg = service.validate_pre_checkout(42, "gift:mini:user_42")
+        ok, _msg = service.validate_pre_checkout(42, "gift:start:user_42")
         assert ok is False
 
 
@@ -119,20 +119,20 @@ class TestProcessSuccessfulPayment:
     async def test_purchase_credits_tokens(self, service_with_mocks: StarsPaymentService) -> None:
         result = await service_with_mocks.process_successful_payment(
             user_id=42,
-            payload="purchase:mini:user_42",
+            payload="purchase:start:user_42",
             telegram_payment_charge_id="charge_123",
             provider_payment_charge_id="provider_123",
             total_amount=65,
         )
-        assert result["tokens_credited"] == 1000
+        assert result["tokens_credited"] == 500
         assert result["new_balance"] == 2500
         assert result["is_duplicate"] is False
-        service_with_mocks._users.credit_balance.assert_called_once_with(42, 1000)
+        service_with_mocks._users.credit_balance.assert_called_once_with(42, 500)
 
     async def test_purchase_creates_payment_record(self, service_with_mocks: StarsPaymentService) -> None:
         await service_with_mocks.process_successful_payment(
             user_id=42,
-            payload="purchase:starter:user_42",
+            payload="purchase:standard:user_42",
             telegram_payment_charge_id="charge_456",
             provider_payment_charge_id="prov_456",
             total_amount=195,
@@ -143,10 +143,10 @@ class TestProcessSuccessfulPayment:
 
     async def test_idempotency_duplicate_charge(self, service_with_mocks: StarsPaymentService) -> None:
         """Duplicate charge_id should not credit tokens (E10)."""
-        service_with_mocks._payments.get_by_telegram_charge_id = AsyncMock(return_value=MagicMock(package_name="mini"))
+        service_with_mocks._payments.get_by_telegram_charge_id = AsyncMock(return_value=MagicMock(package_name="start"))
         result = await service_with_mocks.process_successful_payment(
             user_id=42,
-            payload="purchase:mini:user_42",
+            payload="purchase:start:user_42",
             telegram_payment_charge_id="dup_charge",
             provider_payment_charge_id="prov",
             total_amount=65,
@@ -182,7 +182,7 @@ class TestProcessSuccessfulPayment:
     async def test_unknown_action_returns_error(self, service_with_mocks: StarsPaymentService) -> None:
         result = await service_with_mocks.process_successful_payment(
             user_id=42,
-            payload="gift:mini:user_42",
+            payload="gift:start:user_42",
             telegram_payment_charge_id="charge_gift",
             provider_payment_charge_id="prov_gift",
             total_amount=65,
@@ -311,8 +311,8 @@ class TestFormatting:
         assert "Тарифы" in text
 
     def test_package_text_contains_tokens(self, service: StarsPaymentService) -> None:
-        text = service.format_package_text("mini")
-        assert "1000" in text
+        text = service.format_package_text("start")
+        assert "500" in text
 
     def test_subscription_text_contains_price(self, service: StarsPaymentService) -> None:
         text = service.format_subscription_text("pro")
@@ -343,8 +343,8 @@ class TestFormatting:
         assert "Отменить" in text
 
     def test_payment_link_text_package(self, service: StarsPaymentService) -> None:
-        text = service.format_payment_link_text("mini")
-        assert "1000" in text
+        text = service.format_payment_link_text("start")
+        assert "500" in text
 
     def test_payment_link_text_subscription(self, service: StarsPaymentService) -> None:
         text = service.format_payment_link_text("pro", is_subscription=True)
