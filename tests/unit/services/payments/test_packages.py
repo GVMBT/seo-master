@@ -1,13 +1,11 @@
-"""Tests for services/payments/packages.py — package/subscription catalogue."""
+"""Tests for services/payments/packages.py — package catalogue (PRD §5.4, 3 tariffs)."""
 
 from __future__ import annotations
 
 from services.payments.packages import (
     PACKAGES,
     REFERRAL_BONUS_PERCENT,
-    SUBSCRIPTIONS,
     Package,
-    Subscription,
 )
 
 
@@ -21,56 +19,40 @@ class TestPackageCatalogue:
     def test_start_package(self) -> None:
         p = PACKAGES["start"]
         assert p.tokens == 500
-        assert p.bonus == 0
         assert p.price_rub == 500
         assert p.stars == 33
+        assert p.discount == ""
+        assert p.label == "\u0421\u0442\u0430\u0440\u0442"
 
     def test_standard_package(self) -> None:
         p = PACKAGES["standard"]
         assert p.tokens == 2000
-        assert p.bonus == 0
         assert p.price_rub == 1600
         assert p.stars == 104
+        assert p.discount == "\u221220%"
+        assert p.label == "\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442"
 
     def test_pro_package(self) -> None:
         p = PACKAGES["pro"]
         assert p.tokens == 5000
-        assert p.bonus == 0
         assert p.price_rub == 3000
         assert p.stars == 195
+        assert p.discount == "\u221240%"
+        assert p.label == "\u041f\u0440\u043e"
 
     def test_packages_are_frozen(self) -> None:
         """Packages should be immutable dataclasses."""
         p = PACKAGES["start"]
         assert isinstance(p, Package)
 
-    def test_tokens_include_bonus(self) -> None:
-        """tokens = base + bonus for all packages."""
+    def test_all_tokens_positive(self) -> None:
         for name, pkg in PACKAGES.items():
-            base = pkg.tokens - pkg.bonus
-            assert base > 0, f"Package {name} has non-positive base tokens"
+            assert pkg.tokens > 0, f"Package {name} has non-positive tokens"
 
-
-class TestSubscriptionCatalogue:
-    def test_three_subscriptions_defined(self) -> None:
-        assert len(SUBSCRIPTIONS) == 3
-
-    def test_subscription_names(self) -> None:
-        assert set(SUBSCRIPTIONS.keys()) == {"pro", "business", "enterprise"}
-
-    def test_period_seconds_30_days(self) -> None:
-        for sub in SUBSCRIPTIONS.values():
-            assert sub.period_seconds == 2_592_000
-
-    def test_pro_subscription(self) -> None:
-        s = SUBSCRIPTIONS["pro"]
-        assert s.tokens_per_month == 7200
-        assert s.price_rub == 6000
-        assert s.stars == 390
-
-    def test_subscriptions_are_frozen(self) -> None:
-        s = SUBSCRIPTIONS["pro"]
-        assert isinstance(s, Subscription)
+    def test_price_decreases_per_token(self) -> None:
+        """Pro should have best price per token (biggest discount)."""
+        prices_per_token = {n: p.price_rub / p.tokens for n, p in PACKAGES.items()}
+        assert prices_per_token["pro"] < prices_per_token["standard"] < prices_per_token["start"]
 
 
 class TestReferralBonus:

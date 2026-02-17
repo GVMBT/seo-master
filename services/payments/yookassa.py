@@ -1,6 +1,7 @@
 """YooKassa payment service — create payments, process webhooks.
 
-Source of truth: API_CONTRACTS.md §2.4-§2.5.
+Source of truth: API_CONTRACTS.md §2.4.
+No subscriptions in v2 — one-time purchases only.
 Uses httpx directly (not yookassa SDK) for async compatibility.
 Zero dependencies on Telegram/Aiogram.
 """
@@ -8,7 +9,6 @@ Zero dependencies on Telegram/Aiogram.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from ipaddress import ip_address, ip_network
 from typing import Any
@@ -20,10 +20,7 @@ from db.client import SupabaseClient
 from db.models import PaymentCreate, PaymentUpdate, TokenExpenseCreate
 from db.repositories.payments import PaymentsRepository
 from db.repositories.users import UsersRepository
-from services.payments.packages import (
-    PACKAGES,
-    SUBSCRIPTIONS,
-)
+from services.payments.packages import PACKAGES
 from services.payments.stars import credit_referral_bonus
 
 log = structlog.get_logger()
@@ -54,7 +51,7 @@ def verify_ip(client_ip: str) -> bool:
 
 
 class YooKassaPaymentService:
-    """YooKassa payment and subscription business logic.
+    """YooKassa one-time payment business logic.
 
     Uses YooKassa REST API v3 via shared httpx.AsyncClient.
     """
@@ -85,26 +82,17 @@ class YooKassaPaymentService:
         self,
         user_id: int,
         package_name: str,
-        is_subscription: bool = False,
     ) -> str | None:
         """Create YooKassa payment and return confirmation URL.
 
         Returns None on API error.
         """
-        if is_subscription:
-            sub = SUBSCRIPTIONS.get(package_name)
-            if not sub:
-                return None
-            amount = str(sub.price_rub)
-            tokens = sub.tokens_per_month
-            description = f"Подписка {package_name.capitalize()} — {tokens} токенов/мес"
-        else:
-            pkg = PACKAGES.get(package_name)
-            if not pkg:
-                return None
-            amount = str(pkg.price_rub)
-            tokens = pkg.tokens
-            description = f"Пакет {package_name.capitalize()} — {tokens} токенов"
+        pkg = PACKAGES.get(package_name)
+        if not pkg:
+            return None
+        amount = str(pkg.price_rub)
+        tokens = pkg.tokens
+        description = f"{pkg.label} — {tokens} токенов"
 
         body: dict[str, Any] = {
             "amount": {"value": f"{amount}.00", "currency": "RUB"},
@@ -116,13 +104,9 @@ class YooKassaPaymentService:
                 "user_id": str(user_id),
                 "package_name": package_name,
                 "tokens_amount": str(tokens),
-                "is_subscription": str(is_subscription).lower(),
             },
             "description": description,
         }
-        if is_subscription:
-            body["save_payment_method"] = True
-            body["metadata"]["is_subscription"] = "true"
 
         try:
             resp = await self._http.post(
@@ -178,8 +162,6 @@ class YooKassaPaymentService:
         user_id = int(metadata.get("user_id", 0))
         package_name = metadata.get("package_name", "")
         tokens_amount = int(metadata.get("tokens_amount", 0))
-        is_subscription = metadata.get("is_subscription") == "true"
-        is_renewal = metadata.get("is_renewal") == "true"
 
         if not user_id or not tokens_amount:
             log.error("yookassa_invalid_metadata", yookassa_id=yookassa_id, metadata=metadata)
@@ -197,7 +179,6 @@ class YooKassaPaymentService:
                 tokens_amount=tokens_amount,
                 package_name=package_name,
                 amount_rub=Decimal(amount_val),
-                is_subscription=is_subscription,
             )
         )
 
@@ -205,26 +186,15 @@ class YooKassaPaymentService:
             status="completed",
             yookassa_payment_id=yookassa_id,
         )
-
-        # Save payment_method_id for recurring (API_CONTRACTS.md §2.5 step 2)
-        pm = obj.get("payment_method", {})
-        if pm.get("saved") and pm.get("id"):
-            update.yookassa_payment_method_id = pm["id"]
-
-        if is_subscription:
-            update.subscription_status = "active"
-            update.subscription_expires_at = datetime.now(UTC) + timedelta(days=30)
-
         await self._payments.update(payment.id, update)
 
         # 3. Record token expense
-        label = "Продление подписки" if is_renewal else ("Подписка" if is_subscription else "Покупка")
         await self._payments.create_expense(
             TokenExpenseCreate(
                 user_id=user_id,
                 amount=tokens_amount,
-                operation_type="purchase" if not is_subscription else "subscription",
-                description=f"{label} {package_name.capitalize()} ({tokens_amount} токенов) — ЮKassa",
+                operation_type="purchase",
+                description=f"{package_name.capitalize()} ({tokens_amount} токенов) — ЮKassa",
             )
         )
 
@@ -242,16 +212,11 @@ class YooKassaPaymentService:
         )
 
     async def _process_canceled(self, obj: dict) -> dict[str, Any] | None:
-        """Handle payment.canceled — record failed payment, return notification.
-
-        Service returns notification data; the thin api handler sends it.
-        E37: renewal failure keeps subscription active until expires_at.
-        """
+        """Handle payment.canceled — record failed payment, return notification."""
         yookassa_id = obj["id"]
         metadata = obj.get("metadata", {})
         user_id = int(metadata.get("user_id", 0))
         package_name = metadata.get("package_name", "")
-        is_renewal = metadata.get("is_renewal") == "true"
 
         existing = await self._payments.get_by_yookassa_payment_id(yookassa_id)
         if existing:
@@ -276,26 +241,15 @@ class YooKassaPaymentService:
             log.warning("yookassa_canceled_no_user_id", yookassa_id=yookassa_id)
             return None
 
-        log.info("yookassa_payment_canceled", user_id=user_id, yookassa_id=yookassa_id, is_renewal=is_renewal)
+        log.info("yookassa_payment_canceled", user_id=user_id, yookassa_id=yookassa_id)
 
         if not user_id:
             return None
 
-        if is_renewal:
-            sub = await self._payments.get_active_subscription(user_id)
-            if sub and sub.subscription_expires_at:
-                expires = sub.subscription_expires_at.strftime("%d.%m.%Y")
-                text = (
-                    f"Автопродление подписки не удалось.\n"
-                    f"Подписка действует до {expires}.\n"
-                    f"Обновите способ оплаты или оплатите Stars."
-                )
-            else:
-                text = "Автопродление подписки не удалось.\nОбновите способ оплаты или оплатите Stars."
-        else:
-            text = "Платёж отклонён. Попробуйте снова или выберите другой способ оплаты."
-
-        return {"user_id": user_id, "text": text}
+        return {
+            "user_id": user_id,
+            "text": "Платёж отклонён. Попробуйте снова или выберите другой способ оплаты.",
+        }
 
     async def _process_refund(self, obj: dict) -> None:
         """Handle refund.succeeded — debit tokens, may go negative."""
@@ -329,76 +283,3 @@ class YooKassaPaymentService:
         )
 
         log.info("yookassa_refund_processed", user_id=payment.user_id, tokens=tokens_to_debit)
-
-    # ------------------------------------------------------------------
-    # Recurring payments (API_CONTRACTS.md §2.5 step 3)
-    # ------------------------------------------------------------------
-
-    async def renew_subscription(
-        self,
-        user_id: int,
-        payment_method_id: str,
-        package_name: str,
-    ) -> bool:
-        """Create auto-payment for subscription renewal.
-
-        Called by QStash cron job. Result comes via webhook.
-        Returns True if payment was created successfully.
-        """
-        sub = SUBSCRIPTIONS.get(package_name)
-        if not sub:
-            log.error("renew_unknown_subscription", package=package_name)
-            return False
-
-        body: dict[str, Any] = {
-            "amount": {"value": f"{sub.price_rub}.00", "currency": "RUB"},
-            "payment_method_id": payment_method_id,
-            "metadata": {
-                "user_id": str(user_id),
-                "package_name": package_name,
-                "tokens_amount": str(sub.tokens_per_month),
-                "is_subscription": "true",
-                "is_renewal": "true",
-            },
-            "description": f"Продление подписки {package_name.capitalize()}",
-        }
-
-        try:
-            resp = await self._http.post(
-                f"{_API_BASE}/payments",
-                json=body,
-                auth=(self._shop_id, self._secret_key),
-                headers={
-                    "Content-Type": "application/json",
-                    "Idempotence-Key": f"renew_{user_id}_{package_name}_{datetime.now(UTC).date().isoformat()}",
-                },
-            )
-            resp.raise_for_status()
-            log.info("yookassa_renewal_created", user_id=user_id, package=package_name)
-            return True
-        except httpx.HTTPError:
-            log.exception("yookassa_renewal_error", user_id=user_id, package=package_name)
-            return False
-
-    # ------------------------------------------------------------------
-    # Subscription management
-    # ------------------------------------------------------------------
-
-    async def cancel_subscription(self, user_id: int) -> bool:
-        """Cancel active YooKassa subscription.
-
-        Does NOT call YooKassa API — just stops creating payments (§2.5 step 4).
-        Subscription remains active until subscription_expires_at.
-        """
-        payment = await self._payments.get_active_subscription(user_id)
-        if not payment or payment.provider != "yookassa":
-            return False
-
-        await self._payments.update(
-            payment.id,
-            PaymentUpdate(
-                subscription_status="cancelled",
-            ),
-        )
-        log.info("yookassa_subscription_cancelled", user_id=user_id, payment_id=payment.id)
-        return True

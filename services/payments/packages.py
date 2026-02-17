@@ -1,6 +1,7 @@
-"""Token package and subscription definitions.
+"""Token package definitions.
 
 Source of truth: PRD.md §5.4 — Stars маппинг и тарифы.
+No subscriptions in v2 — users buy packages when needed.
 """
 
 from __future__ import annotations
@@ -13,41 +14,43 @@ class Package:
     """One-time token package."""
 
     name: str
-    tokens: int  # total tokens credited (base + bonus)
-    bonus: int
+    label: str  # Russian display name
+    tokens: int  # total tokens credited (base only, no bonus)
     price_rub: int
+    discount: str  # display discount, e.g. "−20%" or ""
     stars: int  # Stars amount for Telegram invoice
 
 
-@dataclass(frozen=True, slots=True)
-class Subscription:
-    """Monthly auto-renewing subscription."""
-
-    name: str
-    tokens_per_month: int
-    price_rub: int
-    stars: int
-    period_seconds: int = 2_592_000  # 30 days
-
-
 # ---------------------------------------------------------------------------
-# Package catalogue (PRD §5.4)
+# Package catalogue (PRD §5.4, 3 tariffs)
+# Stars ≈ price_rub / 15.38 (approximate, hardcoded per PRD)
 # ---------------------------------------------------------------------------
 
 PACKAGES: dict[str, Package] = {
-    "start": Package(name="start", tokens=500, bonus=0, price_rub=500, stars=33),
-    "standard": Package(name="standard", tokens=2000, bonus=0, price_rub=1600, stars=104),
-    "pro": Package(name="pro", tokens=5000, bonus=0, price_rub=3000, stars=195),
-}
-
-# ---------------------------------------------------------------------------
-# Subscription catalogue (PRD §5.4)
-# ---------------------------------------------------------------------------
-
-SUBSCRIPTIONS: dict[str, Subscription] = {
-    "pro": Subscription(name="pro", tokens_per_month=7200, price_rub=6000, stars=390),
-    "business": Subscription(name="business", tokens_per_month=18000, price_rub=15000, stars=975),
-    "enterprise": Subscription(name="enterprise", tokens_per_month=50000, price_rub=40000, stars=2600),
+    "start": Package(
+        name="start",
+        label="\u0421\u0442\u0430\u0440\u0442",
+        tokens=500,
+        price_rub=500,
+        discount="",
+        stars=33,
+    ),
+    "standard": Package(
+        name="standard",
+        label="\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442",
+        tokens=2000,
+        price_rub=1600,
+        discount="\u221220%",
+        stars=104,
+    ),
+    "pro": Package(
+        name="pro",
+        label="\u041f\u0440\u043e",
+        tokens=5000,
+        price_rub=3000,
+        discount="\u221240%",
+        stars=195,
+    ),
 }
 
 # Referral bonus percentage (PRD §5.4, F19)
