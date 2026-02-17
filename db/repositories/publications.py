@@ -205,6 +205,17 @@ class PublicationsRepository(BaseRepository):
         resp = await self._table(_TABLE).delete().lt("created_at", cutoff_iso).execute()
         return len(self._rows(resp))
 
+    async def get_count_by_project(self, project_id: int) -> int:
+        """Count successful publications for a project."""
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .eq("project_id", project_id)
+            .eq("status", "success")
+            .execute()
+        )
+        return self._count(resp)
+
     async def get_stats_by_user(self, user_id: int) -> dict[str, int]:
         """Get aggregated publication stats for a user."""
         resp = (
