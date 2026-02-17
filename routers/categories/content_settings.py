@@ -90,12 +90,12 @@ async def _check_category_ownership(
     return cats_repo, category
 
 
-def _get_text_settings(category: Any) -> dict[str, Any]:
+def _get_text_settings(category: Category) -> dict[str, Any]:
     """Get text_settings dict from category."""
     return category.text_settings if category.text_settings else {}
 
 
-def _get_image_settings(category: Any) -> dict[str, Any]:
+def _get_image_settings(category: Category) -> dict[str, Any]:
     """Get image_settings dict from category."""
     return category.image_settings if category.image_settings else {}
 

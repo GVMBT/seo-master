@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
-from db.models import Category, CategoryUpdate, User
+from db.models import Category, CategoryUpdate, Project, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import prices_kb
@@ -71,7 +71,7 @@ async def _verify_category_ownership(
     category_id: int,
     user: User,
     db: SupabaseClient,
-) -> tuple[CategoriesRepository, Category | None, object | None]:
+) -> tuple[CategoriesRepository, Category | None, Project | None]:
     """Load category and verify ownership. Returns (repo, category, project) or (repo, None, None)."""
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(category_id)

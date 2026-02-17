@@ -150,7 +150,7 @@ uv run vulture bot/ services/ db/ api/ cache/ platform_rules/ --min-confidence 8
 
 Goal-Oriented Pipeline (Phase 13 — UX_PIPELINE.md):
 - Pipeline заменяет Quick Publish: воронка "Написать статью" / "Пост в соцсети" (2-3 клика для returning users)
-- ArticlePipelineFSM (25 состояний), SocialPipelineFSM (28 состояний) — итого 14 StatesGroup
+- ArticlePipelineFSM (25 состояний), SocialPipelineFSM (28 состояний) — итого 15 StatesGroup
 - Inline handlers (NOT FSM delegation): pipeline реализует sub-flows внутри себя, переиспользуя Service Layer
 - ReadinessService: чеклист готовности (keywords обяз., description обяз. для новичков, prices/media опциональны)
 - ButtonStyle (Bot API 9.4): PRIMARY/SUCCESS/DANGER семантика, макс. 1 PRIMARY на экране
