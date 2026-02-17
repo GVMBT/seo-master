@@ -354,25 +354,30 @@ def _format_competitor_analysis(pages: list[dict[str, Any]]) -> str:
 
 
 def _identify_gaps(pages: list[dict[str, Any]]) -> str:
-    """Identify content gaps — topics NOT covered by all competitors."""
-    all_h2: list[str] = []
-    for page in pages:
-        for h in page.get("headings", []):
-            if h.get("level") == 2:
-                all_h2.append(str(h.get("text", "")).lower())
+    """Summarize competitor structure for AI to identify gaps.
 
-    if not all_h2:
+    Instead of naive Counter-based comparison (which fails for semantically
+    different headings like blogs), we pass raw competitor headings to the AI
+    outline prompt and let it determine real content gaps.
+    """
+    if not pages:
         return ""
 
-    # Find topics mentioned by only 1 competitor (= gap for others)
-    from collections import Counter
+    lines: list[str] = []
+    for i, page in enumerate(pages, 1):
+        h2_list = [
+            str(h.get("text", ""))
+            for h in page.get("headings", [])
+            if h.get("level") == 2
+        ]
+        if h2_list:
+            lines.append(f"Конкурент {i}: {', '.join(h2_list[:8])}")
 
-    counts = Counter(all_h2)
-    unique_topics = [topic for topic, count in counts.items() if count == 1]
+    if not lines:
+        return ""
 
-    if not unique_topics:
-        return "Конкуренты покрывают схожие темы — добавь уникальный экспертный раздел."
-
-    return "Темы, которые покрывает только 1 конкурент (потенциальные пробелы):\n" + "\n".join(
-        f"- {t}" for t in unique_topics[:5]
+    return (
+        "Структура H2 конкурентов (определи, какие темы НЕ раскрыты "
+        "ни одним конкурентом — это твоя уникальная ценность):\n"
+        + "\n".join(lines)
     )
