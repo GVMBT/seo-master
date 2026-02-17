@@ -111,13 +111,14 @@ class PreviewService:
             }
 
             # Scrape top-3 competitor pages via Firecrawl
+            # Filter own site first, then slice to ensure full count
             if self._firecrawl and serper_result.organic:
                 competitor_urls = [
                     r["link"]
-                    for r in serper_result.organic[:_MAX_COMPETITOR_SCRAPE]
+                    for r in serper_result.organic
                     if r.get("link")
                     and not _is_own_site(r["link"], project_url)
-                ]
+                ][:_MAX_COMPETITOR_SCRAPE]
                 if competitor_urls:
                     scrape_tasks = [
                         self._firecrawl.scrape_content(url)
@@ -147,7 +148,7 @@ class PreviewService:
         # Format internal links
         map_result = responses.get("map")
         if map_result and not isinstance(map_result, BaseException):
-            urls = [u["url"] for u in map_result.urls[:20]]
+            urls = [u.get("url", "") for u in map_result.urls[:20] if u.get("url")]
             result["internal_links"] = "\n".join(urls) if urls else ""
         elif isinstance(map_result, BaseException):
             log.warning("websearch_map_failed", error=str(map_result))
@@ -332,7 +333,7 @@ def _is_own_site(url: str, project_url: str | None) -> bool:
         own_domain = urlparse(project_url).netloc.lower().replace("www.", "")
         url_domain = urlparse(url).netloc.lower().replace("www.", "")
         return own_domain == url_domain
-    except Exception:
+    except (ValueError, AttributeError):
         return False
 
 
