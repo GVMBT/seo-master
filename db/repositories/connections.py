@@ -122,6 +122,23 @@ class ConnectionsRepository(BaseRepository):
                 return self._to_connection(rows[0])
         return None
 
+    async def get_by_identifier_global(self, identifier: str, platform_type: str) -> PlatformConnection | None:
+        """Find connection by identifier+platform across ALL users.
+
+        Used for Telegram global uniqueness (E41): a channel must not be
+        connected by any user.
+        """
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .eq("platform_type", platform_type)
+            .eq("identifier", identifier)
+            .limit(1)
+            .execute()
+        )
+        rows = self._rows(resp)
+        return self._to_connection(rows[0]) if rows else None
+
     async def get_platform_types_by_project(self, project_id: int) -> list[str]:
         """Get distinct active platform types for a project (no credential decryption)."""
         resp = (
