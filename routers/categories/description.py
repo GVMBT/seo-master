@@ -190,7 +190,7 @@ async def start_generate(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(DescriptionGenerateFSM.confirm, F.data == "desc:confirm:yes")
+@router.callback_query(DescriptionGenerateFSM.confirm, F.data.regexp(r"^desc:\d+:confirm_yes$"))
 async def confirm_generate(
     callback: CallbackQuery,
     state: FSMContext,
@@ -295,7 +295,7 @@ async def confirm_generate(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(DescriptionGenerateFSM.confirm, F.data == "desc:confirm:no")
+@router.callback_query(DescriptionGenerateFSM.confirm, F.data.regexp(r"^desc:\d+:confirm_no$"))
 async def cancel_generate(
     callback: CallbackQuery,
     state: FSMContext,
@@ -331,7 +331,7 @@ async def cancel_generate(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(DescriptionGenerateFSM.review, F.data == "desc:review:save")
+@router.callback_query(DescriptionGenerateFSM.review, F.data.regexp(r"^desc:\d+:review_save$"))
 async def review_save(
     callback: CallbackQuery,
     state: FSMContext,
@@ -361,7 +361,7 @@ async def review_save(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(DescriptionGenerateFSM.review, F.data == "desc:review:regen")
+@router.callback_query(DescriptionGenerateFSM.review, F.data.regexp(r"^desc:\d+:review_regen$"))
 async def review_regenerate(
     callback: CallbackQuery,
     state: FSMContext,
@@ -458,7 +458,7 @@ async def review_regenerate(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(DescriptionGenerateFSM.review, F.data == "desc:review:cancel")
+@router.callback_query(DescriptionGenerateFSM.review, F.data.regexp(r"^desc:\d+:review_cancel$"))
 async def review_cancel(
     callback: CallbackQuery,
     state: FSMContext,
@@ -589,8 +589,9 @@ async def delete_description(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    # Clear description — bypass exclude_none by calling table directly
-    await db.table("categories").update({"description": None}).eq("id", cat_id).execute()
+    # Clear description via repository
+    cats_repo = CategoriesRepository(db)
+    await cats_repo.clear_description(cat_id)
 
     log.info("description_deleted", cat_id=cat_id, user_id=user.id)
     await _show_description_screen(callback.message, cat_id, db)

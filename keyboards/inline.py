@@ -650,10 +650,10 @@ def keywords_quantity_kb(cat_id: int) -> InlineKeyboardMarkup:
     """Keyword quantity selection (UX_TOOLBOX section 9.5)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="50 фраз \u2014 50 токенов", callback_data="kw:qty:50")],
-            [InlineKeyboardButton(text="100 фраз \u2014 100 токенов", callback_data="kw:qty:100")],
-            [InlineKeyboardButton(text="150 фраз \u2014 150 токенов", callback_data="kw:qty:150")],
-            [InlineKeyboardButton(text="200 фраз \u2014 200 токенов", callback_data="kw:qty:200")],
+            [InlineKeyboardButton(text="50 фраз \u2014 50 токенов", callback_data=f"kw:{cat_id}:qty_50")],
+            [InlineKeyboardButton(text="100 фраз \u2014 100 токенов", callback_data=f"kw:{cat_id}:qty_100")],
+            [InlineKeyboardButton(text="150 фраз \u2014 150 токенов", callback_data=f"kw:{cat_id}:qty_150")],
+            [InlineKeyboardButton(text="200 фраз \u2014 200 токенов", callback_data=f"kw:{cat_id}:qty_200")],
         ]
     )
 
@@ -665,10 +665,10 @@ def keywords_confirm_kb(cat_id: int, cost: int, balance: int) -> InlineKeyboardM
             [
                 InlineKeyboardButton(
                     text="Да, сгенерировать",
-                    callback_data="kw:confirm:yes",
+                    callback_data=f"kw:{cat_id}:confirm_yes",
                     style=ButtonStyle.SUCCESS,
                 ),
-                InlineKeyboardButton(text="Отмена", callback_data="kw:confirm:no"),
+                InlineKeyboardButton(text="Отмена", callback_data=f"kw:{cat_id}:confirm_no"),
             ],
         ]
     )
@@ -759,10 +759,10 @@ def description_confirm_kb(cat_id: int, balance: int) -> InlineKeyboardMarkup:
                 [
                     InlineKeyboardButton(
                         text="Да, сгенерировать",
-                        callback_data="desc:confirm:yes",
+                        callback_data=f"desc:{cat_id}:confirm_yes",
                         style=ButtonStyle.SUCCESS,
                     ),
-                    InlineKeyboardButton(text="Отмена", callback_data="desc:confirm:no"),
+                    InlineKeyboardButton(text="Отмена", callback_data=f"desc:{cat_id}:confirm_no"),
                 ],
             ]
         )
@@ -770,7 +770,7 @@ def description_confirm_kb(cat_id: int, balance: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="Пополнить баланс", callback_data="nav:tokens"),
-                InlineKeyboardButton(text="Отмена", callback_data="desc:confirm:no"),
+                InlineKeyboardButton(text="Отмена", callback_data=f"desc:{cat_id}:confirm_no"),
             ],
         ]
     )
@@ -791,13 +791,13 @@ def description_review_kb(cat_id: int, regen_count: int) -> InlineKeyboardMarkup
             [
                 InlineKeyboardButton(
                     text="Сохранить",
-                    callback_data="desc:review:save",
+                    callback_data=f"desc:{cat_id}:review_save",
                     style=ButtonStyle.SUCCESS,
                 ),
             ],
             [
-                InlineKeyboardButton(text=regen_text, callback_data="desc:review:regen"),
-                InlineKeyboardButton(text="Отмена", callback_data="desc:review:cancel"),
+                InlineKeyboardButton(text=regen_text, callback_data=f"desc:{cat_id}:review_regen"),
+                InlineKeyboardButton(text="Отмена", callback_data=f"desc:{cat_id}:review_cancel"),
             ],
         ]
     )
@@ -883,12 +883,12 @@ def text_style_kb(cat_id: int, selected: list[str]) -> InlineKeyboardMarkup:
     """Multi-select text style grid (UX_TOOLBOX section 12.2)."""
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
-    for style in _TEXT_STYLES:
+    for idx, style in enumerate(_TEXT_STYLES):
         prefix = "\u2713 " if style in selected else ""
         row.append(
             InlineKeyboardButton(
                 text=f"{prefix}{style}",
-                callback_data=f"settings:{cat_id}:style:{style}",
+                callback_data=f"settings:{cat_id}:ts:{idx}",
             ),
         )
         if len(row) == 3:
@@ -900,7 +900,7 @@ def text_style_kb(cat_id: int, selected: list[str]) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Сохранить",
-                callback_data=f"settings:{cat_id}:styles:save",
+                callback_data=f"settings:{cat_id}:ts_save",
                 style=ButtonStyle.SUCCESS,
             ),
         ]
@@ -932,12 +932,12 @@ def image_style_kb(cat_id: int, current: str | None) -> InlineKeyboardMarkup:
     """Image style selection grid (UX_TOOLBOX section 12.4)."""
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
-    for style in _IMAGE_STYLES:
+    for idx, style in enumerate(_IMAGE_STYLES):
         prefix = "\u2713 " if style == current else ""
         row.append(
             InlineKeyboardButton(
                 text=f"{prefix}{style}",
-                callback_data=f"settings:{cat_id}:imgstyle:{style}",
+                callback_data=f"settings:{cat_id}:is:{idx}",
             ),
         )
         if len(row) == 3:

@@ -29,8 +29,8 @@ from keyboards.inline import (
 log = structlog.get_logger()
 router = Router()
 
-# Allowed values (must match keyboards/inline.py _TEXT_STYLES / _IMAGE_STYLES)
-_VALID_TEXT_STYLES: set[str] = {
+# Ordered lists (must match keyboards/inline.py _TEXT_STYLES / _IMAGE_STYLES)
+_TEXT_STYLES: list[str] = [
     "Рекламный",
     "Мотивационный",
     "Дружелюбный",
@@ -41,16 +41,19 @@ _VALID_TEXT_STYLES: set[str] = {
     "С юмором",
     "Мужской",
     "Женский",
-}
+]
 
-_VALID_IMAGE_STYLES: set[str] = {
+_IMAGE_STYLES: list[str] = [
     "Фотореализм",
     "Аниме",
     "Масло",
     "Акварель",
     "Мультяшный",
     "Минимализм",
-}
+]
+
+_VALID_TEXT_STYLES: set[str] = set(_TEXT_STYLES)
+_VALID_IMAGE_STYLES: set[str] = set(_IMAGE_STYLES)
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +244,13 @@ async def process_max_words(
     """Validate max word count (> min, ≤10000) and save."""
     text = (message.text or "").strip()
     data = await state.get_data()
-    min_val = int(data["min_words"])
+    min_raw = data.get("min_words")
+    cat_raw = data.get("settings_cat_id")
+    if min_raw is None or cat_raw is None:
+        await state.clear()
+        await message.answer("Сессия устарела. Начните настройку заново.")
+        return
+    min_val = int(min_raw)
 
     try:
         max_val = int(text)
@@ -257,7 +266,7 @@ async def process_max_words(
         await message.answer("Максимум 10000 слов.")
         return
 
-    cat_id = int(data["settings_cat_id"])
+    cat_id = int(cat_raw)
     await state.clear()
 
     cats_repo = CategoriesRepository(db)
@@ -312,24 +321,25 @@ async def text_style(
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^settings:\d+:style:.+$"))
+@router.callback_query(F.data.regexp(r"^settings:\d+:ts:\d+$"))
 async def toggle_style(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
 ) -> None:
-    """Toggle a text style on/off."""
+    """Toggle a text style on/off (index-based callback)."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
 
     parts = callback.data.split(":")  # type: ignore[union-attr]
     cat_id = int(parts[1])
-    style_name = ":".join(parts[3:])  # handle styles with colons (unlikely but safe)
+    style_idx = int(parts[3])
 
-    if style_name not in _VALID_TEXT_STYLES:
+    if style_idx < 0 or style_idx >= len(_TEXT_STYLES):
         await callback.answer("Неизвестный стиль.", show_alert=True)
         return
+    style_name = _TEXT_STYLES[style_idx]
 
     _, category = await _check_category_ownership(cat_id, user, db)
     if not category:
@@ -357,7 +367,7 @@ async def toggle_style(
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^settings:\d+:styles:save$"))
+@router.callback_query(F.data.regexp(r"^settings:\d+:ts_save$"))
 async def save_styles(
     callback: CallbackQuery,
     user: User,
@@ -498,24 +508,25 @@ async def img_style(
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^settings:\d+:imgstyle:.+$"))
+@router.callback_query(F.data.regexp(r"^settings:\d+:is:\d+$"))
 async def select_img_style(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
 ) -> None:
-    """Save selected image style and return to settings."""
+    """Save selected image style and return to settings (index-based callback)."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
 
     parts = callback.data.split(":")  # type: ignore[union-attr]
     cat_id = int(parts[1])
-    style_name = ":".join(parts[3:])
+    style_idx = int(parts[3])
 
-    if style_name not in _VALID_IMAGE_STYLES:
+    if style_idx < 0 or style_idx >= len(_IMAGE_STYLES):
         await callback.answer("Неизвестный стиль.", show_alert=True)
         return
+    style_name = _IMAGE_STYLES[style_idx]
 
     _, category = await _check_category_ownership(cat_id, user, db)
     if not category:

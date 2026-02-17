@@ -48,6 +48,16 @@ router = Router()
 _MAX_FILE_SIZE = 1 * 1024 * 1024  # 1 MB
 _MAX_PHRASES = 500
 
+# CSV formula injection chars
+_CSV_INJECTION_CHARS = ("=", "+", "-", "@")
+
+
+def _csv_safe(value: str) -> str:
+    """Neutralize CSV formula injection by prepending a single quote."""
+    if value and value[0] in _CSV_INJECTION_CHARS:
+        return "'" + value
+    return value
+
 
 # ---------------------------------------------------------------------------
 # FSM definitions (FSM_SPEC.md section 1)
@@ -322,7 +332,7 @@ async def process_geography(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(KeywordGenerationFSM.quantity, F.data.regexp(r"^kw:qty:\d+$"))
+@router.callback_query(KeywordGenerationFSM.quantity, F.data.regexp(r"^kw:\d+:qty_\d+$"))
 async def select_quantity(
     callback: CallbackQuery,
     state: FSMContext,
@@ -334,7 +344,9 @@ async def select_quantity(
         await callback.answer()
         return
 
-    quantity = int(callback.data.split(":")[2])  # type: ignore[union-attr]
+    # callback_data = "kw:{cat_id}:qty_{n}"
+    action = callback.data.split(":")[2]  # type: ignore[union-attr]
+    quantity = int(action.split("_")[1])
     if quantity not in (50, 100, 150, 200):
         await callback.answer("Недопустимое количество.", show_alert=True)
         return
@@ -374,7 +386,7 @@ async def select_quantity(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(KeywordGenerationFSM.confirm, F.data == "kw:confirm:yes")
+@router.callback_query(KeywordGenerationFSM.confirm, F.data.regexp(r"^kw:\d+:confirm_yes$"))
 async def confirm_generation(
     callback: CallbackQuery,
     state: FSMContext,
@@ -447,7 +459,7 @@ async def confirm_generation(
     )
 
 
-@router.callback_query(KeywordGenerationFSM.confirm, F.data == "kw:confirm:no")
+@router.callback_query(KeywordGenerationFSM.confirm, F.data.regexp(r"^kw:\d+:confirm_no$"))
 async def cancel_generation(
     callback: CallbackQuery,
     state: FSMContext,
@@ -561,7 +573,9 @@ async def _run_generation_pipeline(
             f"Списано {cost} токенов.",
             reply_markup=keywords_results_kb(cat_id),
         )
-        await state.clear()
+        # Use set_state(None) instead of clear() to preserve saved answers
+        # (kw_products_{cat_id}, kw_geography_{cat_id}) for "Use saved" flow
+        await state.set_state(None)
 
         log.info(
             "keyword_generation_complete",
@@ -965,18 +979,18 @@ async def download_csv(
     writer.writerow(["Кластер", "Тип", "Фраза", "Объём", "Сложность", "CPC", "Интент"])
 
     for cluster in clusters:
-        c_name = cluster.get("cluster_name", "")
-        c_type = cluster.get("cluster_type", "")
+        c_name = _csv_safe(cluster.get("cluster_name", ""))
+        c_type = _csv_safe(cluster.get("cluster_type", ""))
         for p in cluster.get("phrases", []):
             writer.writerow(
                 [
                     c_name,
                     c_type,
-                    p.get("phrase", ""),
+                    _csv_safe(p.get("phrase", "")),
                     p.get("volume", 0),
                     p.get("difficulty", 0),
                     p.get("cpc", 0),
-                    p.get("intent", ""),
+                    _csv_safe(p.get("intent", "")),
                 ]
             )
 
