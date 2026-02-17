@@ -18,5 +18,3 @@ def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
     if is_admin:
         rows.append([KeyboardButton(text="АДМИНКА")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
-
-

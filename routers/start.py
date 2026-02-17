@@ -109,8 +109,7 @@ def _build_dashboard_text(
 
     # Returning user, 0 projects
     return (
-        f"Баланс: {balance:,} токенов\n".replace(",", " ")
-        + "У вас пока нет проектов.\n"
+        f"Баланс: {balance:,} токенов\n".replace(",", " ") + "У вас пока нет проектов.\n"
         "Создайте первый — это займёт 30 секунд."
     )
 
@@ -161,12 +160,8 @@ async def _get_checkpoint_text(redis: RedisClient, user_id: int) -> str:
         checkpoint = json.loads(checkpoint_raw)
         project_name = html.escape(checkpoint.get("project_name", ""))
         step = checkpoint.get("step_label", "подготовка")
-        return (
-            f"\n\nУ вас есть незавершённая статья:\n"
-            f"Проект: {project_name}\n"
-            f"Остановились на: {step}"
-        )
-    except (json.JSONDecodeError, TypeError):
+        return f"\n\nУ вас есть незавершённая статья:\nПроект: {project_name}\nОстановились на: {step}"
+    except json.JSONDecodeError, TypeError:
         return ""
 
 
@@ -290,6 +285,16 @@ async def pipeline_cancel(callback: CallbackQuery, redis: RedisClient, user: Use
     await callback.answer("Pipeline отменён.")
     if callback.message and not isinstance(callback.message, InaccessibleMessage):
         await callback.message.delete()
+
+
+@router.callback_query(F.data.startswith("pipeline:"))
+async def pipeline_stale_catchall(callback: CallbackQuery) -> None:
+    """Catch-all for stale pipeline callbacks after FSM timeout/cancel.
+
+    Without this, clicks on old pipeline keyboards silently drop
+    (no handler matches without FSM state) → "spinning clock" forever.
+    """
+    await callback.answer("Сессия завершена. Начните заново.", show_alert=True)
 
 
 @router.callback_query(F.data == "noop")

@@ -5,6 +5,8 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery, InaccessibleMessage
 
 from bot.config import get_settings
+from cache.client import RedisClient
+from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.models import User, UserUpdate
 from db.repositories.users import UsersRepository
@@ -46,9 +48,7 @@ async def nav_profile(
 
     if stats["posts_per_week"] > 0:
         text += (
-            f"Прогноз расхода:\n"
-            f"~{stats['tokens_per_week']} токенов/неделю\n"
-            f"~{stats['tokens_per_month']} токенов/месяц"
+            f"Прогноз расхода:\n~{stats['tokens_per_week']} токенов/неделю\n~{stats['tokens_per_month']} токенов/месяц"
         )
 
     await callback.message.edit_text(text, reply_markup=profile_kb())
@@ -88,6 +88,7 @@ async def toggle_notification(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    redis: RedisClient,
 ) -> None:
     """Toggle a notification setting."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -106,6 +107,9 @@ async def toggle_notification(
 
     repo = UsersRepository(db)
     await repo.update(user.id, update)
+
+    # Invalidate user cache so next navigation shows fresh data
+    await redis.delete(CacheKeys.user_cache(user.id))
 
     # Refresh user object for keyboard
     updated_user = await repo.get_by_id(user.id)
@@ -137,7 +141,7 @@ async def show_referral(
     user: User,
     db: SupabaseClient,
 ) -> None:
-    """Referral program info screen."""
+    """Referral program info screen with inline referral link."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
@@ -147,34 +151,16 @@ async def show_referral(
     referral_count = await UsersRepository(db).get_referral_count(user.id)
     referral_earned = await token_service.get_referral_bonus_total(user.id)
 
-    text = (
-        f"<b>Реферальная программа</b>\n\n"
-        f"Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!\n\n"
-        f"Ваших рефералов: <b>{referral_count}</b>\n"
-        f"Заработано: <b>{referral_earned}</b> токенов\n\n"
-        f"Нажмите «Поделиться ссылкой», чтобы отправить приглашение."
-    )
-
-    await callback.message.edit_text(text, reply_markup=referral_kb())
-    await callback.answer()
-
-
-@router.callback_query(F.data == "profile:referral:share")
-async def share_referral(
-    callback: CallbackQuery,
-    user: User,
-) -> None:
-    """Send referral link as a copyable message."""
     bot_info = await callback.bot.me()  # type: ignore[union-attr]
     link = f"https://t.me/{bot_info.username}?start=referrer_{user.id}"
 
     text = (
-        f"Поделитесь этой ссылкой с друзьями:\n\n"
-        f"<code>{link}</code>\n\n"
-        f"Вы получите 10% от каждой покупки приглашённого пользователя!"
+        f"<b>Реферальная программа</b>\n\n"
+        f"Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!\n\n"
+        f"Ваша ссылка:\n<code>{link}</code>\n\n"
+        f"Рефералов: <b>{referral_count}</b>\n"
+        f"Заработано: <b>{referral_earned}</b> токенов"
     )
 
-    # Send as a new message so user can forward it
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
-        await callback.message.answer(text)
+    await callback.message.edit_text(text, reply_markup=referral_kb())
     await callback.answer()

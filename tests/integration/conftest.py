@@ -12,7 +12,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiogram import Bot, Dispatcher
+from aiogram import Bot
 from aiogram.types import (
     CallbackQuery,
     Chat,
@@ -23,14 +23,6 @@ from aiogram.types import (
     User as TgUser,
 )
 
-from bot.middlewares import (
-    AuthMiddleware,
-    DBSessionMiddleware,
-    FSMInactivityMiddleware,
-    LoggingMiddleware,
-    ThrottlingMiddleware,
-)
-from cache.fsm_storage import UpstashFSMStorage
 from tests.unit.db.repositories.conftest import MockResponse, MockSupabaseClient
 
 # Re-export for convenience in sub-conftest files
