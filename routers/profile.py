@@ -108,8 +108,11 @@ async def toggle_notification(
     repo = UsersRepository(db)
     await repo.update(user.id, update)
 
-    # Invalidate user cache so next navigation shows fresh data
-    await redis.delete(CacheKeys.user_cache(user.id))
+    # Invalidate user cache so next navigation shows fresh data (best-effort)
+    try:
+        await redis.delete(CacheKeys.user_cache(user.id))
+    except Exception:
+        log.warning("user_cache_invalidate_failed", user_id=user.id)
 
     # Refresh user object for keyboard
     updated_user = await repo.get_by_id(user.id)

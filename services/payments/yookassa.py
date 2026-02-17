@@ -152,6 +152,7 @@ class YooKassaPaymentService:
 
         body: dict[str, Any] = {
             "amount": {"value": f"{amount}.00", "currency": "RUB"},
+            "capture": True,
             "payment_method_id": payment_method_id,
             "metadata": {
                 "user_id": str(user_id),
