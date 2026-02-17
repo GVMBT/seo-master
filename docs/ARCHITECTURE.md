@@ -69,8 +69,8 @@ seo-master-bot-v2/
 │   │   ├── scheduler.py            # Настройка расписания (FSM)
 │   │   └── pipeline/               # Goal-Oriented Pipeline (замена Quick Publish)
 │   │       ├── __init__.py          # Регистрация роутеров
-│   │       ├── article.py           # ArticlePipelineFSM (23 состояния, шаги 1-8 + inline sub-flows)
-│   │       ├── social.py            # SocialPipelineFSM (27 состояний, соц. посты + кросс-постинг)
+│   │       ├── article.py           # ArticlePipelineFSM (25 состояний, шаги 1-8 + inline sub-flows)
+│   │       ├── social.py            # SocialPipelineFSM (28 состояний, соц. посты + кросс-постинг)
 │   │       └── readiness.py         # Inline readiness handlers (sub-flows через Service Layer)
 │   ├── profile.py                  # Профиль, расходы, реферал
 │   ├── tariffs.py                  # Пакеты + Telegram Stars

@@ -1209,7 +1209,7 @@ def check_fabricated_data(html: str, prices_excerpt: str, advantages: str) -> li
 ### 3.8 ~~Быстрая публикация (F42)~~ → Goal-Oriented Pipeline
 
 > **Замена:** Quick Publish заменён на Goal-Oriented Pipeline (см. [UX_PIPELINE.md](UX_PIPELINE.md)).
-> Новые FSM: `ArticlePipelineFSM` (23 состояния), `SocialPipelineFSM` (27 состояний).
+> Новые FSM: `ArticlePipelineFSM` (25 состояний), `SocialPipelineFSM` (28 состояний).
 > Новые callback_data: `pipeline:article:*`, `pipeline:social:*`.
 
 Pipeline использует FSM (не callback-based), т.к. включает inline sub-flows с пользовательским вводом (readiness check).

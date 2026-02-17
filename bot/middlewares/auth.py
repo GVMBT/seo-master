@@ -16,9 +16,6 @@ from db.client import SupabaseClient
 from db.models import User, UserCreate
 from db.repositories.users import UsersRepository
 
-# TODO: restore after frontend rewrite
-# from keyboards.reply import main_menu
-
 log = structlog.get_logger()
 
 
@@ -125,7 +122,7 @@ class FSMInactivityMiddleware(BaseMiddleware):
 
     @staticmethod
     async def _send_expired_message(event: TelegramObject, data: dict[str, Any]) -> None:
-        """Send session expired notification and restore main menu keyboard."""
+        """Send session expired notification."""
         text = "Сессия истекла. Начните заново."
         # TODO: restore main_menu keyboard after frontend rewrite
         if isinstance(event, Message):
