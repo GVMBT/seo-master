@@ -1,7 +1,6 @@
-"""YooKassa payment service — create payments, process webhooks.
+"""YooKassa payment service — create payments, process webhooks, auto-renew.
 
-Source of truth: API_CONTRACTS.md §2.4.
-No subscriptions in v2 — one-time purchases only.
+Source of truth: API_CONTRACTS.md §2.4 (one-time), §2.5 (recurring).
 Uses httpx directly (not yookassa SDK) for async compatibility.
 Zero dependencies on Telegram/Aiogram.
 """
@@ -125,6 +124,61 @@ class YooKassaPaymentService:
         except httpx.HTTPError:
             log.exception("yookassa_create_payment_error", user_id=user_id, package=package_name)
             return None
+
+    # ------------------------------------------------------------------
+    # Auto-renewal (API_CONTRACTS.md §2.5 step 3)
+    # ------------------------------------------------------------------
+
+    async def renew_subscription(
+        self,
+        user_id: int,
+        payment_method_id: str,
+        package_name: str,
+    ) -> bool:
+        """Create a recurring payment using saved payment_method_id.
+
+        Called by QStash cron via /api/yookassa/renew every 30 days.
+        Returns True if payment was created successfully, False otherwise.
+        Token crediting happens when payment.succeeded webhook arrives.
+        """
+        pkg = PACKAGES.get(package_name)
+        if not pkg:
+            log.error("renew_unknown_package", user_id=user_id, package=package_name)
+            return False
+
+        amount = str(pkg.price_rub)
+        tokens = pkg.tokens
+        description = f"Продление подписки {pkg.label} — {tokens} токенов"
+
+        body: dict[str, Any] = {
+            "amount": {"value": f"{amount}.00", "currency": "RUB"},
+            "capture": True,
+            "payment_method_id": payment_method_id,
+            "metadata": {
+                "user_id": str(user_id),
+                "package_name": package_name,
+                "tokens_amount": str(tokens),
+                "is_renewal": "true",
+            },
+            "description": description,
+        }
+
+        try:
+            resp = await self._http.post(
+                f"{_API_BASE}/payments",
+                json=body,
+                auth=(self._shop_id, self._secret_key),
+                headers={
+                    "Content-Type": "application/json",
+                    "Idempotence-Key": str(uuid.uuid4()),
+                },
+            )
+            resp.raise_for_status()
+            log.info("renew_payment_created", user_id=user_id, package=package_name)
+            return True
+        except httpx.HTTPError:
+            log.exception("renew_payment_error", user_id=user_id, package=package_name)
+            return False
 
     # ------------------------------------------------------------------
     # Webhook processing

@@ -94,9 +94,7 @@ async def start_create(
     await state.update_data(last_update_time=time.time())
 
     await callback.message.answer(
-        "Как назовём проект?\n"
-        "Это внутреннее имя для вашего удобства.\n\n"
-        "<i>Пример: Мебель Комфорт</i>",
+        "Как назовём проект?\nЭто внутреннее имя для вашего удобства.\n\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
 
@@ -121,9 +119,7 @@ async def process_name(
     await state.update_data(name=text)
     await state.set_state(ProjectCreateFSM.company_name)
     await message.answer(
-        "Как называется ваша компания?\n"
-        "Будет использоваться в текстах.\n\n"
-        "<i>Пример: ООО Мебель Комфорт</i>",
+        "Как называется ваша компания?\nБудет использоваться в текстах.\n\n<i>Пример: ООО Мебель Комфорт</i>",
     )
 
 
@@ -147,8 +143,7 @@ async def process_company_name(
     await state.update_data(company_name=text)
     await state.set_state(ProjectCreateFSM.specialization)
     await message.answer(
-        "Опишите специализацию в 2-3 словах.\n\n"
-        "<i>Пример: мебель на заказ</i>",
+        "Опишите специализацию в 2-3 словах.\n\n<i>Пример: мебель на заказ</i>",
     )
 
 
@@ -172,9 +167,7 @@ async def process_specialization(
     await state.update_data(specialization=text)
     await state.set_state(ProjectCreateFSM.website_url)
     await message.answer(
-        "Адрес вашего сайта (необязательно).\n"
-        "Если нет — напишите «Пропустить».\n\n"
-        "<i>Пример: comfort-mebel.ru</i>",
+        "Адрес вашего сайта (необязательно).\nЕсли нет — напишите «Пропустить».\n\n<i>Пример: comfort-mebel.ru</i>",
     )
 
 
@@ -216,8 +209,7 @@ async def process_website_url(
 
     safe_name = html.escape(project.name)
     await message.answer(
-        f"Проект «{safe_name}» создан!\n"
-        "Теперь подключите платформу для публикации.",
+        f"Проект «{safe_name}» создан!\nТеперь подключите платформу для публикации.",
         reply_markup=project_created_kb(project.id),
     )
 

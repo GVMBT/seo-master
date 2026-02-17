@@ -993,9 +993,8 @@ def notifications_kb(
 
 
 def referral_kb() -> InlineKeyboardMarkup:
-    """Referral program keyboard."""
+    """Referral program keyboard (link shown inline in message text)."""
     rows = [
-        [InlineKeyboardButton(text="Поделиться ссылкой", callback_data="profile:referral:share")],
         [InlineKeyboardButton(text="К профилю", callback_data="nav:profile")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -1065,18 +1064,18 @@ _DAY_LABELS: dict[str, str] = {
 }
 
 
-def scheduler_cat_list_kb(
-    categories: list[Any], project_id: int
-) -> InlineKeyboardMarkup:
+def scheduler_cat_list_kb(categories: list[Any], project_id: int) -> InlineKeyboardMarkup:
     """Category list for scheduler entry."""
     rows: list[list[InlineKeyboardButton]] = []
     for cat in categories:
-        rows.append([
-            InlineKeyboardButton(
-                text=cat.name,
-                callback_data=f"scheduler:{project_id}:cat:{cat.id}",
-            )
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=cat.name,
+                    callback_data=f"scheduler:{project_id}:cat:{cat.id}",
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(text="К проекту", callback_data=f"project:{project_id}:card")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1096,50 +1095,64 @@ def scheduler_conn_list_kb(
             label = f"{conn.identifier} ({days_str})"
         else:
             label = f"{conn.identifier} (нет расписания)"
-        rows.append([
-            InlineKeyboardButton(
-                text=label,
-                callback_data=f"scheduler:{cat_id}:conn:{conn.id}",
-            )
-        ])
-    rows.append([
-        InlineKeyboardButton(
-            text="Назад",
-            callback_data=f"project:{project_id}:scheduler",
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=f"scheduler:{cat_id}:conn:{conn.id}",
+                )
+            ]
         )
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Назад",
+                callback_data=f"project:{project_id}:scheduler",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def scheduler_config_kb(
-    cat_id: int, conn_id: int, has_schedule: bool
-) -> InlineKeyboardMarkup:
+def scheduler_config_kb(cat_id: int, conn_id: int, has_schedule: bool) -> InlineKeyboardMarkup:
     """Schedule config: presets + manual + disable."""
     rows: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(
-            text="3 раза/неделю",
-            callback_data=f"sched:{cat_id}:{conn_id}:preset:3w",
-            style=ButtonStyle.PRIMARY,
-        )],
-        [InlineKeyboardButton(
-            text="1 раз/неделю",
-            callback_data=f"sched:{cat_id}:{conn_id}:preset:1w",
-        )],
-        [InlineKeyboardButton(
-            text="Каждый день",
-            callback_data=f"sched:{cat_id}:{conn_id}:preset:daily",
-        )],
-        [InlineKeyboardButton(
-            text="Настроить вручную",
-            callback_data=f"sched:{cat_id}:{conn_id}:manual",
-        )],
+        [
+            InlineKeyboardButton(
+                text="3 раза/неделю",
+                callback_data=f"sched:{cat_id}:{conn_id}:preset:3w",
+                style=ButtonStyle.PRIMARY,
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="1 раз/неделю",
+                callback_data=f"sched:{cat_id}:{conn_id}:preset:1w",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="Каждый день",
+                callback_data=f"sched:{cat_id}:{conn_id}:preset:daily",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="Настроить вручную",
+                callback_data=f"sched:{cat_id}:{conn_id}:manual",
+            )
+        ],
     ]
     if has_schedule:
-        rows.append([InlineKeyboardButton(
-            text="Отключить расписание",
-            callback_data=f"sched:{cat_id}:{conn_id}:disable",
-            style=ButtonStyle.DANGER,
-        )])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Отключить расписание",
+                    callback_data=f"sched:{cat_id}:{conn_id}:disable",
+                    style=ButtonStyle.DANGER,
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(text="Назад", callback_data=f"scheduler:{cat_id}:conn_list")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1162,10 +1175,7 @@ def schedule_days_kb(selected: set[str]) -> InlineKeyboardMarkup:
 
 def schedule_count_kb() -> InlineKeyboardMarkup:
     """Posts per day selection (1-5)."""
-    row = [
-        InlineKeyboardButton(text=str(i), callback_data=f"sched:count:{i}")
-        for i in range(1, 6)
-    ]
+    row = [InlineKeyboardButton(text=str(i), callback_data=f"sched:count:{i}") for i in range(1, 6)]
     return InlineKeyboardMarkup(inline_keyboard=[row])
 
 

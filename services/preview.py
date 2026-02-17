@@ -116,26 +116,22 @@ class PreviewService:
                 competitor_urls = [
                     r["link"]
                     for r in serper_result.organic
-                    if r.get("link")
-                    and not _is_own_site(r["link"], project_url)
+                    if r.get("link") and not _is_own_site(r["link"], project_url)
                 ][:_MAX_COMPETITOR_SCRAPE]
                 if competitor_urls:
-                    scrape_tasks = [
-                        self._firecrawl.scrape_content(url)
-                        for url in competitor_urls
-                    ]
-                    scrape_results = await asyncio.gather(
-                        *scrape_tasks, return_exceptions=True
-                    )
+                    scrape_tasks = [self._firecrawl.scrape_content(url) for url in competitor_urls]
+                    scrape_results = await asyncio.gather(*scrape_tasks, return_exceptions=True)
                     pages: list[dict[str, Any]] = []
                     for sr in scrape_results:
                         if sr and not isinstance(sr, BaseException):
-                            pages.append({
-                                "url": sr.url,
-                                "word_count": sr.word_count,
-                                "headings": sr.headings,
-                                "summary": sr.summary or "",
-                            })
+                            pages.append(
+                                {
+                                    "url": sr.url,
+                                    "word_count": sr.word_count,
+                                    "headings": sr.headings,
+                                    "summary": sr.summary or "",
+                                }
+                            )
                     result["competitor_pages"] = pages
 
                     # Format competitor analysis for prompt
@@ -341,9 +337,7 @@ def _format_competitor_analysis(pages: list[dict[str, Any]]) -> str:
     """Format competitor scrape results into a text block for AI prompt."""
     lines: list[str] = []
     for i, page in enumerate(pages, 1):
-        h2_headings = [
-            h["text"] for h in page.get("headings", []) if h.get("level") == 2
-        ]
+        h2_headings = [h["text"] for h in page.get("headings", []) if h.get("level") == 2]
         lines.append(f"Конкурент {i} ({page.get('url', '')}):")
         lines.append(f"  Объём: ~{page.get('word_count', 0)} слов")
         if page.get("summary"):
@@ -366,11 +360,7 @@ def _identify_gaps(pages: list[dict[str, Any]]) -> str:
 
     lines: list[str] = []
     for i, page in enumerate(pages, 1):
-        h2_list = [
-            str(h.get("text", ""))
-            for h in page.get("headings", [])
-            if h.get("level") == 2
-        ]
+        h2_list = [str(h.get("text", "")) for h in page.get("headings", []) if h.get("level") == 2]
         if h2_list:
             lines.append(f"Конкурент {i}: {', '.join(h2_list[:8])}")
 
@@ -379,6 +369,5 @@ def _identify_gaps(pages: list[dict[str, Any]]) -> str:
 
     return (
         "Структура H2 конкурентов (определи, какие темы НЕ раскрыты "
-        "ни одним конкурентом — это твоя уникальная ценность):\n"
-        + "\n".join(lines)
+        "ни одним конкурентом — это твоя уникальная ценность):\n" + "\n".join(lines)
     )

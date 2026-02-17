@@ -123,6 +123,7 @@ _BRANDING_SCHEMA: dict[str, Any] = {
     },
 }
 
+
 class FirecrawlClient:
     """Client for Firecrawl API v2.
 

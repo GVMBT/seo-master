@@ -47,9 +47,7 @@ def _is_admin(user: User) -> bool:
 
 
 @router.callback_query(F.data == "admin:panel")
-async def admin_panel(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext
-) -> None:
+async def admin_panel(callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext) -> None:
     """Show admin panel with stats."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -64,10 +62,7 @@ async def admin_panel(
     users_repo = UsersRepository(db)
     total_users = await users_repo.count_all()
 
-    text = (
-        "<b>Админ-панель</b>\n\n"
-        f"Пользователей: {total_users}\n"
-    )
+    text = f"<b>Админ-панель</b>\n\nПользователей: {total_users}\n"
 
     await callback.message.edit_text(text, reply_markup=admin_panel_kb())
     await callback.answer()
@@ -79,9 +74,7 @@ async def admin_panel(
 
 
 @router.callback_query(F.data == "admin:monitoring")
-async def admin_monitoring(
-    callback: CallbackQuery, user: User, db: SupabaseClient
-) -> None:
+async def admin_monitoring(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show service health status."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -99,14 +92,13 @@ async def admin_monitoring(
         log.exception("admin_monitoring_db_check_failed")
         db_status = "ERROR"
 
-    text = (
-        "<b>Мониторинг</b>\n\n"
-        f"Database: {db_status}\n"
-    )
+    text = f"<b>Мониторинг</b>\n\nDatabase: {db_status}\n"
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+        ]
+    )
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
@@ -117,9 +109,7 @@ async def admin_monitoring(
 
 
 @router.callback_query(F.data == "admin:api_costs")
-async def admin_api_costs(
-    callback: CallbackQuery, user: User, db: SupabaseClient
-) -> None:
+async def admin_api_costs(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show API cost summary for 7/30/90 days."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -133,16 +123,13 @@ async def admin_api_costs(
     cost_30d = await repo.sum_api_costs(30)
     cost_90d = await repo.sum_api_costs(90)
 
-    text = (
-        "<b>Затраты API</b>\n\n"
-        f"7 дней: ${cost_7d:.2f}\n"
-        f"30 дней: ${cost_30d:.2f}\n"
-        f"90 дней: ${cost_90d:.2f}\n"
-    )
+    text = f"<b>Затраты API</b>\n\n7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+        ]
+    )
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
@@ -153,9 +140,7 @@ async def admin_api_costs(
 
 
 @router.callback_query(F.data == "admin:broadcast")
-async def broadcast_start(
-    callback: CallbackQuery, user: User, state: FSMContext
-) -> None:
+async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext) -> None:
     """Start broadcast FSM."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -188,9 +173,7 @@ _AUDIENCE_LABELS: dict[str, str] = {
     BroadcastFSM.audience,
     F.data.regexp(r"^broadcast:audience:(all|active_7d|active_30d|paid)$"),
 )
-async def broadcast_audience(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext
-) -> None:
+async def broadcast_audience(callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext) -> None:
     """Select audience, show count, ask for text."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -242,9 +225,7 @@ async def broadcast_text(message: Message, user: User, state: FSMContext) -> Non
 
 
 @router.callback_query(BroadcastFSM.confirm, F.data == "broadcast:send")
-async def broadcast_confirm(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext
-) -> None:
+async def broadcast_confirm(callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext) -> None:
     """Execute broadcast with rate limiting."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -262,9 +243,7 @@ async def broadcast_confirm(
     users_repo = UsersRepository(db)
     user_ids = await users_repo.get_ids_by_audience(audience_key)
 
-    await callback.message.edit_text(
-        f"Рассылка запущена... (0/{len(user_ids)})"
-    )
+    await callback.message.edit_text(f"Рассылка запущена... (0/{len(user_ids)})")
 
     sent = 0
     failed = 0
@@ -280,13 +259,13 @@ async def broadcast_confirm(
             failed += 1
         await asyncio.sleep(0.05)  # 50ms rate limit
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+        ]
+    )
     await callback.message.edit_text(
-        f"<b>Рассылка завершена</b>\n\n"
-        f"Отправлено: {sent}\n"
-        f"Ошибок: {failed}",
+        f"<b>Рассылка завершена</b>\n\nОтправлено: {sent}\nОшибок: {failed}",
         reply_markup=kb,
     )
     await callback.answer()

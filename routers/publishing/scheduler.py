@@ -180,12 +180,7 @@ async def scheduler_connection(callback: CallbackQuery, user: User, db: Supabase
     if existing and existing.enabled:
         days_str = ", ".join(_DAY_LABELS.get(d, d) for d in existing.schedule_days)
         times_str = ", ".join(existing.schedule_times)
-        text += (
-            f"Текущее расписание:\n"
-            f"Дни: {days_str}\n"
-            f"Время: {times_str}\n"
-            f"Постов/день: {existing.posts_per_day}\n\n"
-        )
+        text += f"Текущее расписание:\nДни: {days_str}\nВремя: {times_str}\nПостов/день: {existing.posts_per_day}\n\n"
     text += "Выберите вариант:"
 
     await callback.message.edit_text(
@@ -320,9 +315,7 @@ async def scheduler_disable(
 
 
 @router.callback_query(F.data.regexp(r"^sched:\d+:\d+:manual$"))
-async def scheduler_manual(
-    callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext
-) -> None:
+async def scheduler_manual(callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext) -> None:
     """Enter manual schedule setup FSM."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()

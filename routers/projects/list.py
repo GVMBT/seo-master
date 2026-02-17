@@ -52,8 +52,7 @@ async def _show_list(
 
     if not projects:
         await callback.message.edit_text(
-            "У вас пока нет проектов.\n"
-            "Создайте первый — это займёт 30 секунд.",
+            "У вас пока нет проектов.\nСоздайте первый — это займёт 30 секунд.",
             reply_markup=project_list_empty_kb(),
         )
     else:
