@@ -45,7 +45,7 @@ async def nav_tokens(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data.regexp(r"^tariff:(start|standard|pro):buy$"))
+@router.callback_query(F.data.regexp(r"^tariff:\w+:buy$"))
 async def select_package(
     callback: CallbackQuery,
 ) -> None:
@@ -72,12 +72,16 @@ async def select_package(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data.regexp(r"^tariff:(start|standard|pro):stars$"))
+@router.callback_query(F.data.regexp(r"^tariff:\w+:stars$"))
 async def pay_with_stars(
     callback: CallbackQuery,
     user: User,
 ) -> None:
     """Send Stars invoice via Telegram."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
     package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
     if package_name not in PACKAGES:
         await callback.answer("Пакет не найден", show_alert=True)
@@ -87,7 +91,7 @@ async def pay_with_stars(
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
     params = stars_svc.build_invoice_params(user_id=user.id, package_name=package_name)
 
-    await callback.message.answer_invoice(**params)  # type: ignore[union-attr]
+    await callback.message.answer_invoice(**params)
     await callback.answer()
 
 
@@ -96,7 +100,7 @@ async def pay_with_stars(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data.regexp(r"^tariff:(start|standard|pro):yookassa$"))
+@router.callback_query(F.data.regexp(r"^tariff:\w+:yookassa$"))
 async def pay_with_yookassa(
     callback: CallbackQuery,
     user: User,

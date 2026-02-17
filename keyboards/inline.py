@@ -1007,14 +1007,22 @@ def referral_kb() -> InlineKeyboardMarkup:
 
 
 def tariffs_kb() -> InlineKeyboardMarkup:
-    """Package selection keyboard. Standard is PRIMARY per spec."""
+    """Package selection keyboard. Starter is PRIMARY (most popular)."""
     from services.payments.packages import PACKAGES
 
+    _ru_names: dict[str, str] = {
+        "mini": "Мини",
+        "starter": "Стартер",
+        "pro": "Про",
+        "business": "Бизнес",
+        "enterprise": "Корпоратив",
+    }
     rows: list[list[InlineKeyboardButton]] = []
     for name, pkg in PACKAGES.items():
-        style = ButtonStyle.PRIMARY if name == "standard" else None
+        style = ButtonStyle.PRIMARY if name == "starter" else None
+        ru_name = _ru_names.get(name, pkg.name.capitalize())
         btn = InlineKeyboardButton(
-            text=f"{pkg.name.capitalize()} — {pkg.tokens} токенов / {pkg.price_rub} руб",
+            text=f"{ru_name} — {pkg.tokens} токенов / {pkg.price_rub} руб",
             callback_data=f"tariff:{name}:buy",
         )
         if style:

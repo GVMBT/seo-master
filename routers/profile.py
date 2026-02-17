@@ -166,7 +166,7 @@ async def share_referral(
 ) -> None:
     """Send referral link as a copyable message."""
     bot_info = await callback.bot.me()  # type: ignore[union-attr]
-    link = f"https://t.me/{bot_info.username}?start=ref{user.id}"
+    link = f"https://t.me/{bot_info.username}?start=referrer_{user.id}"
 
     text = (
         f"Поделитесь этой ссылкой с друзьями:\n\n"
