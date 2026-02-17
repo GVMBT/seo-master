@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 import structlog
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -377,8 +378,8 @@ async def wp_process_password(
     # Delete message with password for security (after cancel check)
     try:
         await message.delete()
-    except Exception:
-        log.warning("failed_to_delete_password_message")
+    except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound) as exc:
+        log.warning("failed_to_delete_password_message", reason=str(exc))
 
     if len(text) < 10:
         await message.answer("Application Password слишком короткий. Попробуйте ещё раз.")
@@ -415,8 +416,15 @@ async def wp_process_password(
     # Extract domain as identifier
     identifier = wp_url.replace("https://", "").replace("http://", "").rstrip("/")
     existing = await conn_repo.get_by_identifier_for_user(identifier, "wordpress", user.id)
-    if existing and existing.project_id != project_id:
-        # Same site in different project — allowed by design (E41), just warn
+    if existing and existing.project_id == project_id:
+        await message.answer(f"Сайт {html.escape(identifier)} уже подключён к этому проекту.")
+        return
+    if existing:
+        # E41: same site in different project — warn user but allow
+        await message.answer(
+            f"Сайт {html.escape(identifier)} уже подключён к другому проекту.\n"
+            "Публикации в оба проекта будут идти на один сайт.",
+        )
         log.info("wp_cross_project_connection", identifier=identifier, existing_project=existing.project_id)
 
     # Re-validate ownership before creating connection (I7)
@@ -536,8 +544,8 @@ async def tg_process_token(
     # Delete message with token for security (after cancel check)
     try:
         await message.delete()
-    except Exception:
-        log.warning("failed_to_delete_token_message")
+    except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound) as exc:
+        log.warning("failed_to_delete_token_message", reason=str(exc))
 
     # Validate bot token format (roughly: digits:alphanumeric)
     if ":" not in text or len(text) < 30:
@@ -585,6 +593,11 @@ async def tg_process_token(
         await message.answer(f"Канал {channel_id} уже подключён к этому проекту.")
         return
     if existing:
+        # E41: same channel in different project — warn user but allow
+        await message.answer(
+            f"Канал {channel_id} уже подключён к другому проекту.\n"
+            "Публикации в оба проекта будут идти в один канал.",
+        )
         log.info("tg_cross_project_connection", channel=channel_id, existing_project=existing.project_id)
 
     await state.clear()
@@ -671,8 +684,8 @@ async def vk_process_token(
     # Delete message with token for security (after cancel check)
     try:
         await message.delete()
-    except Exception:
-        log.warning("failed_to_delete_vk_token_message")
+    except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound) as exc:
+        log.warning("failed_to_delete_vk_token_message", reason=str(exc))
 
     if len(text) < 20:
         await message.answer("Токен слишком короткий. Попробуйте ещё раз.")
@@ -766,6 +779,11 @@ async def vk_select_group(
         await callback.answer()
         return
     if existing:
+        # E41: same group in different project — warn user but allow
+        await callback.message.edit_text(
+            f"Группа {html.escape(group_name)} уже подключена к другому проекту.\n"
+            "Публикации в оба проекта будут идти в одну группу.",
+        )
         log.info("vk_cross_project_connection", group=identifier, existing_project=existing.project_id)
 
     conn = await conn_repo.create(
