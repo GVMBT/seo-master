@@ -344,21 +344,25 @@ async def pipeline_select_wp(
         return
 
     parts = callback.data.split(":")  # type: ignore[union-attr]
-    project_id = int(parts[2])
     connection_id = int(parts[4])
+
+    # Trust project_id from FSM state, not callback_data (anti-tampering)
+    data = await state.get_data()
+    state_project_id = data.get("project_id")
+    project_name = data.get("project_name", "")
+    if not state_project_id:
+        await callback.answer("Проект не выбран.", show_alert=True)
+        return
 
     repo = _conn_repo(db)
     conn = await repo.get_by_id(connection_id)
 
-    if conn is None or conn.project_id != project_id:
+    if conn is None or conn.project_id != state_project_id:
         await callback.answer("Подключение не найдено.", show_alert=True)
         return
 
-    data = await state.get_data()
-    project_name = data.get("project_name", "")
-
     await state.update_data(connection_id=conn.id, wp_identifier=conn.identifier)
-    await _show_category_step(callback, state, user, db, redis, project_id, project_name)
+    await _show_category_step(callback, state, user, db, redis, state_project_id, project_name)
     await callback.answer()
 
 
@@ -479,8 +483,11 @@ async def pipeline_select_category(
         return
 
     data = await state.get_data()
-    project_id = data.get("project_id", 0)
+    project_id = data.get("project_id")
     project_name = data.get("project_name", "")
+    if not project_id:
+        await callback.answer("Проект не выбран.", show_alert=True)
+        return
 
     # Ownership check: category belongs to the selected project
     if category.project_id != project_id:
@@ -510,8 +517,11 @@ async def pipeline_create_category_name(
         return
 
     data = await state.get_data()
-    project_id = data.get("project_id", 0)
+    project_id = data.get("project_id")
     project_name = data.get("project_name", "")
+    if not project_id:
+        await message.answer("Проект не выбран. Начните создание статьи заново.")
+        return
 
     repo = CategoriesRepository(db)
     from db.models import CategoryCreate

@@ -102,7 +102,9 @@ class ReadinessService:
         keywords = category.keywords or []
         has_keywords = len(keywords) > 0
         keyword_count = _count_phrases(keywords)
-        cluster_count = len(keywords) if keywords and isinstance(keywords[0], dict) else 0
+        # Cluster format has cluster_name key; legacy flat format has phrase key
+        is_cluster_format = keywords and isinstance(keywords[0], dict) and "cluster_name" in keywords[0]
+        cluster_count = len(keywords) if is_cluster_format else 0
 
         # Description
         has_description = bool(category.description and category.description.strip())

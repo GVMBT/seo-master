@@ -375,6 +375,7 @@ class TestPipelineSelectWp:
     ) -> None:
         """Connection not in DB -> alert."""
         mock_callback.data = "pipeline:article:5:wp:999"
+        mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
         patches, _, _, _ = _patch_repos(connection=None)
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
@@ -392,12 +393,30 @@ class TestPipelineSelectWp:
         """Connection belongs to different project -> alert."""
         conn = make_connection(id=7, project_id=999)  # different project_id
         mock_callback.data = "pipeline:article:5:wp:7"
+        mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
         patches, _, _, _ = _patch_repos(connection=conn)
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_wp(mock_callback, mock_state, user, MagicMock(), mock_redis)
 
         mock_callback.answer.assert_called_with("Подключение не найдено.", show_alert=True)
+
+    async def test_no_project_in_state(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """Missing project_id in FSM state -> alert."""
+        mock_callback.data = "pipeline:article:5:wp:7"
+        mock_state.get_data = AsyncMock(return_value={})
+
+        patches, _, _, _ = _patch_repos()
+        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+            await pipeline_select_wp(mock_callback, mock_state, user, MagicMock(), mock_redis)
+
+        mock_callback.answer.assert_called_with("Проект не выбран.", show_alert=True)
 
 
 # ---------------------------------------------------------------------------

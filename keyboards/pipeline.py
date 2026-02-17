@@ -134,6 +134,12 @@ def pipeline_no_categories_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="Создать категорию",
+                    callback_data="pipeline:article:create_category",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="Отмена",
                     callback_data="pipeline:article:cancel",
                 ),
@@ -155,7 +161,7 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
     if not report.has_keywords:
-        cost_label = f" ({estimate_keywords_cost(100)} ток.)" if not report.has_keywords else ""
+        cost_label = f" ({estimate_keywords_cost(100)} ток.)"
         rows.append(
             [
                 InlineKeyboardButton(
@@ -264,6 +270,7 @@ def pipeline_insufficient_balance_kb() -> InlineKeyboardMarkup:
 
 def pipeline_preview_kb(
     telegraph_url: str,
+    *,
     can_publish: bool = True,
 ) -> InlineKeyboardMarkup:
     """Preview keyboard with publish/regenerate/cancel options."""
