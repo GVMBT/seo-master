@@ -4,7 +4,7 @@
 
 Все FSM-мастера используют Aiogram 3 StatesGroup с хранением в Redis (Upstash).
 
-**Итого: 14 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, DescriptionGenerateFSM, ArticlePipelineFSM, SocialPipelineFSM)
+**Итого: 15 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, DescriptionGenerateFSM, ContentSettingsFSM, ArticlePipelineFSM, SocialPipelineFSM)
 
 > **Убраны в v2:** ArticlePublishFSM, SocialPostPublishFSM (заменены Pipeline FSM), ReviewGenerationFSM (F17 deferred to v3), CompetitorAnalysisFSM (F39 deferred to v3).
 
@@ -70,10 +70,16 @@ class PriceInputFSM(StatesGroup):
     text_input = State()     # Ввод текста (метод выбран callback-кнопкой до входа в FSM)
     file_upload = State()    # Загрузка Excel (метод выбран callback-кнопкой до входа в FSM)
 
-# routers/categories/manage.py
+# routers/categories/description.py
 class DescriptionGenerateFSM(StatesGroup):
     confirm = State()        # Подтверждение стоимости (20 токенов)
     review = State()         # Просмотр результата: [Сохранить/Перегенерировать/Отмена]
+    manual_input = State()   # Ручной ввод описания (10-2000 символов)
+
+# routers/categories/content_settings.py
+class ContentSettingsFSM(StatesGroup):
+    min_words = State()      # Ввод минимальной длины статьи (500-10000)
+    max_words = State()      # Ввод максимальной длины (> min, ≤10000)
 
 # routers/categories/manage.py
 class CategoryCreateFSM(StatesGroup):
@@ -188,7 +194,7 @@ class KeywordUploadFSM(StatesGroup):
 ### 2.1.1 Фичи без FSM (callback-based)
 
 Следующие фичи реализуются через inline-кнопки (callback_data), НЕ через FSM StatesGroup:
-- **F16/F41 (Настройки текста/изображений):** toggle-кнопки на экране категории. Нет пользовательского ввода — только выбор из предложенных опций
+- **F16/F41 (Настройки текста/изображений):** стиль текста, количество/стиль изображений — toggle-кнопки (callback-based, без FSM). Длина статьи (min/max слов) — ContentSettingsFSM (2 состояния для текстового ввода)
 - **Пресеты расписания:** callback-кнопки [1р/нед] [3р/нед] [Каждый день] (см. UX_TOOLBOX §13). При выборе пресета — создание расписания без FSM. ScheduleSetupFSM используется только для ручной настройки
 - **Pipeline (Goal-Oriented):** ArticlePipelineFSM и SocialPipelineFSM реализуют полный flow с inline handlers для sub-flows (через Service Layer). Callback-based навигация до FSM не используется — pipeline сам управляет состояниями
 
@@ -227,6 +233,9 @@ class KeywordUploadFSM(StatesGroup):
 | ProjectEditFSM | field_value | Текст/URL | Зависит от поля (state.data["field_name"]): URL для website_url, email для company_email, phone для company_phone, 2-500 символов для текстовых | "Некорректный формат для поля {field_name}" |
 | KeywordUploadFSM | file_upload | Документ | .txt файл, UTF-8, макс. 1 МБ, одна фраза на строку, макс. 500 фраз | "Загрузите TXT-файл (UTF-8), одна фраза на строку. Макс. 500 фраз, 1 МБ" |
 | PriceInputFSM | file_upload | Документ | .xlsx файл, макс. 1000 строк, 5 МБ. Колонки: A=Название, B=Цена, C=Описание (опц.) | "Загрузите Excel (.xlsx), макс. 1000 строк, 5 МБ" |
+| DescriptionGenerateFSM | manual_input | Текст | 10-2000 символов | "Описание: от 10 до 2000 символов" |
+| ContentSettingsFSM | min_words | Текст | Целое число 500-10000 | "Введите число от 500 до 10000" |
+| ContentSettingsFSM | max_words | Текст | Целое число > min_words, ≤10000 | "Максимум должен быть больше минимума" |
 | ScheduleSetupFSM | select_days | Кнопки (множ. выбор) | Мин. 1 день выбран | "Выберите хотя бы один день" |
 | ScheduleSetupFSM | select_count | Кнопка | 1-5 | Показать кнопки повторно |
 | ScheduleSetupFSM | select_times | Кнопки (множ. выбор) | Ровно posts_per_day штук (из предыдущего шага) | "Выберите ровно {n} временных слотов" |

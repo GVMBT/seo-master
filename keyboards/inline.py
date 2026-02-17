@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.models import Category, PlatformConnection, Project
 from keyboards.pagination import PAGE_SIZE, _safe_cb, paginate
+from services.tokens import COST_DESCRIPTION
 
 # ---------------------------------------------------------------------------
 # Dashboard
@@ -725,8 +726,9 @@ def keywords_delete_all_confirm_kb(cat_id: int) -> InlineKeyboardMarkup:
 
 def description_kb(cat_id: int, has_description: bool) -> InlineKeyboardMarkup:
     """Description screen actions (UX_TOOLBOX section 10 / 10.3)."""
+    gen_label = f"Сгенерировать AI ({COST_DESCRIPTION} токенов)"
     rows: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(text="Сгенерировать AI (20 токенов)", callback_data=f"desc:{cat_id}:generate")],
+        [InlineKeyboardButton(text=gen_label, callback_data=f"desc:{cat_id}:generate")],
         [InlineKeyboardButton(text="Написать вручную", callback_data=f"desc:{cat_id}:manual")],
     ]
     if has_description:
@@ -752,7 +754,7 @@ def description_confirm_kb(cat_id: int, balance: int) -> InlineKeyboardMarkup:
 
     Shows [Пополнить баланс] instead of [Да, сгенерировать] when balance < 20 (E01).
     """
-    cost = 20  # COST_DESCRIPTION
+    cost = COST_DESCRIPTION
     if balance >= cost:
         return InlineKeyboardMarkup(
             inline_keyboard=[
@@ -784,7 +786,7 @@ def description_review_kb(cat_id: int, regen_count: int) -> InlineKeyboardMarkup
     """
     regen_text = "Перегенерировать"
     if regen_count >= 2:
-        regen_text = "Перегенерировать (20 токенов)"
+        regen_text = f"Перегенерировать ({COST_DESCRIPTION} токенов)"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -925,6 +927,9 @@ def image_count_kb(cat_id: int, current: int) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
+    rows.append(
+        [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -945,4 +950,7 @@ def image_style_kb(cat_id: int, current: str | None) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
+    rows.append(
+        [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
