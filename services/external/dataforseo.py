@@ -25,6 +25,11 @@ log = structlog.get_logger()
 # Max keywords per search_volume batch (API limit is 1000, we use 700 for safety)
 _ENRICH_BATCH_SIZE = 700
 
+# Default location: Ukraine (2804). Russia (2643) is banned from all DataForSEO
+# services. Ukraine supports language_code="ru" and provides the closest
+# Russian-language keyword data. Kazakhstan (2398) is an alternative.
+_DEFAULT_LOCATION = 2804
+
 # Max retries on transient errors
 _MAX_RETRIES = 2
 _RETRY_DELAYS = (0.5, 1.0, 2.0)  # seconds, exponential backoff
@@ -132,7 +137,7 @@ class DataForSEOClient:
     async def keyword_suggestions(
         self,
         seed: str,
-        location_code: int = 2643,
+        location_code: int = _DEFAULT_LOCATION,
         language_code: str = "ru",
         limit: int = 200,
     ) -> list[KeywordSuggestion]:
@@ -175,7 +180,7 @@ class DataForSEOClient:
     async def related_keywords(
         self,
         seed: str,
-        location_code: int = 2643,
+        location_code: int = _DEFAULT_LOCATION,
         language_code: str = "ru",
         limit: int = 100,
     ) -> list[KeywordSuggestion]:
@@ -219,7 +224,7 @@ class DataForSEOClient:
     async def enrich_keywords(
         self,
         phrases: list[str],
-        location_code: int = 2643,
+        location_code: int = _DEFAULT_LOCATION,
         language_code: str = "ru",
     ) -> list[KeywordData]:
         """Enrich keywords with volume, difficulty, CPC.
