@@ -184,11 +184,7 @@ async def manage_connection(
 
     status_text = "Активно" if conn.status == "active" else "Ошибка"
     safe_id = html.escape(conn.identifier)
-    text = (
-        f"<b>{conn.platform_type.capitalize()}</b>\n\n"
-        f"Идентификатор: {safe_id}\n"
-        f"Статус: {status_text}\n"
-    )
+    text = f"<b>{conn.platform_type.capitalize()}</b>\n\nИдентификатор: {safe_id}\nСтатус: {status_text}\n"
     await callback.message.edit_text(
         text,
         reply_markup=connection_manage_kb(conn_id, conn.project_id),
@@ -267,8 +263,7 @@ async def execute_connection_delete(
         connections = await conn_repo.get_by_project(project_id)
         safe_name = html.escape(project.name)
         await callback.message.edit_text(
-            f"Подключение {conn.platform_type.capitalize()} ({safe_id}) удалено.\n\n"
-            f"<b>{safe_name}</b> — Подключения",
+            f"Подключение {conn.platform_type.capitalize()} ({safe_id}) удалено.\n\n<b>{safe_name}</b> — Подключения",
             reply_markup=connection_list_kb(connections, project_id),
         )
         log.info("connection_deleted", conn_id=conn_id, user_id=user.id)
@@ -310,9 +305,7 @@ async def start_wp_connect(
     await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
 
     await callback.message.answer(
-        "Подключение WordPress\n\n"
-        "Введите адрес вашего сайта.\n\n"
-        "<i>Пример: example.com</i>",
+        "Подключение WordPress\n\nВведите адрес вашего сайта.\n\n<i>Пример: example.com</i>",
     )
     await callback.answer()
 
@@ -442,8 +435,7 @@ async def wp_process_password(
     project = await projects_repo.get_by_id(project_id)
     safe_name = html.escape(project.name) if project else ""
     await message.answer(
-        f"WordPress ({html.escape(identifier)}) подключён!\n\n"
-        f"<b>{safe_name}</b> — Подключения",
+        f"WordPress ({html.escape(identifier)}) подключён!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
     )
 
@@ -573,14 +565,22 @@ async def tg_process_token(
     finally:
         await temp_bot.session.close()
 
-    await state.clear()
-
-    # Check global uniqueness
+    # E41: Telegram requires GLOBAL uniqueness — channel must not be connected by ANY user
     conn_repo = _make_conn_repo(db)
-    existing = await conn_repo.get_by_identifier_for_user(channel_id, "telegram", user.id)
-    if existing:
-        await message.answer(f"Канал {channel_id} уже подключён.")
+    existing = await conn_repo.get_by_identifier_global(channel_id, "telegram")
+    if existing and existing.project_id == project_id:
+        await message.answer(f"Канал {channel_id} уже подключён к этому проекту.")
         return
+    if existing:
+        # Global block: another user (or another project of same user) already owns this channel
+        await message.answer(
+            f"Канал {channel_id} уже подключён другим пользователем.\n"
+            "Один канал может быть привязан только к одному проекту.",
+        )
+        log.warning("tg_global_duplicate_blocked", channel=channel_id, existing_conn=existing.id)
+        return
+
+    await state.clear()
 
     conn = await conn_repo.create(
         PlatformConnectionCreate(
@@ -599,8 +599,7 @@ async def tg_process_token(
     project = await projects_repo.get_by_id(project_id)
     safe_name = html.escape(project.name) if project else ""
     await message.answer(
-        f"Telegram-канал {channel_id} подключён!\n\n"
-        f"<b>{safe_name}</b> — Подключения",
+        f"Telegram-канал {channel_id} подключён!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
     )
 
@@ -774,8 +773,7 @@ async def vk_select_group(
     project = await projects_repo.get_by_id(project_id)
     safe_name = html.escape(project.name) if project else ""
     await callback.message.edit_text(
-        f"VK-группа «{html.escape(group_name)}» подключена!\n\n"
-        f"<b>{safe_name}</b> — Подключения",
+        f"VK-группа «{html.escape(group_name)}» подключена!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
     )
     await callback.answer()
@@ -830,9 +828,11 @@ async def start_pinterest_connect(
         "Подключение Pinterest\n\n"
         "Нажмите кнопку ниже, чтобы авторизоваться в Pinterest.\n"
         "После авторизации вы будете перенаправлены обратно в бот.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Авторизоваться в Pinterest", url=oauth_url)],
-            [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:list")],
-        ]),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Авторизоваться в Pinterest", url=oauth_url)],
+                [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:list")],
+            ]
+        ),
     )
     await callback.answer()
