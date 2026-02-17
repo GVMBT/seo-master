@@ -158,8 +158,6 @@ class DataForSEOClient:
                 "location_code": location_code,
                 "language_code": language_code,
                 "limit": min(limit, 1000),
-                "include_seed_keyword": True,
-                "order_by": ["keyword_info.search_volume,desc"],
             }
         ]
 
@@ -204,7 +202,6 @@ class DataForSEOClient:
                 "language_code": language_code,
                 "limit": min(limit, 1000),
                 "depth": 2,
-                "order_by": ["keyword_data.keyword_info.search_volume,desc"],
             }
         ]
 
@@ -289,7 +286,11 @@ class DataForSEOClient:
 
         task = tasks[0]
         if task.get("status_code") != 20000:
-            log.warning("dataforseo_task_error", status=task.get("status_code"))
+            log.warning(
+                "dataforseo_task_error",
+                status=task.get("status_code"),
+                message=task.get("status_message", ""),
+            )
             return results
 
         for result_block in task.get("result", []) or []:
@@ -324,7 +325,11 @@ class DataForSEOClient:
 
         task = tasks[0]
         if task.get("status_code") != 20000:
-            log.warning("dataforseo_task_error", status=task.get("status_code"))
+            log.warning(
+                "dataforseo_task_error",
+                status=task.get("status_code"),
+                message=task.get("status_message", ""),
+            )
             return results
 
         for result_block in task.get("result", []) or []:
@@ -360,7 +365,11 @@ class DataForSEOClient:
 
         task = tasks[0]
         if task.get("status_code") != 20000:
-            log.warning("dataforseo_task_error", status=task.get("status_code"))
+            log.warning(
+                "dataforseo_task_error",
+                status=task.get("status_code"),
+                message=task.get("status_message", ""),
+            )
             return results
 
         for item in task.get("result", []) or []:

@@ -315,14 +315,17 @@ class AIOrchestrator:
             "provider": {
                 "data_collection": "deny",
                 "allow_fallbacks": True,
-                "require_parameters": True,
             },
         }
 
-        # Budget tasks use price sorting + max_price guard ($0.05 per call)
+        # Budget tasks use price sorting (no max_price — it blocks endpoints
+        # when combined with require_parameters + json_schema)
         if request.task in BUDGET_TASKS:
             extra_body["provider"]["sort"] = "price"
-            extra_body["max_price"] = {"prompt": 0.03, "completion": 0.02}
+        else:
+            # Non-budget tasks (article, image, competitor_analysis) need
+            # strict parameter matching for quality
+            extra_body["provider"]["require_parameters"] = True
 
         # Response healing plugin for structured tasks
         if request.task in HEALING_TASKS:
