@@ -682,6 +682,7 @@ class TestModelChains:
             "keywords_fallback",
             "review",
             "description",
+            "cross_post",
             "competitor_analysis",
             "image",
             "article_outline",

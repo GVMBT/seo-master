@@ -250,31 +250,25 @@ async def nav_dashboard(
 
 
 # ---------------------------------------------------------------------------
-# Pipeline stubs
+# Pipeline stubs (remaining — article:start moved to pipeline/article.py)
 # ---------------------------------------------------------------------------
-
-
-@router.callback_query(F.data == "pipeline:article:start")
-async def pipeline_article_start(callback: CallbackQuery) -> None:
-    """Stub: Article pipeline — coming in Phase F5."""
-    await callback.answer("Статьи — скоро!", show_alert=True)
 
 
 @router.callback_query(F.data == "pipeline:social:start")
 async def pipeline_social_start(callback: CallbackQuery) -> None:
-    """Stub: Social pipeline — coming in Phase F5."""
+    """Stub: Social pipeline — coming in Phase F6."""
     await callback.answer("Посты — скоро!", show_alert=True)
 
 
 @router.callback_query(F.data == "pipeline:resume")
 async def pipeline_resume(callback: CallbackQuery) -> None:
-    """Stub: Resume pipeline — coming in Phase F5."""
+    """Stub: Resume pipeline — coming in Phase F5.5."""
     await callback.answer("Возобновление — скоро!", show_alert=True)
 
 
 @router.callback_query(F.data == "pipeline:restart")
 async def pipeline_restart(callback: CallbackQuery) -> None:
-    """Stub: Restart pipeline — coming in Phase F5."""
+    """Stub: Restart pipeline — coming in Phase F5.5."""
     await callback.answer("Перезапуск — скоро!", show_alert=True)
 
 
