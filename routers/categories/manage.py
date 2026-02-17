@@ -70,8 +70,7 @@ async def show_category_list(
     if not categories:
         safe_name = html.escape(project.name)
         await callback.message.edit_text(
-            f"<b>{safe_name}</b> — Категории\n\n"
-            "В проекте пока нет категорий.",
+            f"<b>{safe_name}</b> — Категории\n\nВ проекте пока нет категорий.",
             reply_markup=category_list_empty_kb(project_id),
         )
     else:
@@ -148,8 +147,7 @@ async def start_category_create(
     await state.update_data(last_update_time=time.time(), create_project_id=project_id)
 
     await callback.message.answer(
-        "Введите название категории.\n\n"
-        "<i>Пример: Кухни на заказ</i>",
+        "Введите название категории.\n\n<i>Пример: Кухни на заказ</i>",
     )
     await callback.answer()
 
@@ -185,14 +183,11 @@ async def process_category_name(
         return
 
     cats_repo = CategoriesRepository(db)
-    category = await cats_repo.create(
-        CategoryCreate(project_id=project_id, name=text)
-    )
+    category = await cats_repo.create(CategoryCreate(project_id=project_id, name=text))
 
     safe_name = html.escape(category.name)
     await message.answer(
-        f"Категория «{safe_name}» создана!\n"
-        "Добавьте ключевые фразы для генерации контента.",
+        f"Категория «{safe_name}» создана!\nДобавьте ключевые фразы для генерации контента.",
         reply_markup=category_created_kb(category.id, project_id),
     )
     log.info("category_created", category_id=category.id, project_id=project_id, user_id=user.id)
@@ -257,35 +252,6 @@ async def show_category_card(
     text = "\n".join(lines)
     await callback.message.edit_text(text, reply_markup=category_card_kb(category_id, category.project_id))
     await callback.answer()
-
-
-# ---------------------------------------------------------------------------
-# Category card stubs (Phase F3)
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(F.data.regexp(r"^category:\d+:keywords$"))
-async def category_keywords(callback: CallbackQuery) -> None:
-    """Stub: Keywords — coming in Phase F3."""
-    await callback.answer("Ключевые фразы — скоро!", show_alert=True)
-
-
-@router.callback_query(F.data.regexp(r"^category:\d+:description$"))
-async def category_description(callback: CallbackQuery) -> None:
-    """Stub: Description — coming in Phase F3."""
-    await callback.answer("Описание — скоро!", show_alert=True)
-
-
-@router.callback_query(F.data.regexp(r"^category:\d+:prices$"))
-async def category_prices(callback: CallbackQuery) -> None:
-    """Stub: Prices — coming in Phase F3."""
-    await callback.answer("Цены — скоро!", show_alert=True)
-
-
-@router.callback_query(F.data.regexp(r"^category:\d+:content_settings$"))
-async def category_content_settings(callback: CallbackQuery) -> None:
-    """Stub: Content settings — coming in Phase F3."""
-    await callback.answer("Настройки контента — скоро!", show_alert=True)
 
 
 # ---------------------------------------------------------------------------

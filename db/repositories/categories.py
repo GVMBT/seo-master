@@ -52,6 +52,18 @@ class CategoriesRepository(BaseRepository):
         resp = await self._table(_TABLE).delete().eq("id", category_id).execute()
         return len(self._rows(resp)) > 0
 
+    async def clear_prices(self, category_id: int) -> Category | None:
+        """Set prices to NULL. Separate from update() which uses exclude_none."""
+        resp = await self._table(_TABLE).update({"prices": None}).eq("id", category_id).execute()
+        row = self._first(resp)
+        return Category(**row) if row else None
+
+    async def clear_description(self, category_id: int) -> Category | None:
+        """Set description to NULL. Separate from update() which uses exclude_none."""
+        resp = await self._table(_TABLE).update({"description": None}).eq("id", category_id).execute()
+        row = self._first(resp)
+        return Category(**row) if row else None
+
     async def update_keywords(self, category_id: int, keywords: list[dict[str, Any]]) -> Category | None:
         """Replace keywords JSONB array."""
         resp = await self._table(_TABLE).update({"keywords": keywords}).eq("id", category_id).execute()

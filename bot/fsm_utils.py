@@ -16,6 +16,7 @@ _FSM_NAMES: dict[str, str] = {
     "ConnectPinterestFSM": "подключение Pinterest",
     "PriceInputFSM": "ввод цен",
     "DescriptionGenerateFSM": "генерация описания",
+    "ContentSettingsFSM": "настройка контента",
     "BroadcastFSM": "рассылка сообщений",
     "ArticlePipelineFSM": "создание статьи (pipeline)",
     "SocialPipelineFSM": "публикация поста (pipeline)",
