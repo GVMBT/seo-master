@@ -12,49 +12,36 @@ from services.payments.packages import (
 
 
 class TestPackageCatalogue:
-    def test_five_packages_defined(self) -> None:
-        assert len(PACKAGES) == 5
+    def test_three_packages_defined(self) -> None:
+        assert len(PACKAGES) == 3
 
     def test_package_names(self) -> None:
-        assert set(PACKAGES.keys()) == {"mini", "starter", "pro", "business", "enterprise"}
+        assert set(PACKAGES.keys()) == {"start", "standard", "pro"}
 
-    def test_mini_package(self) -> None:
-        p = PACKAGES["mini"]
-        assert p.tokens == 1000
+    def test_start_package(self) -> None:
+        p = PACKAGES["start"]
+        assert p.tokens == 500
         assert p.bonus == 0
-        assert p.price_rub == 1000
-        assert p.stars == 65
+        assert p.price_rub == 500
+        assert p.stars == 33
 
-    def test_starter_package(self) -> None:
-        p = PACKAGES["starter"]
-        assert p.tokens == 3500
-        assert p.bonus == 500
-        assert p.price_rub == 3000
-        assert p.stars == 195
+    def test_standard_package(self) -> None:
+        p = PACKAGES["standard"]
+        assert p.tokens == 2000
+        assert p.bonus == 0
+        assert p.price_rub == 1600
+        assert p.stars == 104
 
     def test_pro_package(self) -> None:
         p = PACKAGES["pro"]
-        assert p.tokens == 7200
-        assert p.bonus == 1200
-        assert p.price_rub == 6000
-
-    def test_business_package(self) -> None:
-        p = PACKAGES["business"]
-        assert p.tokens == 18000
-        assert p.bonus == 3000
-        assert p.price_rub == 15000
-        assert p.stars == 975
-
-    def test_enterprise_package(self) -> None:
-        p = PACKAGES["enterprise"]
-        assert p.tokens == 50000
-        assert p.bonus == 10000
-        assert p.price_rub == 40000
-        assert p.stars == 2600
+        assert p.tokens == 5000
+        assert p.bonus == 0
+        assert p.price_rub == 3000
+        assert p.stars == 195
 
     def test_packages_are_frozen(self) -> None:
         """Packages should be immutable dataclasses."""
-        p = PACKAGES["mini"]
+        p = PACKAGES["start"]
         assert isinstance(p, Package)
 
     def test_tokens_include_bonus(self) -> None:

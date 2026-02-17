@@ -86,7 +86,7 @@ class TestCreatePayment:
         mock_resp.raise_for_status = MagicMock()
         mock_http.post = AsyncMock(return_value=mock_resp)
 
-        url = await service.create_payment(user_id=42, package_name="mini")
+        url = await service.create_payment(user_id=42, package_name="start")
         assert url == "https://pay.yookassa.ru/123"
         mock_http.post.assert_called_once()
 
@@ -112,7 +112,7 @@ class TestCreatePayment:
 
     async def test_returns_none_on_http_error(self, service: YooKassaPaymentService, mock_http: MagicMock) -> None:
         mock_http.post = AsyncMock(side_effect=httpx.HTTPError("Connection error"))
-        url = await service.create_payment(user_id=42, package_name="mini")
+        url = await service.create_payment(user_id=42, package_name="start")
         assert url is None
 
 
@@ -148,7 +148,7 @@ class TestProcessWebhook:
             "id": "yk_pay_123",
             "metadata": {
                 "user_id": "42",
-                "package_name": "mini",
+                "package_name": "start",
                 "tokens_amount": "1000",
                 "is_subscription": "false",
             },
@@ -164,7 +164,7 @@ class TestProcessWebhook:
         service_with_mocks._payments.get_by_yookassa_payment_id = AsyncMock(return_value=MagicMock(id=1))
         obj = {
             "id": "yk_dup",
-            "metadata": {"user_id": "42", "package_name": "mini", "tokens_amount": "1000"},
+            "metadata": {"user_id": "42", "package_name": "start", "tokens_amount": "1000"},
             "amount": {"value": "1000.00"},
         }
         await service_with_mocks.process_webhook("payment.succeeded", obj)
@@ -173,7 +173,7 @@ class TestProcessWebhook:
     async def test_payment_canceled_returns_notification(self, service_with_mocks: YooKassaPaymentService) -> None:
         obj = {
             "id": "yk_cancel_1",
-            "metadata": {"user_id": "42", "package_name": "mini"},
+            "metadata": {"user_id": "42", "package_name": "start"},
         }
         result = await service_with_mocks.process_webhook("payment.canceled", obj)
         service_with_mocks._payments.create.assert_called_once()
@@ -208,13 +208,13 @@ class TestProcessWebhook:
         assert result is None
 
     async def test_refund_succeeded(self, service_with_mocks: YooKassaPaymentService) -> None:
-        payment = MagicMock(id=5, user_id=42, tokens_amount=1000, package_name="mini")
+        payment = MagicMock(id=5, user_id=42, tokens_amount=500, package_name="start")
         service_with_mocks._payments.get_by_yookassa_payment_id = AsyncMock(return_value=payment)
         service_with_mocks._users.force_debit_balance = AsyncMock(return_value=-500)
 
         obj = {"payment_id": "yk_pay_123"}
         await service_with_mocks.process_webhook("refund.succeeded", obj)
-        service_with_mocks._users.force_debit_balance.assert_called_once_with(42, 1000)
+        service_with_mocks._users.force_debit_balance.assert_called_once_with(42, 500)
 
     async def test_saves_payment_method_for_subscription(self, service_with_mocks: YooKassaPaymentService) -> None:
         obj = {

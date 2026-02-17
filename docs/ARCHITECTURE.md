@@ -96,6 +96,7 @@ seo-master-bot-v2/
 │   │   ├── markdown_renderer.py    # SEORenderer (mistune): Markdown → HTML с heading IDs, ToC
 │   │   ├── niche_detector.py       # detect_niche(): specialization → 15+1 ниш, YMYL
 │   │   ├── anti_hallucination.py   # check_fabricated_data(): regex fact-checking (цены, контакты)
+│   │   ├── reconciliation.py       # Image-text reconciliation (привязка изображений к H2-секциям)
 │   │   ├── rate_limiter.py         # Per-action rate limits (token-bucket в Redis)
 │   │   ├── prompt_engine.py        # Jinja2 рендеринг промптов (<< >> delimiters)
 │   │   └── prompts/                # YAML-шаблоны промптов (seed → DB prompt_versions)
@@ -117,12 +118,17 @@ seo-master-bot-v2/
 │   │   └── pinterest.py            # Pinterest API v5
 │   ├── external/
 │   │   ├── firecrawl.py            # Клиент Firecrawl (/map, /scrape+summary, branding v2, /extract)
-│   │   ├── pagespeed.py            # Клиент Google PSI
+│   │   ├── pagespeed.py            # Клиент Google PageSpeed Insights API (F28/F30)
 │   │   ├── dataforseo.py           # Клиент DataForSEO (объемы, сложность ключевиков)
 │   │   ├── serper.py               # Клиент Serper (поиск Google в реальном времени)
 │   │   └── telegraph.py            # Клиент Telegraph API (предпросмотр статей)
 │   ├── tokens.py                   # Токеновая экономика (проверка, списание, возврат)
 │   ├── storage.py                  # ImageStorage: Supabase Storage upload/cleanup (§5.9)
+│   ├── keywords.py                 # KeywordService: бизнес-логика генерации ключевиков
+│   ├── preview.py                  # PreviewService: article pipeline (websearch + AI + Telegraph)
+│   ├── publish.py                  # PublishService: маршрутизация публикации по платформам
+│   ├── cleanup.py                  # CleanupService: очистка expired превью, refund токенов
+│   ├── scheduler.py                # SchedulerService: обёртка QStash SDK (cron, расписания)
 │   ├── notifications.py            # Автоуведомления
 │   ├── readiness.py               # ReadinessService: чеклист готовности для Pipeline
 │   └── payments/                   # Платежи
@@ -153,6 +159,8 @@ seo-master-bot-v2/
 │   ├── cleanup.py                  # QStash -> очистка expired превью, старых логов
 │   ├── notify.py                   # QStash -> уведомления
 │   ├── yookassa.py                 # YooKassa webhook + QStash renew подписки
+│   ├── renew.py                    # QStash → автопродление YooKassa-подписок
+│   ├── models.py                   # Pydantic-модели для webhook payloads
 │   ├── auth.py                     # Pinterest OAuth callback
 │   ├── auth_service.py             # Pinterest OAuth service logic (token exchange)
 │   └── health.py                   # Проверка здоровья

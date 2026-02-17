@@ -20,7 +20,7 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.schedules import SchedulesRepository
-from keyboards.inline import dashboard_kb, dashboard_resume_kb
+from keyboards.inline import admin_panel_kb, dashboard_kb, dashboard_resume_kb
 from keyboards.reply import main_menu_kb
 
 log = structlog.get_logger()
@@ -250,18 +250,8 @@ async def nav_dashboard(
 
 
 ## nav:projects is handled by routers/projects/list.py
-
-
-@router.callback_query(F.data == "nav:profile")
-async def nav_profile(callback: CallbackQuery) -> None:
-    """Stub: Profile screen — coming in Phase F4."""
-    await callback.answer("Профиль — скоро!", show_alert=True)
-
-
-@router.callback_query(F.data == "nav:tokens")
-async def nav_tokens(callback: CallbackQuery) -> None:
-    """Stub: Tokens screen — coming in Phase F4."""
-    await callback.answer("Токены — скоро!", show_alert=True)
+## nav:profile is handled by routers/profile.py
+## nav:tokens is handled by routers/tariffs.py
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +301,17 @@ async def noop_handler(callback: CallbackQuery) -> None:
 # ---------------------------------------------------------------------------
 # Reply text dispatch (persistent keyboard)
 # ---------------------------------------------------------------------------
+
+
+@router.message(F.text == "АДМИНКА")
+async def admin_entry(message: Message, user: User) -> None:
+    """Admin panel entry via reply keyboard."""
+    if user.role != "admin":
+        return  # Silently ignore for non-admins
+    await message.answer(
+        "<b>Админ-панель</b>",
+        reply_markup=admin_panel_kb(),
+    )
 
 
 @router.message(F.text == "Меню")

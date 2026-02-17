@@ -19,7 +19,7 @@ _VALID_PAYMENT_BODY = {
         "id": "yoo_pay_123",
         "metadata": {
             "user_id": "12345",
-            "package_name": "starter",
+            "package_name": "standard",
             "tokens_amount": "5000",
             "is_subscription": "false",
         },
@@ -136,7 +136,7 @@ async def test_yookassa_notifies_user(api_client, app_services):
         "event": "payment.canceled",
         "object": {
             "id": "yoo_pay_456",
-            "metadata": {"user_id": "12345", "package_name": "starter"},
+            "metadata": {"user_id": "12345", "package_name": "standard"},
         },
     }
 

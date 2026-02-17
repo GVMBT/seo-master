@@ -954,3 +954,278 @@ def image_style_kb(cat_id: int, current: str | None) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# Profile (UX_TOOLBOX section 14)
+# ---------------------------------------------------------------------------
+
+
+def profile_kb() -> InlineKeyboardMarkup:
+    """Profile main screen keyboard."""
+    rows = [
+        [InlineKeyboardButton(text="Пополнить баланс", callback_data="nav:tokens", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton(text="Уведомления", callback_data="profile:notifications")],
+        [InlineKeyboardButton(text="Реферальная программа", callback_data="profile:referral")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def notifications_kb(
+    notify_publications: bool,
+    notify_balance: bool,
+    notify_news: bool,
+) -> InlineKeyboardMarkup:
+    """Notification toggle keyboard."""
+
+    def _toggle(label: str, enabled: bool, key: str) -> InlineKeyboardButton:
+        mark = "\u2705" if enabled else "\u274c"
+        return InlineKeyboardButton(text=f"{mark} {label}", callback_data=f"profile:notify:{key}")
+
+    rows = [
+        [_toggle("Публикации", notify_publications, "publications")],
+        [_toggle("Баланс", notify_balance, "balance")],
+        [_toggle("Новости", notify_news, "news")],
+        [InlineKeyboardButton(text="К профилю", callback_data="nav:profile")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def referral_kb() -> InlineKeyboardMarkup:
+    """Referral program keyboard."""
+    rows = [
+        [InlineKeyboardButton(text="Поделиться ссылкой", callback_data="profile:referral:share")],
+        [InlineKeyboardButton(text="К профилю", callback_data="nav:profile")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# Tariffs & Payments (UX_TOOLBOX section 15)
+# ---------------------------------------------------------------------------
+
+
+def tariffs_kb() -> InlineKeyboardMarkup:
+    """Package selection keyboard. Starter is PRIMARY (most popular)."""
+    from services.payments.packages import PACKAGES
+
+    _ru_names: dict[str, str] = {
+        "mini": "Мини",
+        "starter": "Стартер",
+        "pro": "Про",
+        "business": "Бизнес",
+        "enterprise": "Корпоратив",
+    }
+    rows: list[list[InlineKeyboardButton]] = []
+    for name, pkg in PACKAGES.items():
+        style = ButtonStyle.PRIMARY if name == "starter" else None
+        ru_name = _ru_names.get(name, pkg.name.capitalize())
+        btn = InlineKeyboardButton(
+            text=f"{ru_name} — {pkg.tokens} токенов / {pkg.price_rub} руб",
+            callback_data=f"tariff:{name}:buy",
+        )
+        if style:
+            btn.style = style
+        rows.append([btn])
+    rows.append([InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def payment_method_kb(package_name: str) -> InlineKeyboardMarkup:
+    """Payment method selection: Stars or YooKassa."""
+    rows = [
+        [InlineKeyboardButton(text="Telegram Stars", callback_data=f"tariff:{package_name}:stars")],
+        [InlineKeyboardButton(text="ЮKassa (карта)", callback_data=f"tariff:{package_name}:yookassa")],
+        [InlineKeyboardButton(text="Назад", callback_data="nav:tokens")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def yookassa_link_kb(url: str, package_name: str) -> InlineKeyboardMarkup:
+    """YooKassa payment link + back button."""
+    rows = [
+        [InlineKeyboardButton(text="Перейти к оплате", url=url)],
+        [InlineKeyboardButton(text="Назад", callback_data=f"tariff:{package_name}:buy")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# Scheduler (UX_TOOLBOX section 13)
+# ---------------------------------------------------------------------------
+
+_PRESETS: dict[str, tuple[str, list[str], list[str], int]] = {
+    "1w": ("1 раз/нед", ["wed"], ["10:00"], 1),
+    "3w": ("3 раза/нед", ["mon", "wed", "fri"], ["10:00"], 1),
+    "daily": ("Каждый день", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], ["10:00"], 1),
+}
+
+_DAY_LABELS: dict[str, str] = {
+    "mon": "Пн",
+    "tue": "Вт",
+    "wed": "Ср",
+    "thu": "Чт",
+    "fri": "Пт",
+    "sat": "Сб",
+    "sun": "Вс",
+}
+
+
+def scheduler_cat_list_kb(
+    categories: list[Any], project_id: int
+) -> InlineKeyboardMarkup:
+    """Category list for scheduler entry."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for cat in categories:
+        rows.append([
+            InlineKeyboardButton(
+                text=cat.name,
+                callback_data=f"scheduler:{project_id}:cat:{cat.id}",
+            )
+        ])
+    rows.append([InlineKeyboardButton(text="К проекту", callback_data=f"project:{project_id}:card")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def scheduler_conn_list_kb(
+    connections: list[Any],
+    schedules: dict[int, Any],
+    cat_id: int,
+    project_id: int,
+) -> InlineKeyboardMarkup:
+    """Connection list with schedule summaries."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for conn in connections:
+        sched = schedules.get(conn.id)
+        if sched and sched.enabled:
+            days_str = ", ".join(_DAY_LABELS.get(d, d) for d in sched.schedule_days)
+            label = f"{conn.identifier} ({days_str})"
+        else:
+            label = f"{conn.identifier} (нет расписания)"
+        rows.append([
+            InlineKeyboardButton(
+                text=label,
+                callback_data=f"scheduler:{cat_id}:conn:{conn.id}",
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton(
+            text="Назад",
+            callback_data=f"project:{project_id}:scheduler",
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def scheduler_config_kb(
+    cat_id: int, conn_id: int, has_schedule: bool
+) -> InlineKeyboardMarkup:
+    """Schedule config: presets + manual + disable."""
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(
+            text="3 раза/неделю",
+            callback_data=f"sched:{cat_id}:{conn_id}:preset:3w",
+            style=ButtonStyle.PRIMARY,
+        )],
+        [InlineKeyboardButton(
+            text="1 раз/неделю",
+            callback_data=f"sched:{cat_id}:{conn_id}:preset:1w",
+        )],
+        [InlineKeyboardButton(
+            text="Каждый день",
+            callback_data=f"sched:{cat_id}:{conn_id}:preset:daily",
+        )],
+        [InlineKeyboardButton(
+            text="Настроить вручную",
+            callback_data=f"sched:{cat_id}:{conn_id}:manual",
+        )],
+    ]
+    if has_schedule:
+        rows.append([InlineKeyboardButton(
+            text="Отключить расписание",
+            callback_data=f"sched:{cat_id}:{conn_id}:disable",
+            style=ButtonStyle.DANGER,
+        )])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=f"scheduler:{cat_id}:conn_list")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def schedule_days_kb(selected: set[str]) -> InlineKeyboardMarkup:
+    """Day selection grid for manual schedule setup."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for key, label in _DAY_LABELS.items():
+        mark = "\u2713 " if key in selected else ""
+        row.append(InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"sched:day:{key}"))
+        if len(row) == 4:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="Готово", callback_data="sched:days:done")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def schedule_count_kb() -> InlineKeyboardMarkup:
+    """Posts per day selection (1-5)."""
+    row = [
+        InlineKeyboardButton(text=str(i), callback_data=f"sched:count:{i}")
+        for i in range(1, 6)
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[row])
+
+
+def schedule_times_kb(selected: set[str], required: int) -> InlineKeyboardMarkup:
+    """Time slot grid (06:00-23:00). Shows selected count vs required."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for hour in range(6, 24):
+        time_str = f"{hour:02d}:00"
+        mark = "\u2713 " if time_str in selected else ""
+        row.append(InlineKeyboardButton(text=f"{mark}{time_str}", callback_data=f"sched:time:{time_str}"))
+        if len(row) == 4:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    done_text = f"Готово ({len(selected)}/{required})"
+    rows.append([InlineKeyboardButton(text=done_text, callback_data="sched:times:done")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# Admin (UX_TOOLBOX section 16)
+# ---------------------------------------------------------------------------
+
+
+def admin_panel_kb() -> InlineKeyboardMarkup:
+    """Admin panel main keyboard."""
+    rows = [
+        [InlineKeyboardButton(text="Мониторинг", callback_data="admin:monitoring")],
+        [InlineKeyboardButton(text="Рассылка", callback_data="admin:broadcast")],
+        [InlineKeyboardButton(text="Затраты API", callback_data="admin:api_costs")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def broadcast_audience_kb() -> InlineKeyboardMarkup:
+    """Broadcast audience selection."""
+    rows = [
+        [InlineKeyboardButton(text="Все пользователи", callback_data="broadcast:audience:all")],
+        [InlineKeyboardButton(text="Активные 7 дней", callback_data="broadcast:audience:active_7d")],
+        [InlineKeyboardButton(text="Активные 30 дней", callback_data="broadcast:audience:active_30d")],
+        [InlineKeyboardButton(text="Оплатившие", callback_data="broadcast:audience:paid")],
+        [InlineKeyboardButton(text="Отмена", callback_data="admin:panel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def broadcast_confirm_kb() -> InlineKeyboardMarkup:
+    """Broadcast confirm/cancel."""
+    rows = [
+        [InlineKeyboardButton(text="Отправить", callback_data="broadcast:send", style=ButtonStyle.DANGER)],
+        [InlineKeyboardButton(text="Отмена", callback_data="admin:panel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)

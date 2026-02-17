@@ -35,11 +35,9 @@ class Subscription:
 # ---------------------------------------------------------------------------
 
 PACKAGES: dict[str, Package] = {
-    "mini": Package(name="mini", tokens=1000, bonus=0, price_rub=1000, stars=65),
-    "starter": Package(name="starter", tokens=3500, bonus=500, price_rub=3000, stars=195),
-    "pro": Package(name="pro", tokens=7200, bonus=1200, price_rub=6000, stars=390),
-    "business": Package(name="business", tokens=18000, bonus=3000, price_rub=15000, stars=975),
-    "enterprise": Package(name="enterprise", tokens=50000, bonus=10000, price_rub=40000, stars=2600),
+    "start": Package(name="start", tokens=500, bonus=0, price_rub=500, stars=33),
+    "standard": Package(name="standard", tokens=2000, bonus=0, price_rub=1600, stars=104),
+    "pro": Package(name="pro", tokens=5000, bonus=0, price_rub=3000, stars=195),
 }
 
 # ---------------------------------------------------------------------------
