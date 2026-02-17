@@ -13,6 +13,7 @@ API endpoints:
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,6 +27,7 @@ _ENRICH_BATCH_SIZE = 700
 
 # Max retries on transient errors
 _MAX_RETRIES = 2
+_RETRY_DELAYS = (0.5, 1.0, 2.0)  # seconds, exponential backoff
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +116,8 @@ class DataForSEOClient:
                     attempt=attempt + 1,
                     error=str(exc),
                 )
+                if attempt < _MAX_RETRIES:
+                    await asyncio.sleep(_RETRY_DELAYS[attempt])
                 continue
             except DataForSEOError:
                 raise
@@ -164,7 +168,7 @@ class DataForSEOClient:
                 "dataforseo_labs/google/keyword_suggestions/live",
                 payload,
             )
-        except (DataForSEOError, Exception) as exc:
+        except (DataForSEOError, httpx.HTTPError) as exc:
             log.error("dataforseo_suggestions_failed", seed=seed, error=str(exc))
             return []
 
@@ -209,7 +213,7 @@ class DataForSEOClient:
                 "dataforseo_labs/google/related_keywords/live",
                 payload,
             )
-        except (DataForSEOError, Exception) as exc:
+        except (DataForSEOError, httpx.HTTPError) as exc:
             log.error("dataforseo_related_failed", seed=seed, error=str(exc))
             return []
 
@@ -260,7 +264,7 @@ class DataForSEOClient:
                     payload,
                 )
                 results.extend(self._parse_enrich(data))
-            except (DataForSEOError, Exception) as exc:
+            except (DataForSEOError, httpx.HTTPError) as exc:
                 log.error(
                     "dataforseo_enrich_failed",
                     batch_start=i,
