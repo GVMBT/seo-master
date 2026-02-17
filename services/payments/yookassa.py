@@ -189,12 +189,14 @@ class YooKassaPaymentService:
         await self._payments.update(payment.id, update)
 
         # 3. Record token expense
+        pkg = PACKAGES.get(package_name)
+        pkg_label = pkg.label if pkg else package_name.capitalize()
         await self._payments.create_expense(
             TokenExpenseCreate(
                 user_id=user_id,
                 amount=tokens_amount,
                 operation_type="purchase",
-                description=f"{package_name.capitalize()} ({tokens_amount} токенов) — ЮKassa",
+                description=f"{pkg_label} ({tokens_amount} токенов) — ЮKassa",
             )
         )
 

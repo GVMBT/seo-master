@@ -369,7 +369,7 @@ result = firecrawl.scrape(url='https://конкурент.ru/статья', form
 
 ### 5.6 Serper API — актуальные данные из Google для статей
 
-**Реализовано (v2):** Web Search работает как первая фаза article pipeline (`PreviewService._gather_websearch_data`): Serper search → PAA + organic → Firecrawl /scrape топ-3 конкурентов → анализ gaps + динамическая длина → всё передаётся в AI-промпт.
+**Реализовано (v2):** Web Search работает как первая фаза article pipeline: Serper search → PAA + organic → Firecrawl /scrape топ-3 конкурентов → анализ gaps + динамическая длина → всё передаётся в AI-промпт.
 
 **Решение через Serper:** 2 500 одноразовых бесплатных кредитов (не ежемесячных). Далее: Starter $50/50K кредитов (хватает на ~4 года при 900 запросов/мес). Эффективная стоимость: ~$0.001/запрос.
 

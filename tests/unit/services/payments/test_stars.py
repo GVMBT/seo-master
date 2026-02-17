@@ -51,7 +51,7 @@ class TestBuildInvoiceParams:
 
     def test_title_uses_label(self, service: StarsPaymentService) -> None:
         params = service.build_invoice_params(user_id=1, package_name="standard")
-        assert "\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442" in params["title"]
+        assert "Стандарт" in params["title"]
 
 
 # ---------------------------------------------------------------------------
@@ -213,9 +213,9 @@ class TestReferralBonus:
         payments.create_expense = AsyncMock()
         payments.update = AsyncMock()
 
-        await credit_referral_bonus(users, payments, user_id=42, price_rub=1000, payment_id=1, provider_label="\u042eKassa")
+        await credit_referral_bonus(users, payments, user_id=42, price_rub=1000, payment_id=1, provider_label="ЮKassa")
         expense_call = payments.create_expense.call_args[0][0]
-        assert "\u042eKassa" in expense_call.description
+        assert "ЮKassa" in expense_call.description
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ class TestFormatting:
     def test_tariffs_text_contains_balance(self, service: StarsPaymentService) -> None:
         text = service.format_tariffs_text(1500)
         assert "1500" in text
-        assert "\u0422\u0430\u0440\u0438\u0444\u044b" in text
+        assert "Тарифы" in text
 
     def test_package_text_contains_tokens(self, service: StarsPaymentService) -> None:
         text = service.format_package_text("start")
@@ -240,4 +240,4 @@ class TestFormatting:
     def test_payment_link_text_package(self, service: StarsPaymentService) -> None:
         text = service.format_payment_link_text("pro")
         assert "3000" in text
-        assert "\u041f\u0440\u043e" in text
+        assert "Про" in text

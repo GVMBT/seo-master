@@ -177,7 +177,7 @@ class TestProcessWebhook:
         service_with_mocks._payments.create.assert_called_once()
         assert result is not None
         assert result["user_id"] == 42
-        assert "\u041f\u043b\u0430\u0442\u0451\u0436 \u043e\u0442\u043a\u043b\u043e\u043d\u0451\u043d" in result["text"]
+        assert "Платёж отклонён" in result["text"]
 
     async def test_payment_canceled_no_user_returns_none(self, service_with_mocks: YooKassaPaymentService) -> None:
         obj = {

@@ -22,23 +22,23 @@ class TestPackageCatalogue:
         assert p.price_rub == 500
         assert p.stars == 33
         assert p.discount == ""
-        assert p.label == "\u0421\u0442\u0430\u0440\u0442"
+        assert p.label == "Старт"
 
     def test_standard_package(self) -> None:
         p = PACKAGES["standard"]
         assert p.tokens == 2000
         assert p.price_rub == 1600
         assert p.stars == 104
-        assert p.discount == "\u221220%"
-        assert p.label == "\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442"
+        assert p.discount == "−20%"
+        assert p.label == "Стандарт"
 
     def test_pro_package(self) -> None:
         p = PACKAGES["pro"]
         assert p.tokens == 5000
         assert p.price_rub == 3000
         assert p.stars == 195
-        assert p.discount == "\u221240%"
-        assert p.label == "\u041f\u0440\u043e"
+        assert p.discount == "−40%"
+        assert p.label == "Про"
 
     def test_packages_are_frozen(self) -> None:
         """Packages should be immutable dataclasses."""

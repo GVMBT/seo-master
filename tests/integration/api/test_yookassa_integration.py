@@ -22,7 +22,7 @@ _VALID_PAYMENT_BODY = {
             "package_name": "start",
             "tokens_amount": "500",
         },
-        "amount": {"value": "990.00", "currency": "RUB"},
+        "amount": {"value": "500.00", "currency": "RUB"},
     },
 }
 

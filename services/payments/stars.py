@@ -142,9 +142,6 @@ class StarsPaymentService:
         telegram_payment_charge_id: str,
         provider_payment_charge_id: str,
         total_amount: int,
-        is_recurring: bool = False,
-        is_first_recurring: bool = False,
-        subscription_expiration_date: int | None = None,
     ) -> dict:
         """Process successful Stars payment — credit tokens, record payment.
 
