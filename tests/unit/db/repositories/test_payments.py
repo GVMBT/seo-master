@@ -20,8 +20,8 @@ def payment_row() -> dict:
         "stars_amount": 100,
         "yookassa_payment_id": None,
         "yookassa_payment_method_id": None,
-        "package_name": "standard",
-        "tokens_amount": 5000,
+        "package_name": "start",
+        "tokens_amount": 500,
         "amount_rub": "499.00",
         "is_subscription": False,
         "subscription_id": None,
@@ -56,10 +56,10 @@ def repo(mock_db: MockSupabaseClient) -> PaymentsRepository:
 class TestCreatePayment:
     async def test_create(self, repo: PaymentsRepository, mock_db: MockSupabaseClient, payment_row: dict) -> None:
         mock_db.set_response("payments", MockResponse(data=[payment_row]))
-        data = PaymentCreate(user_id=123456789, provider="stars", tokens_amount=5000, package_name="standard")
+        data = PaymentCreate(user_id=123456789, provider="stars", tokens_amount=500, package_name="start")
         payment = await repo.create(data)
         assert isinstance(payment, Payment)
-        assert payment.tokens_amount == 5000
+        assert payment.tokens_amount == 500
 
 
 class TestUpdatePayment:

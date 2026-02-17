@@ -391,7 +391,7 @@ class Payment(BaseModel):
 class PaymentCreate(BaseModel):
     user_id: int
     provider: str
-    tokens_amount: int  # base + bonus (e.g. Starter = 3000 + 500 = 3500)
+    tokens_amount: int
     package_name: str | None = None
     amount_rub: Decimal | None = None
     stars_amount: int | None = None

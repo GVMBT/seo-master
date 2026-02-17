@@ -53,8 +53,6 @@ async def successful_payment_handler(
         telegram_payment_charge_id=payment.telegram_payment_charge_id,
         provider_payment_charge_id=payment.provider_payment_charge_id or "",
         total_amount=payment.total_amount,
-        is_recurring=getattr(payment, "is_recurring", False),
-        is_first_recurring=getattr(payment, "is_first_recurring", False),
     )
 
     if result.get("is_duplicate"):
