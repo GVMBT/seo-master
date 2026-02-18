@@ -330,10 +330,18 @@ async def reply_menu(
 
 
 @router.message(F.text == "Написать статью")
-async def reply_article(message: Message, state: FSMContext) -> None:
-    """Reply keyboard: Write Article → stub."""
+async def reply_article(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Reply keyboard: Write Article → show Dashboard with pipeline CTA."""
     await ensure_no_active_fsm(state)
-    await message.answer("Статьи — скоро! Используйте Dashboard.")
+    await redis.delete(CacheKeys.pipeline_state(user.id))
+    text, kb = await _build_dashboard(user, is_new_user=False, db=db, redis=redis)
+    await message.answer(text, reply_markup=kb)
 
 
 @router.message(F.text == "Создать пост")
@@ -353,8 +361,10 @@ async def reply_cancel(
     db: SupabaseClient,
     redis: RedisClient,
 ) -> None:
-    """Reply keyboard: Cancel → clear FSM, show Dashboard."""
+    """Reply keyboard: Cancel → clear FSM + pipeline checkpoint, show Dashboard."""
     interrupted = await ensure_no_active_fsm(state)
+    # Clear pipeline checkpoint if it exists (BUG-4: reply cancel must clean up Redis)
+    await redis.delete(CacheKeys.pipeline_state(user.id))
     if interrupted:
         await message.answer(f"Процесс ({interrupted}) отменён.")
     text, kb = await _build_dashboard(user, is_new_user, db, redis)

@@ -549,3 +549,30 @@ async def schedule_times_done(
         reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=True),
     )
     await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# FSM: cancel
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "sched:cancel")
+async def schedule_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    """Cancel manual schedule setup, return to connection config."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    cat_id = data.get("sched_cat_id")
+    conn_id = data.get("sched_conn_id")
+    await state.clear()
+
+    if cat_id and conn_id:
+        await callback.message.edit_text(
+            "Настройка расписания отменена.",
+            reply_markup=scheduler_config_kb(int(cat_id), int(conn_id), has_schedule=False),
+        )
+    else:
+        await callback.message.edit_text("Настройка расписания отменена.")
+    await callback.answer()
