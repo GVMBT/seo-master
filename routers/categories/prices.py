@@ -156,7 +156,7 @@ async def start_text(
         "<i>Пример:\n"
         "Кухня угловая \u00abМодена\u00bb \u2014 89 900 руб\n"
         "Стол обеденный \u00abЛофт\u00bb \u2014 24 500 руб</i>",
-        reply_markup=cancel_kb("prices:input:cancel"),
+        reply_markup=cancel_kb(f"price:{cat_id}:cancel"),
     )
     await callback.answer()
 
@@ -254,7 +254,7 @@ async def start_excel(
 
     await callback.message.answer(
         "Загрузите Excel-файл (.xlsx) с прайсом.\nФормат: колонка A = название, колонка B = цена.",
-        reply_markup=cancel_kb("prices:input:cancel"),
+        reply_markup=cancel_kb(f"price:{cat_id}:cancel"),
     )
     await callback.answer()
 
@@ -447,7 +447,7 @@ async def delete_prices(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "prices:input:cancel")
+@router.callback_query(F.data.regexp(r"^price:\d+:cancel$"))
 async def cancel_prices_inline(
     callback: CallbackQuery,
     state: FSMContext,
@@ -459,19 +459,17 @@ async def cancel_prices_inline(
         await callback.answer()
         return
 
-    data = await state.get_data()
-    cat_id = data.get("prices_cat_id")
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.clear()
 
-    if cat_id:
-        _, category, project = await _verify_category_ownership(int(cat_id), user, db)
-        if category and project:
-            await callback.message.edit_text(
-                f"<b>{html.escape(category.name)}</b>",
-                reply_markup=category_card_kb(int(cat_id), category.project_id),
-            )
-            await callback.answer()
-            return
+    _, category, project = await _verify_category_ownership(cat_id, user, db)
+    if category and project:
+        await callback.message.edit_text(
+            f"<b>{html.escape(category.name)}</b>",
+            reply_markup=category_card_kb(cat_id, category.project_id),
+        )
+        await callback.answer()
+        return
 
     await callback.message.edit_text("Ввод цен отменён.")
     await callback.answer()

@@ -218,7 +218,7 @@ async def start_generation(
 
         await callback.message.edit_text(
             "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
-            reply_markup=cancel_kb("keywords:generate:cancel"),
+            reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
         )
 
     await callback.answer()
@@ -235,12 +235,13 @@ async def start_fresh_generation(
         return
 
     # Already in FSM, just reset state to products input
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.set_state(KeywordGenerationFSM.products)
     await state.update_data(last_update_time=time.time())
 
     await callback.message.edit_text(
         "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
-        reply_markup=cancel_kb("keywords:generate:cancel"),
+        reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
     )
     await callback.answer()
 
@@ -294,11 +295,12 @@ async def process_products(
         return
 
     await state.set_state(KeywordGenerationFSM.geography)
-    await state.update_data(kw_products=text, last_update_time=time.time())
+    data = await state.update_data(kw_products=text, last_update_time=time.time())
+    cat_id = data.get("kw_cat_id", 0)
 
     await message.answer(
         "Укажите географию продвижения:\n<i>Например: Москва, Россия, СНГ</i>",
-        reply_markup=cancel_kb("keywords:generate:cancel"),
+        reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
     )
 
 
@@ -644,7 +646,7 @@ async def start_upload(
         "Загрузите текстовый файл (.txt) с ключевыми фразами.\n"
         "Каждая фраза на отдельной строке.\n\n"
         f"Максимум: {_MAX_PHRASES} фраз, {_MAX_FILE_SIZE // (1024 * 1024)} МБ.",
-        reply_markup=cancel_kb("keywords:upload:cancel"),
+        reply_markup=cancel_kb(f"kw:{cat_id}:upl_cancel"),
     )
     await callback.answer()
 
@@ -1189,7 +1191,7 @@ async def delete_all_confirm(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "keywords:generate:cancel")
+@router.callback_query(F.data.regexp(r"^kw:\d+:gen_cancel$"))
 async def cancel_generation_inline(
     callback: CallbackQuery,
     state: FSMContext,
@@ -1201,26 +1203,24 @@ async def cancel_generation_inline(
         await callback.answer()
         return
 
-    data = await state.get_data()
-    cat_id = data.get("kw_cat_id")
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.clear()
 
-    if cat_id:
-        _, category, _ = await _check_category_ownership(int(cat_id), user, db)
-        if category:
-            safe_name = html.escape(category.name)
-            await callback.message.edit_text(
-                f"<b>{safe_name}</b>",
-                reply_markup=category_card_kb(int(cat_id), category.project_id),
-            )
-            await callback.answer()
-            return
+    _, category, _ = await _check_category_ownership(cat_id, user, db)
+    if category:
+        safe_name = html.escape(category.name)
+        await callback.message.edit_text(
+            f"<b>{safe_name}</b>",
+            reply_markup=category_card_kb(cat_id, category.project_id),
+        )
+        await callback.answer()
+        return
 
     await callback.message.edit_text("Подбор фраз отменён.")
     await callback.answer()
 
 
-@router.callback_query(F.data == "keywords:upload:cancel")
+@router.callback_query(F.data.regexp(r"^kw:\d+:upl_cancel$"))
 async def cancel_upload_inline(
     callback: CallbackQuery,
     state: FSMContext,
@@ -1232,20 +1232,18 @@ async def cancel_upload_inline(
         await callback.answer()
         return
 
-    data = await state.get_data()
-    cat_id = data.get("kw_cat_id")
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.clear()
 
-    if cat_id:
-        _, category, _ = await _check_category_ownership(int(cat_id), user, db)
-        if category:
-            safe_name = html.escape(category.name)
-            await callback.message.edit_text(
-                f"<b>{safe_name}</b>",
-                reply_markup=category_card_kb(int(cat_id), category.project_id),
-            )
-            await callback.answer()
-            return
+    _, category, _ = await _check_category_ownership(cat_id, user, db)
+    if category:
+        safe_name = html.escape(category.name)
+        await callback.message.edit_text(
+            f"<b>{safe_name}</b>",
+            reply_markup=category_card_kb(cat_id, category.project_id),
+        )
+        await callback.answer()
+        return
 
     await callback.message.edit_text("Загрузка отменена.")
     await callback.answer()

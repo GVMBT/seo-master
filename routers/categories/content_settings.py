@@ -204,7 +204,7 @@ async def text_length(
     await callback.message.edit_text(
         f"Текущая длина: {current_min}–{current_max} слов.\n\n"
         "Введите <b>минимальную</b> длину статьи (500–10000 слов):",
-        reply_markup=cancel_kb("settings:words:cancel"),
+        reply_markup=cancel_kb(f"cs:{cat_id}:cancel"),
     )
     await callback.answer()
 
@@ -228,11 +228,12 @@ async def process_min_words(
         return
 
     await state.set_state(ContentSettingsFSM.max_words)
-    await state.update_data(min_words=min_val, last_update_time=time.time())
+    data = await state.update_data(min_words=min_val, last_update_time=time.time())
+    cat_id = data.get("settings_cat_id", 0)
 
     await message.answer(
         f"Минимум: {min_val} слов.\n\nВведите <b>максимальную</b> длину (>{min_val}, до 10000):",
-        reply_markup=cancel_kb("settings:words:cancel"),
+        reply_markup=cancel_kb(f"cs:{cat_id}:cancel"),
     )
 
 
@@ -556,7 +557,7 @@ async def select_img_style(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "settings:words:cancel")
+@router.callback_query(F.data.regexp(r"^cs:\d+:cancel$"))
 async def cancel_text_length_inline(
     callback: CallbackQuery,
     state: FSMContext,
@@ -568,20 +569,18 @@ async def cancel_text_length_inline(
         await callback.answer()
         return
 
-    data = await state.get_data()
-    cat_id = data.get("settings_cat_id")
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.clear()
 
-    if cat_id:
-        _, category = await _check_category_ownership(int(cat_id), user, db)
-        if category:
-            safe_name = html.escape(category.name)
-            await callback.message.edit_text(
-                f"<b>{safe_name}</b>",
-                reply_markup=category_card_kb(int(cat_id), category.project_id),
-            )
-            await callback.answer()
-            return
+    _, category = await _check_category_ownership(cat_id, user, db)
+    if category:
+        safe_name = html.escape(category.name)
+        await callback.message.edit_text(
+            f"<b>{safe_name}</b>",
+            reply_markup=category_card_kb(cat_id, category.project_id),
+        )
+        await callback.answer()
+        return
 
     await callback.message.edit_text("Настройка длины отменена.")
     await callback.answer()

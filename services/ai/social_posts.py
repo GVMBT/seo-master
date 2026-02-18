@@ -80,13 +80,20 @@ class SocialPostService:
             raise AIGenerationError(message="Project or category not found")
 
         text_settings = overrides or category.text_settings or {}
+        styles = text_settings.get("styles")
+        if isinstance(styles, str):
+            styles = [styles]
+        if not styles:
+            legacy = text_settings.get("style")
+            styles = [legacy] if legacy else ["Разговорный"]
+
         context: dict[str, Any] = {
             "keyword": keyword,
             "platform": platform,
             "company_name": project.company_name,
             "specialization": project.specialization,
             "language": "ru",
-            "text_style": ", ".join(text_settings.get("styles", ["Разговорный"])),
+            "text_style": ", ".join(s for s in styles if s) or "Разговорный",
             "words_min": text_settings.get("words_min", 100),
             "words_max": text_settings.get("words_max", 300),
             "prices_excerpt": (category.prices or "")[:300],

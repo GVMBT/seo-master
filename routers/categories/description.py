@@ -523,7 +523,7 @@ async def start_manual(
 
     await callback.message.edit_text(
         "Введите описание категории (10\u20132000 символов):",
-        reply_markup=cancel_kb("description:manual:cancel"),
+        reply_markup=cancel_kb(f"desc:{cat_id}:cancel"),
     )
     await callback.answer()
 
@@ -607,7 +607,7 @@ async def delete_description(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "description:manual:cancel")
+@router.callback_query(F.data.regexp(r"^desc:\d+:cancel$"))
 async def cancel_manual_inline(
     callback: CallbackQuery,
     state: FSMContext,
@@ -619,20 +619,18 @@ async def cancel_manual_inline(
         await callback.answer()
         return
 
-    data = await state.get_data()
-    cat_id = data.get("cat_id")
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.clear()
 
-    if cat_id:
-        _, category, _ = await _check_category_ownership(int(cat_id), user, db)
-        if category:
-            safe_name = html.escape(category.name)
-            await callback.message.edit_text(
-                f"<b>{safe_name}</b>",
-                reply_markup=category_card_kb(int(cat_id), category.project_id),
-            )
-            await callback.answer()
-            return
+    _, category, _ = await _check_category_ownership(cat_id, user, db)
+    if category:
+        safe_name = html.escape(category.name)
+        await callback.message.edit_text(
+            f"<b>{safe_name}</b>",
+            reply_markup=category_card_kb(cat_id, category.project_id),
+        )
+        await callback.answer()
+        return
 
     await callback.message.edit_text("Ввод описания отменён.")
     await callback.answer()

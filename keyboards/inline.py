@@ -450,10 +450,10 @@ def connection_list_kb(connections: list[PlatformConnection], project_id: int) -
 
     # Add platform buttons — only for types NOT yet connected
     _ALL_PLATFORMS = [
-        ("wordpress", "+ WordPress"),
-        ("telegram", "+ Telegram"),
-        ("vk", "+ VK"),
-        ("pinterest", "+ Pinterest"),
+        ("wordpress", "Добавить WordPress"),
+        ("telegram", "Добавить Telegram"),
+        ("vk", "Добавить VK"),
+        ("pinterest", "Добавить Pinterest"),
     ]
     add_buttons = [
         InlineKeyboardButton(text=label, callback_data=f"conn:{project_id}:add:{ptype}")

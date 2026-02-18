@@ -921,14 +921,13 @@ async def start_pinterest_connect(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "connect:wp:cancel")
-async def cancel_wp_connect(
+async def _cancel_connection_wizard(
     callback: CallbackQuery,
     state: FSMContext,
     user: User,
     db: SupabaseClient,
 ) -> None:
-    """Cancel WordPress connection via inline button — return to connection list."""
+    """Common cancel logic for connection wizards."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
@@ -953,71 +952,27 @@ async def cancel_wp_connect(
 
     await callback.message.edit_text("Подключение отменено.")
     await callback.answer()
+
+
+@router.callback_query(F.data == "connect:wp:cancel")
+async def cancel_wp_connect(
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
+) -> None:
+    """Cancel WordPress connection via inline button."""
+    await _cancel_connection_wizard(callback, state, user, db)
 
 
 @router.callback_query(F.data == "connect:tg:cancel")
 async def cancel_tg_connect(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
 ) -> None:
-    """Cancel Telegram connection via inline button — return to connection list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    project_id = data.get("connect_project_id")
-    await state.clear()
-
-    if project_id:
-        projects_repo = ProjectsRepository(db)
-        project = await projects_repo.get_by_id(int(project_id))
-        if project and project.user_id == user.id:
-            conn_repo = _make_conn_repo(db)
-            connections = await conn_repo.get_by_project(int(project_id))
-            safe_name = html.escape(project.name)
-            await callback.message.edit_text(
-                f"<b>{safe_name}</b> — Подключения",
-                reply_markup=connection_list_kb(connections, int(project_id)),
-            )
-            await callback.answer()
-            return
-
-    await callback.message.edit_text("Подключение отменено.")
-    await callback.answer()
+    """Cancel Telegram connection via inline button."""
+    await _cancel_connection_wizard(callback, state, user, db)
 
 
 @router.callback_query(F.data == "connect:vk:cancel")
 async def cancel_vk_connect(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
+    callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
 ) -> None:
-    """Cancel VK connection via inline button — return to connection list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    project_id = data.get("connect_project_id")
-    await state.clear()
-
-    if project_id:
-        projects_repo = ProjectsRepository(db)
-        project = await projects_repo.get_by_id(int(project_id))
-        if project and project.user_id == user.id:
-            conn_repo = _make_conn_repo(db)
-            connections = await conn_repo.get_by_project(int(project_id))
-            safe_name = html.escape(project.name)
-            await callback.message.edit_text(
-                f"<b>{safe_name}</b> — Подключения",
-                reply_markup=connection_list_kb(connections, int(project_id)),
-            )
-            await callback.answer()
-            return
-
-    await callback.message.edit_text("Подключение отменено.")
-    await callback.answer()
+    """Cancel VK connection via inline button."""
+    await _cancel_connection_wizard(callback, state, user, db)
