@@ -130,6 +130,7 @@ seo-master-bot-v2/
 │   ├── cleanup.py                  # CleanupService: очистка expired превью, refund токенов
 │   ├── scheduler.py                # SchedulerService: обёртка QStash SDK (cron, расписания)
 │   ├── notifications.py            # Автоуведомления
+│   ├── connections.py             # ConnectionService: валидация платформ + CRUD подключений
 │   ├── readiness.py               # ReadinessService: чеклист готовности для Pipeline
 │   └── payments/                   # Платежи
 │       ├── packages.py             # Пакеты и тарифы
