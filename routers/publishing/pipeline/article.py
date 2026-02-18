@@ -34,7 +34,6 @@ from keyboards.pipeline import (
     pipeline_no_projects_kb,
     pipeline_no_wp_kb,
     pipeline_projects_kb,
-    pipeline_wp_select_kb,
 )
 
 log = structlog.get_logger()
@@ -280,8 +279,9 @@ async def _show_wp_step(
 
     UX_PIPELINE.md §4.1:
     - 1 WP connection -> auto-select, skip to step 3
-    - >1 WP connections -> show list
     - 0 WP connections -> offer connect or preview-only
+
+    Rule: 1 project = max 1 WordPress connection. No multi-WP branch needed.
     """
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         return
@@ -289,27 +289,11 @@ async def _show_wp_step(
     repo = _conn_repo(db)
     wp_connections = await repo.get_by_project_and_platform(project_id, "wordpress")
 
-    if len(wp_connections) == 1:
-        # Auto-select the only WP connection
+    if wp_connections:
+        # Auto-select the WP connection (max 1 per project)
         conn = wp_connections[0]
         await state.update_data(connection_id=conn.id, wp_identifier=conn.identifier)
         await _show_category_step(callback, state, user, db, redis, project_id, project_name)
-        return
-
-    if len(wp_connections) > 1:
-        # Multiple WP connections — show selection
-        await callback.message.edit_text(
-            "Статья (2/5) — Сайт\n\nНа какой сайт?",
-            reply_markup=pipeline_wp_select_kb(wp_connections, project_id),
-        )
-        await state.set_state(ArticlePipelineFSM.select_wp)
-        await _save_checkpoint(
-            redis,
-            user.id,
-            current_step="select_wp",
-            project_id=project_id,
-            project_name=project_name,
-        )
         return
 
     # No WP connections — offer connect or preview-only
@@ -325,45 +309,6 @@ async def _show_wp_step(
         project_id=project_id,
         project_name=project_name,
     )
-
-
-@router.callback_query(
-    ArticlePipelineFSM.select_wp,
-    F.data.regexp(r"^pipeline:article:(\d+):wp:(\d+)$"),
-)
-async def pipeline_select_wp(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-) -> None:
-    """Handle WP connection selection from list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
-        await callback.answer()
-        return
-
-    parts = callback.data.split(":")  # type: ignore[union-attr]
-    connection_id = int(parts[4])
-
-    # Trust project_id from FSM state, not callback_data (anti-tampering)
-    data = await state.get_data()
-    state_project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
-    if not state_project_id:
-        await callback.answer("Проект не выбран.", show_alert=True)
-        return
-
-    repo = _conn_repo(db)
-    conn = await repo.get_by_id(connection_id)
-
-    if conn is None or conn.project_id != state_project_id:
-        await callback.answer("Подключение не найдено.", show_alert=True)
-        return
-
-    await state.update_data(connection_id=conn.id, wp_identifier=conn.identifier)
-    await _show_category_step(callback, state, user, db, redis, state_project_id, project_name)
-    await callback.answer()
 
 
 @router.callback_query(

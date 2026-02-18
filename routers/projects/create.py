@@ -14,7 +14,7 @@ from bot.fsm_utils import ensure_no_active_fsm
 from db.client import SupabaseClient
 from db.models import Project, ProjectCreate, ProjectUpdate, User
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import project_created_kb, project_edit_kb
+from keyboards.inline import cancel_kb, project_created_kb, project_edit_kb
 
 log = structlog.get_logger()
 router = Router()
@@ -95,6 +95,7 @@ async def start_create(
 
     await callback.message.answer(
         "Как назовём проект?\nЭто внутреннее имя для вашего удобства.\n\n<i>Пример: Мебель Комфорт</i>",
+        reply_markup=cancel_kb("project:create:cancel"),
     )
     await callback.answer()
 
@@ -120,6 +121,7 @@ async def process_name(
     await state.set_state(ProjectCreateFSM.company_name)
     await message.answer(
         "Как называется ваша компания?\nБудет использоваться в текстах.\n\n<i>Пример: ООО Мебель Комфорт</i>",
+        reply_markup=cancel_kb("project:create:cancel"),
     )
 
 
@@ -144,6 +146,7 @@ async def process_company_name(
     await state.set_state(ProjectCreateFSM.specialization)
     await message.answer(
         "Опишите специализацию в 2-3 словах.\n\n<i>Пример: мебель на заказ</i>",
+        reply_markup=cancel_kb("project:create:cancel"),
     )
 
 
@@ -168,6 +171,7 @@ async def process_specialization(
     await state.set_state(ProjectCreateFSM.website_url)
     await message.answer(
         "Адрес вашего сайта (необязательно).\nЕсли нет — напишите «Пропустить».\n\n<i>Пример: comfort-mebel.ru</i>",
+        reply_markup=cancel_kb("project:create:cancel"),
     )
 
 
@@ -307,8 +311,8 @@ async def start_field_edit(
     current = getattr(project, field, None) or "—"
     await callback.message.answer(
         f"Введите новое значение для поля «{label}».\n"
-        f"Текущее: {html.escape(str(current))}\n\n"
-        "Для отмены напишите «Отмена».",
+        f"Текущее: {html.escape(str(current))}",
+        reply_markup=cancel_kb("project:edit:cancel"),
     )
     await callback.answer()
 
@@ -382,3 +386,52 @@ async def process_field_value(
         await message.answer("Ошибка обновления.")
 
     log.info("project_field_updated", project_id=project_id, field=field, user_id=user.id)
+
+
+# ---------------------------------------------------------------------------
+# Cancel handlers (inline button)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "project:create:cancel")
+async def cancel_create(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """Cancel project creation via inline button."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    await state.clear()
+    await callback.message.edit_text("Создание проекта отменено.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "project:edit:cancel")
+async def cancel_edit(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel project field edit via inline button — return to edit screen."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    project_id = data.get("edit_project_id")
+    await state.clear()
+
+    if project_id:
+        repo = ProjectsRepository(db)
+        project = await repo.get_by_id(int(project_id))
+        if project and project.user_id == user.id:
+            edit_text = _build_edit_text(project)
+            await callback.message.edit_text(edit_text, reply_markup=project_edit_kb(int(project_id)))
+            await callback.answer()
+            return
+
+    await callback.message.edit_text("Редактирование отменено.")
+    await callback.answer()

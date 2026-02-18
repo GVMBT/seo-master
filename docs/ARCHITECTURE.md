@@ -366,9 +366,9 @@ CREATE TABLE platform_connections (
     status          VARCHAR(20) DEFAULT 'active', -- active, error, disconnected
     credentials     TEXT NOT NULL,              -- Зашифрованный JSON (Fernet), расшифровывается в repository layer
     metadata        JSONB DEFAULT '{}',        -- Доп. данные платформы
-    identifier      VARCHAR(500) NOT NULL,     -- Идентификатор подключения (plaintext, для UNIQUE)
+    identifier      VARCHAR(500) NOT NULL,     -- Идентификатор подключения (plaintext, для отображения/логов)
     created_at      TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(project_id, platform_type, identifier)
+    UNIQUE(project_id, platform_type)
 );
 CREATE INDEX idx_connections_project ON platform_connections(project_id);
 ```

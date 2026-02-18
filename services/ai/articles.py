@@ -466,6 +466,13 @@ class ArticleService:
             text_color = colors.get("text", "#333333")
             accent_color = colors.get("accent", "#0066cc")
 
+        styles = text_settings.get("styles")
+        if isinstance(styles, str):
+            styles = [styles]
+        if not styles:
+            legacy = text_settings.get("style")
+            styles = [legacy] if legacy else ["Информативный"]
+
         context: dict[str, Any] = {
             "keyword": keyword,
             "main_phrase": main_phrase,
@@ -480,7 +487,7 @@ class ArticleService:
             "language": "ru",
             "words_min": words_min,
             "words_max": words_max,
-            "text_style": text_settings.get("style", "Информативный"),
+            "text_style": ", ".join(s for s in styles if s) or "Информативный",
             "niche_type": niche_type,
             "current_date": datetime.now(tz=UTC).strftime("%B %Y"),
             "lsi_keywords": lsi_keywords,

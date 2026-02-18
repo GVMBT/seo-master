@@ -175,28 +175,26 @@ callback_data: `project:{id}:edit:{field}`, `project:{id}:delete`, `project:{id}
 
 ### 5.1. Список подключений
 
-```
+**Правило: 1 проект = макс. 1 подключение каждого типа.** Кнопка «Добавить» скрывается для типов, у которых уже есть подключение. Для другого сайта/канала — создайте новый проект.
+
+```text
 "Подключения — Мебель Комфорт"
 
 [comfort-mebel.ru (WordPress)]
 [@comfort_channel (Telegram)]
-[Мебель Комфорт (VK)]
-[Мебельные идеи (Pinterest)]
 ───────────────────────
-[Добавить WordPress]
-[Добавить Telegram]
-[Добавить VK]
-[Добавить Pinterest]
+[Добавить VK]              ← показана, т.к. VK ещё не подключён
+[Добавить Pinterest]       ← показана, т.к. Pinterest ещё не подключён
 ───────────────────────
 [К проекту]
 ```
 
 callback_data:
 - `conn:{conn_id}:manage` — управление существующим подключением
-- `conn:{project_id}:add:wordpress`
-- `conn:{project_id}:add:telegram`
-- `conn:{project_id}:add:vk`
-- `conn:{project_id}:add:pinterest`
+- `conn:{project_id}:add:wordpress` — только если нет WP
+- `conn:{project_id}:add:telegram` — только если нет TG
+- `conn:{project_id}:add:vk` — только если нет VK
+- `conn:{project_id}:add:pinterest` — только если нет Pinterest
 - `project:{id}:card`
 
 ### 5.2. Управление подключением
@@ -675,7 +673,7 @@ callback_data:
 ```
 [Рекламный]    [Мотивационный]   [Дружелюбный]
 [Разговорный]  [Профессиональный] [Креативный]
-[Информативный] [С юмором]       [Мужской]  [Женский]
+[Информативный] [С юмором]
 ```
 
 callback_data: `settings:{cat_id}:style:{style_name}`

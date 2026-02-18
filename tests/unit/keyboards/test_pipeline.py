@@ -17,7 +17,7 @@ from typing import Any
 from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton
 
-from db.models import Category, PlatformConnection, Project
+from db.models import Category, Project
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_confirm_kb,
@@ -33,7 +33,6 @@ from keyboards.pipeline import (
     pipeline_projects_kb,
     pipeline_readiness_kb,
     pipeline_result_kb,
-    pipeline_wp_select_kb,
 )
 from services.readiness import ReadinessReport
 from services.tokens import (
@@ -67,19 +66,6 @@ def _make_category(id: int = 1, project_id: int = 1, **overrides: Any) -> Catego
     }
     defaults.update(overrides)
     return Category(**defaults)
-
-
-def _make_connection(id: int = 1, project_id: int = 1, **overrides: Any) -> PlatformConnection:
-    defaults: dict[str, Any] = {
-        "id": id,
-        "project_id": project_id,
-        "platform_type": "wordpress",
-        "identifier": f"site-{id}.example.com",
-        "credentials": {"url": "https://example.com", "login": "admin", "password": "pass"},
-        "status": "active",
-    }
-    defaults.update(overrides)
-    return PlatformConnection(**defaults)
 
 
 def _make_report(**overrides: Any) -> ReadinessReport:
@@ -165,39 +151,6 @@ class TestPipelineNoProjectsKb:
 # ---------------------------------------------------------------------------
 # Step 2: WP connection selection
 # ---------------------------------------------------------------------------
-
-
-class TestPipelineWpSelectKb:
-    """pipeline_wp_select_kb shows correct identifiers."""
-
-    def test_single_connection_identifier(self) -> None:
-        conn = _make_connection(id=10, identifier="blog.example.com")
-        kb = pipeline_wp_select_kb([conn], project_id=5)
-        buttons = _flatten_buttons(kb)
-        assert buttons[0].text == "blog.example.com"
-        assert buttons[0].callback_data == "pipeline:article:5:wp:10"
-
-    def test_multiple_connections(self) -> None:
-        conns = [
-            _make_connection(id=1, identifier="site1.com"),
-            _make_connection(id=2, identifier="site2.com"),
-        ]
-        kb = pipeline_wp_select_kb(conns, project_id=3)
-        buttons = _flatten_buttons(kb)
-        assert len(buttons) == 2
-        assert buttons[0].callback_data == "pipeline:article:3:wp:1"
-        assert buttons[1].callback_data == "pipeline:article:3:wp:2"
-
-    def test_fallback_identifier_when_empty(self) -> None:
-        """When identifier is empty string, fallback to 'WP #{id}'.
-
-        Note: PlatformConnection.identifier is required str (not None).
-        The keyboard function uses `conn.identifier or f'WP #{conn.id}'`.
-        """
-        conn = _make_connection(id=7, identifier="")
-        kb = pipeline_wp_select_kb([conn], project_id=1)
-        buttons = _flatten_buttons(kb)
-        assert buttons[0].text == "WP #7"
 
 
 class TestPipelineNoWpKb:

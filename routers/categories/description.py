@@ -20,6 +20,7 @@ from db.models import Category, CategoryUpdate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
+    cancel_kb,
     category_card_kb,
     description_confirm_kb,
     description_kb,
@@ -520,7 +521,10 @@ async def start_manual(
     await state.set_state(DescriptionGenerateFSM.manual_input)
     await state.update_data(last_update_time=time.time(), cat_id=cat_id)
 
-    await callback.message.edit_text("Введите описание категории (10\u20132000 символов):")
+    await callback.message.edit_text(
+        "Введите описание категории (10\u20132000 символов):",
+        reply_markup=cancel_kb(f"desc:{cat_id}:cancel"),
+    )
     await callback.answer()
 
 
@@ -595,4 +599,38 @@ async def delete_description(
 
     log.info("description_deleted", cat_id=cat_id, user_id=user.id)
     await _show_description_screen(callback.message, cat_id, db)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# 11. Cancel handler (inline button)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^desc:\d+:cancel$"))
+async def cancel_manual_inline(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel manual description input via inline button — return to category card."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    await state.clear()
+
+    _, category, _ = await _check_category_ownership(cat_id, user, db)
+    if category:
+        safe_name = html.escape(category.name)
+        await callback.message.edit_text(
+            f"<b>{safe_name}</b>",
+            reply_markup=category_card_kb(cat_id, category.project_id),
+        )
+        await callback.answer()
+        return
+
+    await callback.message.edit_text("Ввод описания отменён.")
     await callback.answer()
