@@ -631,9 +631,14 @@ async def pipeline_connect_wp_password(
         return
 
     data = await state.get_data()
-    wp_url: str = data["wp_url"]
-    wp_login: str = data["wp_login"]
-    project_id: int = data["project_id"]
+    wp_url = data.get("wp_url")
+    wp_login = data.get("wp_login")
+    project_id = data.get("project_id")
+    if not (wp_url and wp_login and project_id):
+        await state.clear()
+        await _clear_checkpoint(redis, user.id)
+        await message.answer("Сессия устарела. Начните подключение заново.")
+        return
     project_name: str = data.get("project_name", "")
 
     # Validate WP REST API

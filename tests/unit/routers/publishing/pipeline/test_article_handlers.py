@@ -927,6 +927,27 @@ class TestPipelineConnectWpPassword:
         assert conn_call is not None
         assert conn_call.kwargs["connection_id"] == 77
 
+    async def test_stale_session_missing_keys_clears_state(
+        self,
+        mock_message: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """Missing FSM keys (stale session) -> clears state, shows error."""
+        mock_message.text = "xxxx xxxx xxxx xxxx xxxx xxxx"
+        mock_message.delete = AsyncMock()
+        mock_state.get_data = AsyncMock(return_value={})  # no wp_url/wp_login/project_id
+        http_client = MagicMock()
+
+        await pipeline_connect_wp_password(
+            mock_message, mock_state, user, MagicMock(), mock_redis, http_client,
+        )
+
+        mock_state.clear.assert_called_once()
+        assert "устарела" in mock_message.answer.call_args.args[0].lower()
+        http_client.head.assert_not_called()
+
     async def test_project_not_found_clears_state(
         self,
         mock_message: MagicMock,
