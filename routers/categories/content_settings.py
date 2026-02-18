@@ -20,6 +20,8 @@ from db.models import Category, CategoryUpdate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
+    cancel_kb,
+    category_card_kb,
     content_settings_kb,
     image_count_kb,
     image_style_kb,
@@ -39,8 +41,6 @@ _TEXT_STYLES: list[str] = [
     "Креативный",
     "Информативный",
     "С юмором",
-    "Мужской",
-    "Женский",
 ]
 
 _IMAGE_STYLES: list[str] = [
@@ -204,6 +204,7 @@ async def text_length(
     await callback.message.edit_text(
         f"Текущая длина: {current_min}–{current_max} слов.\n\n"
         "Введите <b>минимальную</b> длину статьи (500–10000 слов):",
+        reply_markup=cancel_kb("settings:words:cancel"),
     )
     await callback.answer()
 
@@ -231,6 +232,7 @@ async def process_min_words(
 
     await message.answer(
         f"Минимум: {min_val} слов.\n\nВведите <b>максимальную</b> длину (>{min_val}, до 10000):",
+        reply_markup=cancel_kb("settings:words:cancel"),
     )
 
 
@@ -546,4 +548,40 @@ async def select_img_style(
         f"<b>Настройки контента</b> — {safe_name}\n\nСтиль изображений: {style_name}",
         reply_markup=content_settings_kb(cat_id, {**ts, **img}),
     )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# 6. Cancel handler (inline button)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "settings:words:cancel")
+async def cancel_text_length_inline(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel text length input via inline button — return to category card."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    cat_id = data.get("settings_cat_id")
+    await state.clear()
+
+    if cat_id:
+        _, category = await _check_category_ownership(int(cat_id), user, db)
+        if category:
+            safe_name = html.escape(category.name)
+            await callback.message.edit_text(
+                f"<b>{safe_name}</b>",
+                reply_markup=category_card_kb(int(cat_id), category.project_id),
+            )
+            await callback.answer()
+            return
+
+    await callback.message.edit_text("Настройка длины отменена.")
     await callback.answer()

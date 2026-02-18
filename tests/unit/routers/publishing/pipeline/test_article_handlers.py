@@ -4,8 +4,7 @@ Covers steps 1-3 of the Article Pipeline:
 - pipeline_article_start: 0/1/>1 projects
 - pipeline_select_project: ownership check, loading
 - pipeline_projects_page: pagination
-- WP step: 0/1/>1 connections
-- pipeline_select_wp: loading, project match
+- WP step: 0/1 connections (1 project = max 1 WP, no multi-WP)
 - pipeline_preview_only: sets preview_only=True
 - Category step: 0/1/>1 categories
 - pipeline_select_category: ownership check
@@ -30,7 +29,6 @@ from routers.publishing.pipeline.article import (
     pipeline_projects_page,
     pipeline_select_category,
     pipeline_select_project,
-    pipeline_select_wp,
 )
 from tests.unit.routers.conftest import make_category, make_connection, make_project
 
@@ -286,7 +284,10 @@ class TestPipelineProjectsPage:
 
 
 class TestPipelineWpStep:
-    """WP step: 0/1/>1 connections via _show_wp_step (tested through pipeline_article_start)."""
+    """WP step: 0/1 connections via _show_wp_step (tested through pipeline_article_start).
+
+    Rule: 1 project = max 1 WordPress. No multi-WP branch.
+    """
 
     async def test_zero_wp_connections_shows_no_wp_kb(
         self,
@@ -327,96 +328,6 @@ class TestPipelineWpStep:
         )
         assert conn_call is not None
         assert conn_call.kwargs["connection_id"] == 5
-
-    async def test_multiple_wp_shows_selection(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        """>1 WP connections -> show selection list."""
-        project = make_project(id=1)
-        conns = [make_connection(id=1), make_connection(id=2)]
-        patches, _, _, _ = _patch_repos(projects=[project], wp_connections=conns)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_article_start(mock_callback, mock_state, user, MagicMock(), mock_redis)
-
-        mock_state.set_state.assert_called_with(ArticlePipelineFSM.select_wp)
-
-
-class TestPipelineSelectWp:
-    """pipeline_select_wp: correct connection loaded."""
-
-    async def test_valid_wp_selected(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        """Valid WP connection -> state updated with connection_id."""
-        conn = make_connection(id=7, project_id=5, identifier="my-blog.com")
-        mock_callback.data = "pipeline:article:5:wp:7"
-        mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
-
-        patches, _, _, _ = _patch_repos(connection=conn, categories=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_wp(mock_callback, mock_state, user, MagicMock(), mock_redis)
-
-        mock_state.update_data.assert_any_call(connection_id=7, wp_identifier="my-blog.com")
-
-    async def test_connection_not_found(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        """Connection not in DB -> alert."""
-        mock_callback.data = "pipeline:article:5:wp:999"
-        mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
-
-        patches, _, _, _ = _patch_repos(connection=None)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_wp(mock_callback, mock_state, user, MagicMock(), mock_redis)
-
-        mock_callback.answer.assert_called_with("Подключение не найдено.", show_alert=True)
-
-    async def test_connection_project_mismatch(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        """Connection belongs to different project -> alert."""
-        conn = make_connection(id=7, project_id=999)  # different project_id
-        mock_callback.data = "pipeline:article:5:wp:7"
-        mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
-
-        patches, _, _, _ = _patch_repos(connection=conn)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_wp(mock_callback, mock_state, user, MagicMock(), mock_redis)
-
-        mock_callback.answer.assert_called_with("Подключение не найдено.", show_alert=True)
-
-    async def test_no_project_in_state(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        """Missing project_id in FSM state -> alert."""
-        mock_callback.data = "pipeline:article:5:wp:7"
-        mock_state.get_data = AsyncMock(return_value={})
-
-        patches, _, _, _ = _patch_repos()
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_wp(mock_callback, mock_state, user, MagicMock(), mock_redis)
-
-        mock_callback.answer.assert_called_with("Проект не выбран.", show_alert=True)
 
 
 # ---------------------------------------------------------------------------

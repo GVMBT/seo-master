@@ -368,7 +368,7 @@ CREATE TABLE platform_connections (
     metadata        JSONB DEFAULT '{}',        -- Доп. данные платформы
     identifier      VARCHAR(500) NOT NULL,     -- Идентификатор подключения (plaintext, для UNIQUE)
     created_at      TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(project_id, platform_type, identifier)
+    UNIQUE(project_id, platform_type)
 );
 CREATE INDEX idx_connections_project ON platform_connections(project_id);
 ```

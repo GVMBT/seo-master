@@ -28,6 +28,7 @@ from db.models import Category, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
+    cancel_kb,
     category_card_kb,
     keywords_cluster_delete_list_kb,
     keywords_cluster_list_kb,
@@ -217,6 +218,7 @@ async def start_generation(
 
         await callback.message.edit_text(
             "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
+            reply_markup=cancel_kb("keywords:generate:cancel"),
         )
 
     await callback.answer()
@@ -238,6 +240,7 @@ async def start_fresh_generation(
 
     await callback.message.edit_text(
         "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
+        reply_markup=cancel_kb("keywords:generate:cancel"),
     )
     await callback.answer()
 
@@ -295,6 +298,7 @@ async def process_products(
 
     await message.answer(
         "Укажите географию продвижения:\n<i>Например: Москва, Россия, СНГ</i>",
+        reply_markup=cancel_kb("keywords:generate:cancel"),
     )
 
 
@@ -640,6 +644,7 @@ async def start_upload(
         "Загрузите текстовый файл (.txt) с ключевыми фразами.\n"
         "Каждая фраза на отдельной строке.\n\n"
         f"Максимум: {_MAX_PHRASES} фраз, {_MAX_FILE_SIZE // (1024 * 1024)} МБ.",
+        reply_markup=cancel_kb("keywords:upload:cancel"),
     )
     await callback.answer()
 
@@ -1176,4 +1181,71 @@ async def delete_all_confirm(
         f"<b>Ключевые фразы</b> — {safe_name}\n\nВсе фразы удалены.",
         reply_markup=keywords_empty_kb(cat_id),
     )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# 14. Cancel handlers (inline button)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "keywords:generate:cancel")
+async def cancel_generation_inline(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel keyword generation via inline button — return to category card."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    cat_id = data.get("kw_cat_id")
+    await state.clear()
+
+    if cat_id:
+        _, category, _ = await _check_category_ownership(int(cat_id), user, db)
+        if category:
+            safe_name = html.escape(category.name)
+            await callback.message.edit_text(
+                f"<b>{safe_name}</b>",
+                reply_markup=category_card_kb(int(cat_id), category.project_id),
+            )
+            await callback.answer()
+            return
+
+    await callback.message.edit_text("Подбор фраз отменён.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "keywords:upload:cancel")
+async def cancel_upload_inline(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel keyword upload via inline button — return to category card."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    cat_id = data.get("kw_cat_id")
+    await state.clear()
+
+    if cat_id:
+        _, category, _ = await _check_category_ownership(int(cat_id), user, db)
+        if category:
+            safe_name = html.escape(category.name)
+            await callback.message.edit_text(
+                f"<b>{safe_name}</b>",
+                reply_markup=category_card_kb(int(cat_id), category.project_id),
+            )
+            await callback.answer()
+            return
+
+    await callback.message.edit_text("Загрузка отменена.")
     await callback.answer()

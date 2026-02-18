@@ -15,7 +15,7 @@ from db.client import SupabaseClient
 from db.models import Category, CategoryUpdate, Project, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import prices_kb
+from keyboards.inline import cancel_kb, category_card_kb, prices_kb
 
 log = structlog.get_logger()
 router = Router()
@@ -156,6 +156,7 @@ async def start_text(
         "<i>Пример:\n"
         "Кухня угловая \u00abМодена\u00bb \u2014 89 900 руб\n"
         "Стол обеденный \u00abЛофт\u00bb \u2014 24 500 руб</i>",
+        reply_markup=cancel_kb("prices:input:cancel"),
     )
     await callback.answer()
 
@@ -253,6 +254,7 @@ async def start_excel(
 
     await callback.message.answer(
         "Загрузите Excel-файл (.xlsx) с прайсом.\nФормат: колонка A = название, колонка B = цена.",
+        reply_markup=cancel_kb("prices:input:cancel"),
     )
     await callback.answer()
 
@@ -438,3 +440,38 @@ async def delete_prices(
 
     await _show_prices_screen(callback.message, category.id, category.name, None)
     await callback.answer("Прайс удалён.")
+
+
+# ---------------------------------------------------------------------------
+# Cancel handler (inline button)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "prices:input:cancel")
+async def cancel_prices_inline(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel price input via inline button — return to category card."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    cat_id = data.get("prices_cat_id")
+    await state.clear()
+
+    if cat_id:
+        _, category, project = await _verify_category_ownership(int(cat_id), user, db)
+        if category and project:
+            await callback.message.edit_text(
+                f"<b>{html.escape(category.name)}</b>",
+                reply_markup=category_card_kb(int(cat_id), category.project_id),
+            )
+            await callback.answer()
+            return
+
+    await callback.message.edit_text("Ввод цен отменён.")
+    await callback.answer()

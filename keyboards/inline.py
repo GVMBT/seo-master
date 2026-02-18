@@ -11,6 +11,25 @@ from keyboards.pagination import PAGE_SIZE, _safe_cb, paginate
 from services.tokens import COST_DESCRIPTION
 
 # ---------------------------------------------------------------------------
+# Common: cancel keyboard for FSM text input states
+# ---------------------------------------------------------------------------
+
+
+def cancel_kb(callback_data: str = "fsm:cancel") -> InlineKeyboardMarkup:
+    """Inline cancel button for text input FSM states.
+
+    Provides a visible [Отмена] button so users do not have to
+    type the magic word.  The existing text-based "Отмена" handler
+    remains as a fallback.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Отмена", callback_data=callback_data)],
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 
@@ -413,8 +432,15 @@ _PLATFORM_ICONS: dict[str, str] = {
 
 
 def connection_list_kb(connections: list[PlatformConnection], project_id: int) -> InlineKeyboardMarkup:
-    """Connection list with platform status + add buttons (UX_TOOLBOX.md section 5.1)."""
+    """Connection list with platform status + add buttons (UX_TOOLBOX.md section 5.1).
+
+    Rule: 1 project = max 1 connection per platform type.
+    "Add" buttons are hidden for platform types that already have a connection.
+    """
     rows: list[list[InlineKeyboardButton]] = []
+
+    # Determine which platform types already exist
+    connected_types = {conn.platform_type for conn in connections}
 
     for conn in connections:
         icon = _PLATFORM_ICONS.get(conn.platform_type, conn.platform_type)
@@ -422,19 +448,22 @@ def connection_list_kb(connections: list[PlatformConnection], project_id: int) -
         text = f"{status} {icon}: {conn.identifier}"
         rows.append([InlineKeyboardButton(text=text, callback_data=f"conn:{conn.id}:manage")])
 
-    # Add platform buttons
-    rows.append(
-        [
-            InlineKeyboardButton(text="+ WordPress", callback_data=f"conn:{project_id}:add:wordpress"),
-            InlineKeyboardButton(text="+ Telegram", callback_data=f"conn:{project_id}:add:telegram"),
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(text="+ VK", callback_data=f"conn:{project_id}:add:vk"),
-            InlineKeyboardButton(text="+ Pinterest", callback_data=f"conn:{project_id}:add:pinterest"),
-        ]
-    )
+    # Add platform buttons — only for types NOT yet connected
+    _ALL_PLATFORMS = [
+        ("wordpress", "+ WordPress"),
+        ("telegram", "+ Telegram"),
+        ("vk", "+ VK"),
+        ("pinterest", "+ Pinterest"),
+    ]
+    add_buttons = [
+        InlineKeyboardButton(text=label, callback_data=f"conn:{project_id}:add:{ptype}")
+        for ptype, label in _ALL_PLATFORMS
+        if ptype not in connected_types
+    ]
+    # Layout: 2 per row
+    for i in range(0, len(add_buttons), 2):
+        rows.append(add_buttons[i : i + 2])
+
     rows.append(
         [
             InlineKeyboardButton(text="К проекту", callback_data=f"project:{project_id}:card"),
@@ -849,8 +878,6 @@ _TEXT_STYLES: list[str] = [
     "Креативный",
     "Информативный",
     "С юмором",
-    "Мужской",
-    "Женский",
 ]
 
 _IMAGE_STYLES: list[str] = [

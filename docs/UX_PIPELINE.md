@@ -166,9 +166,6 @@ callback_data: `pipeline:resume`, `pipeline:restart`, `pipeline:cancel`
   │
   ├─ ШАГ 2: WordPress подключён?
   │   ├── 1 подключение → автовыбор, переход к шагу 3
-  │   ├── >1 подключений → "Статья (2/5) — Сайт
-  │   │    На какой сайт?"
-  │   │    [comfort-mebel.ru]  [blog.comfort.ru]
   │   └── 0 подключений → "Статья (2/5) — Сайт
   │        Для публикации нужен WordPress-сайт. Подключим?"
   │        [Подключить WordPress]  ← PRIMARY    [Только превью (без публикации)]
@@ -177,8 +174,9 @@ callback_data: `pipeline:resume`, `pipeline:restart`, `pipeline:cancel`
   │        └── [Только превью] → pipeline продолжается,
   │             на шаге публикации будет только Telegraph-превью
   │
-  │   callback_data: pipeline:article:{project_id}:wp:{conn_id}
-  │                  pipeline:article:connect_wp
+  │   Правило: 1 проект = макс. 1 WordPress. Для другого сайта — новый проект.
+  │
+  │   callback_data: pipeline:article:connect_wp
   │                  pipeline:article:preview_only
   │
   ├─ ШАГ 3: Выбор категории (темы)

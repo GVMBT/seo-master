@@ -29,6 +29,7 @@ from db.models import PlatformConnectionCreate, User
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
+    cancel_kb,
     connection_delete_confirm_kb,
     connection_list_kb,
     connection_manage_kb,
@@ -298,6 +299,16 @@ async def start_wp_connect(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
+    # Rule: 1 project = max 1 WordPress connection
+    conn_repo = _make_conn_repo(db)
+    existing_wp = await conn_repo.get_by_project_and_platform(project_id, "wordpress")
+    if existing_wp:
+        await callback.answer(
+            "К проекту уже подключён WordPress-сайт. Для другого сайта создайте новый проект.",
+            show_alert=True,
+        )
+        return
+
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
         await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
@@ -307,6 +318,7 @@ async def start_wp_connect(
 
     await callback.message.answer(
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n\n<i>Пример: example.com</i>",
+        reply_markup=cancel_kb("connect:wp:cancel"),
     )
     await callback.answer()
 
@@ -327,7 +339,10 @@ async def wp_process_url(message: Message, state: FSMContext) -> None:
     url = text if text.startswith("http") else f"https://{text}"
     await state.update_data(wp_url=url)
     await state.set_state(ConnectWordPressFSM.login)
-    await message.answer("Введите логин WordPress (имя пользователя).")
+    await message.answer(
+        "Введите логин WordPress (имя пользователя).",
+        reply_markup=cancel_kb("connect:wp:cancel"),
+    )
 
 
 @router.message(ConnectWordPressFSM.login, F.text)
@@ -348,7 +363,8 @@ async def wp_process_login(message: Message, state: FSMContext) -> None:
     await message.answer(
         "Введите Application Password.\n\n"
         "Создайте его в WordPress: Пользователи → Профиль → Application Passwords.\n"
-        "Формат: xxxx xxxx xxxx xxxx xxxx xxxx"
+        "Формат: xxxx xxxx xxxx xxxx xxxx xxxx",
+        reply_markup=cancel_kb("connect:wp:cancel"),
     )
 
 
@@ -404,21 +420,18 @@ async def wp_process_password(
         await message.answer("Не удалось подключиться к сайту. Проверьте URL.")
         return
 
-    # E41: Check duplicate — warn but allow (same site in multiple projects is valid)
     conn_repo = _make_conn_repo(db)
     # Extract domain as identifier
     identifier = wp_url.replace("https://", "").replace("http://", "").rstrip("/")
-    existing = await conn_repo.get_by_identifier_for_user(identifier, "wordpress", user.id)
-    if existing and existing.project_id == project_id:
-        await message.answer(f"Сайт {html.escape(identifier)} уже подключён к этому проекту.")
-        return
-    if existing:
-        # E41: same site in different project — warn user but allow
+
+    # Rule: 1 project = max 1 WordPress connection
+    existing_wp = await conn_repo.get_by_project_and_platform(project_id, "wordpress")
+    if existing_wp:
         await message.answer(
-            f"Сайт {html.escape(identifier)} уже подключён к другому проекту.\n"
-            "Публикации в оба проекта будут идти на один сайт.",
+            "К проекту уже подключён WordPress-сайт.\n"
+            "Для другого сайта создайте новый проект.",
         )
-        log.info("wp_cross_project_connection", identifier=identifier, existing_project=existing.project_id)
+        return
 
     # Re-validate ownership before creating connection (I7)
     projects_repo = ProjectsRepository(db)
@@ -477,6 +490,16 @@ async def start_tg_connect(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
+    # Rule: 1 project = max 1 Telegram connection
+    conn_repo = _make_conn_repo(db)
+    existing_tg = await conn_repo.get_by_project_and_platform(project_id, "telegram")
+    if existing_tg:
+        await callback.answer(
+            "К проекту уже подключён Telegram-канал. Для другого канала создайте новый проект.",
+            show_alert=True,
+        )
+        return
+
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
         await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
@@ -488,6 +511,7 @@ async def start_tg_connect(
         "Подключение Telegram-канала\n\n"
         "Введите ссылку на канал.\n\n"
         "<i>Формат: @channel, t.me/channel или ID (-100...)</i>",
+        reply_markup=cancel_kb("connect:tg:cancel"),
     )
     await callback.answer()
 
@@ -514,7 +538,8 @@ async def tg_process_channel(message: Message, state: FSMContext) -> None:
     await state.set_state(ConnectTelegramFSM.token)
     await message.answer(
         "Теперь создайте бота через @BotFather и отправьте его токен.\n\n"
-        "После этого добавьте бота в канал как администратора с правом публикации."
+        "После этого добавьте бота в канал как администратора с правом публикации.",
+        reply_markup=cancel_kb("connect:tg:cancel"),
     )
 
 
@@ -586,14 +611,20 @@ async def tg_process_token(
     finally:
         await temp_bot.session.close()
 
-    # E41: Telegram requires GLOBAL uniqueness — channel must not be connected by ANY user
     conn_repo = _make_conn_repo(db)
-    existing = await conn_repo.get_by_identifier_global(channel_id, "telegram")
-    if existing and existing.project_id == project_id:
-        await message.answer(f"Канал {channel_id} уже подключён к этому проекту.")
+
+    # Rule: 1 project = max 1 Telegram connection
+    existing_tg = await conn_repo.get_by_project_and_platform(project_id, "telegram")
+    if existing_tg:
+        await message.answer(
+            "К проекту уже подключён Telegram-канал.\n"
+            "Для другого канала создайте новый проект.",
+        )
         return
+
+    # E41: Telegram requires GLOBAL uniqueness — channel must not be connected by ANY user
+    existing = await conn_repo.get_by_identifier_global(channel_id, "telegram")
     if existing:
-        # Global block: another user (or another project of same user) already owns this channel
         await message.answer(
             f"Канал {channel_id} уже подключён другим пользователем.\n"
             "Один канал может быть привязан только к одному проекту.",
@@ -649,6 +680,16 @@ async def start_vk_connect(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
+    # Rule: 1 project = max 1 VK connection
+    conn_repo = _make_conn_repo(db)
+    existing_vk = await conn_repo.get_by_project_and_platform(project_id, "vk")
+    if existing_vk:
+        await callback.answer(
+            "К проекту уже подключена VK-группа. Для другой группы создайте новый проект.",
+            show_alert=True,
+        )
+        return
+
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
         await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
@@ -663,6 +704,7 @@ async def start_vk_connect(
         "2. Разрешите доступ\n"
         "3. Скопируйте токен из URL\n\n"
         "Отправьте токен сюда.",
+        reply_markup=cancel_kb("connect:vk:cancel"),
     )
     await callback.answer()
 
@@ -772,19 +814,15 @@ async def vk_select_group(
     conn_repo = _make_conn_repo(db)
     identifier = f"club{group_id}"
 
-    # E41: Check duplicate — same-project block, cross-project allow
-    existing = await conn_repo.get_by_identifier_for_user(identifier, "vk", user.id)
-    if existing and existing.project_id == project_id:
-        await callback.message.edit_text(f"Группа {html.escape(group_name)} уже подключена к этому проекту.")
+    # Rule: 1 project = max 1 VK connection
+    existing_vk = await conn_repo.get_by_project_and_platform(project_id, "vk")
+    if existing_vk:
+        await callback.message.edit_text(
+            "К проекту уже подключена VK-группа.\n"
+            "Для другой группы создайте новый проект.",
+        )
         await callback.answer()
         return
-    if existing:
-        # E41: same group in different project — warn user but allow
-        await callback.message.edit_text(
-            f"Группа {html.escape(group_name)} уже подключена к другому проекту.\n"
-            "Публикации в оба проекта будут идти в одну группу.",
-        )
-        log.info("vk_cross_project_connection", group=identifier, existing_project=existing.project_id)
 
     conn = await conn_repo.create(
         PlatformConnectionCreate(
@@ -834,6 +872,16 @@ async def start_pinterest_connect(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
+    # Rule: 1 project = max 1 Pinterest connection
+    conn_repo = _make_conn_repo(db)
+    existing_pinterest = await conn_repo.get_by_project_and_platform(project_id, "pinterest")
+    if existing_pinterest:
+        await callback.answer(
+            "К проекту уже подключён Pinterest. Для другой доски создайте новый проект.",
+            show_alert=True,
+        )
+        return
+
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
         await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
@@ -865,4 +913,111 @@ async def start_pinterest_connect(
             ]
         ),
     )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Cancel handlers (inline button)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "connect:wp:cancel")
+async def cancel_wp_connect(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel WordPress connection via inline button — return to connection list."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    project_id = data.get("connect_project_id")
+    await state.clear()
+
+    if project_id:
+        projects_repo = ProjectsRepository(db)
+        project = await projects_repo.get_by_id(int(project_id))
+        if project and project.user_id == user.id:
+            conn_repo = _make_conn_repo(db)
+            connections = await conn_repo.get_by_project(int(project_id))
+            safe_name = html.escape(project.name)
+            await callback.message.edit_text(
+                f"<b>{safe_name}</b> — Подключения",
+                reply_markup=connection_list_kb(connections, int(project_id)),
+            )
+            await callback.answer()
+            return
+
+    await callback.message.edit_text("Подключение отменено.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "connect:tg:cancel")
+async def cancel_tg_connect(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel Telegram connection via inline button — return to connection list."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    project_id = data.get("connect_project_id")
+    await state.clear()
+
+    if project_id:
+        projects_repo = ProjectsRepository(db)
+        project = await projects_repo.get_by_id(int(project_id))
+        if project and project.user_id == user.id:
+            conn_repo = _make_conn_repo(db)
+            connections = await conn_repo.get_by_project(int(project_id))
+            safe_name = html.escape(project.name)
+            await callback.message.edit_text(
+                f"<b>{safe_name}</b> — Подключения",
+                reply_markup=connection_list_kb(connections, int(project_id)),
+            )
+            await callback.answer()
+            return
+
+    await callback.message.edit_text("Подключение отменено.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "connect:vk:cancel")
+async def cancel_vk_connect(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Cancel VK connection via inline button — return to connection list."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    project_id = data.get("connect_project_id")
+    await state.clear()
+
+    if project_id:
+        projects_repo = ProjectsRepository(db)
+        project = await projects_repo.get_by_id(int(project_id))
+        if project and project.user_id == user.id:
+            conn_repo = _make_conn_repo(db)
+            connections = await conn_repo.get_by_project(int(project_id))
+            safe_name = html.escape(project.name)
+            await callback.message.edit_text(
+                f"<b>{safe_name}</b> — Подключения",
+                reply_markup=connection_list_kb(connections, int(project_id)),
+            )
+            await callback.answer()
+            return
+
+    await callback.message.edit_text("Подключение отменено.")
     await callback.answer()

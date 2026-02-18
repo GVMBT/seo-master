@@ -5,8 +5,8 @@ from __future__ import annotations
 from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from db.models import Category, PlatformConnection, Project
-from keyboards.pagination import _safe_cb, paginate
+from db.models import Category, Project
+from keyboards.pagination import paginate
 from services.readiness import ReadinessReport
 from services.tokens import (
     COST_DESCRIPTION,
@@ -61,27 +61,6 @@ def pipeline_no_projects_kb() -> InlineKeyboardMarkup:
 # ---------------------------------------------------------------------------
 # Step 2: Select WP connection
 # ---------------------------------------------------------------------------
-
-
-def pipeline_wp_select_kb(
-    connections: list[PlatformConnection],
-    project_id: int,
-) -> InlineKeyboardMarkup:
-    """WP connection selection for pipeline step 2.
-
-    callback_data: pipeline:article:{project_id}:wp:{conn_id}
-    """
-    rows: list[list[InlineKeyboardButton]] = []
-    for conn in connections:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=conn.identifier or f"WP #{conn.id}",
-                    callback_data=_safe_cb(f"pipeline:article:{project_id}:wp:{conn.id}"),
-                ),
-            ]
-        )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def pipeline_no_wp_kb() -> InlineKeyboardMarkup:

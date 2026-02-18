@@ -480,7 +480,7 @@ class ArticleService:
             "language": "ru",
             "words_min": words_min,
             "words_max": words_max,
-            "text_style": text_settings.get("style", "Информативный"),
+            "text_style": ", ".join(text_settings.get("styles", ["Информативный"])),
             "niche_type": niche_type,
             "current_date": datetime.now(tz=UTC).strftime("%B %Y"),
             "lsi_keywords": lsi_keywords,

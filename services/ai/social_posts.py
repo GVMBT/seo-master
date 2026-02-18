@@ -86,7 +86,7 @@ class SocialPostService:
             "company_name": project.company_name,
             "specialization": project.specialization,
             "language": "ru",
-            "text_style": text_settings.get("style", "Разговорный"),
+            "text_style": ", ".join(text_settings.get("styles", ["Разговорный"])),
             "words_min": text_settings.get("words_min", 100),
             "words_max": text_settings.get("words_max", 300),
             "prices_excerpt": (category.prices or "")[:300],
