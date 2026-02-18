@@ -228,16 +228,26 @@ async def start_generation(
 async def start_fresh_generation(
     callback: CallbackQuery,
     state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Start generation from scratch, ignoring saved answers."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
 
-    # Already in FSM, just reset state to products input
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    _, category, project_id = await _check_category_ownership(cat_id, user, db)
+    if not category:
+        await callback.answer("Категория не найдена.", show_alert=True)
+        return
+
     await state.set_state(KeywordGenerationFSM.products)
-    await state.update_data(last_update_time=time.time())
+    await state.update_data(
+        last_update_time=time.time(),
+        kw_cat_id=cat_id,
+        kw_project_id=project_id,
+    )
 
     await callback.message.edit_text(
         "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",

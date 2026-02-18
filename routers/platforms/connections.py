@@ -318,7 +318,7 @@ async def start_wp_connect(
 
     await callback.message.answer(
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n\n<i>Пример: example.com</i>",
-        reply_markup=cancel_kb("connect:wp:cancel"),
+        reply_markup=cancel_kb(f"conn:{project_id}:wp_cancel"),
     )
     await callback.answer()
 
@@ -337,11 +337,12 @@ async def wp_process_url(message: Message, state: FSMContext) -> None:
         return
 
     url = text if text.startswith("http") else f"https://{text}"
-    await state.update_data(wp_url=url)
+    data = await state.update_data(wp_url=url)
+    pid = data.get("connect_project_id", 0)
     await state.set_state(ConnectWordPressFSM.login)
     await message.answer(
         "Введите логин WordPress (имя пользователя).",
-        reply_markup=cancel_kb("connect:wp:cancel"),
+        reply_markup=cancel_kb(f"conn:{pid}:wp_cancel"),
     )
 
 
@@ -358,13 +359,14 @@ async def wp_process_login(message: Message, state: FSMContext) -> None:
         await message.answer("Логин: от 1 до 100 символов.")
         return
 
-    await state.update_data(wp_login=text)
+    data = await state.update_data(wp_login=text)
+    pid = data.get("connect_project_id", 0)
     await state.set_state(ConnectWordPressFSM.password)
     await message.answer(
         "Введите Application Password.\n\n"
         "Создайте его в WordPress: Пользователи → Профиль → Application Passwords.\n"
         "Формат: xxxx xxxx xxxx xxxx xxxx xxxx",
-        reply_markup=cancel_kb("connect:wp:cancel"),
+        reply_markup=cancel_kb(f"conn:{pid}:wp_cancel"),
     )
 
 
@@ -511,7 +513,7 @@ async def start_tg_connect(
         "Подключение Telegram-канала\n\n"
         "Введите ссылку на канал.\n\n"
         "<i>Формат: @channel, t.me/channel или ID (-100...)</i>",
-        reply_markup=cancel_kb("connect:tg:cancel"),
+        reply_markup=cancel_kb(f"conn:{project_id}:tg_cancel"),
     )
     await callback.answer()
 
@@ -534,12 +536,13 @@ async def tg_process_channel(message: Message, state: FSMContext) -> None:
     if text.startswith("https://t.me/") or text.startswith("http://t.me/") or text.startswith("t.me/"):
         channel_id = "@" + text.split("/")[-1]
 
-    await state.update_data(tg_channel=channel_id)
+    data = await state.update_data(tg_channel=channel_id)
+    pid = data.get("connect_project_id", 0)
     await state.set_state(ConnectTelegramFSM.token)
     await message.answer(
         "Теперь создайте бота через @BotFather и отправьте его токен.\n\n"
         "После этого добавьте бота в канал как администратора с правом публикации.",
-        reply_markup=cancel_kb("connect:tg:cancel"),
+        reply_markup=cancel_kb(f"conn:{pid}:tg_cancel"),
     )
 
 
@@ -704,7 +707,7 @@ async def start_vk_connect(
         "2. Разрешите доступ\n"
         "3. Скопируйте токен из URL\n\n"
         "Отправьте токен сюда.",
-        reply_markup=cancel_kb("connect:vk:cancel"),
+        reply_markup=cancel_kb(f"conn:{project_id}:vk_cancel"),
     )
     await callback.answer()
 
@@ -932,20 +935,27 @@ async def _cancel_connection_wizard(
         await callback.answer()
         return
 
-    data = await state.get_data()
-    project_id = data.get("connect_project_id")
+    # Get project_id from callback_data (conn:{pid}:*_cancel) or FSM state
+    project_id: int | None = None
+    parts = (callback.data or "").split(":")
+    if len(parts) >= 2 and parts[1].isdigit():
+        project_id = int(parts[1])
+    if not project_id:
+        data = await state.get_data()
+        pid = data.get("connect_project_id")
+        project_id = int(pid) if pid else None
     await state.clear()
 
     if project_id:
         projects_repo = ProjectsRepository(db)
-        project = await projects_repo.get_by_id(int(project_id))
+        project = await projects_repo.get_by_id(project_id)
         if project and project.user_id == user.id:
             conn_repo = _make_conn_repo(db)
-            connections = await conn_repo.get_by_project(int(project_id))
+            connections = await conn_repo.get_by_project(project_id)
             safe_name = html.escape(project.name)
             await callback.message.edit_text(
                 f"<b>{safe_name}</b> — Подключения",
-                reply_markup=connection_list_kb(connections, int(project_id)),
+                reply_markup=connection_list_kb(connections, project_id),
             )
             await callback.answer()
             return
@@ -954,7 +964,7 @@ async def _cancel_connection_wizard(
     await callback.answer()
 
 
-@router.callback_query(F.data == "connect:wp:cancel")
+@router.callback_query(F.data.regexp(r"^conn:\d+:wp_cancel$"))
 async def cancel_wp_connect(
     callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
 ) -> None:
@@ -962,7 +972,7 @@ async def cancel_wp_connect(
     await _cancel_connection_wizard(callback, state, user, db)
 
 
-@router.callback_query(F.data == "connect:tg:cancel")
+@router.callback_query(F.data.regexp(r"^conn:\d+:tg_cancel$"))
 async def cancel_tg_connect(
     callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
 ) -> None:
@@ -970,7 +980,7 @@ async def cancel_tg_connect(
     await _cancel_connection_wizard(callback, state, user, db)
 
 
-@router.callback_query(F.data == "connect:vk:cancel")
+@router.callback_query(F.data.regexp(r"^conn:\d+:vk_cancel$"))
 async def cancel_vk_connect(
     callback: CallbackQuery, state: FSMContext, user: User, db: SupabaseClient,
 ) -> None:
