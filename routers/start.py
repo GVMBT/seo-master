@@ -334,13 +334,15 @@ async def reply_article(
     message: Message,
     state: FSMContext,
     user: User,
+    is_new_user: bool,
+    is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
 ) -> None:
     """Reply keyboard: Write Article → show Dashboard with pipeline CTA."""
     await ensure_no_active_fsm(state)
     await redis.delete(CacheKeys.pipeline_state(user.id))
-    text, kb = await _build_dashboard(user, is_new_user=False, db=db, redis=redis)
+    text, kb = await _build_dashboard(user, is_new_user=is_new_user, db=db, redis=redis)
     await message.answer(text, reply_markup=kb)
 
 

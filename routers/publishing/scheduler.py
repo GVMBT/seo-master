@@ -339,7 +339,17 @@ async def scheduler_manual(callback: CallbackQuery, user: User, db: SupabaseClie
     if interrupted:
         await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
-    await state.update_data(sched_cat_id=cat_id, sched_conn_id=conn_id, sched_days=[])
+    # Check if schedule already exists (to restore button state on cancel)
+    schedules = await SchedulesRepository(db).get_by_category(cat_id)
+    existing = next((s for s in schedules if s.connection_id == conn_id), None)
+    sched_has_schedule = existing is not None and existing.enabled
+
+    await state.update_data(
+        sched_cat_id=cat_id,
+        sched_conn_id=conn_id,
+        sched_days=[],
+        sched_has_schedule=sched_has_schedule,
+    )
     await state.set_state(ScheduleSetupFSM.select_days)
 
     await callback.message.edit_text(
@@ -556,7 +566,9 @@ async def schedule_times_done(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "sched:cancel")
+@router.callback_query(F.data == "sched:cancel", ScheduleSetupFSM.select_days)
+@router.callback_query(F.data == "sched:cancel", ScheduleSetupFSM.select_count)
+@router.callback_query(F.data == "sched:cancel", ScheduleSetupFSM.select_times)
 async def schedule_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """Cancel manual schedule setup, return to connection config."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -566,12 +578,13 @@ async def schedule_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     cat_id = data.get("sched_cat_id")
     conn_id = data.get("sched_conn_id")
+    has_schedule = data.get("sched_has_schedule", False)
     await state.clear()
 
     if cat_id and conn_id:
         await callback.message.edit_text(
             "Настройка расписания отменена.",
-            reply_markup=scheduler_config_kb(int(cat_id), int(conn_id), has_schedule=False),
+            reply_markup=scheduler_config_kb(int(cat_id), int(conn_id), has_schedule=bool(has_schedule)),
         )
     else:
         await callback.message.edit_text("Настройка расписания отменена.")
