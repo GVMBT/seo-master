@@ -13,7 +13,7 @@ Covers steps 1-3 of the Article Pipeline:
 - pipeline_select_category: ownership check
 - pipeline_create_category_name: inline creation + validation
 - pipeline_article_cancel: clears FSM and checkpoint
-- _save_checkpoint / _clear_checkpoint
+- save_checkpoint / clear_checkpoint
 """
 
 from __future__ import annotations
@@ -21,10 +21,12 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from routers.publishing.pipeline.article import (
+from routers.publishing.pipeline._common import (
     ArticlePipelineFSM,
-    _clear_checkpoint,
-    _save_checkpoint,
+    clear_checkpoint,
+    save_checkpoint,
+)
+from routers.publishing.pipeline.article import (
     pipeline_article_cancel,
     pipeline_article_start,
     pipeline_cancel_wp_subflow,
@@ -113,7 +115,12 @@ class TestPipelineArticleStart:
         patches, _, _, _ = _patch_repos(projects=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         mock_callback.message.edit_text.assert_called_once()
@@ -136,7 +143,12 @@ class TestPipelineArticleStart:
         patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         # Should save project data to state
@@ -154,7 +166,12 @@ class TestPipelineArticleStart:
         patches, _, _, _ = _patch_repos(projects=projects)
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         mock_callback.message.edit_text.assert_called_once()
@@ -179,7 +196,12 @@ class TestPipelineArticleStart:
         patches, _, _, _ = _patch_repos()
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         callback.answer.assert_called_once()
@@ -199,7 +221,12 @@ class TestPipelineArticleStart:
         patches, _, _, _ = _patch_repos()
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         callback.answer.assert_called_once()
@@ -227,7 +254,12 @@ class TestPipelineSelectProject:
         patches, _, _, _ = _patch_repos(project=project, wp_connections=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         mock_state.update_data.assert_called_with(project_id=5, project_name="My Site")
@@ -246,7 +278,12 @@ class TestPipelineSelectProject:
         patches, _, _, _ = _patch_repos(project=other_user_project)
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         mock_callback.answer.assert_called_with("Проект не найден.", show_alert=True)
@@ -265,7 +302,12 @@ class TestPipelineSelectProject:
         patches, _, _, _ = _patch_repos(project=None)
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         mock_callback.answer.assert_called_with("Проект не найден.", show_alert=True)
@@ -283,7 +325,12 @@ class TestPipelineSelectProject:
         patches, _, _, _ = _patch_repos()
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         mock_callback.answer.assert_called_once()
@@ -455,16 +502,23 @@ class TestPipelineCreateProjectUrl:
         """Valid URL -> project created, proceeds to WP step."""
         mock_message.text = "example.com"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "new_project_name": "Test",
-            "new_company_name": "Co",
-            "new_specialization": "SEO",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "new_project_name": "Test",
+                "new_company_name": "Co",
+                "new_specialization": "SEO",
+            }
+        )
         created = make_project(id=42, name="Test")
         patches, proj_mock, _, _ = _patch_repos(created_project=created, wp_connections=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_create_project_url(
-                mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         # Project creation called
@@ -488,16 +542,23 @@ class TestPipelineCreateProjectUrl:
         """'Пропустить' -> project created with website_url=None."""
         mock_message.text = "Пропустить"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "new_project_name": "Test",
-            "new_company_name": "Co",
-            "new_specialization": "SEO",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "new_project_name": "Test",
+                "new_company_name": "Co",
+                "new_specialization": "SEO",
+            }
+        )
         created = make_project(id=42, name="Test")
         patches, proj_mock, _, _ = _patch_repos(created_project=created, wp_connections=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_create_project_url(
-                mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         # Check that website_url is None in the create call
@@ -514,7 +575,12 @@ class TestPipelineCreateProjectUrl:
         """Invalid URL -> error message, no project created."""
         mock_message.text = "not a url!!!"
         await pipeline_create_project_url(
-            mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            MagicMock(),
+            MagicMock(),
+            mock_redis,
         )
         assert "Некорректный URL" in mock_message.answer.call_args.args[0]
 
@@ -528,16 +594,23 @@ class TestPipelineCreateProjectUrl:
         """URL without scheme gets https:// prefix."""
         mock_message.text = "example.com"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "new_project_name": "Test",
-            "new_company_name": "Co",
-            "new_specialization": "SEO",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "new_project_name": "Test",
+                "new_company_name": "Co",
+                "new_specialization": "SEO",
+            }
+        )
         created = make_project(id=42, name="Test")
         patches, proj_mock, _, _ = _patch_repos(created_project=created, wp_connections=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_create_project_url(
-                mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         create_arg = proj_mock.create.call_args.args[0]
@@ -567,7 +640,12 @@ class TestPipelineWpStep:
         patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         # Should set state to select_wp (from _show_wp_step)
@@ -586,7 +664,12 @@ class TestPipelineWpStep:
         patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[conn], categories=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         # Should update state with connection_id
@@ -620,7 +703,12 @@ class TestPipelinePreviewOnly:
         patches, _, _, _ = _patch_repos(categories=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_preview_only(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         mock_state.update_data.assert_called_once_with(connection_id=None, wp_identifier=None, preview_only=True)
@@ -639,7 +727,12 @@ class TestPipelinePreviewOnly:
         patches, _, _, _ = _patch_repos(categories=[cat])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_preview_only(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         # Should have called _show_category_step -> auto-select single category
@@ -760,12 +853,14 @@ class TestPipelineConnectWpPassword:
         """Valid password + service validates OK -> connection created, proceeds to category."""
         mock_message.text = "xxxx xxxx xxxx xxxx xxxx xxxx"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "wp_url": "https://example.com",
-            "wp_login": "admin",
-            "project_id": 5,
-            "project_name": "Test",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "wp_url": "https://example.com",
+                "wp_login": "admin",
+                "project_id": 5,
+                "project_name": "Test",
+            }
+        )
         project = make_project(id=5, user_id=user.id)
         created_conn = make_connection(id=99, identifier="example.com")
 
@@ -778,7 +873,12 @@ class TestPipelineConnectWpPassword:
         )
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
             )
 
         # Connection created
@@ -796,19 +896,26 @@ class TestPipelineConnectWpPassword:
         """Service returns auth error -> error message shown."""
         mock_message.text = "xxxx xxxx xxxx xxxx xxxx xxxx"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "wp_url": "https://example.com",
-            "wp_login": "admin",
-            "project_id": 5,
-            "project_name": "Test",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "wp_url": "https://example.com",
+                "wp_login": "admin",
+                "project_id": 5,
+                "project_name": "Test",
+            }
+        )
 
         patches, _, _, _ = _patch_repos(
             validate_wp_error="Неверный логин или пароль. Попробуйте ещё раз.",
         )
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
             )
 
         error_text = mock_message.answer.call_args.args[0]
@@ -824,19 +931,26 @@ class TestPipelineConnectWpPassword:
         """Service returns server error -> error message shown."""
         mock_message.text = "xxxx xxxx xxxx xxxx xxxx xxxx"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "wp_url": "https://example.com",
-            "wp_login": "admin",
-            "project_id": 5,
-            "project_name": "Test",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "wp_url": "https://example.com",
+                "wp_login": "admin",
+                "project_id": 5,
+                "project_name": "Test",
+            }
+        )
 
         patches, _, _, _ = _patch_repos(
             validate_wp_error="Сайт вернул ошибку (500). Проверьте URL и данные.",
         )
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
             )
 
         error_text = mock_message.answer.call_args.args[0]
@@ -852,19 +966,26 @@ class TestPipelineConnectWpPassword:
         """Service returns timeout error -> error message shown."""
         mock_message.text = "xxxx xxxx xxxx xxxx xxxx xxxx"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "wp_url": "https://example.com",
-            "wp_login": "admin",
-            "project_id": 5,
-            "project_name": "Test",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "wp_url": "https://example.com",
+                "wp_login": "admin",
+                "project_id": 5,
+                "project_name": "Test",
+            }
+        )
 
         patches, _, _, _ = _patch_repos(
             validate_wp_error="Сайт не отвечает. Проверьте URL.",
         )
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
             )
 
         error_text = mock_message.answer.call_args.args[0]
@@ -880,19 +1001,26 @@ class TestPipelineConnectWpPassword:
         """Service returns connection error -> error message shown."""
         mock_message.text = "xxxx xxxx xxxx xxxx xxxx xxxx"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "wp_url": "https://example.com",
-            "wp_login": "admin",
-            "project_id": 5,
-            "project_name": "Test",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "wp_url": "https://example.com",
+                "wp_login": "admin",
+                "project_id": 5,
+                "project_name": "Test",
+            }
+        )
 
         patches, _, _, _ = _patch_repos(
             validate_wp_error="Не удалось подключиться к сайту. Проверьте URL.",
         )
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
             )
 
         error_text = mock_message.answer.call_args.args[0]
@@ -912,7 +1040,12 @@ class TestPipelineConnectWpPassword:
         patches, _, conn_mock, _ = _patch_repos()
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
             )
 
         assert "короткий" in mock_message.answer.call_args.args[0].lower()
@@ -928,12 +1061,14 @@ class TestPipelineConnectWpPassword:
         """Already has WP connection -> auto-select existing, no new creation."""
         mock_message.text = "xxxx xxxx xxxx xxxx xxxx xxxx"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "wp_url": "https://example.com",
-            "wp_login": "admin",
-            "project_id": 5,
-            "project_name": "Test",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "wp_url": "https://example.com",
+                "wp_login": "admin",
+                "project_id": 5,
+                "project_name": "Test",
+            }
+        )
         project = make_project(id=5, user_id=user.id)
         existing_conn = make_connection(id=77, identifier="other.com")
 
@@ -945,7 +1080,12 @@ class TestPipelineConnectWpPassword:
         )
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
             )
 
         # Should NOT create new connection
@@ -972,7 +1112,12 @@ class TestPipelineConnectWpPassword:
         mock_state.get_data = AsyncMock(return_value={})  # no wp_url/wp_login/project_id
 
         await pipeline_connect_wp_password(
-            mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+            mock_message,
+            mock_state,
+            user,
+            MagicMock(),
+            mock_redis,
+            MagicMock(),
         )
 
         mock_state.clear.assert_called_once()
@@ -988,17 +1133,24 @@ class TestPipelineConnectWpPassword:
         """Project not found during re-validation -> clears state."""
         mock_message.text = "xxxx xxxx xxxx xxxx xxxx xxxx"
         mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={
-            "wp_url": "https://example.com",
-            "wp_login": "admin",
-            "project_id": 999,
-            "project_name": "Ghost",
-        })
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "wp_url": "https://example.com",
+                "wp_login": "admin",
+                "project_id": 999,
+                "project_name": "Ghost",
+            }
+        )
 
         patches, _, _, _ = _patch_repos(project=None, validate_wp_error=None)
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
             )
 
         mock_state.clear.assert_called_once()
@@ -1068,7 +1220,12 @@ class TestPipelineCategoryStep:
         patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[conn], categories=[])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         # After auto-selecting project and WP, 0 categories -> create_category_name state
@@ -1088,7 +1245,12 @@ class TestPipelineCategoryStep:
         patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[conn], categories=[cat])
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         update_calls = mock_state.update_data.call_args_list
@@ -1114,7 +1276,12 @@ class TestPipelineCategoryStep:
         patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[conn], categories=cats)
         with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
-                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                MagicMock(),
+                mock_redis,
             )
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.select_category)
@@ -1368,17 +1535,17 @@ class TestPipelineArticleCancel:
 
 
 class TestSaveCheckpoint:
-    """_save_checkpoint saves JSON to Redis with correct key."""
+    """save_checkpoint saves JSON to Redis with correct key."""
 
     async def test_saves_to_correct_key(self, mock_redis: MagicMock) -> None:
-        await _save_checkpoint(mock_redis, user_id=123, current_step="select_project")
+        await save_checkpoint(mock_redis, user_id=123, current_step="select_project")
         key = mock_redis.set.call_args.args[0]
         assert key == "pipeline:123:state"
 
     async def test_saves_step_data(self, mock_redis: MagicMock) -> None:
         import json
 
-        await _save_checkpoint(
+        await save_checkpoint(
             mock_redis,
             user_id=123,
             current_step="select_wp",
@@ -1395,7 +1562,7 @@ class TestSaveCheckpoint:
     async def test_includes_step_label(self, mock_redis: MagicMock) -> None:
         import json
 
-        await _save_checkpoint(mock_redis, user_id=123, current_step="readiness_check")
+        await save_checkpoint(mock_redis, user_id=123, current_step="readiness_check")
         saved_json = mock_redis.set.call_args.args[1]
         data = json.loads(saved_json)
         assert data["step_label"] == "подготовка"
@@ -1403,14 +1570,14 @@ class TestSaveCheckpoint:
     async def test_sets_ttl(self, mock_redis: MagicMock) -> None:
         from cache.keys import PIPELINE_CHECKPOINT_TTL
 
-        await _save_checkpoint(mock_redis, user_id=123, current_step="select_project")
+        await save_checkpoint(mock_redis, user_id=123, current_step="select_project")
         call_kwargs = mock_redis.set.call_args.kwargs
         assert call_kwargs.get("ex") == PIPELINE_CHECKPOINT_TTL
 
 
 class TestClearCheckpoint:
-    """_clear_checkpoint deletes Redis key."""
+    """clear_checkpoint deletes Redis key."""
 
     async def test_deletes_correct_key(self, mock_redis: MagicMock) -> None:
-        await _clear_checkpoint(mock_redis, user_id=456)
+        await clear_checkpoint(mock_redis, user_id=456)
         mock_redis.delete.assert_called_once_with("pipeline:456:state")

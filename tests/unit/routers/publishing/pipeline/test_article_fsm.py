@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from aiogram.fsm.state import State
 
-from routers.publishing.pipeline.article import ArticlePipelineFSM
+from routers.publishing.pipeline._common import ArticlePipelineFSM
 
 # Expected state names from FSM_SPEC.md section 1
 _EXPECTED_STATES = [
