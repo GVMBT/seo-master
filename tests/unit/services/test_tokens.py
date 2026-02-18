@@ -508,3 +508,70 @@ class TestFormatInsufficientMsg:
         assert "320" in msg
         assert "100" in msg
         assert "токенов" in msg
+
+
+# ---------------------------------------------------------------------------
+# TokenService.refund_active_previews (E42)
+# ---------------------------------------------------------------------------
+
+
+class TestRefundActivePreviews:
+    async def test_refunds_all_previews_with_tokens(
+        self,
+        service: TokenService,
+        mock_users_repo: AsyncMock,
+        mock_payments_repo: AsyncMock,
+    ) -> None:
+        from db.models import ArticlePreview
+
+        mock_users_repo.refund_balance.return_value = 1500
+        previews = [
+            ArticlePreview(id=1, user_id=123, project_id=1, category_id=1, tokens_charged=100),
+            ArticlePreview(id=2, user_id=123, project_id=1, category_id=1, tokens_charged=200),
+        ]
+        count = await service.refund_active_previews(previews, 123, "удаление проекта #1")
+        assert count == 2
+        assert mock_users_repo.refund_balance.await_count == 2
+        assert mock_payments_repo.create_expense.await_count == 2
+
+    async def test_skips_previews_with_zero_tokens(
+        self,
+        service: TokenService,
+        mock_users_repo: AsyncMock,
+        mock_payments_repo: AsyncMock,
+    ) -> None:
+        from db.models import ArticlePreview
+
+        previews = [
+            ArticlePreview(id=1, user_id=123, project_id=1, category_id=1, tokens_charged=0),
+            ArticlePreview(id=2, user_id=123, project_id=1, category_id=1, tokens_charged=None),
+        ]
+        count = await service.refund_active_previews(previews, 123, "удаление категории #5")
+        assert count == 0
+        mock_users_repo.refund_balance.assert_not_awaited()
+
+    async def test_mixed_previews(
+        self,
+        service: TokenService,
+        mock_users_repo: AsyncMock,
+        mock_payments_repo: AsyncMock,
+    ) -> None:
+        from db.models import ArticlePreview
+
+        mock_users_repo.refund_balance.return_value = 1500
+        previews = [
+            ArticlePreview(id=1, user_id=123, project_id=1, category_id=1, tokens_charged=100),
+            ArticlePreview(id=2, user_id=123, project_id=1, category_id=1, tokens_charged=0),
+            ArticlePreview(id=3, user_id=123, project_id=1, category_id=1, tokens_charged=300),
+        ]
+        count = await service.refund_active_previews(previews, 123, "удаление проекта #2")
+        assert count == 2  # only previews with tokens_charged > 0
+
+    async def test_empty_previews(
+        self,
+        service: TokenService,
+        mock_users_repo: AsyncMock,
+    ) -> None:
+        count = await service.refund_active_previews([], 123, "empty test")
+        assert count == 0
+        mock_users_repo.refund_balance.assert_not_awaited()

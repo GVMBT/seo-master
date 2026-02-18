@@ -157,18 +157,8 @@ async def execute_delete(
     active_previews = await previews_repo.get_active_drafts_by_project(project_id)
     if active_previews:
         token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-        for preview in active_previews:
-            if preview.tokens_charged and preview.tokens_charged > 0:
-                await token_service.refund(
-                    user_id=user.id,
-                    amount=preview.tokens_charged,
-                    reason="refund",
-                    description=f"Возврат за превью (удаление проекта #{project_id})",
-                )
-        log.info(
-            "previews_refunded_on_delete",
-            project_id=project_id,
-            count=len(active_previews),
+        await token_service.refund_active_previews(
+            active_previews, user.id, f"удаление проекта #{project_id}",
         )
 
     # Delete project (CASCADE deletes categories, connections, schedules)

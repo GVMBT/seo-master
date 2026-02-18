@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import html
 import json
-import re
 import time
 
 import httpx
@@ -26,15 +25,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
-from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.validators import URL_RE
 from cache.client import RedisClient
 from cache.keys import PIPELINE_CHECKPOINT_TTL, CacheKeys
 from db.client import SupabaseClient
-from db.credential_manager import CredentialManager
 from db.models import CategoryCreate, PlatformConnectionCreate, ProjectCreate, User
 from db.repositories.categories import CategoriesRepository
-from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import cancel_kb
 from keyboards.pipeline import (
@@ -43,22 +40,10 @@ from keyboards.pipeline import (
     pipeline_no_wp_kb,
     pipeline_projects_kb,
 )
+from services.connections import ConnectionService
 
 log = structlog.get_logger()
 router = Router()
-
-# URL regex — same pattern as routers/projects/create.py and routers/platforms/connections.py
-_URL_RE = re.compile(
-    r"^(?:https?://)?[\w][\w.-]*\.[a-z]{2,}(?:[/\w.\-?#=&%]*)?$",
-    re.IGNORECASE,
-)
-
-
-def _conn_repo(db: SupabaseClient) -> ConnectionsRepository:
-    """Create ConnectionsRepository with CredentialManager."""
-    settings = get_settings()
-    cm = CredentialManager(settings.encryption_key.get_secret_value())
-    return ConnectionsRepository(db, cm)
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +152,7 @@ async def pipeline_article_start(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    http_client: httpx.AsyncClient,
     redis: RedisClient,
 ) -> None:
     """Start article pipeline — show project selection (step 1).
@@ -203,7 +189,7 @@ async def pipeline_article_start(
         # Auto-select the only project
         project = projects[0]
         await state.update_data(project_id=project.id, project_name=project.name)
-        await _show_wp_step(callback, state, user, db, redis, project.id, project.name)
+        await _show_wp_step(callback, state, user, db, http_client, redis, project.id, project.name)
         await callback.answer()
         return
 
@@ -226,6 +212,7 @@ async def pipeline_select_project(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    http_client: httpx.AsyncClient,
     redis: RedisClient,
 ) -> None:
     """Handle project selection from list."""
@@ -246,7 +233,7 @@ async def pipeline_select_project(
         return
 
     await state.update_data(project_id=project.id, project_name=project.name)
-    await _show_wp_step(callback, state, user, db, redis, project.id, project.name)
+    await _show_wp_step(callback, state, user, db, http_client, redis, project.id, project.name)
     await callback.answer()
 
 
@@ -380,6 +367,7 @@ async def pipeline_create_project_url(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    http_client: httpx.AsyncClient,
     redis: RedisClient,
 ) -> None:
     """Inline project creation step 4: URL -> create project -> proceed to step 2."""
@@ -387,7 +375,7 @@ async def pipeline_create_project_url(
 
     website_url: str | None = None
     if text.lower() not in ("пропустить", "нет", "-", ""):
-        if not _URL_RE.match(text):
+        if not URL_RE.match(text):
             await message.answer(
                 "Некорректный URL. Попробуйте ещё раз или напишите «Пропустить».",
                 reply_markup=cancel_kb("pipeline:article:cancel"),
@@ -413,7 +401,7 @@ async def pipeline_create_project_url(
     await message.answer(f"Проект «{html.escape(project.name)}» создан!")
 
     # Proceed to step 2 (WP check) — message context, can't edit
-    await _show_wp_step_msg(message, state, user, db, redis, project.id, project.name)
+    await _show_wp_step_msg(message, state, user, db, http_client, redis, project.id, project.name)
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +414,7 @@ async def _show_wp_step(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    http_client: httpx.AsyncClient,
     redis: RedisClient,
     project_id: int,
     project_name: str,
@@ -441,8 +430,8 @@ async def _show_wp_step(
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         return
 
-    repo = _conn_repo(db)
-    wp_connections = await repo.get_by_project_and_platform(project_id, "wordpress")
+    conn_svc = ConnectionService(db, http_client)
+    wp_connections = await conn_svc.get_by_project_and_platform(project_id, "wordpress")
 
     if wp_connections:
         # Auto-select the WP connection (max 1 per project)
@@ -475,6 +464,7 @@ async def pipeline_preview_only(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    http_client: httpx.AsyncClient,
     redis: RedisClient,
 ) -> None:
     """User chose preview-only (no WP publication)."""
@@ -497,6 +487,7 @@ async def _show_wp_step_msg(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    http_client: httpx.AsyncClient,
     redis: RedisClient,
     project_id: int,
     project_name: str,
@@ -506,8 +497,8 @@ async def _show_wp_step_msg(
     Used after inline project creation (text messages can't be edited).
     Same logic as _show_wp_step but sends new messages.
     """
-    repo = _conn_repo(db)
-    wp_connections = await repo.get_by_project_and_platform(project_id, "wordpress")
+    conn_svc = ConnectionService(db, http_client)
+    wp_connections = await conn_svc.get_by_project_and_platform(project_id, "wordpress")
 
     if wp_connections:
         conn = wp_connections[0]
@@ -565,7 +556,7 @@ async def pipeline_connect_wp_url(
 ) -> None:
     """Inline WP connection step 1: site URL."""
     text = (message.text or "").strip()
-    if not _URL_RE.match(text):
+    if not URL_RE.match(text):
         await message.answer(
             "Некорректный URL. Попробуйте ещё раз.",
             reply_markup=cancel_kb("pipeline:article:cancel_wp"),
@@ -641,35 +632,12 @@ async def pipeline_connect_wp_password(
         return
     project_name: str = data.get("project_name", "")
 
-    # Validate WP REST API
-    api_url = f"{wp_url}/wp-json/wp/v2/posts"
-    try:
-        resp = await http_client.head(
-            api_url,
-            auth=httpx.BasicAuth(wp_login, text),
-            timeout=10.0,
-        )
-        if resp.status_code == 401:
-            await message.answer(
-                "Неверный логин или пароль. Попробуйте ещё раз.",
-                reply_markup=cancel_kb("pipeline:article:cancel_wp"),
-            )
-            return
-        if resp.status_code >= 400:
-            await message.answer(
-                f"Сайт вернул ошибку ({resp.status_code}). Проверьте URL и данные.",
-                reply_markup=cancel_kb("pipeline:article:cancel_wp"),
-            )
-            return
-    except httpx.TimeoutException:
+    # Validate WP REST API via service
+    conn_svc = ConnectionService(db, http_client)
+    error = await conn_svc.validate_wordpress(wp_url, wp_login, text)
+    if error:
         await message.answer(
-            "Сайт не отвечает. Проверьте URL.",
-            reply_markup=cancel_kb("pipeline:article:cancel_wp"),
-        )
-        return
-    except httpx.RequestError:
-        await message.answer(
-            "Не удалось подключиться к сайту. Проверьте URL.",
+            error,
             reply_markup=cancel_kb("pipeline:article:cancel_wp"),
         )
         return
@@ -684,8 +652,7 @@ async def pipeline_connect_wp_password(
         return
 
     # Check max 1 WP per project
-    conn_repo = _conn_repo(db)
-    existing_wp = await conn_repo.get_by_project_and_platform(project_id, "wordpress")
+    existing_wp = await conn_svc.get_by_project_and_platform(project_id, "wordpress")
     if existing_wp:
         await message.answer("К проекту уже подключён WordPress-сайт.")
         # Still proceed — auto-select the existing one
@@ -696,7 +663,7 @@ async def pipeline_connect_wp_password(
 
     # Create connection
     identifier = wp_url.replace("https://", "").replace("http://", "").rstrip("/")
-    conn = await conn_repo.create(
+    conn = await conn_svc.create(
         PlatformConnectionCreate(
             project_id=project_id,
             platform_type="wordpress",

@@ -1,7 +1,6 @@
 """ProjectCreateFSM and ProjectEditFSM handlers."""
 
 import html
-import re
 import time
 
 import structlog
@@ -11,6 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.validators import URL_RE
 from db.client import SupabaseClient
 from db.models import Project, ProjectCreate, ProjectUpdate, User
 from db.repositories.projects import ProjectsRepository
@@ -18,12 +18,6 @@ from keyboards.inline import cancel_kb, project_created_kb, project_edit_kb
 
 log = structlog.get_logger()
 router = Router()
-
-# URL regex (simple validation — accepts with or without scheme)
-_URL_RE = re.compile(
-    r"^(?:https?://)?[\w][\w.-]*\.[a-z]{2,}(?:[/\w.\-?#=&%]*)?$",
-    re.IGNORECASE,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +186,7 @@ async def process_website_url(
 
     website_url: str | None = None
     if text not in ("Пропустить", "нет", "-", ""):
-        if not _URL_RE.match(text):
+        if not URL_RE.match(text):
             await message.answer("Некорректный URL. Попробуйте ещё раз или нажмите «Пропустить».")
             return
         website_url = text if text.startswith("http") else f"https://{text}"
@@ -352,7 +346,7 @@ async def process_field_value(
     if field == "website_url":
         if text.lower() in ("нет", "-", ""):
             text = ""
-        elif not _URL_RE.match(text):
+        elif not URL_RE.match(text):
             await message.answer("Некорректный URL. Попробуйте ещё раз.")
             return
         else:

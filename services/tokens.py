@@ -10,7 +10,7 @@ from decimal import Decimal
 import structlog
 
 from db.client import SupabaseClient
-from db.models import TokenExpense, TokenExpenseCreate, User
+from db.models import ArticlePreview, TokenExpense, TokenExpenseCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.payments import PaymentsRepository
 from db.repositories.projects import ProjectsRepository
@@ -251,6 +251,27 @@ class TokenService:
             "tokens_per_week": tokens_per_week,
             "tokens_per_month": tokens_per_month,
         }
+
+    async def refund_active_previews(
+        self,
+        previews: list[ArticlePreview],
+        user_id: int,
+        reason_suffix: str,
+    ) -> int:
+        """Refund tokens for active previews (E42). Returns count refunded."""
+        count = 0
+        for preview in previews:
+            if preview.tokens_charged and preview.tokens_charged > 0:
+                await self.refund(
+                    user_id=user_id,
+                    amount=preview.tokens_charged,
+                    reason="refund",
+                    description=f"Возврат за превью ({reason_suffix})",
+                )
+                count += 1
+        if count:
+            log.info("previews_refunded", count=count, user_id=user_id, reason=reason_suffix)
+        return count
 
     def format_insufficient_msg(self, required: int, balance: int) -> str:
         """Format user-friendly insufficient balance message (E01, E10)."""
