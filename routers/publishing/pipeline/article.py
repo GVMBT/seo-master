@@ -8,13 +8,12 @@ This file implements steps 1-3 (selection) + inline sub-flows (F5.2):
 - Inline project creation (4 states: name → company → spec → url)
 - Inline WP connection (3 states: url → login → password)
 - Inline category creation (1 state: name)
-Steps 4-8 (readiness, generation, preview, publish) will be added in F5.3-F5.4.
+Step 4 (readiness) is in readiness.py. Steps 5-8 will be added in F5.4.
 """
 
 from __future__ import annotations
 
 import html
-import json
 import time
 
 import httpx
@@ -22,13 +21,11 @@ import structlog
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.validators import URL_RE
 from cache.client import RedisClient
-from cache.keys import PIPELINE_CHECKPOINT_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.models import CategoryCreate, PlatformConnectionCreate, ProjectCreate, User
 from db.repositories.categories import CategoriesRepository
@@ -40,105 +37,19 @@ from keyboards.pipeline import (
     pipeline_no_wp_kb,
     pipeline_projects_kb,
 )
+from routers.publishing.pipeline._common import (
+    ArticlePipelineFSM,
+    clear_checkpoint,
+    save_checkpoint,
+)
+from routers.publishing.pipeline.readiness import (
+    show_readiness_check,
+    show_readiness_check_msg,
+)
 from services.connections import ConnectionService
 
 log = structlog.get_logger()
 router = Router()
-
-
-# ---------------------------------------------------------------------------
-# FSM (FSM_SPEC.md §1 — ArticlePipelineFSM, 25 states)
-# ---------------------------------------------------------------------------
-
-
-class ArticlePipelineFSM(StatesGroup):
-    """Article pipeline FSM — 25 states covering 8 steps + inline sub-flows."""
-
-    # Step 1: Project selection
-    select_project = State()
-    create_project_name = State()
-    create_project_company = State()
-    create_project_spec = State()
-    create_project_url = State()
-
-    # Step 2: WP connection check
-    select_wp = State()
-    connect_wp_url = State()
-    connect_wp_login = State()
-    connect_wp_password = State()
-
-    # Step 3: Category selection
-    select_category = State()
-    create_category_name = State()
-
-    # Step 4: Readiness check + inline sub-flows
-    readiness_check = State()
-    readiness_keywords_products = State()
-    readiness_keywords_geo = State()
-    readiness_keywords_qty = State()
-    readiness_keywords_generating = State()
-    readiness_description = State()
-    readiness_prices = State()
-    readiness_photos = State()
-
-    # Step 5-8: Confirmation, generation, preview, result
-    confirm_cost = State()
-    generating = State()
-    preview = State()
-    publishing = State()
-    result = State()
-    regenerating = State()
-
-
-# ---------------------------------------------------------------------------
-# Checkpoint helpers
-# ---------------------------------------------------------------------------
-
-
-async def _save_checkpoint(
-    redis: RedisClient,
-    user_id: int,
-    *,
-    current_step: str,
-    project_id: int | None = None,
-    project_name: str | None = None,
-    connection_id: int | None = None,
-    category_id: int | None = None,
-    **extra: object,
-) -> None:
-    """Save pipeline checkpoint to Redis (UX_PIPELINE.md §10.3)."""
-    data: dict[str, object] = {
-        "pipeline_type": "article",
-        "current_step": current_step,
-        "project_id": project_id,
-        "project_name": project_name,
-        "connection_id": connection_id,
-        "category_id": category_id,
-    }
-    # step_label for Dashboard resume display
-    step_labels = {
-        "select_project": "выбор проекта",
-        "select_wp": "выбор сайта",
-        "select_category": "выбор темы",
-        "readiness_check": "подготовка",
-        "confirm_cost": "подтверждение",
-        "generating": "генерация",
-        "preview": "превью",
-        "publishing": "публикация",
-        "result": "результат",
-    }
-    data["step_label"] = step_labels.get(current_step, current_step)
-    data.update(extra)  # type: ignore[arg-type]
-    await redis.set(
-        CacheKeys.pipeline_state(user_id),
-        json.dumps(data, ensure_ascii=False),
-        ex=PIPELINE_CHECKPOINT_TTL,
-    )
-
-
-async def _clear_checkpoint(redis: RedisClient, user_id: int) -> None:
-    """Remove pipeline checkpoint from Redis."""
-    await redis.delete(CacheKeys.pipeline_state(user_id))
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +92,7 @@ async def pipeline_article_start(
             reply_markup=pipeline_no_projects_kb(),
         )
         await state.set_state(ArticlePipelineFSM.select_project)
-        await _save_checkpoint(redis, user.id, current_step="select_project")
+        await save_checkpoint(redis, user.id, current_step="select_project")
         await callback.answer()
         return
 
@@ -199,7 +110,7 @@ async def pipeline_article_start(
         reply_markup=pipeline_projects_kb(projects),
     )
     await state.set_state(ArticlePipelineFSM.select_project)
-    await _save_checkpoint(redis, user.id, current_step="select_project")
+    await save_checkpoint(redis, user.id, current_step="select_project")
     await callback.answer()
 
 
@@ -284,9 +195,7 @@ async def pipeline_start_create_project(
     await state.set_state(ArticlePipelineFSM.create_project_name)
     await state.update_data(last_update_time=time.time())
     await callback.message.edit_text(
-        "Статья (1/5) — Создание проекта\n\n"
-        "Как назовём проект?\n"
-        "<i>Пример: Мебель Комфорт</i>",
+        "Статья (1/5) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
 
@@ -308,8 +217,7 @@ async def pipeline_create_project_name(
     await state.update_data(new_project_name=text, last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.create_project_company)
     await message.answer(
-        "Как называется ваша компания?\n"
-        "<i>Пример: ООО Мебель Комфорт</i>",
+        "Как называется ваша компания?\n<i>Пример: ООО Мебель Комфорт</i>",
         reply_markup=cancel_kb("pipeline:article:cancel"),
     )
 
@@ -331,8 +239,7 @@ async def pipeline_create_project_company(
     await state.update_data(new_company_name=text, last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.create_project_spec)
     await message.answer(
-        "Опишите специализацию в 2-3 словах.\n"
-        "<i>Пример: мебель на заказ</i>",
+        "Опишите специализацию в 2-3 словах.\n<i>Пример: мебель на заказ</i>",
         reply_markup=cancel_kb("pipeline:article:cancel"),
     )
 
@@ -354,9 +261,7 @@ async def pipeline_create_project_spec(
     await state.update_data(new_specialization=text, last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.create_project_url)
     await message.answer(
-        "Адрес сайта (необязательно).\n"
-        "Если нет — напишите «Пропустить».\n"
-        "<i>Пример: comfort-mebel.ru</i>",
+        "Адрес сайта (необязательно).\nЕсли нет — напишите «Пропустить».\n<i>Пример: comfort-mebel.ru</i>",
         reply_markup=cancel_kb("pipeline:article:cancel"),
     )
 
@@ -446,7 +351,7 @@ async def _show_wp_step(
         reply_markup=pipeline_no_wp_kb(),
     )
     await state.set_state(ArticlePipelineFSM.select_wp)
-    await _save_checkpoint(
+    await save_checkpoint(
         redis,
         user.id,
         current_step="select_wp",
@@ -511,7 +416,7 @@ async def _show_wp_step_msg(
         reply_markup=pipeline_no_wp_kb(),
     )
     await state.set_state(ArticlePipelineFSM.select_wp)
-    await _save_checkpoint(
+    await save_checkpoint(
         redis,
         user.id,
         current_step="select_wp",
@@ -542,9 +447,7 @@ async def pipeline_start_connect_wp(
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await state.update_data(last_update_time=time.time())
     await callback.message.edit_text(
-        "Статья (2/5) — Подключение WordPress\n\n"
-        "Введите адрес вашего сайта.\n"
-        "<i>Пример: example.com</i>",
+        "Статья (2/5) — Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
     )
     await callback.answer()
 
@@ -627,7 +530,7 @@ async def pipeline_connect_wp_password(
     project_id = data.get("project_id")
     if not (wp_url and wp_login and project_id):
         await state.clear()
-        await _clear_checkpoint(redis, user.id)
+        await clear_checkpoint(redis, user.id)
         await message.answer("Сессия устарела. Начните подключение заново.")
         return
     project_name: str = data.get("project_name", "")
@@ -647,7 +550,7 @@ async def pipeline_connect_wp_password(
     project = await projects_repo.get_by_id(project_id)
     if not project or project.user_id != user.id:
         await state.clear()
-        await _clear_checkpoint(redis, user.id)
+        await clear_checkpoint(redis, user.id)
         await message.answer("Проект не найден.")
         return
 
@@ -704,7 +607,7 @@ async def pipeline_cancel_wp_subflow(
             reply_markup=pipeline_no_wp_kb(),
         )
         await state.set_state(ArticlePipelineFSM.select_wp)
-        await _save_checkpoint(
+        await save_checkpoint(
             redis,
             user.id,
             current_step="select_wp",
@@ -713,7 +616,7 @@ async def pipeline_cancel_wp_subflow(
         )
     else:
         await state.clear()
-        await _clear_checkpoint(redis, user.id)
+        await clear_checkpoint(redis, user.id)
         await callback.message.edit_text("Pipeline отменён.")
 
     await callback.answer()
@@ -753,7 +656,7 @@ async def _show_category_step(
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         await state.set_state(ArticlePipelineFSM.create_category_name)
-        await _save_checkpoint(
+        await save_checkpoint(
             redis,
             user.id,
             current_step="select_category",
@@ -766,7 +669,7 @@ async def _show_category_step(
         # Auto-select the only category
         cat = categories[0]
         await state.update_data(category_id=cat.id, category_name=cat.name)
-        await _show_readiness_stub(callback, state, user, db, redis, project_id, project_name, cat.id, cat.name)
+        await show_readiness_check(callback, state, user, db, redis)
         return
 
     # Multiple categories — show list
@@ -775,7 +678,7 @@ async def _show_category_step(
         reply_markup=pipeline_categories_kb(categories, project_id),
     )
     await state.set_state(ArticlePipelineFSM.select_category)
-    await _save_checkpoint(
+    await save_checkpoint(
         redis,
         user.id,
         current_step="select_category",
@@ -807,7 +710,7 @@ async def _show_category_step_msg(
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         await state.set_state(ArticlePipelineFSM.create_category_name)
-        await _save_checkpoint(
+        await save_checkpoint(
             redis,
             user.id,
             current_step="select_category",
@@ -819,9 +722,7 @@ async def _show_category_step_msg(
     if len(categories) == 1:
         cat = categories[0]
         await state.update_data(category_id=cat.id, category_name=cat.name)
-        await _show_readiness_stub_msg(
-            message, state, user, db, redis, project_id, project_name, cat.id, cat.name,
-        )
+        await show_readiness_check_msg(message, state, user, db, redis)
         return
 
     await message.answer(
@@ -829,7 +730,7 @@ async def _show_category_step_msg(
         reply_markup=pipeline_categories_kb(categories, project_id),
     )
     await state.set_state(ArticlePipelineFSM.select_category)
-    await _save_checkpoint(
+    await save_checkpoint(
         redis,
         user.id,
         current_step="select_category",
@@ -866,7 +767,6 @@ async def pipeline_select_category(
 
     data = await state.get_data()
     project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
     if not project_id:
         await callback.answer("Проект не выбран.", show_alert=True)
         return
@@ -877,7 +777,7 @@ async def pipeline_select_category(
         return
 
     await state.update_data(category_id=category.id, category_name=category.name)
-    await _show_readiness_stub(callback, state, user, db, redis, project_id, project_name, category.id, category.name)
+    await show_readiness_check(callback, state, user, db, redis)
     await callback.answer()
 
 
@@ -903,7 +803,6 @@ async def pipeline_create_category_name(
 
     data = await state.get_data()
     project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
     if not project_id:
         await message.answer("Проект не выбран. Начните создание статьи заново.")
         return
@@ -924,83 +823,7 @@ async def pipeline_create_category_name(
 
     # Proceed to readiness (step 4)
     # For text messages we can't edit — send new message
-    await _show_readiness_stub_msg(
-        message,
-        state,
-        user,
-        db,
-        redis,
-        project_id,
-        project_name,
-        category.id,
-        category.name,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Step 4 stub: Readiness (will be implemented in F5.3)
-# ---------------------------------------------------------------------------
-
-
-async def _show_readiness_stub(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    project_id: int,
-    project_name: str,
-    category_id: int,
-    category_name: str,
-) -> None:
-    """Stub for readiness check (step 4). Will be replaced in F5.3."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
-        return
-
-    await callback.message.edit_text(
-        f"Статья (4/5) — Подготовка\n\n"
-        f"Проект: {html.escape(project_name)}\n"
-        f"Тема: {html.escape(category_name)}\n\n"
-        f"Readiness check — будет реализован в F5.3.",
-    )
-    await state.set_state(ArticlePipelineFSM.readiness_check)
-    await _save_checkpoint(
-        redis,
-        user.id,
-        current_step="readiness_check",
-        project_id=project_id,
-        project_name=project_name,
-        category_id=category_id,
-    )
-
-
-async def _show_readiness_stub_msg(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    project_id: int,
-    project_name: str,
-    category_id: int,
-    category_name: str,
-) -> None:
-    """Stub readiness for message (non-edit) context."""
-    await message.answer(
-        f"Статья (4/5) — Подготовка\n\n"
-        f"Проект: {html.escape(project_name)}\n"
-        f"Тема: {html.escape(category_name)}\n\n"
-        f"Readiness check — будет реализован в F5.3.",
-    )
-    await state.set_state(ArticlePipelineFSM.readiness_check)
-    await _save_checkpoint(
-        redis,
-        user.id,
-        current_step="readiness_check",
-        project_id=project_id,
-        project_name=project_name,
-        category_id=category_id,
-    )
+    await show_readiness_check_msg(message, state, user, db, redis)
 
 
 # ---------------------------------------------------------------------------
@@ -1017,7 +840,7 @@ async def pipeline_article_cancel(
 ) -> None:
     """Cancel article pipeline, clear FSM and checkpoint."""
     await state.clear()
-    await _clear_checkpoint(redis, user.id)
+    await clear_checkpoint(redis, user.id)
     if callback.message and not isinstance(callback.message, InaccessibleMessage):
         await callback.message.edit_text("Pipeline отменён.")
     await callback.answer()

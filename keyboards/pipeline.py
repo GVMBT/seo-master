@@ -436,6 +436,37 @@ def pipeline_description_options_kb() -> InlineKeyboardMarkup:
 
 
 # ---------------------------------------------------------------------------
+# Readiness sub-flow: Prices
+# ---------------------------------------------------------------------------
+
+
+def pipeline_prices_options_kb() -> InlineKeyboardMarkup:
+    """Prices input options in readiness sub-flow."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Добавить текстом",
+                    callback_data="pipeline:readiness:prices:text",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Загрузить Excel",
+                    callback_data="pipeline:readiness:prices:excel",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Назад к чеклисту",
+                    callback_data="pipeline:readiness:back",
+                ),
+            ],
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
 # Readiness sub-flow: Images
 # ---------------------------------------------------------------------------
 
