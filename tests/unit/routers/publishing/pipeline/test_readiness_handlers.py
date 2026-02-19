@@ -611,6 +611,36 @@ class TestDescriptionSubFlow:
         mock_callback.answer.assert_called_once()
         assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
 
+    async def test_ai_save_fails_no_charge(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """If category update returns None, tokens are NOT charged."""
+        mock_state.get_data = AsyncMock(return_value=_make_state_data())
+
+        p_token, token_mock = _patch_token_svc(balance=1500, has_balance=True)
+        p_cats, cat_mock = _patch_cats_repo()
+        cat_mock.update = AsyncMock(return_value=None)
+        p_settings = _patch_settings()
+
+        with p_token, p_cats, p_settings:
+            await readiness_description_ai(
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+            )
+
+        cat_mock.update.assert_called_once()
+        token_mock.charge.assert_not_called()
+        mock_callback.answer.assert_called()
+        assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
+
     async def test_manual_start_sets_state(
         self,
         mock_callback: MagicMock,
@@ -1018,6 +1048,29 @@ class TestImagesSubFlow:
             )
 
         mock_state.update_data.assert_called_with(image_count=0)
+
+    async def test_select_invalid_count_rejected(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """Invalid image count (e.g. 99) is rejected with show_alert."""
+        mock_callback.data = "pipeline:readiness:images:99"
+
+        await readiness_images_select(
+            mock_callback,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+        )
+
+        mock_state.update_data.assert_not_called()
+        mock_callback.answer.assert_called_once()
+        assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
 
 
 # ---------------------------------------------------------------------------

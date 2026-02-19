@@ -527,14 +527,6 @@ async def readiness_description_ai(
         )
         return
 
-    # Charge tokens
-    await token_svc.charge(
-        user_id=user.id,
-        amount=COST_DESCRIPTION,
-        operation_type="description",
-        description=f"Описание (pipeline, категория #{category_id})",
-    )
-
     # Phase 10 stub: generate template description
     project_name = data.get("project_name", "")
     category_name = data.get("category_name", "")
@@ -543,9 +535,24 @@ async def readiness_description_ai(
         f"Мы предлагаем качественные решения для наших клиентов."
     )
 
-    # Save to category
+    # Save FIRST, charge AFTER (if update fails, user is not billed)
     cats_repo = CategoriesRepository(db)
-    await cats_repo.update(category_id, CategoryUpdate(description=generated))
+    result = await cats_repo.update(category_id, CategoryUpdate(description=generated))
+    if not result:
+        log.error(
+            "pipeline.readiness.description_save_failed",
+            user_id=user.id,
+            category_id=category_id,
+        )
+        await callback.answer("Ошибка сохранения описания.", show_alert=True)
+        return
+
+    await token_svc.charge(
+        user_id=user.id,
+        amount=COST_DESCRIPTION,
+        operation_type="description",
+        description=f"Описание (pipeline, категория #{category_id})",
+    )
 
     log.info(
         "pipeline.readiness.description_generated",
@@ -854,7 +861,18 @@ async def readiness_images_select(
         await callback.answer()
         return
 
-    count = int(callback.data.split(":")[-1])
+    try:
+        count = int(callback.data.split(":")[-1])
+    except ValueError:
+        await callback.answer()
+        return
+
+    allowed = {0, 1, 2, 3, 4, 6, 8, 10}
+    if count not in allowed:
+        log.warning("pipeline.readiness.images_invalid_count", user_id=user.id, count=count)
+        await callback.answer("Некорректное количество.", show_alert=True)
+        return
+
     await state.update_data(image_count=count)
 
     log.info("pipeline.readiness.images_count", user_id=user.id, count=count)
