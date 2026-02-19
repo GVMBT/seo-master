@@ -335,7 +335,7 @@ async def reply_article(
     state: FSMContext,
     user: User,
     is_new_user: bool,
-    is_admin: bool,
+    is_admin: bool,  # noqa: ARG001
     db: SupabaseClient,
     redis: RedisClient,
 ) -> None:
