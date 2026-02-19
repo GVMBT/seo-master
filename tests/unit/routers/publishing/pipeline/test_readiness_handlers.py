@@ -126,7 +126,7 @@ def _make_state_data(**overrides: Any) -> dict[str, Any]:
 class TestBuildChecklistText:
     """_build_checklist_text builds correct display text."""
 
-    def test_all_filled(self) -> None:
+    async def test_all_filled(self) -> None:
         report = _make_report(has_keywords=True, has_description=True, has_prices=True)
         data = _make_state_data()
         text = _build_checklist_text(report, data)
@@ -135,7 +135,7 @@ class TestBuildChecklistText:
         assert "5 кластеров (50 фраз)" in text
         assert "заполнено" in text
 
-    def test_keywords_missing(self) -> None:
+    async def test_keywords_missing(self) -> None:
         report = _make_report(
             has_keywords=False,
             keyword_count=0,
@@ -145,22 +145,22 @@ class TestBuildChecklistText:
         text = _build_checklist_text(report, _make_state_data())
         assert "не заполнены (обязательно)" in text
 
-    def test_description_missing(self) -> None:
+    async def test_description_missing(self) -> None:
         report = _make_report(has_description=False, missing_items=["description"])
         text = _build_checklist_text(report, _make_state_data())
         assert "Описание — не заполнено" in text
 
-    def test_prices_missing_shown(self) -> None:
+    async def test_prices_missing_shown(self) -> None:
         report = _make_report(has_prices=False, missing_items=["prices"])
         text = _build_checklist_text(report, _make_state_data())
         assert "Цены — не заполнены" in text
 
-    def test_image_count_in_text(self) -> None:
+    async def test_image_count_in_text(self) -> None:
         report = _make_report(image_count=6)
         text = _build_checklist_text(report, _make_state_data())
         assert "6 AI" in text
 
-    def test_html_escaping(self) -> None:
+    async def test_html_escaping(self) -> None:
         data = _make_state_data(project_name="<script>", category_name="&test")
         report = _make_report()
         text = _build_checklist_text(report, data)
