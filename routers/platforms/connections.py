@@ -721,8 +721,20 @@ async def vk_process_token(
     error, groups = await conn_svc.validate_vk_token(text)
     if error:
         if "нет групп" in error.lower():
+            fsm_data = await state.get_data()
+            project_id = int(fsm_data["connect_project_id"])
             await state.clear()
-        await message.answer(error)
+            await message.answer(
+                error,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="К подключениям",
+                        callback_data=f"project:{project_id}:connections",
+                    )],
+                ]),
+            )
+        else:
+            await message.answer(error + "\n\nПопробуйте ещё раз или нажмите Отмена.")
         return
 
     fsm_data = await state.get_data()
