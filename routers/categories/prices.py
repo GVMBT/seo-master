@@ -274,7 +274,7 @@ async def handle_text_in_excel_state(
     await message.answer("Ожидается файл Excel (.xlsx). Для отмены напишите \u00abОтмена\u00bb.")
 
 
-def _parse_excel_rows(file_bytes: bytes) -> list[str] | str:
+def parse_excel_rows(file_bytes: bytes) -> list[str] | str:
     """Parse Excel file into price lines. Returns list of lines or error string."""
     import openpyxl  # type: ignore[import-untyped]
 
@@ -346,7 +346,7 @@ async def process_excel(
         return
 
     try:
-        result = _parse_excel_rows(file_bytes_io.read())
+        result = parse_excel_rows(file_bytes_io.read())
     except Exception:
         log.exception("excel_parse_error")
         await state.clear()

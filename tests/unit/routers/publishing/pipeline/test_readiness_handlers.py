@@ -917,7 +917,7 @@ class TestPricesSubFlow:
 
         parsed_rows = ["Кухня — 120000", "Шкаф — 45000"]
         p_parse = patch(
-            "routers.categories.prices._parse_excel_rows",
+            "routers.categories.prices.parse_excel_rows",
             return_value=parsed_rows,
         )
         p_cats, cat_mock = _patch_cats_repo()
@@ -955,7 +955,7 @@ class TestPricesSubFlow:
         mock_message.bot.download = AsyncMock(return_value=BytesIO(b"fake"))
 
         p_parse = patch(
-            "routers.categories.prices._parse_excel_rows",
+            "routers.categories.prices.parse_excel_rows",
             return_value="empty",
         )
 

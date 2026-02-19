@@ -777,9 +777,9 @@ async def readiness_prices_excel_file(
     file_bytes = file.read()
 
     # Reuse Excel parsing from prices module
-    from routers.categories.prices import _parse_excel_rows
+    from routers.categories.prices import parse_excel_rows
 
-    result = _parse_excel_rows(file_bytes)
+    result = parse_excel_rows(file_bytes)
 
     if isinstance(result, str):
         error_msgs = {
