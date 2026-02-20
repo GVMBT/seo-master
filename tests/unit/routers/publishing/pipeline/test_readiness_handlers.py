@@ -14,8 +14,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from routers.publishing.pipeline._common import ArticlePipelineFSM
 from routers.publishing.pipeline.readiness import (
     _build_checklist_text,
@@ -42,7 +40,6 @@ from routers.publishing.pipeline.readiness import (
     show_readiness_check_msg,
 )
 from services.readiness import ReadinessReport
-from tests.unit.routers.conftest import make_category
 
 _MODULE = "routers.publishing.pipeline.readiness"
 
@@ -209,7 +206,10 @@ class TestShowReadinessCheck:
         p_readiness, _ = _patch_readiness(report)
         p_token, _ = _patch_token_svc()
         p_settings = _patch_settings()
-        p_confirm = patch(f"{_MODULE}._show_confirm_stub", new_callable=AsyncMock)
+        p_confirm = patch(
+            "routers.publishing.pipeline.generation.show_confirm",
+            new_callable=AsyncMock,
+        )
 
         with p_readiness, p_token, p_settings, p_confirm as mock_confirm:
             await show_readiness_check(mock_callback, mock_state, user, mock_db, mock_redis)
@@ -1112,7 +1112,10 @@ class TestNavigation:
         p_readiness, _ = _patch_readiness(report)
         p_token, _ = _patch_token_svc()
         p_settings = _patch_settings()
-        p_confirm = patch(f"{_MODULE}._show_confirm_stub", new_callable=AsyncMock)
+        p_confirm = patch(
+            "routers.publishing.pipeline.generation.show_confirm",
+            new_callable=AsyncMock,
+        )
 
         with p_readiness, p_token, p_settings, p_confirm as mock_confirm:
             await readiness_done(mock_callback, mock_state, user, mock_db, mock_redis)

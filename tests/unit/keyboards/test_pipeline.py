@@ -23,6 +23,7 @@ from keyboards.pipeline import (
     pipeline_confirm_kb,
     pipeline_description_options_kb,
     pipeline_exit_confirm_kb,
+    pipeline_generation_error_kb,
     pipeline_images_options_kb,
     pipeline_insufficient_balance_kb,
     pipeline_keywords_options_kb,
@@ -30,6 +31,7 @@ from keyboards.pipeline import (
     pipeline_no_projects_kb,
     pipeline_no_wp_kb,
     pipeline_preview_kb,
+    pipeline_preview_no_wp_kb,
     pipeline_projects_kb,
     pipeline_readiness_kb,
     pipeline_result_kb,
@@ -248,12 +250,14 @@ class TestPipelineReadinessKb:
         buttons = _flatten_buttons(kb)
         assert any(b.callback_data == "pipeline:readiness:prices" for b in buttons)
 
-    def test_generate_button_always_last(self) -> None:
-        """The 'generate' button is always the last row."""
+    def test_generate_button_before_cancel(self) -> None:
+        """The 'generate' button is second-to-last (cancel is last)."""
         report = _make_report(has_keywords=False, has_description=False)
         kb = pipeline_readiness_kb(report)
+        second_to_last_row = kb.inline_keyboard[-2]
+        assert second_to_last_row[0].callback_data == "pipeline:readiness:done"
         last_row = kb.inline_keyboard[-1]
-        assert last_row[0].callback_data == "pipeline:readiness:done"
+        assert last_row[0].callback_data == "pipeline:article:cancel"
 
     def test_keyword_cost_in_label(self) -> None:
         """Keywords button shows cost estimate."""
@@ -303,6 +307,17 @@ class TestPipelineConfirmKb:
         kb = pipeline_confirm_kb()
         buttons = _flatten_buttons(kb)
         assert any(b.callback_data == "pipeline:article:back_readiness" for b in buttons)
+
+    def test_cancel_button_present(self) -> None:
+        """G6: cancel button added to confirm keyboard."""
+        kb = pipeline_confirm_kb()
+        buttons = _flatten_buttons(kb)
+        assert any(b.callback_data == "pipeline:article:cancel" for b in buttons)
+
+    def test_three_rows_total(self) -> None:
+        """G6: confirm kb has 3 rows: create, back, cancel."""
+        kb = pipeline_confirm_kb()
+        assert len(kb.inline_keyboard) == 3
 
 
 class TestPipelineInsufficientBalanceKb:
@@ -356,6 +371,64 @@ class TestPipelinePreviewKb:
         cancel_btn = next(b for b in buttons if b.callback_data == "pipeline:article:cancel_refund")
         assert cancel_btn.style == ButtonStyle.DANGER
 
+    def test_e05_no_telegraph_url_no_preview_button(self) -> None:
+        """E05: when Telegraph is down, no preview URL button shown."""
+        kb = pipeline_preview_kb(None)
+        buttons = _flatten_buttons(kb)
+        assert not any(b.url for b in buttons)
+
+    def test_regen_shows_cost_after_free_limit(self) -> None:
+        """Regen button shows cost when regen_count >= 2."""
+        kb = pipeline_preview_kb("https://telegra.ph/test", regen_count=2, regen_cost=320)
+        buttons = _flatten_buttons(kb)
+        regen_btn = next(b for b in buttons if b.callback_data == "pipeline:article:regenerate")
+        assert "320" in regen_btn.text
+
+    def test_regen_no_cost_for_free(self) -> None:
+        """Regen button has no cost when regen_count < 2."""
+        kb = pipeline_preview_kb("https://telegra.ph/test", regen_count=0, regen_cost=320)
+        buttons = _flatten_buttons(kb)
+        regen_btn = next(b for b in buttons if b.callback_data == "pipeline:article:regenerate")
+        assert "320" not in regen_btn.text
+
+
+class TestPipelinePreviewNoWpKb:
+    """pipeline_preview_no_wp_kb — Variant B, no WP connection (G1)."""
+
+    def test_connect_wp_publish_button(self) -> None:
+        kb = pipeline_preview_no_wp_kb("https://telegra.ph/test")
+        buttons = _flatten_buttons(kb)
+        btn = next(b for b in buttons if b.callback_data == "pipeline:article:connect_wp_publish")
+        assert btn.style == ButtonStyle.SUCCESS
+
+    def test_copy_html_button(self) -> None:
+        kb = pipeline_preview_no_wp_kb("https://telegra.ph/test")
+        buttons = _flatten_buttons(kb)
+        assert any(b.callback_data == "pipeline:article:copy_html" for b in buttons)
+
+    def test_regen_button(self) -> None:
+        kb = pipeline_preview_no_wp_kb("https://telegra.ph/test")
+        buttons = _flatten_buttons(kb)
+        assert any(b.callback_data == "pipeline:article:regenerate" for b in buttons)
+
+    def test_cancel_refund_button(self) -> None:
+        kb = pipeline_preview_no_wp_kb("https://telegra.ph/test")
+        buttons = _flatten_buttons(kb)
+        cancel_btn = next(b for b in buttons if b.callback_data == "pipeline:article:cancel_refund")
+        assert cancel_btn.style == ButtonStyle.DANGER
+
+    def test_telegraph_url_optional(self) -> None:
+        """E05: no preview button when telegraph_url is None."""
+        kb = pipeline_preview_no_wp_kb(None)
+        buttons = _flatten_buttons(kb)
+        assert not any(b.url for b in buttons)
+
+    def test_regen_shows_cost_when_paid(self) -> None:
+        kb = pipeline_preview_no_wp_kb("https://telegra.ph/test", regen_count=3, regen_cost=320)
+        buttons = _flatten_buttons(kb)
+        regen_btn = next(b for b in buttons if b.callback_data == "pipeline:article:regenerate")
+        assert "320" in regen_btn.text
+
 
 # ---------------------------------------------------------------------------
 # Step 8: Result
@@ -368,7 +441,7 @@ class TestPipelineResultKb:
     def test_another_article_button_primary(self) -> None:
         kb = pipeline_result_kb()
         buttons = _flatten_buttons(kb)
-        another_btn = next(b for b in buttons if b.callback_data == "pipeline:article:start")
+        another_btn = next(b for b in buttons if b.callback_data == "pipeline:article:more")
         assert another_btn.style == ButtonStyle.PRIMARY
 
     def test_post_url_when_provided(self) -> None:
@@ -535,3 +608,27 @@ class TestPipelineImagesOptionsKb:
         assert len(kb.inline_keyboard[0]) == 4
         assert len(kb.inline_keyboard[1]) == 4
         assert len(kb.inline_keyboard[2]) == 1  # back button
+
+
+# ---------------------------------------------------------------------------
+# Generation error (E35)
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineGenerationErrorKb:
+    """pipeline_generation_error_kb has retry PRIMARY + cancel."""
+
+    def test_retry_button_primary(self) -> None:
+        kb = pipeline_generation_error_kb()
+        buttons = _flatten_buttons(kb)
+        retry_btn = next(b for b in buttons if b.callback_data == "pipeline:article:confirm")
+        assert retry_btn.style == ButtonStyle.PRIMARY
+
+    def test_cancel_button_present(self) -> None:
+        kb = pipeline_generation_error_kb()
+        buttons = _flatten_buttons(kb)
+        assert any(b.callback_data == "pipeline:article:cancel" for b in buttons)
+
+    def test_two_rows(self) -> None:
+        kb = pipeline_generation_error_kb()
+        assert len(kb.inline_keyboard) == 2

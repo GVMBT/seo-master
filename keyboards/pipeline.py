@@ -192,6 +192,16 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
         ]
     )
 
+    # Cancel pipeline
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Отменить",
+                callback_data="pipeline:article:cancel",
+            ),
+        ]
+    )
+
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -201,7 +211,7 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
 
 
 def pipeline_confirm_kb() -> InlineKeyboardMarkup:
-    """Confirmation keyboard for pipeline step 5."""
+    """Confirmation keyboard for pipeline step 5 (G6: includes cancel)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -215,6 +225,12 @@ def pipeline_confirm_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Вернуться к чеклисту",
                     callback_data="pipeline:article:back_readiness",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Отмена",
+                    callback_data="pipeline:article:cancel",
                 ),
             ],
         ]
@@ -248,22 +264,32 @@ def pipeline_insufficient_balance_kb() -> InlineKeyboardMarkup:
 
 
 def pipeline_preview_kb(
-    telegraph_url: str,
+    telegraph_url: str | None = None,
     *,
     can_publish: bool = True,
+    regen_count: int = 0,
+    regen_cost: int = 0,
 ) -> InlineKeyboardMarkup:
-    """Preview keyboard with publish/regenerate/cancel options."""
+    """Preview keyboard with publish/regenerate/cancel options.
+
+    Args:
+        telegraph_url: Telegraph preview link. None when E05 Telegraph down.
+        can_publish: Whether WP connection is available.
+        regen_count: Current regeneration count (0-based).
+        regen_cost: Token cost for next regeneration (shown when count >= 2).
+    """
     rows: list[list[InlineKeyboardButton]] = []
 
-    # Preview link
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="Открыть превью",
-                url=telegraph_url,
-            ),
-        ]
-    )
+    # Preview link (E05: omitted when Telegraph is down)
+    if telegraph_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Открыть превью",
+                    url=telegraph_url,
+                ),
+            ]
+        )
 
     if can_publish:
         rows.append(
@@ -276,10 +302,80 @@ def pipeline_preview_kb(
             ]
         )
 
+    # Regen button: show cost when count >= MAX_REGENERATIONS_FREE (2)
+    regen_text = "Перегенерировать"
+    if regen_count >= 2 and regen_cost > 0:
+        regen_text = f"Перегенерировать (~{regen_cost} ток.)"
     rows.append(
         [
             InlineKeyboardButton(
-                text="Перегенерировать",
+                text=regen_text,
+                callback_data="pipeline:article:regenerate",
+            ),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Отмена — вернуть токены",
+                callback_data="pipeline:article:cancel_refund",
+                style=ButtonStyle.DANGER,
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def pipeline_preview_no_wp_kb(
+    telegraph_url: str | None = None,
+    *,
+    regen_count: int = 0,
+    regen_cost: int = 0,
+) -> InlineKeyboardMarkup:
+    """Preview-only keyboard — Variant B, no WP (G1).
+
+    Shows: preview link, connect WP, copy HTML, regenerate, cancel.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if telegraph_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Открыть превью",
+                    url=telegraph_url,
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Подключить WordPress и опубликовать",
+                callback_data="pipeline:article:connect_wp_publish",
+                style=ButtonStyle.SUCCESS,
+            ),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Скопировать HTML",
+                callback_data="pipeline:article:copy_html",
+            ),
+        ]
+    )
+
+    regen_text = "Перегенерировать"
+    if regen_count >= 2 and regen_cost > 0:
+        regen_text = f"Перегенерировать (~{regen_cost} ток.)"
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=regen_text,
                 callback_data="pipeline:article:regenerate",
             ),
         ]
@@ -321,7 +417,7 @@ def pipeline_result_kb(post_url: str | None = None) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Ещё статью",
-                callback_data="pipeline:article:start",
+                callback_data="pipeline:article:more",
                 style=ButtonStyle.PRIMARY,
             ),
         ]
@@ -341,6 +437,32 @@ def pipeline_result_kb(post_url: str | None = None) -> InlineKeyboardMarkup:
     )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# Step 6: Generation error
+# ---------------------------------------------------------------------------
+
+
+def pipeline_generation_error_kb() -> InlineKeyboardMarkup:
+    """Error keyboard after failed generation (E35)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Повторить",
+                    callback_data="pipeline:article:confirm",
+                    style=ButtonStyle.PRIMARY,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Отмена",
+                    callback_data="pipeline:article:cancel",
+                ),
+            ],
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
