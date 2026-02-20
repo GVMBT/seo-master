@@ -406,8 +406,7 @@ async def wp_process_password(
     existing_wp = await conn_svc.get_by_project_and_platform(project_id, "wordpress")
     if existing_wp:
         await message.answer(
-            "К проекту уже подключён WordPress-сайт.\n"
-            "Для другого сайта создайте новый проект.",
+            "К проекту уже подключён WordPress-сайт.\nДля другого сайта создайте новый проект.",
         )
         return
 
@@ -598,8 +597,7 @@ async def tg_process_token(
     existing_tg = await conn_svc.get_by_project_and_platform(project_id, "telegram")
     if existing_tg:
         await message.answer(
-            "К проекту уже подключён Telegram-канал.\n"
-            "Для другого канала создайте новый проект.",
+            "К проекту уже подключён Telegram-канал.\nДля другого канала создайте новый проект.",
         )
         return
 
@@ -726,12 +724,16 @@ async def vk_process_token(
             await state.clear()
             await message.answer(
                 error,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(
-                        text="К подключениям",
-                        callback_data=f"project:{project_id}:connections",
-                    )],
-                ]),
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="К подключениям",
+                                callback_data=f"project:{project_id}:connections",
+                            )
+                        ],
+                    ]
+                ),
             )
         else:
             await message.answer(error + "\n\nПопробуйте ещё раз или нажмите Отмена.")
@@ -784,8 +786,7 @@ async def vk_select_group(
     existing_vk = await conn_svc.get_by_project_and_platform(project_id, "vk")
     if existing_vk:
         await callback.message.edit_text(
-            "К проекту уже подключена VK-группа.\n"
-            "Для другой группы создайте новый проект.",
+            "К проекту уже подключена VK-группа.\nДля другой группы создайте новый проект.",
         )
         await callback.answer()
         return
@@ -931,8 +932,11 @@ async def _cancel_connection_wizard(
 
 @router.callback_query(F.data.regexp(r"^conn:\d+:wp_cancel$"))
 async def cancel_wp_connect(
-    callback: CallbackQuery, state: FSMContext, user: User,
-    db: SupabaseClient, http_client: httpx.AsyncClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Cancel WordPress connection via inline button."""
     await _cancel_connection_wizard(callback, state, user, db, http_client)
@@ -940,8 +944,11 @@ async def cancel_wp_connect(
 
 @router.callback_query(F.data.regexp(r"^conn:\d+:tg_cancel$"))
 async def cancel_tg_connect(
-    callback: CallbackQuery, state: FSMContext, user: User,
-    db: SupabaseClient, http_client: httpx.AsyncClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Cancel Telegram connection via inline button."""
     await _cancel_connection_wizard(callback, state, user, db, http_client)
@@ -949,8 +956,11 @@ async def cancel_tg_connect(
 
 @router.callback_query(F.data.regexp(r"^conn:\d+:vk_cancel$"))
 async def cancel_vk_connect(
-    callback: CallbackQuery, state: FSMContext, user: User,
-    db: SupabaseClient, http_client: httpx.AsyncClient,
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Cancel VK connection via inline button."""
     await _cancel_connection_wizard(callback, state, user, db, http_client)

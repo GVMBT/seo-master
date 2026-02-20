@@ -1196,10 +1196,12 @@ def schedule_days_kb(selected: set[str]) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
-    rows.append([
-        InlineKeyboardButton(text="Готово", callback_data="sched:days:done"),
-        InlineKeyboardButton(text="Отмена", callback_data="sched:cancel"),
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(text="Готово", callback_data="sched:days:done"),
+            InlineKeyboardButton(text="Отмена", callback_data="sched:cancel"),
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -1224,10 +1226,12 @@ def schedule_times_kb(selected: set[str], required: int) -> InlineKeyboardMarkup
     if row:
         rows.append(row)
     done_text = f"Готово ({len(selected)}/{required})"
-    rows.append([
-        InlineKeyboardButton(text=done_text, callback_data="sched:times:done"),
-        InlineKeyboardButton(text="Отмена", callback_data="sched:cancel"),
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(text=done_text, callback_data="sched:times:done"),
+            InlineKeyboardButton(text="Отмена", callback_data="sched:cancel"),
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

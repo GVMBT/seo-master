@@ -304,8 +304,7 @@ async def start_field_edit(
     label = _FIELD_LABELS[field]
     current = getattr(project, field, None) or "—"
     await callback.message.answer(
-        f"Введите новое значение для поля «{label}».\n"
-        f"Текущее: {html.escape(str(current))}",
+        f"Введите новое значение для поля «{label}».\nТекущее: {html.escape(str(current))}",
         reply_markup=cancel_kb("project:edit:cancel"),
     )
     await callback.answer()

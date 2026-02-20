@@ -135,7 +135,9 @@ async def show_readiness_check(
 
     # Skip to step 5 if all required items filled and nothing to show
     if report.all_filled and not report.missing_items:
-        await _show_confirm_stub(callback, state, user, redis, report, data)
+        from routers.publishing.pipeline.generation import show_confirm
+
+        await show_confirm(callback, state, user, redis, report, data)
         return
 
     text = _build_checklist_text(report, data)
@@ -181,7 +183,9 @@ async def show_readiness_check_msg(
     report = await svc.check(user.id, category_id, balance, image_count)
 
     if report.all_filled and not report.missing_items:
-        await _show_confirm_stub_msg(message, state, user, redis, report, data)
+        from routers.publishing.pipeline.generation import show_confirm_msg
+
+        await show_confirm_msg(message, state, user, redis, report, data)
         return
 
     text = _build_checklist_text(report, data)
@@ -196,82 +200,6 @@ async def show_readiness_check_msg(
         project_id=project_id,
         project_name=project_name,
         category_id=category_id,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Step 5 stub (will be implemented in F5.4)
-# ---------------------------------------------------------------------------
-
-
-async def _show_confirm_stub(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    redis: RedisClient,
-    report: ReadinessReport,
-    fsm_data: dict,  # type: ignore[type-arg]
-) -> None:
-    """Stub for step 5 confirmation. Will be replaced in F5.4."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
-        return
-
-    project_name = html.escape(fsm_data.get("project_name", ""))
-    category_name = html.escape(fsm_data.get("category_name", ""))
-    wp_id = fsm_data.get("wp_identifier", "")
-
-    text = (
-        f"Статья (5/5) — Подтверждение\n\n"
-        f"{project_name}"
-        f"{' → ' + html.escape(str(wp_id)) if wp_id else ''}\n"
-        f"Тема: {category_name}\n"
-        f"Ключевики: {report.keyword_count} фраз | Изображения: {report.image_count} AI\n\n"
-        f"Стоимость: ~{report.estimated_cost} ток. | Баланс: {report.user_balance}\n\n"
-        f"Подтверждение и генерация — будет реализовано в F5.4."
-    )
-    await callback.message.edit_text(text)
-    await state.set_state(ArticlePipelineFSM.confirm_cost)
-    await save_checkpoint(
-        redis,
-        user.id,
-        current_step="confirm_cost",
-        project_id=fsm_data.get("project_id"),
-        project_name=fsm_data.get("project_name"),
-        category_id=fsm_data.get("category_id"),
-    )
-
-
-async def _show_confirm_stub_msg(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    redis: RedisClient,
-    report: ReadinessReport,
-    fsm_data: dict,  # type: ignore[type-arg]
-) -> None:
-    """Stub for step 5 (message context)."""
-    project_name = html.escape(fsm_data.get("project_name", ""))
-    category_name = html.escape(fsm_data.get("category_name", ""))
-    wp_id = fsm_data.get("wp_identifier", "")
-
-    text = (
-        f"Статья (5/5) — Подтверждение\n\n"
-        f"{project_name}"
-        f"{' → ' + html.escape(str(wp_id)) if wp_id else ''}\n"
-        f"Тема: {category_name}\n"
-        f"Ключевики: {report.keyword_count} фраз | Изображения: {report.image_count} AI\n\n"
-        f"Стоимость: ~{report.estimated_cost} ток. | Баланс: {report.user_balance}\n\n"
-        f"Подтверждение и генерация — будет реализовано в F5.4."
-    )
-    await message.answer(text)
-    await state.set_state(ArticlePipelineFSM.confirm_cost)
-    await save_checkpoint(
-        redis,
-        user.id,
-        current_step="confirm_cost",
-        project_id=fsm_data.get("project_id"),
-        project_name=fsm_data.get("project_name"),
-        category_id=fsm_data.get("category_id"),
     )
 
 
@@ -938,5 +866,7 @@ async def readiness_done(
         )
         return
 
-    await _show_confirm_stub(callback, state, user, redis, report, data)
+    from routers.publishing.pipeline.generation import show_confirm
+
+    await show_confirm(callback, state, user, redis, report, data)
     await callback.answer()

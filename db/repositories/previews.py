@@ -95,3 +95,44 @@ class PreviewsRepository(BaseRepository):
         )
         row = self._first(resp)
         return ArticlePreview(**row) if row else None
+
+    async def atomic_mark_published(self, preview_id: int) -> ArticlePreview | None:
+        """Atomically mark preview as published (CAS: only if status='draft').
+
+        Returns the updated preview, or None if already published/expired (E18, P0-3).
+        Prevents race between publish and cleanup.
+        """
+        resp = (
+            await self._table(_TABLE)
+            .update({"status": "published"})
+            .eq("id", preview_id)
+            .eq("status", "draft")
+            .execute()
+        )
+        row = self._first(resp)
+        return ArticlePreview(**row) if row else None
+
+    async def increment_regeneration(self, preview_id: int) -> int:
+        """Atomically increment regeneration_count using CAS (compare-and-swap).
+
+        Reads current count, then updates only if count hasn't changed.
+        Returns new count, or 0 if preview not found.
+        """
+        preview = await self.get_by_id(preview_id)
+        if not preview:
+            return 0
+        old_count = preview.regeneration_count
+        new_count = old_count + 1
+        resp = (
+            await self._table(_TABLE)
+            .update({"regeneration_count": new_count})
+            .eq("id", preview_id)
+            .eq("regeneration_count", old_count)
+            .execute()
+        )
+        row = self._first(resp)
+        if row:
+            return new_count
+        # CAS failed (concurrent update) — re-read current value
+        refreshed = await self.get_by_id(preview_id)
+        return refreshed.regeneration_count if refreshed else 0

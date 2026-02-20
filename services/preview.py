@@ -163,8 +163,12 @@ class PreviewService:
         project_id: int,
         category_id: int,
         keyword: str,
+        image_count: int | None = None,
     ) -> ArticleContent:
         """Run full article pipeline: websearch → text + images in parallel.
+
+        Args:
+            image_count: Override image count. If None, uses category settings.
 
         Returns ArticleContent with real AI-generated content.
         Raises on text generation failure (caller should refund).
@@ -179,7 +183,8 @@ class PreviewService:
 
         category = await CategoriesRepository(self._db).get_by_id(category_id)
         project = await ProjectsRepository(self._db).get_by_id(project_id)
-        image_count = (category.image_settings or {}).get("count", 4) if category else 4
+        if image_count is None:
+            image_count = (category.image_settings or {}).get("count", 4) if category else 4
 
         # Phase 1: Gather websearch data (Serper PAA + Firecrawl competitors)
         project_url = project.website_url if project else None
@@ -329,7 +334,7 @@ def _is_own_site(url: str, project_url: str | None) -> bool:
         own_domain = urlparse(project_url).netloc.lower().replace("www.", "")
         url_domain = urlparse(url).netloc.lower().replace("www.", "")
         return own_domain == url_domain
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return False
 
 
