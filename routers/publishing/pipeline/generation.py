@@ -16,11 +16,13 @@ from __future__ import annotations
 import asyncio
 import html
 import random
+import re
 from typing import Any
 
 import httpx
 import structlog
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, InaccessibleMessage, Message
 
@@ -295,7 +297,7 @@ async def _progress_task(
             return
         try:
             await message.edit_text(text)
-        except Exception:
+        except TelegramBadRequest, TelegramRetryAfter:
             log.debug("progress_msg_edit_failed")
 
 
@@ -591,83 +593,84 @@ async def publish_article(
     await state.set_state(ArticlePipelineFSM.publishing)
     await callback.message.edit_text("Публикую на WordPress...")
 
-    # Load WP connection
-    conn_svc = ConnectionService(db, http_client)
-    connection = await conn_svc.get_by_id(connection_id)
-    if not connection:
-        await redis.delete(lock_key)
-        await callback.message.edit_text(
-            "WordPress-подключение не найдено. Проверьте настройки.",
-        )
-        await callback.answer()
-        return
-
     try:
-        preview_svc = PreviewService(
-            ai_orchestrator=ai_orchestrator,
-            db=db,
-            image_storage=image_storage,
-            http_client=http_client,
+        # Load WP connection
+        conn_svc = ConnectionService(db, http_client)
+        connection = await conn_svc.get_by_id(connection_id)
+        if not connection:
+            await callback.message.edit_text(
+                "WordPress-подключение не найдено. Проверьте настройки.",
+            )
+            await callback.answer()
+            return
+
+        try:
+            preview_svc = PreviewService(
+                ai_orchestrator=ai_orchestrator,
+                db=db,
+                image_storage=image_storage,
+                http_client=http_client,
+            )
+            result = await preview_svc.publish_to_wordpress(preview, connection)
+        except Exception as exc:
+            log.exception("pipeline.publish_failed", preview_id=preview_id, error=str(exc))
+            # Revert to draft on failure
+            await previews_repo.update(preview_id, ArticlePreviewUpdate(status="draft"))
+            await callback.message.edit_text(
+                "Ошибка публикации на WordPress. Попробуйте снова.",
+                reply_markup=pipeline_preview_kb(
+                    preview.telegraph_url,
+                    can_publish=True,
+                    regen_count=preview.regeneration_count,
+                    regen_cost=preview.tokens_charged or 0,
+                ),
+            )
+            await state.set_state(ArticlePipelineFSM.preview)
+            await callback.answer()
+            return
+
+        # Log publication
+        pub_repo = PublicationsRepository(db)
+        await pub_repo.create_log(
+            PublicationLogCreate(
+                user_id=user.id,
+                project_id=preview.project_id,
+                category_id=preview.category_id,
+                platform_type="wordpress",
+                connection_id=connection_id,
+                keyword=preview.keyword,
+                content_type="article",
+                images_count=preview.images_count or 0,
+                post_url=result.post_url,
+                word_count=preview.word_count or 0,
+                tokens_spent=preview.tokens_charged or 0,
+            )
         )
-        result = await preview_svc.publish_to_wordpress(preview, connection)
-    except Exception as exc:
-        log.exception("pipeline.publish_failed", preview_id=preview_id, error=str(exc))
-        # Revert to draft on failure
-        await previews_repo.update(preview_id, ArticlePreviewUpdate(status="draft"))
-        await redis.delete(lock_key)
+
+        # Show result (step 8)
+        await state.set_state(ArticlePipelineFSM.result)
+        balance = await TokenService(db=db, admin_ids=get_settings().admin_ids).get_balance(user.id)
+
+        result_text = (
+            "Статья опубликована!\n\n"
+            f"<b>{html.escape(preview.title or '')}</b>\n"
+            f"Списано: {preview.tokens_charged or 0} ток. | Баланс: {balance} ток."
+        )
         await callback.message.edit_text(
-            "Ошибка публикации на WordPress. Попробуйте снова.",
-            reply_markup=pipeline_preview_kb(
-                preview.telegraph_url,
-                can_publish=True,
-                regen_count=preview.regeneration_count,
-                regen_cost=preview.tokens_charged or 0,
-            ),
+            result_text,
+            reply_markup=pipeline_result_kb(result.post_url),
         )
-        await state.set_state(ArticlePipelineFSM.preview)
+        await clear_checkpoint(redis, user.id)
         await callback.answer()
-        return
 
-    # Log publication
-    pub_repo = PublicationsRepository(db)
-    await pub_repo.create_log(
-        PublicationLogCreate(
+        log.info(
+            "pipeline.article_published",
             user_id=user.id,
-            project_id=preview.project_id,
-            category_id=preview.category_id,
-            platform_type="wordpress",
-            connection_id=connection_id,
-            keyword=preview.keyword,
-            content_type="article",
-            images_count=preview.images_count or 0,
+            preview_id=preview_id,
             post_url=result.post_url,
-            word_count=preview.word_count or 0,
-            tokens_spent=preview.tokens_charged or 0,
         )
-    )
-
-    # Show result (step 8)
-    await state.set_state(ArticlePipelineFSM.result)
-    balance = await TokenService(db=db, admin_ids=get_settings().admin_ids).get_balance(user.id)
-
-    result_text = (
-        "Статья опубликована!\n\n"
-        f"<b>{html.escape(preview.title or '')}</b>\n"
-        f"Списано: {preview.tokens_charged or 0} ток. | Баланс: {balance} ток."
-    )
-    await callback.message.edit_text(
-        result_text,
-        reply_markup=pipeline_result_kb(result.post_url),
-    )
-    await clear_checkpoint(redis, user.id)
-    await callback.answer()
-
-    log.info(
-        "pipeline.article_published",
-        user_id=user.id,
-        preview_id=preview_id,
-        post_url=result.post_url,
-    )
+    finally:
+        await redis.delete(lock_key)
 
 
 @router.callback_query(
@@ -733,7 +736,15 @@ async def regenerate_article(
         )
 
     # Increment regen counter in DB (G2: persistent in PostgreSQL)
-    new_count = await previews_repo.increment_regeneration(preview_id)
+    try:
+        new_count = await previews_repo.increment_regeneration(preview_id)
+    except Exception:
+        log.exception("pipeline.increment_regen_failed", preview_id=preview_id)
+        # Refund if charge happened
+        if regen_count >= MAX_REGENERATIONS_FREE and not is_god:
+            await _try_refund(db, user, tokens_charged, "increment_regen_failed")
+        await callback.answer("Ошибка обновления счётчика. Попробуйте снова.", show_alert=True)
+        return
 
     # Update state for regeneration
     await state.update_data(
@@ -827,9 +838,10 @@ async def copy_html(
         await callback.answer("Контент недоступен.", show_alert=True)
         return
 
-    # Send as .html document
+    # Send as .html document (sanitize filename: keep only alnum, dash, underscore)
     html_bytes = preview.content_html.encode("utf-8")
-    filename = f"{(preview.keyword or 'article').replace(' ', '_')[:40]}.html"
+    safe_name = re.sub(r"[^\w\-]", "_", preview.keyword or "article")[:40].strip("_") or "article"
+    filename = f"{safe_name}.html"
     doc = BufferedInputFile(html_bytes, filename=filename)
     await callback.message.answer_document(doc, caption="HTML-код статьи")
     await callback.answer()

@@ -113,10 +113,26 @@ class PreviewsRepository(BaseRepository):
         return ArticlePreview(**row) if row else None
 
     async def increment_regeneration(self, preview_id: int) -> int:
-        """Increment regeneration_count and return new value."""
+        """Atomically increment regeneration_count using CAS (compare-and-swap).
+
+        Reads current count, then updates only if count hasn't changed.
+        Returns new count, or 0 if preview not found.
+        """
         preview = await self.get_by_id(preview_id)
         if not preview:
             return 0
-        new_count = preview.regeneration_count + 1
-        await self._table(_TABLE).update({"regeneration_count": new_count}).eq("id", preview_id).execute()
-        return new_count
+        old_count = preview.regeneration_count
+        new_count = old_count + 1
+        resp = (
+            await self._table(_TABLE)
+            .update({"regeneration_count": new_count})
+            .eq("id", preview_id)
+            .eq("regeneration_count", old_count)
+            .execute()
+        )
+        row = self._first(resp)
+        if row:
+            return new_count
+        # CAS failed (concurrent update) — re-read current value
+        refreshed = await self.get_by_id(preview_id)
+        return refreshed.regeneration_count if refreshed else 0
