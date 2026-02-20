@@ -17,6 +17,7 @@ import asyncio
 import html
 import random
 import re
+import time
 from typing import Any
 
 import httpx
@@ -235,7 +236,7 @@ async def confirm_generate(
             operation_type="article",
             description=f"Статья (категория #{category_id})",
         )
-    await state.update_data(tokens_charged=cost)
+    await state.update_data(tokens_charged=cost, last_update_time=time.time())
 
     await state.set_state(ArticlePipelineFSM.generating)
     await callback.answer()
@@ -379,9 +380,9 @@ async def _run_generation(
         if not progress.done():
             progress.cancel()
 
-    # E34: partial images — refund for missing images
+    # E34: partial/zero images — refund for missing images (including all-fail case)
     actual_images = content.images_count
-    if actual_images < image_count and actual_images >= 1:
+    if actual_images < image_count:
         missing = image_count - actual_images
         partial_refund = missing * COST_PER_IMAGE
         if partial_refund > 0:
@@ -590,6 +591,15 @@ async def publish_article(
         await callback.answer("Превью устарело или уже опубликовано.", show_alert=True)
         return
 
+    # Ownership check (defense-in-depth: preview_id from FSM state, not callback_data)
+    if preview.user_id != user.id:
+        log.warning("pipeline.publish_ownership_mismatch", user_id=user.id, preview_user_id=preview.user_id)
+        await previews_repo.update(preview_id, ArticlePreviewUpdate(status="draft"))
+        await redis.delete(lock_key)
+        await callback.answer("Доступ запрещён.", show_alert=True)
+        return
+
+    await state.update_data(last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.publishing)
     await callback.message.edit_text("Публикую на WordPress...")
 
@@ -709,6 +719,9 @@ async def regenerate_article(
     if not preview or preview.status != "draft":
         await callback.answer("Превью устарело.", show_alert=True)
         return
+    if preview.user_id != user.id:
+        await callback.answer("Доступ запрещён.", show_alert=True)
+        return
 
     regen_count = preview.regeneration_count
     settings = get_settings()
@@ -749,6 +762,7 @@ async def regenerate_article(
     # Update state for regeneration
     await state.update_data(
         tokens_charged=tokens_charged,
+        last_update_time=time.time(),
     )
     await state.set_state(ArticlePipelineFSM.regenerating)
     await callback.answer()
@@ -760,6 +774,9 @@ async def regenerate_article(
         regen_count=new_count,
         charged=regen_count >= MAX_REGENERATIONS_FREE,
     )
+
+    # Sync data dict with updated state (avoid stale tokens_charged in refund path)
+    data["tokens_charged"] = tokens_charged
 
     # Run generation with same data
     await _run_generation(
@@ -799,7 +816,7 @@ async def cancel_refund(
     if preview_id:
         previews_repo = PreviewsRepository(db)
         preview = await previews_repo.get_by_id(preview_id)
-        if preview and preview.status == "draft":
+        if preview and preview.status == "draft" and preview.user_id == user.id:
             # Mark as cancelled
             await previews_repo.update(preview_id, ArticlePreviewUpdate(status="cancelled"))
             # Refund tokens
