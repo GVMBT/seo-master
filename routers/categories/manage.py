@@ -340,7 +340,9 @@ async def execute_category_delete(
     if active_previews:
         token_service = TokenService(db=db, admin_ids=settings.admin_ids)
         await token_service.refund_active_previews(
-            active_previews, user.id, f"удаление категории #{category_id}",
+            active_previews,
+            user.id,
+            f"удаление категории #{category_id}",
         )
 
     # Delete category (CASCADE deletes schedules, overrides)

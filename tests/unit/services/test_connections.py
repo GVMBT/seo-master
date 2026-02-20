@@ -112,15 +112,18 @@ class TestValidateWordpress:
 class TestValidateVkToken:
     async def test_valid_token_with_groups(self) -> None:
         users_resp = httpx.Response(200, json={"response": [{"id": 1}]})
-        groups_resp = httpx.Response(200, json={
-            "response": {
-                "count": 2,
-                "items": [
-                    {"id": 100, "name": "Group 1"},
-                    {"id": 200, "name": "Group 2"},
-                ],
+        groups_resp = httpx.Response(
+            200,
+            json={
+                "response": {
+                    "count": 2,
+                    "items": [
+                        {"id": 100, "name": "Group 1"},
+                        {"id": 200, "name": "Group 2"},
+                    ],
+                },
             },
-        })
+        )
         svc, _ = _make_service(http_responses=[users_resp, users_resp, groups_resp])
         # Override get to return side_effect sequence
         svc._http.get = AsyncMock(side_effect=[users_resp, groups_resp])

@@ -66,13 +66,15 @@ async def successful_payment_handler(
     tokens = result["tokens_credited"]
     new_balance = result["new_balance"]
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Написать статью", callback_data="pipeline:article:start")],
-        [
-            InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard"),
-            InlineKeyboardButton(text="Пополнить ещё", callback_data="nav:tokens"),
-        ],
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Написать статью", callback_data="pipeline:article:start")],
+            [
+                InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard"),
+                InlineKeyboardButton(text="Пополнить ещё", callback_data="nav:tokens"),
+            ],
+        ]
+    )
     await message.answer(
         f"Оплата прошла успешно!\n\nНачислено: <b>{tokens}</b> токенов\nБаланс: <b>{new_balance}</b> токенов",
         reply_markup=kb,

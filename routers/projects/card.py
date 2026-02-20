@@ -158,7 +158,9 @@ async def execute_delete(
     if active_previews:
         token_service = TokenService(db=db, admin_ids=settings.admin_ids)
         await token_service.refund_active_previews(
-            active_previews, user.id, f"удаление проекта #{project_id}",
+            active_previews,
+            user.id,
+            f"удаление проекта #{project_id}",
         )
 
     # Delete project (CASCADE deletes categories, connections, schedules)

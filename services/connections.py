@@ -39,7 +39,10 @@ class ConnectionService:
     # ------------------------------------------------------------------
 
     async def validate_wordpress(
-        self, url: str, login: str, password: str,
+        self,
+        url: str,
+        login: str,
+        password: str,
     ) -> str | None:
         """Validate WP REST API credentials.
 
@@ -116,13 +119,17 @@ class ConnectionService:
         return await self._repo.get_by_project(project_id)
 
     async def get_by_project_and_platform(
-        self, project_id: int, platform_type: str,
+        self,
+        project_id: int,
+        platform_type: str,
     ) -> list[PlatformConnection]:
         """Get connections filtered by project + platform."""
         return await self._repo.get_by_project_and_platform(project_id, platform_type)
 
     async def get_by_identifier_global(
-        self, identifier: str, platform_type: str,
+        self,
+        identifier: str,
+        platform_type: str,
     ) -> PlatformConnection | None:
         """Find connection by identifier+platform across ALL users (E41)."""
         return await self._repo.get_by_identifier_global(identifier, platform_type)

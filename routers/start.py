@@ -161,7 +161,7 @@ async def _get_checkpoint_text(redis: RedisClient, user_id: int) -> str:
         project_name = html.escape(checkpoint.get("project_name", ""))
         step = checkpoint.get("step_label", "подготовка")
         return f"\n\nУ вас есть незавершённая статья:\nПроект: {project_name}\nОстановились на: {step}"
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return ""
 
 
