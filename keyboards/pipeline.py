@@ -667,9 +667,9 @@ def social_connections_kb(
 
     for conn in connections:
         platform_labels = {
-            "telegram": "Telegram",
+            "telegram": "Телеграм",
             "vk": "ВКонтакте",
-            "pinterest": "Pinterest",
+            "pinterest": "Пинтерест",
         }
         label = platform_labels.get(conn.platform_type, conn.platform_type)
         display = f"{label}: {conn.identifier}"
@@ -709,7 +709,7 @@ def social_no_connections_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Подключить Telegram",
+                    text="Подключить Телеграм",
                     callback_data="pipeline:social:connect:telegram",
                     style=ButtonStyle.PRIMARY,
                 ),
@@ -722,7 +722,7 @@ def social_no_connections_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Подключить Pinterest",
+                    text="Подключить Пинтерест",
                     callback_data="pipeline:social:connect:pinterest",
                 ),
             ],
