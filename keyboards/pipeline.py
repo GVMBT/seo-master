@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -662,6 +664,7 @@ def social_connections_kb(
     """Social connection selection for pipeline step 2 (UX_PIPELINE.md §5.2).
 
     Shows connected platforms + "Подключить ещё".
+    VK connections display group_name from metadata (P2-7 fix).
     """
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -672,7 +675,11 @@ def social_connections_kb(
             "pinterest": "Пинтерест",
         }
         label = platform_labels.get(conn.platform_type, conn.platform_type)
-        display = f"{label}: {conn.identifier}"
+        # P2-7: Show group_name for VK instead of raw club123456
+        if conn.platform_type == "vk" and conn.metadata.get("group_name"):
+            display = f"{label}: {conn.metadata['group_name']}"
+        else:
+            display = f"{label}: {conn.identifier}"
         rows.append(
             [
                 InlineKeyboardButton(
@@ -703,37 +710,61 @@ def social_connections_kb(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def social_no_connections_kb() -> InlineKeyboardMarkup:
-    """No social connections — offer to connect."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Подключить Телеграм",
-                    callback_data="pipeline:social:connect:telegram",
-                    style=ButtonStyle.PRIMARY,
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Подключить ВКонтакте",
-                    callback_data="pipeline:social:connect:vk",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Подключить Пинтерест",
-                    callback_data="pipeline:social:connect:pinterest",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Отмена",
-                    callback_data="pipeline:social:cancel",
-                ),
-            ],
+def social_no_connections_kb(
+    exclude_types: set[str] | None = None,
+) -> InlineKeyboardMarkup:
+    """No social connections — offer to connect.
+
+    Args:
+        exclude_types: Platform types to hide (already connected). P1-3 fix.
+    """
+    exclude = exclude_types or set()
+    platforms = [
+        ("Подключить Телеграм", "pipeline:social:connect:telegram", "telegram", True),
+        ("Подключить ВКонтакте", "pipeline:social:connect:vk", "vk", False),
+        ("Подключить Пинтерест", "pipeline:social:connect:pinterest", "pinterest", False),
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    for text, cb, ptype, is_primary in platforms:
+        if ptype in exclude:
+            continue
+        btn = InlineKeyboardButton(text=text, callback_data=cb)
+        if is_primary and not rows:
+            btn.style = ButtonStyle.PRIMARY
+        rows.append([btn])
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Отмена",
+                callback_data="pipeline:social:cancel",
+            ),
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def vk_group_select_pipeline_kb(groups: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    """VK group selection within social pipeline."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for group in groups:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=group["name"],
+                    callback_data=f"pipeline:social:vk_group:{group['id']}",
+                ),
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Отмена",
+                callback_data="pipeline:social:cancel",
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:

@@ -503,11 +503,16 @@ async def _route_social_to_step(
         return
 
     if step == "select_connection":
-        # TODO F6.2: show connection selection screen
-        await callback.message.edit_text(
-            "Пост (2/5) — Подключение\n\nВыбор подключения — скоро! (F6.2)",
+        if not project_id:
+            await callback.message.edit_text("Данные сессии устарели. Начните заново.")
+            await redis.delete(CacheKeys.pipeline_state(user.id))
+            await state.clear()
+            return
+        from routers.publishing.pipeline.social.connection import _show_connection_step
+
+        await _show_connection_step(
+            callback, state, user, db, redis, project_id, project_name,
         )
-        await state.set_state(SocialPipelineFSM.select_connection)
         return
 
     if step == "select_category":
