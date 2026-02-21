@@ -539,6 +539,74 @@ def pipeline_keywords_options_kb() -> InlineKeyboardMarkup:
     )
 
 
+def pipeline_keywords_qty_kb() -> InlineKeyboardMarkup:
+    """Keyword quantity selection for pipeline readiness sub-flow."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="50 фраз (50 ток.)",
+                    callback_data="pipeline:readiness:keywords:qty_50",
+                ),
+                InlineKeyboardButton(
+                    text="100 фраз (100 ток.)",
+                    callback_data="pipeline:readiness:keywords:qty_100",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="150 фраз (150 ток.)",
+                    callback_data="pipeline:readiness:keywords:qty_150",
+                ),
+                InlineKeyboardButton(
+                    text="200 фраз (200 ток.)",
+                    callback_data="pipeline:readiness:keywords:qty_200",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Назад к чеклисту",
+                    callback_data="pipeline:readiness:back",
+                ),
+            ],
+        ]
+    )
+
+
+def pipeline_keywords_confirm_kb(cost: int, balance: int) -> InlineKeyboardMarkup:
+    """Confirm keyword generation cost in pipeline readiness sub-flow."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if balance >= cost:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"Подобрать ({cost} ток.)",
+                    callback_data="pipeline:readiness:keywords:confirm",
+                    style=ButtonStyle.SUCCESS,
+                ),
+            ]
+        )
+    else:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Пополнить баланс",
+                    callback_data="nav:tokens",
+                    style=ButtonStyle.PRIMARY,
+                ),
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Назад к чеклисту",
+                callback_data="pipeline:readiness:keywords:cancel",
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 # ---------------------------------------------------------------------------
 # Readiness sub-flow: Description
 # ---------------------------------------------------------------------------
