@@ -662,8 +662,9 @@ class PublishService:
                 log.exception("cross_post_failed", conn_id=conn_id, keyword=keyword)
                 try:
                     await self._tokens.refund(user_id, cost, reason="cross_post_error")
-                except Exception:
+                except Exception as refund_exc:
                     log.critical("cross_post_refund_failed", user_id=user_id, conn_id=conn_id)
+                    sentry_sdk.capture_exception(refund_exc)
 
                 await self._publications.create_log(
                     PublicationLogCreate(
