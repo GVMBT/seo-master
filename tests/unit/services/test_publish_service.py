@@ -473,9 +473,7 @@ async def test_cross_post_happy_path(
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
     svc._schedules.update = AsyncMock(return_value=None)
-    svc._schedules.get_by_id = AsyncMock(
-        return_value=_make_schedule(cross_post_connection_ids=[20, 30])
-    )
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[20, 30]))
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
 
@@ -503,9 +501,11 @@ async def test_cross_post_happy_path(
     mock_validator_cls.return_value = mock_val_inst
 
     # Publisher succeeds
-    svc._get_publisher = MagicMock(return_value=MagicMock(
-        publish=AsyncMock(return_value=MagicMock(success=True, post_url="https://vk.com/wall123"))
-    ))
+    svc._get_publisher = MagicMock(
+        return_value=MagicMock(
+            publish=AsyncMock(return_value=MagicMock(success=True, post_url="https://vk.com/wall123"))
+        )
+    )
 
     result = await svc.execute(_make_payload(platform_type="telegram"))
     assert result.status == "ok"
@@ -530,9 +530,7 @@ async def test_cross_post_inactive_connection_skipped(
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
     svc._schedules.update = AsyncMock(return_value=None)
-    svc._schedules.get_by_id = AsyncMock(
-        return_value=_make_schedule(cross_post_connection_ids=[20])
-    )
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[20]))
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
 
@@ -569,9 +567,7 @@ async def test_cross_post_insufficient_balance_stops_remaining(
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
     svc._schedules.update = AsyncMock(return_value=None)
-    svc._schedules.get_by_id = AsyncMock(
-        return_value=_make_schedule(cross_post_connection_ids=[20, 30])
-    )
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[20, 30]))
     # Lead charge OK, but cross-post balance check fails
     svc._tokens.check_balance = AsyncMock(side_effect=[True, False])
     svc._tokens.charge = AsyncMock(return_value=680)
@@ -612,9 +608,7 @@ async def test_cross_post_adaptation_error_refunds_and_continues(
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
     svc._schedules.update = AsyncMock(return_value=None)
-    svc._schedules.get_by_id = AsyncMock(
-        return_value=_make_schedule(cross_post_connection_ids=[20, 30])
-    )
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[20, 30]))
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
     svc._tokens.refund = AsyncMock(return_value=True)
@@ -628,13 +622,9 @@ async def test_cross_post_adaptation_error_refunds_and_continues(
     vk_conn = _make_connection(id=20, platform_type="vk")
     pin_conn = _make_connection(id=30, platform_type="pinterest", identifier="Board")
     conn_repo = MagicMock()
-    conn_repo.get_by_id = AsyncMock(
-        side_effect=lambda cid: {5: _make_connection(), 20: vk_conn, 30: pin_conn}[cid]
-    )
+    conn_repo.get_by_id = AsyncMock(side_effect=lambda cid: {5: _make_connection(), 20: vk_conn, 30: pin_conn}[cid])
     mock_conn_cls.return_value = conn_repo
-    mock_settings.return_value = MagicMock(
-        encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key"))
-    )
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
 
     # adapt_for_platform: first call raises, second succeeds
     mock_social_inst = MagicMock()
@@ -648,9 +638,9 @@ async def test_cross_post_adaptation_error_refunds_and_continues(
     mock_val_inst.validate.return_value = MagicMock(is_valid=True, errors=[])
     mock_validator_cls.return_value = mock_val_inst
 
-    svc._get_publisher = MagicMock(return_value=MagicMock(
-        publish=AsyncMock(return_value=MagicMock(success=True, post_url="https://pin/123"))
-    ))
+    svc._get_publisher = MagicMock(
+        return_value=MagicMock(publish=AsyncMock(return_value=MagicMock(success=True, post_url="https://pin/123")))
+    )
 
     result = await svc.execute(_make_payload(platform_type="telegram"))
     assert result.status == "ok"
@@ -679,9 +669,7 @@ async def test_cross_post_empty_ids_no_cross_posts(
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
     svc._schedules.update = AsyncMock(return_value=None)
-    svc._schedules.get_by_id = AsyncMock(
-        return_value=_make_schedule(cross_post_connection_ids=[])
-    )
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[]))
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
     svc._generate_and_publish = AsyncMock(return_value=(_make_gen_result(), _make_pub_result(), 0))

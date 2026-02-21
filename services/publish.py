@@ -248,11 +248,7 @@ class PublishService:
             # Execute cross-posts if configured (social posts only)
             cross_results: list[CrossPostResult] = []
             schedule = await self._schedules.get_by_id(payload.schedule_id)
-            if (
-                schedule
-                and schedule.cross_post_connection_ids
-                and payload.platform_type != "wordpress"
-            ):
+            if schedule and schedule.cross_post_connection_ids and payload.platform_type != "wordpress":
                 lead_text = ""
                 if isinstance(gen_result.content, dict):
                     lead_text = gen_result.content.get("text", "")
@@ -273,9 +269,7 @@ class PublishService:
                         category_id=payload.category_id,
                     )
 
-            total_cost = estimated_cost + sum(
-                cr.tokens_spent for cr in cross_results if cr.tokens_spent
-            )
+            total_cost = estimated_cost + sum(cr.tokens_spent for cr in cross_results if cr.tokens_spent)
             return PublishOutcome(
                 status="ok",
                 keyword=keyword,

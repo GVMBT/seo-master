@@ -51,11 +51,7 @@ def _extract_selected_from_keyboard(
     selected: list[int] = []
     for row in markup.inline_keyboard:
         for btn in row:
-            if (
-                btn.callback_data
-                and btn.callback_data.endswith(":toggle")
-                and btn.text.startswith("\u2713")
-            ):
+            if btn.callback_data and btn.callback_data.endswith(":toggle") and btn.text.startswith("\u2713"):
                 parts = btn.callback_data.split(":")
                 if len(parts) >= 4:
                     selected.append(int(parts[3]))

@@ -28,9 +28,9 @@ from routers.publishing.pipeline.readiness import (
     readiness_keywords_auto,
     readiness_keywords_configure,
     readiness_keywords_menu,
+    readiness_keywords_text_input,
     readiness_keywords_upload_file,
     readiness_keywords_upload_start,
-    readiness_keywords_upload_text,
     readiness_prices_excel_file,
     readiness_prices_excel_start,
     readiness_prices_menu,
@@ -295,19 +295,103 @@ class TestKeywordsSubFlow:
         assert "Ключевые фразы" in mock_callback.message.edit_text.call_args[0][0]
         mock_callback.answer.assert_called_once()
 
-    async def test_auto_stub_shows_alert(self, mock_callback: MagicMock) -> None:
-        """Auto keyword generation is a Phase 10 stub."""
-        await readiness_keywords_auto(mock_callback)
-        mock_callback.answer.assert_called_once()
-        call_kwargs = mock_callback.answer.call_args
-        assert call_kwargs.kwargs.get("show_alert") is True
+    async def test_auto_shows_confirm(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+    ) -> None:
+        """Auto keyword generation loads category/project and shows confirm."""
+        mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-    async def test_configure_stub_shows_alert(self, mock_callback: MagicMock) -> None:
-        """Configure keyword generation is a Phase 10 stub."""
-        await readiness_keywords_configure(mock_callback)
-        mock_callback.answer.assert_called_once()
-        call_kwargs = mock_callback.answer.call_args
-        assert call_kwargs.kwargs.get("show_alert") is True
+        cat_obj = MagicMock()
+        cat_obj.name = "Test Category"
+        p_cats, _ = _patch_cats_repo(category=cat_obj)
+        p_projects = patch(
+            f"{_MODULE}.ProjectsRepository",
+            return_value=MagicMock(
+                get_by_id=AsyncMock(
+                    return_value=MagicMock(company_city="Москва"),
+                ),
+            ),
+        )
+        p_settings = patch(f"{_MODULE}.get_settings", return_value=MagicMock(admin_ids=[]))
+        p_token = patch(
+            f"{_MODULE}.TokenService",
+            return_value=MagicMock(
+                get_balance=AsyncMock(return_value=500),
+            ),
+        )
+
+        with p_cats, p_projects, p_settings, p_token:
+            await readiness_keywords_auto(
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+            )
+
+        mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
+        mock_state.update_data.assert_called_once()
+        update_kwargs = mock_state.update_data.call_args.kwargs
+        assert update_kwargs["kw_quantity"] == 100
+        assert update_kwargs["kw_products"] == "Test Category"
+        assert update_kwargs["kw_geography"] == "Москва"
+        mock_callback.message.edit_text.assert_called_once()
+        assert "Автоподбор" in mock_callback.message.edit_text.call_args[0][0]
+
+    async def test_auto_default_geography(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+    ) -> None:
+        """Auto defaults geography to 'Россия' when project has no city."""
+        mock_state.get_data = AsyncMock(return_value=_make_state_data())
+
+        cat_obj = MagicMock()
+        cat_obj.name = "Test Category"
+        p_cats, _ = _patch_cats_repo(category=cat_obj)
+        p_projects = patch(
+            f"{_MODULE}.ProjectsRepository",
+            return_value=MagicMock(
+                get_by_id=AsyncMock(
+                    return_value=MagicMock(company_city=None),
+                ),
+            ),
+        )
+        p_settings = patch(f"{_MODULE}.get_settings", return_value=MagicMock(admin_ids=[]))
+        p_token = patch(
+            f"{_MODULE}.TokenService",
+            return_value=MagicMock(
+                get_balance=AsyncMock(return_value=500),
+            ),
+        )
+
+        with p_cats, p_projects, p_settings, p_token:
+            await readiness_keywords_auto(
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+            )
+
+        update_kwargs = mock_state.update_data.call_args.kwargs
+        assert update_kwargs["kw_geography"] == "Россия"
+
+    async def test_configure_shows_products_prompt(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+    ) -> None:
+        """Configure keyword generation shows products input prompt."""
+        await readiness_keywords_configure(mock_callback, mock_state)
+        mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_products)
+        mock_state.update_data.assert_called_with(kw_mode="configure")
+        mock_callback.message.edit_text.assert_called_once()
+        assert "товары" in mock_callback.message.edit_text.call_args[0][0].lower()
 
     async def test_upload_start_sets_state(
         self,
@@ -486,7 +570,7 @@ class TestKeywordsSubFlow:
         p_show = patch(f"{_MODULE}.show_readiness_check_msg", new_callable=AsyncMock)
 
         with p_cats, p_show as mock_show:
-            await readiness_keywords_upload_text(
+            await readiness_keywords_text_input(
                 mock_message,
                 mock_state,
                 user,
@@ -509,7 +593,7 @@ class TestKeywordsSubFlow:
         """Empty text -> error."""
         mock_message.text = ""
 
-        await readiness_keywords_upload_text(
+        await readiness_keywords_text_input(
             mock_message,
             mock_state,
             user,
@@ -531,7 +615,7 @@ class TestKeywordsSubFlow:
         mock_message.text = "фраза один"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
 
-        await readiness_keywords_upload_text(
+        await readiness_keywords_text_input(
             mock_message,
             mock_state,
             user,

@@ -300,7 +300,7 @@ async def _progress_task(
             return
         try:
             await message.edit_text(text)
-        except TelegramBadRequest, TelegramRetryAfter:
+        except (TelegramBadRequest, TelegramRetryAfter):  # fmt: skip
             log.debug("progress_msg_edit_failed")
 
 
