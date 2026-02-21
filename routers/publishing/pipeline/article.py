@@ -54,6 +54,13 @@ log = structlog.get_logger()
 router = Router()
 
 
+def _get_image_count(category: object) -> int:
+    """Extract image count from category.image_settings, default 4."""
+    settings = getattr(category, "image_settings", None) or {}
+    count = settings.get("count", 4) if isinstance(settings, dict) else 4
+    return int(count)
+
+
 # ---------------------------------------------------------------------------
 # Step 1: Entry point — pipeline:article:start
 # ---------------------------------------------------------------------------
@@ -680,7 +687,11 @@ async def _show_category_step(
     if len(categories) == 1:
         # Auto-select the only category
         cat = categories[0]
-        await state.update_data(category_id=cat.id, category_name=cat.name)
+        await state.update_data(
+            category_id=cat.id,
+            category_name=cat.name,
+            image_count=_get_image_count(cat),
+        )
         await show_readiness_check(callback, state, user, db, redis)
         return
 
@@ -733,7 +744,11 @@ async def _show_category_step_msg(
 
     if len(categories) == 1:
         cat = categories[0]
-        await state.update_data(category_id=cat.id, category_name=cat.name)
+        await state.update_data(
+            category_id=cat.id,
+            category_name=cat.name,
+            image_count=_get_image_count(cat),
+        )
         await show_readiness_check_msg(message, state, user, db, redis)
         return
 
@@ -788,7 +803,11 @@ async def pipeline_select_category(
         await callback.answer("Категория не принадлежит проекту.", show_alert=True)
         return
 
-    await state.update_data(category_id=category.id, category_name=category.name)
+    await state.update_data(
+        category_id=category.id,
+        category_name=category.name,
+        image_count=_get_image_count(category),
+    )
     await show_readiness_check(callback, state, user, db, redis)
     await callback.answer()
 
@@ -830,7 +849,11 @@ async def pipeline_create_category_name(
         await message.answer("Не удалось создать категорию. Попробуйте снова.")
         return
 
-    await state.update_data(category_id=category.id, category_name=category.name)
+    await state.update_data(
+        category_id=category.id,
+        category_name=category.name,
+        image_count=_get_image_count(category),
+    )
     await message.answer(f"Тема «{html.escape(category.name)}» создана.")
 
     # Proceed to readiness (step 4)
