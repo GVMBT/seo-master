@@ -196,7 +196,10 @@ def project_card_kb(project_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
-                InlineKeyboardButton(text="Планировщик", callback_data=f"project:{pid}:scheduler"),
+            ],
+            [
+                InlineKeyboardButton(text="Статьи", callback_data=f"project:{pid}:sched_articles"),
+                InlineKeyboardButton(text="Соцсети", callback_data=f"project:{pid}:sched_social"),
             ],
             [
                 InlineKeyboardButton(
@@ -1110,6 +1113,22 @@ def scheduler_cat_list_kb(categories: list[Any], project_id: int) -> InlineKeybo
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def scheduler_social_cat_list_kb(categories: list[Any], project_id: int) -> InlineKeyboardMarkup:
+    """Category list for social scheduler entry."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for cat in categories:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=cat.name,
+                    callback_data=f"sched_social:{project_id}:cat:{cat.id}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="К проекту", callback_data=f"project:{project_id}:card")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def scheduler_conn_list_kb(
     connections: list[Any],
     schedules: dict[int, Any],
@@ -1213,6 +1232,141 @@ def schedule_count_kb() -> InlineKeyboardMarkup:
     row = [InlineKeyboardButton(text=str(i), callback_data=f"sched:count:{i}") for i in range(1, 6)]
     cancel_row = [InlineKeyboardButton(text="Отмена", callback_data="sched:cancel")]
     return InlineKeyboardMarkup(inline_keyboard=[row, cancel_row])
+
+
+_SOCIAL_TYPES = {"telegram", "vk", "pinterest"}
+
+
+def scheduler_social_conn_list_kb(
+    connections: list[Any],
+    schedules: dict[int, Any],
+    cat_id: int,
+    project_id: int,
+) -> InlineKeyboardMarkup:
+    """Social connection list with cross-post count badges."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for conn in connections:
+        if conn.platform_type not in _SOCIAL_TYPES:
+            continue
+        sched = schedules.get(conn.id)
+        if sched and sched.enabled:
+            days_str = ", ".join(_DAY_LABELS.get(d, d) for d in sched.schedule_days)
+            cross_count = len(sched.cross_post_connection_ids) if sched.cross_post_connection_ids else 0
+            cross_badge = f" +{cross_count} кросс" if cross_count else ""
+            label = f"{conn.identifier} ({days_str}{cross_badge})"
+        else:
+            label = f"{conn.identifier} (нет расписания)"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=f"sched_social:{cat_id}:conn:{conn.id}",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Назад",
+                callback_data=f"project:{project_id}:sched_social",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def scheduler_crosspost_kb(
+    cat_id: int,
+    conn_id: int,
+    social_connections: list[Any],
+    selected_ids: list[int],
+) -> InlineKeyboardMarkup:
+    """Cross-post toggle checkboxes for dependent platforms."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for conn in social_connections:
+        if conn.id == conn_id:
+            continue  # skip lead connection
+        mark = "\u2713 " if conn.id in selected_ids else ""
+        icon = _PLATFORM_ICONS.get(conn.platform_type, conn.platform_type)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{mark}{icon}: {conn.identifier}",
+                    callback_data=f"sched_xp:{cat_id}:{conn_id}:{conn.id}:toggle",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Сохранить",
+                callback_data=f"sched_xp:{cat_id}:{conn_id}:save",
+                style=ButtonStyle.SUCCESS,
+            ),
+            InlineKeyboardButton(
+                text="Отмена",
+                callback_data=f"sched_social:{cat_id}:conn:{conn_id}",
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def scheduler_social_config_kb(
+    cat_id: int,
+    conn_id: int,
+    has_schedule: bool,
+    has_other_social: bool = False,
+) -> InlineKeyboardMarkup:
+    """Schedule config for social connections: presets + manual + cross-post + disable."""
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text="3 раза/неделю",
+                callback_data=f"sched:{cat_id}:{conn_id}:preset:3w",
+                style=ButtonStyle.PRIMARY,
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="1 раз/неделю",
+                callback_data=f"sched:{cat_id}:{conn_id}:preset:1w",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="Каждый день",
+                callback_data=f"sched:{cat_id}:{conn_id}:preset:daily",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="Настроить вручную",
+                callback_data=f"sched:{cat_id}:{conn_id}:manual",
+            )
+        ],
+    ]
+    if has_schedule and has_other_social:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Кросс-постинг",
+                    callback_data=f"sched_xp:{cat_id}:{conn_id}:config",
+                )
+            ]
+        )
+    if has_schedule:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Отключить расписание",
+                    callback_data=f"sched:{cat_id}:{conn_id}:disable",
+                    style=ButtonStyle.DANGER,
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=f"scheduler:{cat_id}:social_conn_list")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def schedule_times_kb(selected: set[str], required: int) -> InlineKeyboardMarkup:

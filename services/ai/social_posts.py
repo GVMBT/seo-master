@@ -122,3 +122,51 @@ class SocialPostService:
             )
 
         return result
+
+    async def adapt_for_platform(
+        self,
+        original_text: str,
+        source_platform: str,
+        target_platform: str,
+        user_id: int,
+        project_id: int,
+        keyword: str,
+    ) -> GenerationResult:
+        """Adapt existing social post for a different platform (cross-posting)."""
+        project = await self._projects.get_by_id(project_id)
+        if project is None:
+            from bot.exceptions import AIGenerationError
+
+            raise AIGenerationError(message="Project not found")
+
+        context: dict[str, Any] = {
+            "original_text": original_text,
+            "source_platform": source_platform,
+            "target_platform": target_platform,
+            "keyword": keyword,
+            "company_name": project.company_name,
+            "specialization": project.specialization,
+            "company_description": project.description or "",
+            "website_url": project.website_url or "",
+            "language": "ru",
+        }
+
+        request = GenerationRequest(
+            task="cross_post",
+            context=context,
+            user_id=user_id,
+            response_schema=SOCIAL_POST_SCHEMA,
+        )
+
+        result = await self._orchestrator.generate(request)
+
+        # Sanitize with nh3 for target platform
+        if isinstance(result.content, dict) and "text" in result.content:
+            allowed_tags = _SOCIAL_TAGS.get(target_platform, set())
+            result.content["text"] = nh3.clean(
+                result.content["text"],
+                tags=allowed_tags,
+                attributes=_SOCIAL_ATTRS,
+            )
+
+        return result

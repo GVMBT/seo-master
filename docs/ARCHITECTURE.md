@@ -470,6 +470,7 @@ CREATE TABLE platform_schedules (
     enabled         BOOLEAN DEFAULT FALSE,
     status          VARCHAR(20) DEFAULT 'active', -- active | error (E24: 3 retry fail → error)
     qstash_schedule_ids TEXT[] DEFAULT '{}',   -- ID расписаний в QStash (один per time slot)
+    cross_post_connection_ids INTEGER[] DEFAULT '{}', -- ID зависимых подключений для кросс-постинга
     last_post_at    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ DEFAULT now(),
     UNIQUE(category_id, platform_type, connection_id),

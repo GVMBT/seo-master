@@ -109,7 +109,8 @@ callback_data (при inline в Pipeline): `pipeline:create_project:cancel`
  Публикаций: 47"
 
 [Редактировать]    [Категории]
-[Подключения]      [Планировщик]
+[Подключения]
+[Статьи]           [Соцсети]
 ───────────────────────
 [Удалить проект] ← DANGER
 [К списку проектов]
@@ -119,7 +120,9 @@ callback_data:
 - `project:{id}:edit` — редактирование
 - `project:{id}:categories` — список категорий
 - `project:{id}:connections` — подключения
-- `project:{id}:scheduler` — планировщик
+- `project:{id}:sched_articles` — планировщик статей (WP)
+- `project:{id}:sched_social` — планировщик соцсетей (TG/VK/Pinterest)
+- `project:{id}:scheduler` — legacy redirect → sched_articles
 - `project:{id}:delete` — удаление
 - `nav:projects` — к списку
 
@@ -695,10 +698,20 @@ callback_data: `settings:{cat_id}:style:{style_name}`
 
 ## 13. Планировщик
 
-### 13.1. Выбор категории
+### 13.0. Точка входа
+
+Карточка проекта имеет 2 кнопки планировщика:
 
 ```
-"Планировщик — Мебель Комфорт
+[Статьи]    [Соцсети]
+```
+
+callback_data: `project:{id}:sched_articles`, `project:{id}:sched_social`
+
+### 13.1. Расписание статей — выбор категории
+
+```
+"Статьи — Планировщик
 
  Выберите категорию:"
 
@@ -710,24 +723,59 @@ callback_data: `settings:{cat_id}:style:{style_name}`
 
 callback_data: `scheduler:{project_id}:cat:{cat_id}`, `project:{id}:card`
 
-### 13.2. Планировщик категории
+Downstream: показывает только WordPress-подключения.
+
+### 13.2. Расписание соцсетей — выбор категории
 
 ```
-"Планировщик — Кухонная мебель
+"Соцсети — Планировщик
 
- Сегодня запланировано:
-   10:00 — WordPress (comfort-mebel.ru)
-   12:00 — Telegram (@comfort_channel)
-   18:00 — VK (Мебель Комфорт)
- Следующий пост: через 2ч 15мин"
+ Выберите категорию:"
 
-[WordPress: comfort-mebel.ru]    → настройка
-[Telegram: @comfort_channel]     → настройка
-[VK: Мебель Комфорт]            → настройка
-[К планировщику]
+[Кухонная мебель]
+[Шкафы-купе]
+[К проекту]
 ```
 
-callback_data: `scheduler:{cat_id}:conn:{conn_id}`, `scheduler:{project_id}:list`
+callback_data: `sched_social:{project_id}:cat:{cat_id}`
+
+### 13.2.1. Соцсети — выбор подключения
+
+```
+"Соцсети — Подключения
+
+ Выберите подключение для настройки расписания:"
+
+[Telegram: @comfort_channel ✓]
+[VK: Мебель Комфорт]
+[Pinterest: comfort_pin ✓ +1 кросс]
+[К категориям]
+```
+
+callback_data: `sched_social:{cat_id}:conn:{conn_id}`
+
+### 13.2.2. Соцсети — кросс-постинг
+
+```
+"Кросс-постинг
+
+ Ведущая платформа: Telegram (@comfort_channel)
+
+ Выберите платформы для автоматической адаптации поста.
+ Стоимость: ~10 ток/пост за кросс-пост."
+
+[✓ VK: Мебель Комфорт]       → toggle
+[  Pinterest: comfort_pin]    → toggle
+[Сохранить]  [Назад]
+```
+
+callback_data: `sched_xp:{cat_id}:{conn_id}:{target_conn_id}:toggle`, `sched_xp:{cat_id}:{conn_id}:save`
+
+При авто-публикации:
+- Ведущая платформа генерирует пост
+- Для каждого кросс-пост подключения: AI-адаптация (~10 ток/пост)
+- Partial failure OK: ведущий пост опубликован, ошибка адаптации = рефанд за целевую платформу
+- Одно уведомление со всеми результатами (ведущий + кросс-посты)
 
 ### 13.3. Настройка расписания (FSM — 3 шага)
 

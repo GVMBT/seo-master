@@ -1,0 +1,68 @@
+meta:
+  task_type: cross_post
+  version: v1
+  model_tier: budget
+  max_tokens: 2000
+  temperature: 0.8
+
+system: |
+  Ты — SMM-копирайтер. Пиши на <<language>>.
+  Компания: <<company_name>> (<<specialization>>).
+  <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if website_url %>Сайт: <<website_url>>.<% endif %>
+
+user: |
+  Адаптируй пост из <<source_platform>> для <<target_platform>>.
+
+  Оригинальный текст:
+  ---
+  <<original_text>>
+  ---
+
+  Требования:
+  - Сохрани смысл и ключевую фразу "<<keyword>>"
+  - Адаптируй формат под <<target_platform>>:
+    - telegram: HTML-разметка (<b>, <i>, <a>), макс. 4096 символов
+    - vk: текст + хештеги, макс. 16 384 символов
+    - pinterest: описание пина, макс. 500 символов + заголовок 100 символов
+  - Сохрани призыв к действию
+  - НЕ копируй текст дословно — перефразируй для естественности
+
+  Формат ответа — JSON:
+  {
+    "text": "...",
+    "hashtags": ["...", "..."],
+    "pin_title": "..."
+  }
+
+variables:
+  - name: original_text
+    source: lead post text
+    required: true
+  - name: source_platform
+    source: lead connection platform_type
+    required: true
+  - name: target_platform
+    source: target connection platform_type
+    required: true
+  - name: keyword
+    source: categories.keywords (selected phrase)
+    required: true
+  - name: company_name
+    source: projects.company_name
+    required: true
+  - name: specialization
+    source: projects.specialization
+    required: true
+  - name: company_description
+    source: projects.description
+    required: false
+    default: ""
+  - name: website_url
+    source: projects.website_url
+    required: false
+    default: ""
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"

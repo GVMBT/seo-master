@@ -103,6 +103,7 @@ STRUCTURED_TASKS: set[str] = {
     "article_outline",
     "article_critique",
     "social_post",
+    "cross_post",
     "keywords",
     "keywords_fallback",
     "review",

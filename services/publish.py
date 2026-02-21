@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from dataclasses import field as dataclasses_field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -33,7 +34,7 @@ from db.repositories.users import UsersRepository
 from services.ai.orchestrator import AIOrchestrator
 from services.publishers.base import PublishRequest, PublishResult
 from services.storage import ImageStorage
-from services.tokens import TokenService, estimate_article_cost, estimate_social_post_cost
+from services.tokens import TokenService, estimate_article_cost, estimate_cross_post_cost, estimate_social_post_cost
 
 if TYPE_CHECKING:
     import httpx
@@ -41,6 +42,18 @@ if TYPE_CHECKING:
     from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
+
+
+@dataclass
+class CrossPostResult:
+    """Result of a single cross-post attempt."""
+
+    connection_id: int
+    platform: str
+    status: str  # "ok", "error"
+    post_url: str = ""
+    error: str = ""
+    tokens_spent: int = 0
 
 
 @dataclass
@@ -54,6 +67,7 @@ class PublishOutcome:
     tokens_spent: int = 0
     user_id: int = 0
     notify: bool = False
+    cross_post_results: list[CrossPostResult] = dataclasses_field(default_factory=list)
 
 
 class PublishService:
@@ -161,7 +175,29 @@ class PublishService:
             log.exception("publish_charge_failed", user_id=user_id)
             return PublishOutcome(status="error", reason="charge_failed", user_id=user_id)
 
-        # 9. Generate + publish (with refund on error)
+        # 9-10. Generate, publish, log, cross-post (with refund on error)
+        return await self._publish_and_log(
+            payload=payload,
+            user=user,
+            category=category,
+            connection=connection,
+            keyword=keyword,
+            content_type=content_type,
+            estimated_cost=estimated_cost,
+        )
+
+    async def _publish_and_log(
+        self,
+        payload: PublishPayload,
+        user: Any,
+        category: Any,
+        connection: Any,
+        keyword: str,
+        content_type: str,
+        estimated_cost: int,
+    ) -> PublishOutcome:
+        """Generate content, publish, log result, and execute cross-posts."""
+        user_id = payload.user_id
         try:
             gen_result, pub_result, failed_images = await self._generate_and_publish(
                 user_id=user_id,
@@ -209,25 +245,55 @@ class PublishService:
                 PlatformScheduleUpdate(last_post_at=datetime.now(tz=UTC)),
             )
 
+            # Execute cross-posts if configured (social posts only)
+            cross_results: list[CrossPostResult] = []
+            schedule = await self._schedules.get_by_id(payload.schedule_id)
+            if (
+                schedule
+                and schedule.cross_post_connection_ids
+                and payload.platform_type != "wordpress"
+            ):
+                lead_text = ""
+                if isinstance(gen_result.content, dict):
+                    lead_text = gen_result.content.get("text", "")
+                if not lead_text:
+                    log.warning(
+                        "cross_post_skipped_empty_text",
+                        schedule_id=payload.schedule_id,
+                        platform=payload.platform_type,
+                    )
+                if lead_text:
+                    cross_results = await self._execute_cross_posts(
+                        user_id=user_id,
+                        schedule=schedule,
+                        keyword=keyword,
+                        lead_text=lead_text,
+                        lead_platform=payload.platform_type,
+                        project_id=payload.project_id,
+                        category_id=payload.category_id,
+                    )
+
+            total_cost = estimated_cost + sum(
+                cr.tokens_spent for cr in cross_results if cr.tokens_spent
+            )
             return PublishOutcome(
                 status="ok",
                 keyword=keyword,
-                tokens_spent=estimated_cost,
+                tokens_spent=total_cost,
                 user_id=user_id,
                 post_url=pub_log.post_url or "",
                 notify=user.notify_publications,
+                cross_post_results=cross_results,
             )
 
         except Exception as exc:
-            # Refund on any error after charge
             log.exception("publish_generation_failed", user_id=user_id, keyword=keyword)
             try:
                 await self._tokens.refund(user_id, estimated_cost, reason="auto_publish_error")
-            except Exception:
+            except Exception as refund_exc:
                 log.critical("refund_failed_after_charge", user_id=user_id, amount=estimated_cost)
-                sentry_sdk.capture_exception(exc)
+                sentry_sdk.capture_exception(refund_exc)
 
-            # Log failed publication
             await self._publications.create_log(
                 PublicationLogCreate(
                     user_id=user_id,
@@ -482,6 +548,163 @@ class PublishService:
             raise RuntimeError(f"Publish failed: {pub_result.error}")
 
         return result, pub_result
+
+    async def _execute_cross_posts(
+        self,
+        user_id: int,
+        schedule: Any,
+        keyword: str,
+        lead_text: str,
+        lead_platform: str,
+        project_id: int,
+        category_id: int,
+    ) -> list[CrossPostResult]:
+        """Execute cross-posts for dependent connections after lead publish."""
+        from services.ai.social_posts import SocialPostService
+
+        settings = get_settings()
+        cm = CredentialManager(settings.encryption_key.get_secret_value())
+        conn_repo = ConnectionsRepository(self._db, cm)
+        social_service = SocialPostService(self._ai_orchestrator, self._db)
+        category = await self._categories.get_by_id(category_id)
+        results: list[CrossPostResult] = []
+
+        for conn_id in schedule.cross_post_connection_ids:
+            conn = await conn_repo.get_by_id(conn_id)
+            # Verify connection exists, is active, and belongs to same project
+            if not conn or conn.status != "active" or conn.project_id != project_id:
+                results.append(
+                    CrossPostResult(
+                        connection_id=conn_id,
+                        platform=conn.platform_type if conn else "unknown",
+                        status="error",
+                        error="connection_inactive",
+                    )
+                )
+                continue
+
+            cost = estimate_cross_post_cost()
+            if not await self._tokens.check_balance(user_id, cost):
+                results.append(
+                    CrossPostResult(
+                        connection_id=conn_id,
+                        platform=conn.platform_type,
+                        status="error",
+                        error="insufficient_balance",
+                    )
+                )
+                log.warning("cross_post_insufficient_balance", user_id=user_id, conn_id=conn_id)
+                break  # stop remaining cross-posts
+
+            try:
+                await self._tokens.charge(user_id, cost, "cross_post", description=f"Cross-post: {keyword}")
+            except InsufficientBalanceError:
+                results.append(
+                    CrossPostResult(
+                        connection_id=conn_id,
+                        platform=conn.platform_type,
+                        status="error",
+                        error="charge_failed",
+                    )
+                )
+                break
+
+            try:
+                adapted = await social_service.adapt_for_platform(
+                    original_text=lead_text,
+                    source_platform=lead_platform,
+                    target_platform=conn.platform_type,
+                    user_id=user_id,
+                    project_id=project_id,
+                    keyword=keyword,
+                )
+
+                adapted_text = ""
+                if isinstance(adapted.content, dict):
+                    adapted_text = adapted.content.get("text", "")
+
+                publisher = self._get_publisher(conn.platform_type)
+                from services.ai.content_validator import ContentValidator
+
+                validator = ContentValidator()
+                validation = validator.validate(adapted_text, "social_post", conn.platform_type)
+                if not validation.is_valid:
+                    raise RuntimeError(f"Validation failed: {'; '.join(validation.errors)}")
+
+                ct: Literal["html", "telegram_html", "plain_text", "pin_text"] = self._get_content_type(
+                    conn.platform_type
+                )  # type: ignore[assignment]
+                pub_result = await publisher.publish(
+                    PublishRequest(
+                        connection=conn,
+                        content=adapted_text,
+                        content_type=ct,
+                        category=category,
+                    )
+                )
+
+                if not pub_result.success:
+                    raise RuntimeError(f"Publish failed: {pub_result.error}")
+
+                # Log cross-post publication
+                await self._publications.create_log(
+                    PublicationLogCreate(
+                        user_id=user_id,
+                        project_id=project_id,
+                        category_id=category_id,
+                        platform_type=conn.platform_type,
+                        connection_id=conn_id,
+                        keyword=keyword,
+                        content_type="cross_post",
+                        tokens_spent=cost,
+                        status="success",
+                        post_url=pub_result.post_url or "",
+                    )
+                )
+
+                results.append(
+                    CrossPostResult(
+                        connection_id=conn_id,
+                        platform=conn.platform_type,
+                        status="ok",
+                        post_url=pub_result.post_url or "",
+                        tokens_spent=cost,
+                    )
+                )
+
+            except Exception as exc:
+                log.exception("cross_post_failed", conn_id=conn_id, keyword=keyword)
+                try:
+                    await self._tokens.refund(user_id, cost, reason="cross_post_error")
+                except Exception as refund_exc:
+                    log.critical("cross_post_refund_failed", user_id=user_id, conn_id=conn_id)
+                    sentry_sdk.capture_exception(refund_exc)
+
+                await self._publications.create_log(
+                    PublicationLogCreate(
+                        user_id=user_id,
+                        project_id=project_id,
+                        category_id=category_id,
+                        platform_type=conn.platform_type,
+                        connection_id=conn_id,
+                        keyword=keyword,
+                        content_type="cross_post",
+                        tokens_spent=0,
+                        status="error",
+                        error_message=str(exc)[:500],
+                    )
+                )
+
+                results.append(
+                    CrossPostResult(
+                        connection_id=conn_id,
+                        platform=conn.platform_type,
+                        status="error",
+                        error=str(exc)[:200],
+                    )
+                )
+
+        return results
 
     def _get_publisher(self, platform_type: str) -> Any:
         """Get publisher instance for platform type."""
