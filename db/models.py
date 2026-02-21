@@ -247,6 +247,7 @@ class PlatformSchedule(BaseModel):
     enabled: bool = False
     status: str = "active"
     qstash_schedule_ids: list[str] = Field(default_factory=list)
+    cross_post_connection_ids: list[int] = Field(default_factory=list)
     last_post_at: datetime | None = None
     created_at: datetime | None = None
 
@@ -258,6 +259,7 @@ class PlatformScheduleCreate(BaseModel):
     schedule_days: list[str] = Field(default_factory=list)
     schedule_times: list[str] = Field(default_factory=list)
     posts_per_day: int = Field(default=1, ge=1, le=5)
+    cross_post_connection_ids: list[int] = Field(default_factory=list)
 
 
 class PlatformScheduleUpdate(BaseModel):
@@ -267,6 +269,7 @@ class PlatformScheduleUpdate(BaseModel):
     enabled: bool | None = None
     status: str | None = None
     qstash_schedule_ids: list[str] | None = None
+    cross_post_connection_ids: list[int] | None = None
     last_post_at: datetime | None = None
 
 

@@ -24,11 +24,22 @@ from keyboards.inline import (
     scheduler_cat_list_kb,
     scheduler_config_kb,
     scheduler_conn_list_kb,
+    scheduler_crosspost_kb,
+    scheduler_social_cat_list_kb,
+    scheduler_social_config_kb,
+    scheduler_social_conn_list_kb,
 )
 from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
 router = Router()
+
+_SOCIAL_PLATFORM_TYPES = {"telegram", "vk", "pinterest"}
+
+
+def _filter_social(conns: list) -> list:  # type: ignore[type-arg]
+    """Filter active social connections from connection list."""
+    return [c for c in conns if c.platform_type in _SOCIAL_PLATFORM_TYPES and c.status == "active"]
 
 
 class ScheduleSetupFSM(StatesGroup):
@@ -51,7 +62,7 @@ def _make_conn_repo(db: SupabaseClient) -> ConnectionsRepository:
 
 @router.callback_query(F.data.regexp(r"^project:\d+:scheduler$"))
 async def scheduler_entry(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
-    """Show category list for scheduler."""
+    """Legacy entry — redirect to articles scheduler."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
@@ -69,8 +80,67 @@ async def scheduler_entry(callback: CallbackQuery, user: User, db: SupabaseClien
         return
 
     await callback.message.edit_text(
-        "<b>Планировщик</b>\n\nВыберите категорию:",
+        "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
         reply_markup=scheduler_cat_list_kb(cats, project_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^project:\d+:sched_articles$"))
+async def scheduler_articles_entry(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Articles scheduler entry — filters WP-only connections downstream."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    repo = ProjectsRepository(db)
+    project = await repo.get_by_id(project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    cats = await CategoriesRepository(db).get_by_project(project_id)
+    if not cats:
+        await callback.answer("Сначала создайте категорию", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
+        reply_markup=scheduler_cat_list_kb(cats, project_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^project:\d+:sched_social$"))
+async def scheduler_social_entry(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Social scheduler entry — filters social connections."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    repo = ProjectsRepository(db)
+    project = await repo.get_by_id(project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    conn_repo = _make_conn_repo(db)
+    connections = await conn_repo.get_by_project(project_id)
+    social_conns = _filter_social(connections)
+    if not social_conns:
+        await callback.answer("Нет подключённых соцсетей", show_alert=True)
+        return
+
+    cats = await CategoriesRepository(db).get_by_project(project_id)
+    if not cats:
+        await callback.answer("Сначала создайте категорию", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "<b>Соцсети — Планировщик</b>\n\nВыберите категорию:",
+        reply_markup=scheduler_social_cat_list_kb(cats, project_id),
     )
     await callback.answer()
 
@@ -557,6 +627,278 @@ async def schedule_times_done(
         f"Постов/день: {required}\n"
         f"Ориент. расход: ~{weekly_cost} токенов/нед",
         reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=True),
+    )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Social: connection list for category
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^sched_social:\d+:cat:\d+$"))
+async def scheduler_social_category(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Show social connections with schedule summaries for a category."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")  # type: ignore[union-attr]
+    project_id = int(parts[1])
+    cat_id = int(parts[3])
+
+    project = await ProjectsRepository(db).get_by_id(project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    conn_repo = _make_conn_repo(db)
+    connections = await conn_repo.get_by_project(project_id)
+    social_conns = _filter_social(connections)
+    if not social_conns:
+        await callback.answer("Нет подключённых соцсетей", show_alert=True)
+        return
+
+    schedules_list = await SchedulesRepository(db).get_by_category(cat_id)
+    schedules_map = {s.connection_id: s for s in schedules_list}
+
+    await callback.message.edit_text(
+        "<b>Соцсети — Подключения</b>\n\nВыберите подключение для настройки расписания:",
+        reply_markup=scheduler_social_conn_list_kb(social_conns, schedules_map, cat_id, project_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^scheduler:\d+:social_conn_list$"))
+async def scheduler_social_conn_list_back(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Navigate back to social connection list."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cat = await CategoriesRepository(db).get_by_id(cat_id)
+    if not cat:
+        await callback.answer("Категория не найдена", show_alert=True)
+        return
+
+    project = await ProjectsRepository(db).get_by_id(cat.project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    conn_repo = _make_conn_repo(db)
+    connections = await conn_repo.get_by_project(project.id)
+    social_conns = _filter_social(connections)
+    schedules_list = await SchedulesRepository(db).get_by_category(cat_id)
+    schedules_map = {s.connection_id: s for s in schedules_list}
+
+    await callback.message.edit_text(
+        "<b>Соцсети — Подключения</b>\n\nВыберите подключение для настройки расписания:",
+        reply_markup=scheduler_social_conn_list_kb(social_conns, schedules_map, cat_id, project.id),
+    )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Social: connection config
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^sched_social:\d+:conn:\d+$"))
+async def scheduler_social_connection(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Show social schedule config with cross-post option."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cat_id = int(parts[1])
+    conn_id = int(parts[3])
+
+    cat = await CategoriesRepository(db).get_by_id(cat_id)
+    if not cat:
+        await callback.answer("Категория не найдена", show_alert=True)
+        return
+    project = await ProjectsRepository(db).get_by_id(cat.project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    schedules = await SchedulesRepository(db).get_by_category(cat_id)
+    existing = next((s for s in schedules if s.connection_id == conn_id), None)
+
+    # Check if there are other social connections
+    conn_repo = _make_conn_repo(db)
+    connections = await conn_repo.get_by_project(project.id)
+    social_conns = _filter_social(connections)
+    has_other_social = len(social_conns) > 1
+
+    text = "<b>Настройка расписания (соцсети)</b>\n\n"
+    if existing and existing.enabled:
+        days_str = ", ".join(_DAY_LABELS.get(d, d) for d in existing.schedule_days)
+        times_str = ", ".join(existing.schedule_times)
+        text += f"Текущее расписание:\nДни: {days_str}\nВремя: {times_str}\nПостов/день: {existing.posts_per_day}\n"
+        if existing.cross_post_connection_ids:
+            text += f"Кросс-постинг: {len(existing.cross_post_connection_ids)} платформ\n"
+        text += "\n"
+    text += "Выберите вариант:"
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=scheduler_social_config_kb(
+            cat_id, conn_id, existing is not None and existing.enabled, has_other_social
+        ),
+    )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Cross-post config
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:config$"))
+async def scheduler_crosspost_config(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Show cross-post toggle screen."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cat_id = int(parts[1])
+    conn_id = int(parts[2])
+
+    cat = await CategoriesRepository(db).get_by_id(cat_id)
+    if not cat:
+        await callback.answer("Категория не найдена", show_alert=True)
+        return
+    project = await ProjectsRepository(db).get_by_id(cat.project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    conn_repo = _make_conn_repo(db)
+    lead_conn = await conn_repo.get_by_id(conn_id)
+    if not lead_conn:
+        await callback.answer("Подключение не найдено", show_alert=True)
+        return
+
+    connections = await conn_repo.get_by_project(project.id)
+    social_conns = _filter_social(connections)
+
+    schedules = await SchedulesRepository(db).get_by_category(cat_id)
+    existing = next((s for s in schedules if s.connection_id == conn_id), None)
+    selected_ids = existing.cross_post_connection_ids if existing else []
+
+    import html as html_mod
+
+    lead_name = html_mod.escape(lead_conn.identifier)
+    text = (
+        f"<b>Кросс-постинг</b>\n\n"
+        f"Ведущая платформа: {lead_conn.platform_type.capitalize()} ({lead_name})\n\n"
+        "Выберите платформы для автоматической адаптации поста.\n"
+        "Стоимость: ~10 ток/пост за кросс-пост."
+    )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=scheduler_crosspost_kb(cat_id, conn_id, social_conns, selected_ids),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:\d+:toggle$"))
+async def scheduler_crosspost_toggle(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Toggle a cross-post target connection."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cat_id = int(parts[1])
+    conn_id = int(parts[2])
+    target_conn_id = int(parts[3])
+
+    cat = await CategoriesRepository(db).get_by_id(cat_id)
+    if not cat:
+        await callback.answer("Категория не найдена", show_alert=True)
+        return
+    project = await ProjectsRepository(db).get_by_id(cat.project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    schedules = await SchedulesRepository(db).get_by_category(cat_id)
+    existing = next((s for s in schedules if s.connection_id == conn_id), None)
+    selected_ids: list[int] = list(existing.cross_post_connection_ids) if existing else []
+
+    if target_conn_id in selected_ids:
+        selected_ids.remove(target_conn_id)
+    else:
+        selected_ids.append(target_conn_id)
+
+    conn_repo = _make_conn_repo(db)
+    connections = await conn_repo.get_by_project(project.id)
+    social_conns = _filter_social(connections)
+
+    await callback.message.edit_reply_markup(
+        reply_markup=scheduler_crosspost_kb(cat_id, conn_id, social_conns, selected_ids),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:save$"))
+async def scheduler_crosspost_save(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Save cross_post_connection_ids to schedule."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cat_id = int(parts[1])
+    conn_id = int(parts[2])
+
+    cat = await CategoriesRepository(db).get_by_id(cat_id)
+    if not cat:
+        await callback.answer("Категория не найдена", show_alert=True)
+        return
+    project = await ProjectsRepository(db).get_by_id(cat.project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден", show_alert=True)
+        return
+
+    # Extract selected IDs from current keyboard state
+    selected_ids: list[int] = []
+    if callback.message.reply_markup:
+        for row in callback.message.reply_markup.inline_keyboard:
+            for btn in row:
+                if btn.callback_data and btn.callback_data.endswith(":toggle") and btn.text.startswith("\u2713"):
+                    # Parse target_conn_id from callback_data
+                    toggle_parts = btn.callback_data.split(":")
+                    if len(toggle_parts) >= 4:
+                        selected_ids.append(int(toggle_parts[3]))
+
+    from db.models import PlatformScheduleUpdate
+
+    schedules = await SchedulesRepository(db).get_by_category(cat_id)
+    existing = next((s for s in schedules if s.connection_id == conn_id), None)
+    if existing:
+        await SchedulesRepository(db).update(
+            existing.id,
+            PlatformScheduleUpdate(cross_post_connection_ids=selected_ids),
+        )
+
+    count = len(selected_ids)
+    msg = f"Кросс-постинг сохранён: {count} платформ." if count else "Кросс-постинг отключён."
+    conn_repo = _make_conn_repo(db)
+    connections = await conn_repo.get_by_project(project.id)
+    social_conns = _filter_social(connections)
+    has_other_social = len(social_conns) > 1
+
+    await callback.message.edit_text(
+        msg,
+        reply_markup=scheduler_social_config_kb(cat_id, conn_id, has_schedule=True, has_other_social=has_other_social),
     )
     await callback.answer()
 

@@ -36,6 +36,11 @@ class SchedulesRepository(BaseRepository):
         resp = await self._table(_TABLE).select("*").in_("category_id", category_ids).execute()
         return [PlatformSchedule(**row) for row in self._rows(resp)]
 
+    async def get_by_connection_cross_post(self, connection_id: int) -> list[PlatformSchedule]:
+        """Get schedules where connection_id is in cross_post_connection_ids."""
+        resp = await self._table(_TABLE).select("*").contains("cross_post_connection_ids", [connection_id]).execute()
+        return [PlatformSchedule(**row) for row in self._rows(resp)]
+
     async def get_enabled(self) -> list[PlatformSchedule]:
         """Get all enabled schedules (for QStash sync)."""
         resp = await self._table(_TABLE).select("*").eq("enabled", True).order("created_at").execute()

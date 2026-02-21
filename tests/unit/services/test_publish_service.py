@@ -137,6 +137,7 @@ async def test_publish_happy_path(
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://test.com/seo"))
     svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[]))
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
 
@@ -333,6 +334,7 @@ async def test_low_pool_warning_e22(
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", True))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url=""))
     svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[]))
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=680)
 
@@ -408,6 +410,7 @@ async def test_social_post_content_type(
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
     svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url=""))
     svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[]))
     svc._tokens.check_balance = AsyncMock(return_value=True)
     svc._tokens.charge = AsyncMock(return_value=960)
 
