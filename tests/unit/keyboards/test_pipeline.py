@@ -616,7 +616,7 @@ class TestPipelineImagesOptionsKb:
 
 
 class TestPipelineGenerationErrorKb:
-    """pipeline_generation_error_kb has retry PRIMARY + cancel."""
+    """pipeline_generation_error_kb has 3 buttons: retry, change_topic, dashboard (UX_PIPELINE §8.3)."""
 
     def test_retry_button_primary(self) -> None:
         kb = pipeline_generation_error_kb()
@@ -624,11 +624,16 @@ class TestPipelineGenerationErrorKb:
         retry_btn = next(b for b in buttons if b.callback_data == "pipeline:article:confirm")
         assert retry_btn.style == ButtonStyle.PRIMARY
 
-    def test_cancel_button_present(self) -> None:
+    def test_change_topic_button_present(self) -> None:
         kb = pipeline_generation_error_kb()
         buttons = _flatten_buttons(kb)
-        assert any(b.callback_data == "pipeline:article:cancel" for b in buttons)
+        assert any(b.callback_data == "pipeline:article:change_topic" for b in buttons)
 
-    def test_two_rows(self) -> None:
+    def test_dashboard_button_present(self) -> None:
         kb = pipeline_generation_error_kb()
-        assert len(kb.inline_keyboard) == 2
+        buttons = _flatten_buttons(kb)
+        assert any(b.callback_data == "nav:dashboard" for b in buttons)
+
+    def test_three_rows(self) -> None:
+        kb = pipeline_generation_error_kb()
+        assert len(kb.inline_keyboard) == 3

@@ -107,6 +107,7 @@ async def show_confirm(
         project_id=fsm_data.get("project_id"),
         project_name=fsm_data.get("project_name"),
         category_id=fsm_data.get("category_id"),
+        connection_id=fsm_data.get("connection_id"),
     )
 
 
@@ -130,6 +131,7 @@ async def show_confirm_msg(
         project_id=fsm_data.get("project_id"),
         project_name=fsm_data.get("project_name"),
         category_id=fsm_data.get("category_id"),
+        connection_id=fsm_data.get("connection_id"),
     )
 
 
@@ -457,6 +459,8 @@ async def _run_generation(
         project_id=project_id,
         project_name=fsm_data.get("project_name"),
         category_id=category_id,
+        connection_id=connection_id,
+        preview_id=preview.id,
     )
 
     log.info(
@@ -880,6 +884,7 @@ async def connect_wp_publish(
         await callback.answer()
         return
 
+    await state.update_data(from_preview=True)
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await callback.message.edit_text(
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
@@ -892,18 +897,17 @@ async def connect_wp_publish(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(
-    ArticlePipelineFSM.result,
-    F.data == "pipeline:article:more",
-)
-async def more_articles(
+async def _jump_to_category_selection(
     callback: CallbackQuery,
     state: FSMContext,
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
 ) -> None:
-    """Write another article — jump to step 3 (category), keeping project+WP (G5)."""
+    """Jump to step 3 (category selection), clearing generation data.
+
+    Shared by more_articles and change_topic handlers.
+    """
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
@@ -916,7 +920,7 @@ async def more_articles(
         await callback.answer("Данные сессии устарели.", show_alert=True)
         return
 
-    # Clear result-specific data, keep project + connection
+    # Clear generation-specific data, keep project + connection
     await state.update_data(
         category_id=None,
         category_name=None,
@@ -925,7 +929,6 @@ async def more_articles(
         tokens_charged=None,
     )
 
-    # Jump to category selection (step 3)
     cats_repo = CategoriesRepository(db)
     categories = await cats_repo.get_by_project(project_id)
 
@@ -958,5 +961,36 @@ async def more_articles(
         current_step="select_category",
         project_id=project_id,
         project_name=project_name,
+        connection_id=data.get("connection_id"),
     )
     await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.result,
+    F.data == "pipeline:article:more",
+)
+async def more_articles(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Write another article — jump to step 3 (category), keeping project+WP (G5)."""
+    await _jump_to_category_selection(callback, state, user, db, redis)
+
+
+@router.callback_query(F.data == "pipeline:article:change_topic")
+async def change_topic(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Change topic after error — jump to step 3 (category), keeping project+WP.
+
+    Stateless filter: error can leave FSM in various states (confirm_cost etc.).
+    """
+    await _jump_to_category_selection(callback, state, user, db, redis)
