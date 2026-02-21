@@ -491,12 +491,12 @@ async def _route_social_to_step(
         projects = await projects_repo.get_by_user(user.id)
         if not projects:
             await callback.message.edit_text(
-                "Пост (1/4) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+                "Пост (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
                 reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
             )
         else:
             await callback.message.edit_text(
-                "Пост (1/4) — Проект\n\nДля какого проекта?",
+                "Пост (1/5) — Проект\n\nДля какого проекта?",
                 reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
             )
         await state.set_state(SocialPipelineFSM.select_project)
@@ -505,7 +505,7 @@ async def _route_social_to_step(
     if step == "select_connection":
         # TODO F6.2: show connection selection screen
         await callback.message.edit_text(
-            "Пост (2/4) — Подключение\n\nВыбор подключения — скоро! (F6.2)",
+            "Пост (2/5) — Подключение\n\nВыбор подключения — скоро! (F6.2)",
         )
         await state.set_state(SocialPipelineFSM.select_connection)
         return
@@ -520,7 +520,7 @@ async def _route_social_to_step(
         categories = await cats_repo.get_by_project(project_id)
         if not categories:
             await callback.message.edit_text(
-                "Пост (3/4) — Тема\n\nО чём будет пост? Назовите тему.",
+                "Пост (3/5) — Тема\n\nО чём будет пост? Назовите тему.",
                 reply_markup=cancel_kb("pipeline:social:cancel"),
             )
             await state.set_state(SocialPipelineFSM.create_category_name)
@@ -534,7 +534,7 @@ async def _route_social_to_step(
             await state.set_state(SocialPipelineFSM.readiness_check)
         else:
             await callback.message.edit_text(
-                "Пост (3/4) — Тема\n\nКакая тема?",
+                "Пост (3/5) — Тема\n\nКакая тема?",
                 reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
             )
             await state.set_state(SocialPipelineFSM.select_category)

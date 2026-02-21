@@ -124,6 +124,6 @@ async def exit_cancel(callback: CallbackQuery) -> None:
     if callback.message and not isinstance(callback.message, InaccessibleMessage):
         try:
             await callback.message.delete()
-        except TelegramBadRequest, TelegramForbiddenError, TelegramNotFound:
+        except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound):
             log.debug("exit_cancel.delete_failed")
     await callback.answer("Продолжаем!")

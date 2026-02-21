@@ -92,7 +92,7 @@ class TestPipelineSocialStart:
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_project)
         mock_callback.message.edit_text.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "Пост (1/4)" in text
+        assert "Пост (1/5)" in text
 
     async def test_one_project_auto_selects(
         self,

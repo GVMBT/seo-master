@@ -42,7 +42,7 @@ log = structlog.get_logger()
 router = Router()
 
 # Total step count for social pipeline (displayed in step headers)
-_TOTAL_STEPS = 4
+_TOTAL_STEPS = 5
 
 
 # ---------------------------------------------------------------------------
