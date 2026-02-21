@@ -9,6 +9,7 @@ Rules: .claude/rules/pipeline.md — inline handlers, NOT FSM delegation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import html
 from typing import Any
 
@@ -29,6 +30,7 @@ from keyboards.pipeline import (
     pipeline_back_to_checklist_kb,
     pipeline_description_options_kb,
     pipeline_images_options_kb,
+    pipeline_keywords_city_kb,
     pipeline_keywords_confirm_kb,
     pipeline_keywords_options_kb,
     pipeline_keywords_qty_kb,
@@ -102,9 +104,12 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     elif report.has_prices:
         lines.append("Цены — заполнены")
 
-    # Images
-    img_cost = report.image_count * COST_PER_IMAGE
-    lines.append(f"Изображения — {report.image_count} AI ({img_cost} ток.)")
+    # Images (generated WITH the article, not separately)
+    if report.image_count > 0:
+        img_cost = report.image_count * COST_PER_IMAGE
+        lines.append(f"Изображения — {report.image_count} шт. в статье ({img_cost} ток.)")
+    else:
+        lines.append("Изображения — без изображений")
 
     # Cost estimate
     lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")
@@ -269,7 +274,20 @@ async def readiness_keywords_auto(
     project = await projects_repo.get_by_id(project_id)
 
     products = category.name
-    geography = (project.company_city if project and project.company_city else None) or "Россия"
+    geography = project.company_city if project and project.company_city else None
+
+    # UX_PIPELINE §4a: if no company_city — ask city first
+    if not geography:
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_geo)
+        await state.update_data(kw_products=products, kw_mode="auto")
+
+        await callback.message.edit_text(
+            "В каком городе ваш бизнес?\n<i>Для точных SEO-фраз</i>",
+            reply_markup=pipeline_keywords_city_kb(),
+        )
+        await callback.answer()
+        return
+
     quantity = 100
     cost = estimate_keywords_cost(quantity)
 
@@ -503,12 +521,84 @@ async def _handle_configure_products(message: Message, state: FSMContext) -> Non
     )
 
 
+@router.callback_query(
+    ArticlePipelineFSM.readiness_keywords_geo,
+    F.data.startswith("pipeline:readiness:keywords:city:"),
+)
+async def readiness_keywords_city_select(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    """Quick city selection for auto-keywords (UX_PIPELINE §4a).
+
+    Saves city to project and proceeds to confirm screen.
+    """
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    if not callback.data:
+        await callback.answer()
+        return
+
+    city = callback.data.split(":")[-1]
+    data = await state.get_data()
+    kw_mode = data.get("kw_mode", "")
+    products = data.get("kw_products", "")
+    project_id = data.get("project_id")
+
+    # Save city to project for future use
+    if project_id:
+        from db.models import ProjectUpdate
+
+        projects_repo = ProjectsRepository(db)
+        await projects_repo.update(project_id, ProjectUpdate(company_city=city))
+
+    if kw_mode == "auto":
+        # Auto path: city selected → go straight to confirm (100 phrases)
+        quantity = 100
+        cost = estimate_keywords_cost(quantity)
+
+        settings = get_settings()
+        token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
+        balance = await token_svc.get_balance(user.id)
+
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_qty)
+        await state.update_data(
+            kw_geography=city,
+            kw_quantity=quantity,
+            kw_cost=cost,
+        )
+
+        await callback.message.edit_text(
+            f"Автоподбор ключевых фраз\n\n"
+            f"Тема: {html.escape(products)}\n"
+            f"География: {html.escape(city)}\n"
+            f"Количество: {quantity} фраз\n\n"
+            f"Стоимость: {cost} ток. Баланс: {balance}.",
+            reply_markup=pipeline_keywords_confirm_kb(cost, balance),
+        )
+    else:
+        # Configure path: city selected → go to qty selection
+        await state.set_state(ArticlePipelineFSM.readiness_keywords_qty)
+        await state.update_data(kw_geography=city)
+
+        await callback.message.edit_text(
+            "Сколько ключевых фраз подобрать?",
+            reply_markup=pipeline_keywords_qty_kb(),
+        )
+
+    await callback.answer()
+
+
 @router.message(ArticlePipelineFSM.readiness_keywords_geo, F.text)
 async def readiness_keywords_geo_input(
     message: Message,
     state: FSMContext,
 ) -> None:
-    """Geography input for configure keyword path (2-200 chars)."""
+    """Geography text input for configure keyword path (2-200 chars)."""
     text = (message.text or "").strip()
     if len(text) < 2 or len(text) > 200:
         await message.answer(
@@ -652,7 +742,10 @@ async def readiness_keywords_confirm(
 
 
 @router.callback_query(
-    ArticlePipelineFSM.readiness_keywords_qty,
+    StateFilter(
+        ArticlePipelineFSM.readiness_keywords_geo,
+        ArticlePipelineFSM.readiness_keywords_qty,
+    ),
     F.data == "pipeline:readiness:keywords:cancel",
 )
 async def readiness_keywords_cancel(
@@ -689,10 +782,22 @@ async def _run_pipeline_keyword_generation(
     ai_orchestrator: AIOrchestrator,
     dataforseo_client: DataForSEOClient,
 ) -> None:
-    """Run keyword pipeline: fetch → cluster → enrich → save → return to checklist."""
+    """Run keyword pipeline: fetch → cluster → enrich → save → return to checklist.
+
+    NOTE: AI clustering (DeepSeek) can take 60-90 seconds. Telegram may expire
+    the original callback message, so progress updates use _safe_edit (tolerates
+    Telegram errors) and the final result is sent as a NEW message.
+    """
     msg = callback.message
     if not msg or isinstance(msg, InaccessibleMessage):
         return
+
+    async def _safe_edit(text: str) -> None:
+        """Edit message, silently ignoring Telegram errors (expired message, etc.)."""
+        try:
+            await msg.edit_text(text)  # type: ignore[union-attr]
+        except Exception:
+            log.debug("pipeline.readiness.edit_failed", text=text[:50])
 
     try:
         kw_service = KeywordService(
@@ -701,7 +806,7 @@ async def _run_pipeline_keyword_generation(
             db=db,
         )
 
-        # Step 1: Fetch raw phrases
+        # Step 1: Fetch raw phrases (~1-3s)
         raw_phrases = await kw_service.fetch_raw_phrases(
             products=products,
             geography=geography,
@@ -710,8 +815,8 @@ async def _run_pipeline_keyword_generation(
             user_id=user.id,
         )
 
-        # Step 2: AI clustering
-        await msg.edit_text(f"Получено {len(raw_phrases)} фраз. Группирую по интенту...")
+        # Step 2: AI clustering (~60-90s for DeepSeek V3.2)
+        await _safe_edit(f"Получено {len(raw_phrases)} фраз. Группирую по интенту (до 1.5 мин)...")
         clusters = await kw_service.cluster_phrases(
             raw_phrases=raw_phrases,
             products=products,
@@ -721,8 +826,8 @@ async def _run_pipeline_keyword_generation(
             user_id=user.id,
         )
 
-        # Step 3: Enrich with metrics
-        await msg.edit_text(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
+        # Step 3: Enrich with metrics (~3s)
+        await _safe_edit(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
         enriched = await kw_service.enrich_clusters(clusters)
 
         # Save (MERGE with existing)
@@ -744,16 +849,26 @@ async def _run_pipeline_keyword_generation(
             cost=cost,
         )
 
-        # Brief results summary, then return to checklist
-        await msg.edit_text(
-            f"Готово! Добавлено:\n"
-            f"Кластеров: {len(enriched)}\n"
-            f"Фраз: {total_phrases}\n"
-            f"Общий объём: {total_volume:,}/мес\n\n"
-            f"Списано {cost} токенов.",
+        # Delete progress message and send results as a NEW message
+        # (original callback message may be stale after 90s)
+        try:
+            await msg.delete()
+        except Exception:
+            log.debug("pipeline.readiness.delete_progress_failed")
+
+        chat = msg.chat
+        await chat.bot.send_message(  # type: ignore[union-attr]
+            chat_id=chat.id,
+            text=(
+                f"Готово! Добавлено:\n"
+                f"Кластеров: {len(enriched)}\n"
+                f"Фраз: {total_phrases}\n"
+                f"Общий объём: {total_volume:,}/мес\n\n"
+                f"Списано {cost} токенов."
+            ),
         )
-        await asyncio.sleep(2)
-        await show_readiness_check(callback, state, user, db, redis)
+        await asyncio.sleep(1)
+        await show_readiness_check_msg(msg, state, user, db, redis)
 
     except Exception:
         log.exception(
@@ -768,8 +883,13 @@ async def _run_pipeline_keyword_generation(
             reason="refund",
             description=f"Возврат: ошибка подбора фраз (pipeline, категория #{category_id})",
         )
-        await msg.edit_text(
-            "Ошибка при подборе фраз. Токены возвращены.\nПопробуйте позже.",
+        # Send error as new message (original may be expired)
+        with contextlib.suppress(Exception):
+            await msg.delete()
+        chat = msg.chat
+        await chat.bot.send_message(  # type: ignore[union-attr]
+            chat_id=chat.id,
+            text="Ошибка при подборе фраз. Токены возвращены.\nПопробуйте позже.",
             reply_markup=pipeline_back_to_checklist_kb(),
         )
         await state.set_state(ArticlePipelineFSM.readiness_check)
