@@ -40,11 +40,20 @@ class ProjectEditFSM(StatesGroup):
 # Field metadata for edit
 # ---------------------------------------------------------------------------
 
+
+def _truncate(text: str, max_len: int) -> str:
+    """Truncate text with ellipsis for display."""
+    return text[:max_len] + "…" if len(text) > max_len else text
+
+
 _FIELD_LABELS: dict[str, str] = {
     "name": "название проекта",
     "company_name": "название компании",
     "specialization": "специализацию",
     "website_url": "URL сайта",
+    "description": "описание компании",
+    "advantages": "преимущества",
+    "experience": "опыт работы",
     "company_city": "город",
     "company_address": "адрес",
     "company_phone": "телефон",
@@ -57,6 +66,9 @@ _FIELD_LIMITS: dict[str, tuple[int, int]] = {
     "company_name": (2, 255),
     "specialization": (2, 500),
     "website_url": (0, 500),
+    "description": (10, 2000),
+    "advantages": (5, 1000),
+    "experience": (2, 500),
     "company_city": (2, 100),
     "company_address": (2, 255),
     "company_phone": (5, 30),
@@ -250,6 +262,9 @@ def _build_edit_text(project: Project) -> str:
         ("Компания", project.company_name),
         ("Специализация", project.specialization),
         ("Сайт", project.website_url or "—"),
+        ("Описание", _truncate(project.description, 100) if project.description else "—"),
+        ("Преимущества", _truncate(project.advantages, 100) if project.advantages else "—"),
+        ("Опыт", _truncate(project.experience, 100) if project.experience else "—"),
         ("Город", project.company_city or "—"),
         ("Адрес", project.company_address or "—"),
         ("Телефон", project.company_phone or "—"),

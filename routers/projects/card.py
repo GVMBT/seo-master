@@ -64,6 +64,9 @@ async def show_project_card(
 
     if project.website_url:
         lines.append(f"Сайт: {html.escape(project.website_url)}")
+    if project.advantages:
+        short = project.advantages[:80] + "…" if len(project.advantages) > 80 else project.advantages
+        lines.append(f"Преимущества: {html.escape(short)}")
 
     if platform_types:
         platforms_str = ", ".join(p.capitalize() for p in platform_types)
