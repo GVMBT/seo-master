@@ -7,17 +7,26 @@ meta:
 
 system: |
   Ты — SEO-копирайтер. Пиши на <<language>>.
+  Компания: <<company_name>> (<<specialization>>).
+  <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if advantages %>Преимущества: <<advantages>>.<% endif %>
+  <% if experience %>Опыт: <<experience>>.<% endif %>
+  <% if city %>Город: <<city>>.<% endif %>
+  <% if website_url %>Сайт: <<website_url>>.<% endif %>
 
 user: |
   Напиши описание категории "<<category_name>>" для компании "<<company_name>>" (<<specialization>>).
 
-  Контекст:
-  - Ключевые фразы категории: <<keywords_sample>>
-  - Товары/услуги: <<prices_excerpt>>
-  - Отзывы клиентов: <<reviews_excerpt>>
+  <COMPANY_CONTEXT>
+  <% if keywords_sample %>Ключевые фразы категории: <<keywords_sample>><% endif %>
+  <% if prices_excerpt %>Товары/услуги: <<prices_excerpt>><% endif %>
+  <% if reviews_excerpt %>Отзывы клиентов: <<reviews_excerpt>><% endif %>
+  </COMPANY_CONTEXT>
 
   Требования:
   - Объём: 100-300 слов
+  - Используй ТОЛЬКО реальные данные компании из контекста выше
+  - НЕ выдумывай факты, преимущества или услуги, которых нет в контексте
   - Включи основные ключевые фразы естественно
   - Описание используется как контекст для AI при генерации статей и постов
 
@@ -33,6 +42,26 @@ variables:
   - name: specialization
     source: projects.specialization
     required: true
+  - name: company_description
+    source: projects.description
+    required: false
+    default: ""
+  - name: advantages
+    source: projects.advantages
+    required: false
+    default: ""
+  - name: experience
+    source: projects.experience
+    required: false
+    default: ""
+  - name: website_url
+    source: projects.website_url
+    required: false
+    default: ""
+  - name: city
+    source: projects.company_city
+    required: false
+    default: ""
   - name: language
     source: users.language
     required: true
@@ -40,7 +69,7 @@ variables:
   - name: keywords_sample
     source: categories.keywords (first 10 phrases)
     required: false
-    default: "не заданы"
+    default: ""
   - name: prices_excerpt
     source: categories.prices
     required: false

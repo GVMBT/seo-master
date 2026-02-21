@@ -214,6 +214,10 @@ async def confirm_generate(
         description=f"Генерация описания (категория #{cat_id})",
     )
 
+    # Show progress indicator before AI call
+    await callback.message.edit_text("Генерирую описание...")
+    await callback.answer()
+
     # Generate description via AI
     try:
         desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
@@ -233,7 +237,6 @@ async def confirm_generate(
         )
         await state.clear()
         await callback.message.edit_text("Ошибка генерации описания. Токены возвращены.")
-        await callback.answer()
         return
 
     # Move to review state
@@ -249,7 +252,6 @@ async def confirm_generate(
         f"Описание сгенерировано (списано {COST_DESCRIPTION} токенов):\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, regen_count),
     )
-    await callback.answer()
     log.info(
         "description_generated",
         cat_id=cat_id,
@@ -367,6 +369,10 @@ async def review_regenerate(
             operation_type="description",
             description=f"Перегенерация описания (категория #{cat_id}, попытка {regen_count + 1})",
         )
+
+    # Show progress indicator before AI call
+    await callback.message.edit_text("Генерирую описание...")
+    await callback.answer()
 
     # Regenerate via AI
     try:
