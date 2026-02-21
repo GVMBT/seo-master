@@ -156,7 +156,12 @@ class TestBuildChecklistText:
     async def test_image_count_in_text(self) -> None:
         report = _make_report(image_count=6)
         text = _build_checklist_text(report, _make_state_data())
-        assert "6 AI" in text
+        assert "6 шт. в статье" in text
+
+    async def test_zero_images_in_text(self) -> None:
+        report = _make_report(image_count=0)
+        text = _build_checklist_text(report, _make_state_data())
+        assert "без изображений" in text
 
     async def test_html_escaping(self) -> None:
         data = _make_state_data(project_name="<script>", category_name="&test")
@@ -341,14 +346,14 @@ class TestKeywordsSubFlow:
         mock_callback.message.edit_text.assert_called_once()
         assert "Автоподбор" in mock_callback.message.edit_text.call_args[0][0]
 
-    async def test_auto_default_geography(
+    async def test_auto_no_city_shows_city_kb(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
         user: Any,
         mock_db: MagicMock,
     ) -> None:
-        """Auto defaults geography to 'Россия' when project has no city."""
+        """Auto shows city selection when project has no company_city (UX_PIPELINE §4a)."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
         cat_obj = MagicMock()
@@ -362,15 +367,8 @@ class TestKeywordsSubFlow:
                 ),
             ),
         )
-        p_settings = patch(f"{_MODULE}.get_settings", return_value=MagicMock(admin_ids=[]))
-        p_token = patch(
-            f"{_MODULE}.TokenService",
-            return_value=MagicMock(
-                get_balance=AsyncMock(return_value=500),
-            ),
-        )
 
-        with p_cats, p_projects, p_settings, p_token:
+        with p_cats, p_projects:
             await readiness_keywords_auto(
                 mock_callback,
                 mock_state,
@@ -378,8 +376,14 @@ class TestKeywordsSubFlow:
                 mock_db,
             )
 
+        # Should transition to geo state with kw_mode="auto"
+        mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_geo)
         update_kwargs = mock_state.update_data.call_args.kwargs
-        assert update_kwargs["kw_geography"] == "Россия"
+        assert update_kwargs["kw_mode"] == "auto"
+        assert update_kwargs["kw_products"] == "Test Category"
+        # Should show city selection, not directly confirm
+        edit_text = mock_callback.message.edit_text.call_args[0][0]
+        assert "город" in edit_text.lower()
 
     async def test_configure_shows_products_prompt(
         self,
