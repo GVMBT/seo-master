@@ -63,12 +63,7 @@ def _make_cat(id: int = 10, name: str = "SEO") -> MagicMock:
 
 def _get_all_callbacks(kb: Any) -> list[str]:
     """Extract all callback_data from keyboard."""
-    return [
-        btn.callback_data
-        for row in kb.inline_keyboard
-        for btn in row
-        if btn.callback_data
-    ]
+    return [btn.callback_data for row in kb.inline_keyboard for btn in row if btn.callback_data]
 
 
 def _get_all_texts(kb: Any) -> list[str]:
@@ -143,9 +138,7 @@ def test_social_conn_list_filters_social_only() -> None:
 def test_social_conn_list_shows_cross_post_badge() -> None:
     """Social connection list shows cross-post count badge."""
     connections = [_make_conn(2, "telegram", "@channel")]
-    schedules = {
-        2: _make_schedule(connection_id=2, enabled=True, cross_post_connection_ids=[3, 4])
-    }
+    schedules = {2: _make_schedule(connection_id=2, enabled=True, cross_post_connection_ids=[3, 4])}
     kb = scheduler_social_conn_list_kb(connections, schedules, cat_id=10, project_id=5)
     texts = _get_all_texts(kb)
 

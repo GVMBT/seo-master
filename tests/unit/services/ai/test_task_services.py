@@ -582,9 +582,7 @@ class TestSocialPostService:
 class TestSocialPostAdaptForPlatform:
     """Tests for SocialPostService.adapt_for_platform() cross-post method."""
 
-    async def test_adapt_success_returns_result(
-        self, mock_orchestrator: AsyncMock, mock_db: MagicMock
-    ) -> None:
+    async def test_adapt_success_returns_result(self, mock_orchestrator: AsyncMock, mock_db: MagicMock) -> None:
         """Successful adaptation returns GenerationResult with adapted text."""
         adapted = {"text": "Adapted post for VK!", "hashtags": ["#seo"]}
         mock_orchestrator.generate.return_value = _make_generation_result(content=adapted)
@@ -613,9 +611,7 @@ class TestSocialPostAdaptForPlatform:
         assert call_args.context["source_platform"] == "telegram"
         assert call_args.context["target_platform"] == "vk"
 
-    async def test_adapt_project_not_found_raises_error(
-        self, mock_orchestrator: AsyncMock, mock_db: MagicMock
-    ) -> None:
+    async def test_adapt_project_not_found_raises_error(self, mock_orchestrator: AsyncMock, mock_db: MagicMock) -> None:
         """Missing project raises AIGenerationError."""
         with patch("services.ai.social_posts.ProjectsRepository") as MockProjRepo:
             MockProjRepo.return_value.get_by_id = AsyncMock(return_value=None)
