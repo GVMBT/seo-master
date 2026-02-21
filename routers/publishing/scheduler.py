@@ -4,7 +4,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage
+from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
@@ -40,6 +40,26 @@ _SOCIAL_PLATFORM_TYPES = {"telegram", "vk", "pinterest"}
 def _filter_social(conns: list) -> list:  # type: ignore[type-arg]
     """Filter active social connections from connection list."""
     return [c for c in conns if c.platform_type in _SOCIAL_PLATFORM_TYPES and c.status == "active"]
+
+
+def _extract_selected_from_keyboard(
+    markup: InlineKeyboardMarkup | None,
+) -> list[int]:
+    """Extract selected connection IDs from cross-post keyboard checkmarks."""
+    if not markup:
+        return []
+    selected: list[int] = []
+    for row in markup.inline_keyboard:
+        for btn in row:
+            if (
+                btn.callback_data
+                and btn.callback_data.endswith(":toggle")
+                and btn.text.startswith("\u2713")
+            ):
+                parts = btn.callback_data.split(":")
+                if len(parts) >= 4:
+                    selected.append(int(parts[3]))
+    return selected
 
 
 class ScheduleSetupFSM(StatesGroup):
@@ -829,18 +849,23 @@ async def scheduler_crosspost_toggle(callback: CallbackQuery, user: User, db: Su
         await callback.answer("Проект не найден", show_alert=True)
         return
 
-    schedules = await SchedulesRepository(db).get_by_category(cat_id)
-    existing = next((s for s in schedules if s.connection_id == conn_id), None)
-    selected_ids: list[int] = list(existing.cross_post_connection_ids) if existing else []
+    conn_repo = _make_conn_repo(db)
+    connections = await conn_repo.get_by_project(project.id)
+    social_conns = _filter_social(connections)
+
+    # P0-3: verify target_conn_id belongs to this project's social connections
+    project_conn_ids = {c.id for c in social_conns}
+    if target_conn_id not in project_conn_ids:
+        await callback.answer("Подключение не найдено", show_alert=True)
+        return
+
+    # P0-2: read current selection from keyboard markup, not DB (avoids losing intermediate toggles)
+    selected_ids: list[int] = _extract_selected_from_keyboard(callback.message.reply_markup)
 
     if target_conn_id in selected_ids:
         selected_ids.remove(target_conn_id)
     else:
         selected_ids.append(target_conn_id)
-
-    conn_repo = _make_conn_repo(db)
-    connections = await conn_repo.get_by_project(project.id)
-    social_conns = _filter_social(connections)
 
     await callback.message.edit_reply_markup(
         reply_markup=scheduler_crosspost_kb(cat_id, conn_id, social_conns, selected_ids),
@@ -868,26 +893,26 @@ async def scheduler_crosspost_save(callback: CallbackQuery, user: User, db: Supa
         await callback.answer("Проект не найден", show_alert=True)
         return
 
-    # Extract selected IDs from current keyboard state
-    selected_ids: list[int] = []
-    if callback.message.reply_markup:
-        for row in callback.message.reply_markup.inline_keyboard:
-            for btn in row:
-                if btn.callback_data and btn.callback_data.endswith(":toggle") and btn.text.startswith("\u2713"):
-                    # Parse target_conn_id from callback_data
-                    toggle_parts = btn.callback_data.split(":")
-                    if len(toggle_parts) >= 4:
-                        selected_ids.append(int(toggle_parts[3]))
+    selected_ids = _extract_selected_from_keyboard(callback.message.reply_markup)
+
+    # P0-3: verify all selected IDs belong to this project's social connections
+    conn_repo = _make_conn_repo(db)
+    connections = await conn_repo.get_by_project(project.id)
+    social_conns = _filter_social(connections)
+    project_conn_ids = {c.id for c in social_conns}
+    selected_ids = [cid for cid in selected_ids if cid in project_conn_ids]
 
     from db.models import PlatformScheduleUpdate
 
     schedules = await SchedulesRepository(db).get_by_category(cat_id)
     existing = next((s for s in schedules if s.connection_id == conn_id), None)
-    if existing:
-        await SchedulesRepository(db).update(
-            existing.id,
-            PlatformScheduleUpdate(cross_post_connection_ids=selected_ids),
-        )
+    if not existing:
+        await callback.answer("Расписание не найдено", show_alert=True)
+        return
+    await SchedulesRepository(db).update(
+        existing.id,
+        PlatformScheduleUpdate(cross_post_connection_ids=selected_ids),
+    )
 
     count = len(selected_ids)
     msg = f"Кросс-постинг сохранён: {count} платформ." if count else "Кросс-постинг отключён."

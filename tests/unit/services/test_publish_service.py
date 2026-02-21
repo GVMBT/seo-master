@@ -593,6 +593,77 @@ async def test_cross_post_insufficient_balance_stops_remaining(
     assert result.cross_post_results[0].error == "insufficient_balance"
 
 
+@patch("services.ai.content_validator.ContentValidator", autospec=True)
+@patch("services.ai.social_posts.SocialPostService", autospec=True)
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_cross_post_adaptation_error_refunds_and_continues(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+    mock_social_cls: MagicMock,
+    mock_validator_cls: MagicMock,
+) -> None:
+    """Adaptation error for a cross-post target refunds tokens and continues."""
+    svc = _make_service()
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(
+        return_value=_make_schedule(cross_post_connection_ids=[20, 30])
+    )
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=680)
+    svc._tokens.refund = AsyncMock(return_value=True)
+
+    gen = MagicMock()
+    gen.content = {"text": "Lead text", "images_meta": []}
+    svc._generate_and_publish = AsyncMock(return_value=(gen, _make_pub_result(), 0))
+
+    # First cross-post: adaptation raises exception → refund
+    # Second cross-post: succeeds
+    vk_conn = _make_connection(id=20, platform_type="vk")
+    pin_conn = _make_connection(id=30, platform_type="pinterest", identifier="Board")
+    conn_repo = MagicMock()
+    conn_repo.get_by_id = AsyncMock(
+        side_effect=lambda cid: {5: _make_connection(), 20: vk_conn, 30: pin_conn}[cid]
+    )
+    mock_conn_cls.return_value = conn_repo
+    mock_settings.return_value = MagicMock(
+        encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key"))
+    )
+
+    # adapt_for_platform: first call raises, second succeeds
+    mock_social_inst = MagicMock()
+    mock_social_inst.adapt_for_platform = AsyncMock(
+        side_effect=[RuntimeError("AI service down"), _make_social_gen_result()]
+    )
+    mock_social_cls.return_value = mock_social_inst
+
+    # Validator passes for the second cross-post
+    mock_val_inst = MagicMock()
+    mock_val_inst.validate.return_value = MagicMock(is_valid=True, errors=[])
+    mock_validator_cls.return_value = mock_val_inst
+
+    svc._get_publisher = MagicMock(return_value=MagicMock(
+        publish=AsyncMock(return_value=MagicMock(success=True, post_url="https://pin/123"))
+    ))
+
+    result = await svc.execute(_make_payload(platform_type="telegram"))
+    assert result.status == "ok"
+    assert len(result.cross_post_results) == 2
+    # First: error with refund
+    assert result.cross_post_results[0].status == "error"
+    assert "AI service down" in (result.cross_post_results[0].error or "")
+    # Second: success
+    assert result.cross_post_results[1].status == "ok"
+    # Refund was called for the failed cross-post
+    svc._tokens.refund.assert_awaited_once()
+
+
 @patch("services.publish.get_settings")
 @patch("services.publish.CredentialManager")
 @patch("services.publish.ConnectionsRepository")

@@ -245,13 +245,23 @@ class PublishService:
                 PlatformScheduleUpdate(last_post_at=datetime.now(tz=UTC)),
             )
 
-            # Execute cross-posts if configured
+            # Execute cross-posts if configured (social posts only)
             cross_results: list[CrossPostResult] = []
             schedule = await self._schedules.get_by_id(payload.schedule_id)
-            if schedule and schedule.cross_post_connection_ids:
+            if (
+                schedule
+                and schedule.cross_post_connection_ids
+                and payload.platform_type != "wordpress"
+            ):
                 lead_text = ""
                 if isinstance(gen_result.content, dict):
                     lead_text = gen_result.content.get("text", "")
+                if not lead_text:
+                    log.warning(
+                        "cross_post_skipped_empty_text",
+                        schedule_id=payload.schedule_id,
+                        platform=payload.platform_type,
+                    )
                 if lead_text:
                     cross_results = await self._execute_cross_posts(
                         user_id=user_id,
@@ -263,10 +273,13 @@ class PublishService:
                         category_id=payload.category_id,
                     )
 
+            total_cost = estimated_cost + sum(
+                cr.tokens_spent for cr in cross_results if cr.tokens_spent
+            )
             return PublishOutcome(
                 status="ok",
                 keyword=keyword,
-                tokens_spent=estimated_cost,
+                tokens_spent=total_cost,
                 user_id=user_id,
                 post_url=pub_log.post_url or "",
                 notify=user.notify_publications,
@@ -557,7 +570,8 @@ class PublishService:
 
         for conn_id in schedule.cross_post_connection_ids:
             conn = await conn_repo.get_by_id(conn_id)
-            if not conn or conn.status != "active":
+            # Verify connection exists, is active, and belongs to same project
+            if not conn or conn.status != "active" or conn.project_id != project_id:
                 results.append(
                     CrossPostResult(
                         connection_id=conn_id,

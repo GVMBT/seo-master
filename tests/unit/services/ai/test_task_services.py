@@ -575,6 +575,96 @@ class TestSocialPostService:
 
 
 # ---------------------------------------------------------------------------
+# SocialPostService — adapt_for_platform (cross-post)
+# ---------------------------------------------------------------------------
+
+
+class TestSocialPostAdaptForPlatform:
+    """Tests for SocialPostService.adapt_for_platform() cross-post method."""
+
+    async def test_adapt_success_returns_result(
+        self, mock_orchestrator: AsyncMock, mock_db: MagicMock
+    ) -> None:
+        """Successful adaptation returns GenerationResult with adapted text."""
+        adapted = {"text": "Adapted post for VK!", "hashtags": ["#seo"]}
+        mock_orchestrator.generate.return_value = _make_generation_result(content=adapted)
+
+        with patch("services.ai.social_posts.ProjectsRepository") as MockProjRepo:
+            MockProjRepo.return_value.get_by_id = AsyncMock(return_value=_make_project())
+
+            from services.ai.social_posts import SocialPostService
+
+            svc = SocialPostService(orchestrator=mock_orchestrator, db=mock_db)
+            svc._projects = MockProjRepo.return_value
+
+            result = await svc.adapt_for_platform(
+                original_text="Original TG post",
+                source_platform="telegram",
+                target_platform="vk",
+                user_id=123,
+                project_id=1,
+                keyword="test keyword",
+            )
+
+        assert result.content["text"] == "Adapted post for VK!"  # type: ignore[index]
+        # Verify cross_post task type
+        call_args = mock_orchestrator.generate.call_args[0][0]
+        assert call_args.task == "cross_post"
+        assert call_args.context["source_platform"] == "telegram"
+        assert call_args.context["target_platform"] == "vk"
+
+    async def test_adapt_project_not_found_raises_error(
+        self, mock_orchestrator: AsyncMock, mock_db: MagicMock
+    ) -> None:
+        """Missing project raises AIGenerationError."""
+        with patch("services.ai.social_posts.ProjectsRepository") as MockProjRepo:
+            MockProjRepo.return_value.get_by_id = AsyncMock(return_value=None)
+
+            from services.ai.social_posts import SocialPostService
+
+            svc = SocialPostService(orchestrator=mock_orchestrator, db=mock_db)
+            svc._projects = MockProjRepo.return_value
+
+            with pytest.raises(AIGenerationError, match="not found"):
+                await svc.adapt_for_platform(
+                    original_text="text",
+                    source_platform="telegram",
+                    target_platform="vk",
+                    user_id=123,
+                    project_id=999,
+                    keyword="test",
+                )
+
+    async def test_adapt_sanitizes_with_target_platform_tags(
+        self, mock_orchestrator: AsyncMock, mock_db: MagicMock
+    ) -> None:
+        """Adapted text is sanitized using target platform's allowed tags."""
+        # Include HTML that should be stripped for VK
+        adapted = {"text": "<b>Bold</b> and <script>bad</script>", "hashtags": []}
+        mock_orchestrator.generate.return_value = _make_generation_result(content=adapted)
+
+        with patch("services.ai.social_posts.ProjectsRepository") as MockProjRepo:
+            MockProjRepo.return_value.get_by_id = AsyncMock(return_value=_make_project())
+
+            from services.ai.social_posts import SocialPostService
+
+            svc = SocialPostService(orchestrator=mock_orchestrator, db=mock_db)
+            svc._projects = MockProjRepo.return_value
+
+            result = await svc.adapt_for_platform(
+                original_text="text",
+                source_platform="telegram",
+                target_platform="vk",
+                user_id=123,
+                project_id=1,
+                keyword="test",
+            )
+
+        # <script> must be stripped, <b> may or may not be allowed depending on platform
+        assert "<script>" not in result.content["text"]  # type: ignore[index]
+
+
+# ---------------------------------------------------------------------------
 # KeywordService
 # ---------------------------------------------------------------------------
 
