@@ -170,7 +170,7 @@ async def _get_checkpoint_text(redis: RedisClient, user_id: int) -> str:
         project_name = html.escape(checkpoint.get("project_name", ""))
         step = checkpoint.get("step_label", "подготовка")
         return f"\n\nУ вас есть незавершённая статья:\nПроект: {project_name}\nОстановились на: {step}"
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):  # fmt: skip
         return ""
 
 
@@ -410,7 +410,7 @@ async def pipeline_resume(
 
     try:
         checkpoint = json.loads(checkpoint_raw)
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):  # fmt: skip
         await callback.answer("Нет активного pipeline.", show_alert=True)
         return
 
@@ -421,12 +421,19 @@ async def pipeline_resume(
     category_id = checkpoint.get("category_id")
     preview_id = checkpoint.get("preview_id")
 
-    # Restore FSM data from checkpoint
+    # Restore FSM data from checkpoint (M1: load category_name from DB)
+    category_name = ""
+    if category_id:
+        cats_repo = CategoriesRepository(db)
+        cat = await cats_repo.get_by_id(category_id)
+        category_name = cat.name if cat else ""
+
     await state.update_data(
         project_id=project_id,
         project_name=project_name,
         connection_id=connection_id,
         category_id=category_id,
+        category_name=category_name,
         preview_id=preview_id,
     )
 

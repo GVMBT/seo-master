@@ -384,8 +384,12 @@ async def pipeline_preview_only(
     project_name = data.get("project_name", "")
 
     await state.update_data(connection_id=None, wp_identifier=None, preview_only=True)
-    if project_id:
-        await _show_category_step(callback, state, user, db, redis, project_id, project_name)
+    if not project_id:
+        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await state.clear()
+        await clear_checkpoint(redis, user.id)
+        return
+    await _show_category_step(callback, state, user, db, redis, project_id, project_name)
     await callback.answer()
 
 

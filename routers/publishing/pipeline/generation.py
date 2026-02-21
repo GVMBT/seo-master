@@ -409,8 +409,21 @@ async def _run_generation(
     telegraph_url = telegraph_page.url if telegraph_page else None
     telegraph_path = telegraph_page.path if telegraph_page else None
 
-    # Save preview to DB
+    # Expire previous preview to prevent orphaned draft refund (M3 fix)
+    # Best-effort: don't break generation if expiration fails
     previews_repo = PreviewsRepository(db)
+    old_preview_id = fsm_data.get("preview_id")
+    if old_preview_id:
+        try:
+            await previews_repo.mark_expired(old_preview_id)
+        except Exception:
+            log.warning(
+                "pipeline.expire_old_preview_failed",
+                old_preview_id=old_preview_id,
+                user_id=user.id,
+            )
+
+    # Save preview to DB
     preview = await previews_repo.create(
         ArticlePreviewCreate(
             user_id=user.id,
@@ -763,9 +776,14 @@ async def regenerate_article(
         await callback.answer("Ошибка обновления счётчика. Попробуйте снова.", show_alert=True)
         return
 
+    # For free regenerations: set tokens_charged=0 so _try_refund won't refund
+    # tokens that were never charged. For paid regens, tokens_charged is the actual
+    # amount charged above (C2 fix: prevent free regen refund leak).
+    actually_charged = tokens_charged if (regen_count >= MAX_REGENERATIONS_FREE and not is_god) else 0
+
     # Update state for regeneration
     await state.update_data(
-        tokens_charged=tokens_charged,
+        tokens_charged=actually_charged,
         last_update_time=time.time(),
     )
     await state.set_state(ArticlePipelineFSM.regenerating)
@@ -780,7 +798,7 @@ async def regenerate_article(
     )
 
     # Sync data dict with updated state (avoid stale tokens_charged in refund path)
-    data["tokens_charged"] = tokens_charged
+    data["tokens_charged"] = actually_charged
 
     # Run generation with same data
     await _run_generation(
@@ -840,6 +858,7 @@ async def cancel_refund(
 async def copy_html(
     callback: CallbackQuery,
     state: FSMContext,
+    user: User,
     db: SupabaseClient,
 ) -> None:
     """Send article HTML as a downloadable .html file."""
@@ -857,6 +876,10 @@ async def copy_html(
     preview = await previews_repo.get_by_id(preview_id)
     if not preview or not preview.content_html:
         await callback.answer("Контент недоступен.", show_alert=True)
+        return
+
+    if preview.user_id != user.id:
+        await callback.answer("Доступ запрещён.", show_alert=True)
         return
 
     # Send as .html document (sanitize filename: keep only alnum, dash, underscore)

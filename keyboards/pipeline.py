@@ -632,3 +632,17 @@ def pipeline_images_options_kb(current_count: int = 4) -> InlineKeyboardMarkup:
     )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def pipeline_back_to_checklist_kb() -> InlineKeyboardMarkup:
+    """Single 'Back to checklist' button for text-input sub-flows (M5)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Назад к чеклисту",
+                    callback_data="pipeline:readiness:back",
+                ),
+            ],
+        ]
+    )

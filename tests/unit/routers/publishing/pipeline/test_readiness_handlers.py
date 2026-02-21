@@ -82,6 +82,7 @@ def _patch_token_svc(balance: int = 1500, *, has_balance: bool = True):
     token_mock.get_balance = AsyncMock(return_value=balance)
     token_mock.check_balance = AsyncMock(return_value=has_balance)
     token_mock.charge = AsyncMock()
+    token_mock.refund = AsyncMock(return_value=balance)
     token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
     return patch(f"{_MODULE}.TokenService", return_value=token_mock), token_mock
 
@@ -570,14 +571,20 @@ class TestDescriptionSubFlow:
         p_cats, cat_mock = _patch_cats_repo()
         p_settings = _patch_settings()
         p_show = patch(f"{_MODULE}.show_readiness_check", new_callable=AsyncMock)
+        p_desc = patch(f"{_MODULE}.DescriptionService")
+        mock_orchestrator = MagicMock()
 
-        with p_token, p_cats, p_settings, p_show as mock_show:
+        with p_token, p_cats, p_settings, p_show as mock_show, p_desc as desc_cls:
+            desc_cls.return_value.generate = AsyncMock(
+                return_value=MagicMock(content="Generated description")
+            )
             await readiness_description_ai(
                 mock_callback,
                 mock_state,
                 user,
                 mock_db,
                 mock_redis,
+                mock_orchestrator,
             )
 
         token_mock.check_balance.assert_called_once()
@@ -598,6 +605,7 @@ class TestDescriptionSubFlow:
 
         p_token, _ = _patch_token_svc(balance=5, has_balance=False)
         p_settings = _patch_settings()
+        mock_orchestrator = MagicMock()
 
         with p_token, p_settings:
             await readiness_description_ai(
@@ -606,12 +614,13 @@ class TestDescriptionSubFlow:
                 user,
                 mock_db,
                 mock_redis,
+                mock_orchestrator,
             )
 
         mock_callback.answer.assert_called_once()
         assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
 
-    async def test_ai_save_fails_no_charge(
+    async def test_ai_save_fails_refunds(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
@@ -619,27 +628,34 @@ class TestDescriptionSubFlow:
         mock_db: MagicMock,
         mock_redis: MagicMock,
     ) -> None:
-        """If category update returns None, tokens are NOT charged."""
+        """If category update returns None, tokens are refunded (debit-first)."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
         p_token, token_mock = _patch_token_svc(balance=1500, has_balance=True)
         p_cats, cat_mock = _patch_cats_repo()
         cat_mock.update = AsyncMock(return_value=None)
         p_settings = _patch_settings()
+        p_desc = patch(f"{_MODULE}.DescriptionService")
+        mock_orchestrator = MagicMock()
 
-        with p_token, p_cats, p_settings:
+        with p_token, p_cats, p_settings, p_desc as desc_cls:
+            desc_cls.return_value.generate = AsyncMock(
+                return_value=MagicMock(content="Generated description")
+            )
             await readiness_description_ai(
                 mock_callback,
                 mock_state,
                 user,
                 mock_db,
                 mock_redis,
+                mock_orchestrator,
             )
 
-        cat_mock.update.assert_called_once()
-        token_mock.charge.assert_not_called()
+        # Debit-first: charge called, then refund on save failure
+        token_mock.charge.assert_called_once()
+        token_mock.refund.assert_called_once()
         mock_callback.answer.assert_called()
-        assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
+        assert "возвращены" in mock_callback.answer.call_args[0][0]
 
     async def test_manual_start_sets_state(
         self,

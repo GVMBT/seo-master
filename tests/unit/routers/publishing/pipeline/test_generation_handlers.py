@@ -747,13 +747,14 @@ class TestCopyHtml:
         mock_state: MagicMock,
         mock_db: MagicMock,
     ) -> None:
+        user = make_user()
         preview = _make_preview(content_html="<h1>Test</h1>", keyword="seo tips")
         mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
         mock_callback.message.answer_document = AsyncMock()
 
         with patch(f"{_MODULE}.PreviewsRepository") as repo_cls:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
-            await copy_html(mock_callback, mock_state, mock_db)
+            await copy_html(mock_callback, mock_state, user, mock_db)
 
         mock_callback.message.answer_document.assert_called_once()
 
@@ -763,15 +764,34 @@ class TestCopyHtml:
         mock_state: MagicMock,
         mock_db: MagicMock,
     ) -> None:
+        user = make_user()
         preview = _make_preview(content_html=None)
         mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
 
         with patch(f"{_MODULE}.PreviewsRepository") as repo_cls:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
-            await copy_html(mock_callback, mock_state, mock_db)
+            await copy_html(mock_callback, mock_state, user, mock_db)
 
         mock_callback.answer.assert_called()
         assert "недоступен" in mock_callback.answer.call_args.args[0].lower()
+
+    async def test_ownership_check_rejects_other_user(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_db: MagicMock,
+    ) -> None:
+        """m1: copy_html rejects preview owned by different user."""
+        user = make_user(id=999999)
+        preview = _make_preview(content_html="<h1>Test</h1>")  # user_id=123456
+        mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
+
+        with patch(f"{_MODULE}.PreviewsRepository") as repo_cls:
+            repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
+            await copy_html(mock_callback, mock_state, user, mock_db)
+
+        mock_callback.answer.assert_called_once()
+        assert "запрещён" in mock_callback.answer.call_args.args[0].lower()
 
 
 # ---------------------------------------------------------------------------
