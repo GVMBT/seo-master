@@ -6,7 +6,10 @@ Edge case E05: Telegraph down -> return None, caller handles fallback.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from html.parser import HTMLParser
+from typing import Any
 
 import httpx
 import structlog
@@ -14,6 +17,110 @@ import structlog
 log = structlog.get_logger()
 
 TELEGRAPH_API_BASE = "https://api.telegra.ph"
+
+# Tags that Telegraph API accepts (all others are stripped, children kept).
+_ALLOWED_TAGS = frozenset(
+    {
+        "a",
+        "aside",
+        "b",
+        "blockquote",
+        "br",
+        "code",
+        "em",
+        "figcaption",
+        "figure",
+        "h3",
+        "h4",
+        "hr",
+        "i",
+        "img",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "s",
+        "strong",
+        "u",
+        "ul",
+    }
+)
+
+# HTML heading tags to remap to Telegraph-supported h3/h4.
+_HEADING_MAP: dict[str, str] = {
+    "h1": "h3",
+    "h2": "h3",
+    "h3": "h3",
+    "h4": "h4",
+    "h5": "h4",
+    "h6": "h4",
+}
+
+
+class _TelegraphNodeBuilder(HTMLParser):
+    """Convert HTML to Telegraph Node Array (JSON-serializable list)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._stack: list[dict[str, Any]] = []  # open elements
+        self._root: list[Any] = []  # top-level nodes
+
+    def _current(self) -> list[Any]:
+        if self._stack:
+            children: list[Any] = self._stack[-1].setdefault("children", [])
+            return children
+        return self._root
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # Remap headings
+        tag = _HEADING_MAP.get(tag, tag)
+
+        # Self-closing tags
+        if tag in ("br", "hr", "img"):
+            node: dict[str, Any] = {"tag": tag}
+            if attrs:
+                node["attrs"] = {k: v or "" for k, v in attrs if k in ("src", "href", "alt")}
+            self._current().append(node)
+            return
+
+        if tag not in _ALLOWED_TAGS:
+            # Skip unsupported tag, but keep processing children
+            return
+
+        node = {"tag": tag}
+        attr_dict = {k: v or "" for k, v in attrs if k in ("href", "src", "alt")}
+        if attr_dict:
+            node["attrs"] = attr_dict
+        self._current().append(node)
+        self._stack.append(node)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = _HEADING_MAP.get(tag, tag)
+        if tag not in _ALLOWED_TAGS or tag in ("br", "hr", "img"):
+            return
+        # Pop matching tag from stack
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i]["tag"] == tag:
+                self._stack.pop(i)
+                break
+
+    def handle_data(self, data: str) -> None:
+        text = data
+        if text:
+            self._current().append(text)
+
+    def get_nodes(self) -> list[Any]:
+        # Ensure at least one node (Telegraph requires non-empty content)
+        if not self._root:
+            return [{"tag": "p", "children": [" "]}]
+        return self._root
+
+
+def html_to_telegraph_nodes(html: str) -> str:
+    """Convert HTML string to Telegraph Node Array JSON string."""
+    parser = _TelegraphNodeBuilder()
+    parser.feed(html)
+    return json.dumps(parser.get_nodes(), ensure_ascii=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,13 +189,14 @@ class TelegraphClient:
             return None
 
         try:
+            content_json = html_to_telegraph_nodes(html)
             resp = await self._http.post(
                 f"{TELEGRAPH_API_BASE}/createPage",
                 data={
                     "access_token": token,
                     "title": title,
                     "author_name": author,
-                    "content": html,
+                    "content": content_json,
                     "return_content": "false",
                 },
             )
