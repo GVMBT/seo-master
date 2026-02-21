@@ -897,89 +897,16 @@ async def connect_wp_publish(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(
-    ArticlePipelineFSM.result,
-    F.data == "pipeline:article:more",
-)
-async def more_articles(
+async def _jump_to_category_selection(
     callback: CallbackQuery,
     state: FSMContext,
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
 ) -> None:
-    """Write another article — jump to step 3 (category), keeping project+WP (G5)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
-        await callback.answer()
-        return
+    """Jump to step 3 (category selection), clearing generation data.
 
-    data = await state.get_data()
-    project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
-
-    if not project_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
-        return
-
-    # Clear result-specific data, keep project + connection
-    await state.update_data(
-        category_id=None,
-        category_name=None,
-        preview_id=None,
-        keyword=None,
-        tokens_charged=None,
-    )
-
-    # Jump to category selection (step 3)
-    cats_repo = CategoriesRepository(db)
-    categories = await cats_repo.get_by_project(project_id)
-
-    from keyboards.pipeline import pipeline_categories_kb
-
-    if not categories:
-        from keyboards.inline import cancel_kb
-
-        await callback.message.edit_text(
-            "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
-            reply_markup=cancel_kb("pipeline:article:cancel"),
-        )
-        await state.set_state(ArticlePipelineFSM.create_category_name)
-    elif len(categories) == 1:
-        cat = categories[0]
-        await state.update_data(category_id=cat.id, category_name=cat.name)
-        from routers.publishing.pipeline.readiness import show_readiness_check
-
-        await show_readiness_check(callback, state, user, db, redis)
-    else:
-        await callback.message.edit_text(
-            "Статья (3/5) — Тема\n\nКакая тема?",
-            reply_markup=pipeline_categories_kb(categories, project_id),
-        )
-        await state.set_state(ArticlePipelineFSM.select_category)
-
-    await save_checkpoint(
-        redis,
-        user.id,
-        current_step="select_category",
-        project_id=project_id,
-        project_name=project_name,
-        connection_id=data.get("connection_id"),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "pipeline:article:change_topic")
-async def change_topic(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-) -> None:
-    """Change topic after error — jump to step 3 (category), keeping project+WP.
-
-    Stateless filter: error can leave FSM in various states (confirm_cost etc.).
-    Reuses more_articles logic.
+    Shared by more_articles and change_topic handlers.
     """
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
@@ -1037,3 +964,33 @@ async def change_topic(
         connection_id=data.get("connection_id"),
     )
     await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.result,
+    F.data == "pipeline:article:more",
+)
+async def more_articles(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Write another article — jump to step 3 (category), keeping project+WP (G5)."""
+    await _jump_to_category_selection(callback, state, user, db, redis)
+
+
+@router.callback_query(F.data == "pipeline:article:change_topic")
+async def change_topic(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Change topic after error — jump to step 3 (category), keeping project+WP.
+
+    Stateless filter: error can leave FSM in various states (confirm_cost etc.).
+    """
+    await _jump_to_category_selection(callback, state, user, db, redis)

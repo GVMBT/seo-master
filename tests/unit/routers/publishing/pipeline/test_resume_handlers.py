@@ -49,7 +49,7 @@ def _make_preview(**overrides: Any) -> ArticlePreview:
 # ---------------------------------------------------------------------------
 
 
-async def test_resume_no_checkpoint(
+async def test_resume_no_checkpoint_shows_alert(
     mock_callback: MagicMock,
     mock_state: MagicMock,
     mock_redis: MagicMock,
@@ -63,7 +63,7 @@ async def test_resume_no_checkpoint(
     mock_callback.answer.assert_called_once_with("Нет активного pipeline.", show_alert=True)
 
 
-async def test_resume_invalid_json(
+async def test_resume_invalid_json_shows_alert(
     mock_callback: MagicMock,
     mock_state: MagicMock,
     mock_redis: MagicMock,

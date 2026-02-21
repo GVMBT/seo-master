@@ -897,8 +897,8 @@ class TestBuildPreviewText:
 
 @patch(f"{_MODULE}.CategoriesRepository")
 @patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
-async def test_change_topic_multiple_categories(
-    mock_save: AsyncMock,
+async def test_change_topic_multiple_categories_shows_list(
+    _mock_save: AsyncMock,
     mock_cats_cls: MagicMock,
     mock_callback: MagicMock,
     mock_state: MagicMock,
@@ -924,9 +924,9 @@ async def test_change_topic_multiple_categories(
 
 @patch(f"{_MODULE}.CategoriesRepository")
 @patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
-async def test_change_topic_no_project_id(
-    mock_save: AsyncMock,
-    mock_cats_cls: MagicMock,
+async def test_change_topic_no_project_id_shows_stale_alert(
+    _mock_save: AsyncMock,
+    _mock_cats_cls: MagicMock,
     mock_callback: MagicMock,
     mock_state: MagicMock,
     mock_redis: MagicMock,
@@ -943,9 +943,9 @@ async def test_change_topic_no_project_id(
 @patch(f"{_MODULE}.CategoriesRepository")
 @patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
 @patch("routers.publishing.pipeline.readiness.show_readiness_check", new_callable=AsyncMock)
-async def test_change_topic_clears_generation_data(
-    mock_readiness: AsyncMock,
-    mock_save: AsyncMock,
+async def test_change_topic_single_category_clears_generation_data(
+    _mock_readiness: AsyncMock,
+    _mock_save: AsyncMock,
     mock_cats_cls: MagicMock,
     mock_callback: MagicMock,
     mock_state: MagicMock,

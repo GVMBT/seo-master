@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import structlog
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
@@ -71,7 +72,7 @@ async def exit_confirm(
     callback: CallbackQuery,
     state: FSMContext,
     user: User,
-    redis: RedisClient,
+    redis: RedisClient,  # noqa: ARG001 — checkpoint intentionally retained for resume
 ) -> None:
     """User confirmed exit — clear FSM, keep checkpoint for resume."""
     await state.clear()
@@ -88,6 +89,6 @@ async def exit_cancel(callback: CallbackQuery) -> None:
     if callback.message and not isinstance(callback.message, InaccessibleMessage):
         try:
             await callback.message.delete()
-        except Exception:
+        except TelegramBadRequest, TelegramForbiddenError, TelegramNotFound:
             log.debug("exit_cancel.delete_failed")
     await callback.answer("Продолжаем!")

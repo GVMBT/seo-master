@@ -309,6 +309,8 @@ async def _route_to_step(
     if step == "select_category":
         if not project_id:
             await callback.message.edit_text("Данные сессии устарели. Начните заново.")
+            await redis.delete(CacheKeys.pipeline_state(user.id))
+            await state.clear()
             return
         cats_repo = CategoriesRepository(db)
         categories = await cats_repo.get_by_project(project_id)
