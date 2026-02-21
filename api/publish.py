@@ -57,7 +57,8 @@ def _build_notification_text(result: PublishOutcome) -> str:
                 error_safe = html_mod.escape(xp.error or "unknown error")
                 text += f"\n\u2717 {label}: {error_safe}"
         return text
-    return _REASON_TEMPLATES.get(result.reason, f"Ошибка автопубликации: {result.reason}")
+    reason_safe = html_mod.escape(result.reason or "unknown")
+    return _REASON_TEMPLATES.get(result.reason, f"Ошибка автопубликации: {reason_safe}")
 
 
 @require_qstash_signature

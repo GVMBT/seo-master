@@ -182,6 +182,14 @@ def test_notification_text_unknown_reason() -> None:
     assert "something_weird" in text
 
 
+def test_notification_text_unknown_reason_escapes_html() -> None:
+    """Unknown reason with HTML tags is escaped to prevent XSS."""
+    result = PublishOutcome(status="error", reason='<script>alert("xss")</script>')
+    text = _build_notification_text(result)
+    assert "<script>" not in text
+    assert "&lt;script&gt;" in text
+
+
 # ---------------------------------------------------------------------------
 # Cross-post notification tests
 # ---------------------------------------------------------------------------
