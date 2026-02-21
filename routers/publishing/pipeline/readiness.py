@@ -462,7 +462,20 @@ async def readiness_description_ai(
         )
         return
 
-    # Generate real description via DescriptionService
+    # Debit-first: charge before generation, refund on failure
+    try:
+        await token_svc.charge(
+            user_id=user.id,
+            amount=COST_DESCRIPTION,
+            operation_type="description",
+            description=f"Описание (pipeline, категория #{category_id})",
+        )
+    except Exception:
+        log.exception("pipeline.readiness.description_charge_failed", user_id=user.id)
+        await callback.answer("Ошибка списания токенов.", show_alert=True)
+        return
+
+    # Generate + save; refund on any failure
     desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
     try:
         result = await desc_svc.generate(
@@ -470,35 +483,27 @@ async def readiness_description_ai(
             project_id=project_id,
             category_id=category_id,
         )
+        generated = result.content if isinstance(result.content, str) else str(result.content)
+
+        cats_repo = CategoriesRepository(db)
+        save_result = await cats_repo.update(category_id, CategoryUpdate(description=generated))
+        if not save_result:
+            raise RuntimeError("description_save_failed")
     except Exception:
+        # Refund on any error after charge
+        await token_svc.refund(
+            user_id=user.id,
+            amount=COST_DESCRIPTION,
+            reason="refund",
+            description=f"Возврат: ошибка описания (категория #{category_id})",
+        )
         log.exception(
             "pipeline.readiness.description_ai_failed",
             user_id=user.id,
             category_id=category_id,
         )
-        await callback.answer("Ошибка генерации описания. Попробуйте позже.", show_alert=True)
+        await callback.answer("Ошибка генерации описания. Токены возвращены.", show_alert=True)
         return
-
-    generated = result.content if isinstance(result.content, str) else str(result.content)
-
-    # Save FIRST, charge AFTER (if update fails, user is not billed)
-    cats_repo = CategoriesRepository(db)
-    save_result = await cats_repo.update(category_id, CategoryUpdate(description=generated))
-    if not save_result:
-        log.error(
-            "pipeline.readiness.description_save_failed",
-            user_id=user.id,
-            category_id=category_id,
-        )
-        await callback.answer("Ошибка сохранения описания.", show_alert=True)
-        return
-
-    await token_svc.charge(
-        user_id=user.id,
-        amount=COST_DESCRIPTION,
-        operation_type="description",
-        description=f"Описание (pipeline, категория #{category_id})",
-    )
 
     log.info(
         "pipeline.readiness.description_generated",

@@ -410,10 +410,18 @@ async def _run_generation(
     telegraph_path = telegraph_page.path if telegraph_page else None
 
     # Expire previous preview to prevent orphaned draft refund (M3 fix)
+    # Best-effort: don't break generation if expiration fails
     previews_repo = PreviewsRepository(db)
     old_preview_id = fsm_data.get("preview_id")
     if old_preview_id:
-        await previews_repo.mark_expired(old_preview_id)
+        try:
+            await previews_repo.mark_expired(old_preview_id)
+        except Exception:
+            log.warning(
+                "pipeline.expire_old_preview_failed",
+                old_preview_id=old_preview_id,
+                user_id=user.id,
+            )
 
     # Save preview to DB
     preview = await previews_repo.create(
