@@ -13,7 +13,7 @@ import structlog
 from db.client import SupabaseClient
 from db.repositories.categories import CategoriesRepository
 from db.repositories.publications import PublicationsRepository
-from services.tokens import estimate_article_cost
+from services.tokens import estimate_article_cost, estimate_social_post_cost
 
 log = structlog.get_logger()
 
@@ -60,13 +60,14 @@ class ReadinessReport:
 
 
 class ReadinessService:
-    """Checks category readiness for article generation.
+    """Checks category readiness for article/social generation.
 
     Progressive readiness (UX_PIPELINE.md §4.4):
     - 0 publications:  show keywords (required) + description
-    - 2-5 publications: + prices, images
-    - >5 publications:  show all items
+    - 2-5 publications: + prices, images (article only)
+    - >5 publications:  show all items (article only)
 
+    Social pipeline: only keywords + description, no prices/images.
     Prices and images are NEVER blocking — only informational.
     """
 
@@ -81,6 +82,8 @@ class ReadinessService:
         category_id: int,
         user_balance: int,
         image_count: int = 4,
+        *,
+        pipeline_type: str = "article",
     ) -> ReadinessReport:
         """Build readiness report for a category.
 
@@ -89,6 +92,7 @@ class ReadinessService:
             category_id: Target category.
             user_balance: Current user balance (tokens).
             image_count: Number of AI images (default 4).
+            pipeline_type: "article" or "social" — affects cost and missing items.
 
         Returns:
             ReadinessReport with all checks filled.
@@ -116,16 +120,23 @@ class ReadinessService:
         user_pubs = await self._publications.get_by_user(user_id)
         publication_count = len(user_pubs)
 
-        # Cost estimation
-        estimated_cost = estimate_article_cost(images_count=image_count)
+        # Cost estimation: social posts are cheaper, no images
+        if pipeline_type == "social":
+            # Social: no images in pipeline
+            effective_image_count = 0
+            estimated_cost = estimate_social_post_cost(images_count=effective_image_count)
+        else:
+            estimated_cost = estimate_article_cost(images_count=image_count)
+            effective_image_count = image_count
 
         # Missing items (progressive)
         missing = _build_missing_items(
             has_keywords=has_keywords,
             has_description=has_description,
             has_prices=has_prices,
-            image_count=image_count,
+            image_count=effective_image_count,
             publication_count=publication_count,
+            pipeline_type=pipeline_type,
         )
 
         is_sufficient = user_balance >= estimated_cost
@@ -136,7 +147,7 @@ class ReadinessService:
             cluster_count=cluster_count,
             has_description=has_description,
             has_prices=has_prices,
-            image_count=image_count,
+            image_count=effective_image_count,
             estimated_cost=estimated_cost,
             user_balance=user_balance,
             is_sufficient_balance=is_sufficient,
@@ -172,13 +183,16 @@ def _build_missing_items(
     has_prices: bool,
     image_count: int,
     publication_count: int,
+    pipeline_type: str = "article",
 ) -> list[str]:
     """Build list of missing items based on progressive readiness.
 
-    UX_PIPELINE.md §4.4:
+    UX_PIPELINE.md §4.4 (article):
     - 0 pubs: keywords + description
     - 2-5 pubs: + prices, images
     - >5 pubs: all items shown
+
+    Social pipeline (UX_PIPELINE.md §5.4): only keywords + description.
     """
     missing: list[str] = []
 
@@ -190,11 +204,15 @@ def _build_missing_items(
     if not has_description:
         missing.append("description")
 
-    # Prices: shown after 2+ publications
+    # Social pipeline: no prices/images checks
+    if pipeline_type == "social":
+        return missing
+
+    # Prices: shown after 2+ publications (article only)
     if publication_count >= 2 and not has_prices:
         missing.append("prices")
 
-    # Images: always available but shown as configurable after 2+ pubs
+    # Images: always available but shown as configurable after 2+ pubs (article only)
     if publication_count >= 2 and image_count == 0:
         missing.append("images")
 

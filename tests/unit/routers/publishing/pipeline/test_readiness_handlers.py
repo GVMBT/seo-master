@@ -575,9 +575,7 @@ class TestDescriptionSubFlow:
         mock_orchestrator = MagicMock()
 
         with p_token, p_cats, p_settings, p_show as mock_show, p_desc as desc_cls:
-            desc_cls.return_value.generate = AsyncMock(
-                return_value=MagicMock(content="Generated description")
-            )
+            desc_cls.return_value.generate = AsyncMock(return_value=MagicMock(content="Generated description"))
             await readiness_description_ai(
                 mock_callback,
                 mock_state,
@@ -639,9 +637,7 @@ class TestDescriptionSubFlow:
         mock_orchestrator = MagicMock()
 
         with p_token, p_cats, p_settings, p_desc as desc_cls:
-            desc_cls.return_value.generate = AsyncMock(
-                return_value=MagicMock(content="Generated description")
-            )
+            desc_cls.return_value.generate = AsyncMock(return_value=MagicMock(content="Generated description"))
             await readiness_description_ai(
                 mock_callback,
                 mock_state,

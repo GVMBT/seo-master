@@ -5,7 +5,7 @@ from __future__ import annotations
 from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from db.models import Category, Project
+from db.models import Category, PlatformConnection, Project
 from keyboards.pagination import paginate
 from services.readiness import ReadinessReport
 from services.tokens import (
@@ -15,43 +15,44 @@ from services.tokens import (
 )
 
 # ---------------------------------------------------------------------------
-# Step 1: Select project
+# Step 1: Select project (shared article/social)
 # ---------------------------------------------------------------------------
 
 
 def pipeline_projects_kb(
     projects: list[Project],
     page: int = 1,
+    pipeline_type: str = "article",
 ) -> InlineKeyboardMarkup:
     """Project selection for pipeline step 1.
 
-    callback_data: pipeline:article:{project_id}:select
-    pagination: page:pipeline_projects:{page}
+    callback_data: pipeline:{type}:{project_id}:select
+    pagination: page:pipeline_{type}_projects:{page}
     """
     return paginate(
         items=projects,
         page=page,
-        cb_prefix="pipeline_projects",
+        cb_prefix=f"pipeline_{pipeline_type}_projects",
         item_text="name",
-        item_cb="pipeline:article:{id}:select",
+        item_cb=f"pipeline:{pipeline_type}:{{id}}:select",
     )[0]
 
 
-def pipeline_no_projects_kb() -> InlineKeyboardMarkup:
+def pipeline_no_projects_kb(pipeline_type: str = "article") -> InlineKeyboardMarkup:
     """No projects — offer to create one inline."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="Создать проект",
-                    callback_data="pipeline:article:create_project",
+                    callback_data=f"pipeline:{pipeline_type}:create_project",
                     style=ButtonStyle.PRIMARY,
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Отмена",
-                    callback_data="pipeline:article:cancel",
+                    callback_data=f"pipeline:{pipeline_type}:cancel",
                 ),
             ],
         ]
@@ -93,34 +94,35 @@ def pipeline_categories_kb(
     categories: list[Category],
     project_id: int,
     page: int = 1,
+    pipeline_type: str = "article",
 ) -> InlineKeyboardMarkup:
     """Category selection for pipeline step 3.
 
-    callback_data: pipeline:article:{project_id}:cat:{cat_id}
+    callback_data: pipeline:{type}:{project_id}:cat:{cat_id}
     """
     return paginate(
         items=categories,
         page=page,
-        cb_prefix="pipeline_categories",
+        cb_prefix=f"pipeline_{pipeline_type}_categories",
         item_text="name",
-        item_cb=f"pipeline:article:{project_id}:cat:{{id}}",
+        item_cb=f"pipeline:{pipeline_type}:{project_id}:cat:{{id}}",
     )[0]
 
 
-def pipeline_no_categories_kb() -> InlineKeyboardMarkup:
+def pipeline_no_categories_kb(pipeline_type: str = "article") -> InlineKeyboardMarkup:
     """No categories — prompt for inline creation."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="Создать категорию",
-                    callback_data="pipeline:article:create_category",
+                    callback_data=f"pipeline:{pipeline_type}:create_category",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Отмена",
-                    callback_data="pipeline:article:cancel",
+                    callback_data=f"pipeline:{pipeline_type}:cancel",
                 ),
             ],
         ]
@@ -642,6 +644,161 @@ def pipeline_back_to_checklist_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Назад к чеклисту",
                     callback_data="pipeline:readiness:back",
+                ),
+            ],
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Social Pipeline keyboards (UX_PIPELINE.md §5)
+# ---------------------------------------------------------------------------
+
+
+def social_connections_kb(
+    connections: list[PlatformConnection],
+    project_id: int,
+) -> InlineKeyboardMarkup:
+    """Social connection selection for pipeline step 2 (UX_PIPELINE.md §5.2).
+
+    Shows connected platforms + "Подключить ещё".
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for conn in connections:
+        platform_labels = {
+            "telegram": "Телеграм",
+            "vk": "ВКонтакте",
+            "pinterest": "Пинтерест",
+        }
+        label = platform_labels.get(conn.platform_type, conn.platform_type)
+        display = f"{label}: {conn.identifier}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=display,
+                    callback_data=f"pipeline:social:{project_id}:conn:{conn.id}",
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Подключить ещё",
+                callback_data="pipeline:social:add_connection",
+            ),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Отмена",
+                callback_data="pipeline:social:cancel",
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def social_no_connections_kb() -> InlineKeyboardMarkup:
+    """No social connections — offer to connect."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Подключить Телеграм",
+                    callback_data="pipeline:social:connect:telegram",
+                    style=ButtonStyle.PRIMARY,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Подключить ВКонтакте",
+                    callback_data="pipeline:social:connect:vk",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Подключить Пинтерест",
+                    callback_data="pipeline:social:connect:pinterest",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Отмена",
+                    callback_data="pipeline:social:cancel",
+                ),
+            ],
+        ]
+    )
+
+
+def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
+    """Simplified readiness checklist for social pipeline (UX_PIPELINE.md §5.4).
+
+    Only keywords + description. No prices/images.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if not report.has_keywords:
+        cost_label = f" ({estimate_keywords_cost(100)} ток.)"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"Подобрать ключевики{cost_label}",
+                    callback_data="pipeline:social:readiness:keywords",
+                ),
+            ]
+        )
+
+    if not report.has_description:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"Описание ({COST_DESCRIPTION} ток.)",
+                    callback_data="pipeline:social:readiness:description",
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Всё ОК — генерировать",
+                callback_data="pipeline:social:readiness:done",
+                style=ButtonStyle.SUCCESS,
+            ),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Отменить",
+                callback_data="pipeline:social:cancel",
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def social_exit_confirm_kb() -> InlineKeyboardMarkup:
+    """Exit confirmation for social pipeline steps 4-7."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Да, выйти",
+                    callback_data="pipeline:social:exit_confirm",
+                    style=ButtonStyle.DANGER,
+                ),
+                InlineKeyboardButton(
+                    text="Продолжить",
+                    callback_data="pipeline:social:exit_cancel",
                 ),
             ],
         ]

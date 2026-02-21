@@ -19,8 +19,8 @@ from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from cache.client import RedisClient
 from db.models import User
-from keyboards.pipeline import pipeline_exit_confirm_kb
-from routers.publishing.pipeline._common import ArticlePipelineFSM
+from keyboards.pipeline import pipeline_exit_confirm_kb, social_exit_confirm_kb
+from routers.publishing.pipeline._common import ArticlePipelineFSM, SocialPipelineFSM
 
 log = structlog.get_logger()
 router = Router()
@@ -28,7 +28,7 @@ router = Router()
 # States where exit requires confirmation (steps 4-7).
 # Excludes generating/publishing/regenerating — those have active coroutines;
 # clearing FSM mid-flight causes race conditions (M4).
-_PROTECTED_STATES = StateFilter(
+_ARTICLE_PROTECTED = StateFilter(
     ArticlePipelineFSM.readiness_check,
     ArticlePipelineFSM.readiness_keywords_products,
     ArticlePipelineFSM.readiness_keywords_geo,
@@ -41,13 +41,25 @@ _PROTECTED_STATES = StateFilter(
     ArticlePipelineFSM.preview,
 )
 
+_SOCIAL_PROTECTED = StateFilter(
+    SocialPipelineFSM.readiness_check,
+    SocialPipelineFSM.readiness_keywords_products,
+    SocialPipelineFSM.readiness_keywords_geo,
+    SocialPipelineFSM.readiness_keywords_qty,
+    SocialPipelineFSM.readiness_keywords_generating,
+    SocialPipelineFSM.readiness_description,
+    SocialPipelineFSM.confirm_cost,
+    SocialPipelineFSM.review,
+    SocialPipelineFSM.cross_post_review,
+)
+
 
 @router.message(
-    _PROTECTED_STATES,
+    _ARTICLE_PROTECTED,
     F.text.in_({"Меню", "Отмена"}),
 )
-async def exit_protection_reply(message: Message) -> None:
-    """Intercept reply keyboard 'Меню'/'Отмена' on protected steps."""
+async def exit_protection_reply_article(message: Message) -> None:
+    """Intercept reply keyboard 'Меню'/'Отмена' on protected article steps."""
     await message.answer(
         "Прервать публикацию?\nПрогресс сохранится на 24 часа.",
         reply_markup=pipeline_exit_confirm_kb(),
@@ -55,23 +67,47 @@ async def exit_protection_reply(message: Message) -> None:
 
 
 @router.message(
-    _PROTECTED_STATES,
+    _SOCIAL_PROTECTED,
+    F.text.in_({"Меню", "Отмена"}),
+)
+async def exit_protection_reply_social(message: Message) -> None:
+    """Intercept reply keyboard 'Меню'/'Отмена' on protected social steps."""
+    await message.answer(
+        "Прервать публикацию?\nПрогресс сохранится на 24 часа.",
+        reply_markup=social_exit_confirm_kb(),
+    )
+
+
+@router.message(
+    _ARTICLE_PROTECTED,
     Command("cancel"),
 )
-async def exit_protection_cancel_cmd(message: Message) -> None:
-    """Intercept /cancel command on protected steps."""
+async def exit_protection_cancel_cmd_article(message: Message) -> None:
+    """Intercept /cancel command on protected article steps."""
     await message.answer(
         "Прервать публикацию?\nПрогресс сохранится на 24 часа.",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
 
-@router.callback_query(F.data == "pipeline:article:exit_confirm")
+@router.message(
+    _SOCIAL_PROTECTED,
+    Command("cancel"),
+)
+async def exit_protection_cancel_cmd_social(message: Message) -> None:
+    """Intercept /cancel command on protected social steps."""
+    await message.answer(
+        "Прервать публикацию?\nПрогресс сохранится на 24 часа.",
+        reply_markup=social_exit_confirm_kb(),
+    )
+
+
+@router.callback_query(F.data.in_({"pipeline:article:exit_confirm", "pipeline:social:exit_confirm"}))
 async def exit_confirm(
     callback: CallbackQuery,
     state: FSMContext,
     user: User,
-    redis: RedisClient,  # noqa: ARG001 — checkpoint intentionally retained for resume
+    redis: RedisClient,  # checkpoint intentionally retained for resume
 ) -> None:
     """User confirmed exit — clear FSM, keep checkpoint for resume."""
     await state.clear()
@@ -82,12 +118,12 @@ async def exit_confirm(
     log.info("pipeline.exit_confirmed", user_id=user.id)
 
 
-@router.callback_query(F.data == "pipeline:article:exit_cancel")
+@router.callback_query(F.data.in_({"pipeline:article:exit_cancel", "pipeline:social:exit_cancel"}))
 async def exit_cancel(callback: CallbackQuery) -> None:
     """User chose to continue — dismiss confirmation dialog."""
     if callback.message and not isinstance(callback.message, InaccessibleMessage):
         try:
             await callback.message.delete()
-        except TelegramBadRequest, TelegramForbiddenError, TelegramNotFound:
+        except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound):
             log.debug("exit_cancel.delete_failed")
     await callback.answer("Продолжаем!")

@@ -1,6 +1,6 @@
 """Tests for routers/publishing/pipeline/exit_protection.py.
 
-Covers exit protection for Article Pipeline steps 4-7:
+Covers exit protection for Article + Social Pipeline steps 4-7:
 - Reply keyboard "Меню"/"Отмена" interception on protected states
 - /cancel command interception on protected states
 - Exit confirm — clear FSM, keep checkpoint
@@ -11,27 +11,27 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from routers.publishing.pipeline._common import ArticlePipelineFSM
 from routers.publishing.pipeline.exit_protection import (
     exit_cancel,
     exit_confirm,
-    exit_protection_cancel_cmd,
-    exit_protection_reply,
+    exit_protection_cancel_cmd_article,
+    exit_protection_cancel_cmd_social,
+    exit_protection_reply_article,
+    exit_protection_reply_social,
 )
 from tests.unit.routers.conftest import make_user
 
-
 # ---------------------------------------------------------------------------
-# exit_protection_reply
+# exit_protection_reply (article)
 # ---------------------------------------------------------------------------
 
 
-async def test_exit_protection_reply_shows_confirm(mock_message: MagicMock) -> None:
-    """Reply 'Меню' or 'Отмена' on protected state shows exit confirmation."""
+async def test_exit_protection_reply_article_shows_confirm(mock_message: MagicMock) -> None:
+    """Reply 'Меню' on protected article state shows exit confirmation."""
     mock_message.text = "Меню"
     mock_message.answer = AsyncMock()
 
-    await exit_protection_reply(mock_message)
+    await exit_protection_reply_article(mock_message)
 
     mock_message.answer.assert_called_once()
     text = mock_message.answer.call_args[0][0]
@@ -44,27 +44,59 @@ async def test_exit_protection_reply_shows_confirm(mock_message: MagicMock) -> N
     assert "pipeline:article:exit_cancel" in callbacks
 
 
-async def test_exit_protection_reply_otmena(mock_message: MagicMock) -> None:
-    """Reply 'Отмена' also triggers exit protection."""
+async def test_exit_protection_reply_article_otmena(mock_message: MagicMock) -> None:
+    """Reply 'Отмена' also triggers article exit protection."""
     mock_message.text = "Отмена"
     mock_message.answer = AsyncMock()
 
-    await exit_protection_reply(mock_message)
+    await exit_protection_reply_article(mock_message)
 
     mock_message.answer.assert_called_once()
     assert "Прервать публикацию?" in mock_message.answer.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------
-# exit_protection_cancel_cmd
+# exit_protection_reply (social)
 # ---------------------------------------------------------------------------
 
 
-async def test_exit_protection_cancel_cmd(mock_message: MagicMock) -> None:
-    """/cancel command on protected state shows exit confirmation."""
+async def test_exit_protection_reply_social_shows_confirm(mock_message: MagicMock) -> None:
+    """Reply 'Меню' on protected social state shows exit confirmation."""
+    mock_message.text = "Меню"
     mock_message.answer = AsyncMock()
 
-    await exit_protection_cancel_cmd(mock_message)
+    await exit_protection_reply_social(mock_message)
+
+    mock_message.answer.assert_called_once()
+    text = mock_message.answer.call_args[0][0]
+    assert "Прервать публикацию?" in text
+    assert "24 часа" in text
+    kb = mock_message.answer.call_args[1]["reply_markup"]
+    callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert "pipeline:social:exit_confirm" in callbacks
+    assert "pipeline:social:exit_cancel" in callbacks
+
+
+# ---------------------------------------------------------------------------
+# exit_protection_cancel_cmd (article + social)
+# ---------------------------------------------------------------------------
+
+
+async def test_exit_protection_cancel_cmd_article(mock_message: MagicMock) -> None:
+    """/cancel command on protected article state shows exit confirmation."""
+    mock_message.answer = AsyncMock()
+
+    await exit_protection_cancel_cmd_article(mock_message)
+
+    mock_message.answer.assert_called_once()
+    assert "Прервать публикацию?" in mock_message.answer.call_args[0][0]
+
+
+async def test_exit_protection_cancel_cmd_social(mock_message: MagicMock) -> None:
+    """/cancel command on protected social state shows exit confirmation."""
+    mock_message.answer = AsyncMock()
+
+    await exit_protection_cancel_cmd_social(mock_message)
 
     mock_message.answer.assert_called_once()
     assert "Прервать публикацию?" in mock_message.answer.call_args[0][0]

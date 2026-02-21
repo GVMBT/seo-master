@@ -138,6 +138,12 @@ class ConnectionService:
         """Get distinct active platform types for a project."""
         return await self._repo.get_platform_types_by_project(project_id)
 
+    async def get_social_connections(self, project_id: int) -> list[PlatformConnection]:
+        """Get active social platform connections (TG/VK/Pinterest) for a project."""
+        all_conns = await self._repo.get_by_project(project_id)
+        social_types = {"telegram", "vk", "pinterest"}
+        return [c for c in all_conns if c.platform_type in social_types and c.status == "active"]
+
     async def create(
         self,
         data: PlatformConnectionCreate,
