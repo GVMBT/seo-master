@@ -31,6 +31,7 @@ class ConnectionService:
     def __init__(self, db: SupabaseClient, http_client: httpx.AsyncClient) -> None:
         settings = get_settings()
         cm = CredentialManager(settings.encryption_key.get_secret_value())
+        self._db = db
         self._repo = ConnectionsRepository(db, cm)
         self._http = http_client
 
@@ -151,6 +152,22 @@ class ConnectionService:
     ) -> PlatformConnection:
         """Create connection with encrypted credentials."""
         return await self._repo.create(data, raw_credentials)
+
+    async def cleanup_cross_post_refs(self, connection_id: int) -> None:
+        """Remove deleted connection from cross_post_connection_ids arrays."""
+        from db.repositories.schedules import SchedulesRepository
+
+        schedules_repo = SchedulesRepository(self._db)
+        # PostgREST does not support array_remove natively,
+        # so we fetch schedules that reference this connection and update them.
+        all_schedules = await schedules_repo.get_by_connection_cross_post(connection_id)
+        for sched in all_schedules:
+            updated_ids = [cid for cid in sched.cross_post_connection_ids if cid != connection_id]
+            from db.models import PlatformScheduleUpdate
+
+            await schedules_repo.update(sched.id, PlatformScheduleUpdate(cross_post_connection_ids=updated_ids))
+        if all_schedules:
+            log.info("cross_post_refs_cleaned", connection_id=connection_id, count=len(all_schedules))
 
     async def delete(self, connection_id: int) -> bool:
         """Delete connection."""

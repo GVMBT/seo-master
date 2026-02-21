@@ -247,6 +247,9 @@ async def execute_connection_delete(
     # E24: Cancel QStash schedules for this connection
     await scheduler_service.cancel_schedules_for_connection(conn_id)
 
+    # Clean up cross_post_connection_ids references
+    await conn_svc.cleanup_cross_post_refs(conn_id)
+
     deleted = await conn_svc.delete(conn_id)
     if deleted:
         safe_id = html.escape(conn.identifier)

@@ -54,6 +54,11 @@ def estimate_social_post_cost(word_count: int = 100, images_count: int = 1) -> i
     return estimate_text_cost(word_count) + images_count * COST_PER_IMAGE
 
 
+def estimate_cross_post_cost(word_count: int = 100) -> int:
+    """Cross-post: text adaptation only, no images (~10 tokens)."""
+    return estimate_text_cost(word_count)
+
+
 def estimate_keywords_cost(quantity: int) -> int:
     """Keyword generation: 50-200 tokens (1:1 mapping)."""
     return max(quantity * COST_KEYWORDS_PER_UNIT, 0)

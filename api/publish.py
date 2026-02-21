@@ -30,14 +30,35 @@ _REASON_TEMPLATES: dict[str, str] = {
 }
 
 
+_PLATFORM_LABELS: dict[str, str] = {
+    "telegram": "Telegram",
+    "vk": "VK",
+    "pinterest": "Pinterest",
+    "wordpress": "WordPress",
+}
+
+
 def _build_notification_text(result: PublishOutcome) -> str:
     """Build user-facing notification text per EDGE_CASES.md templates."""
+    import html as html_mod
+
     if result.status == "ok":
-        text = f"Автопубликация выполнена: <b>{result.keyword}</b>"
+        keyword_safe = html_mod.escape(result.keyword)
+        text = f"Автопубликация выполнена: <b>{keyword_safe}</b>"
         if result.post_url:
-            text += f"\n{result.post_url}"
+            text += f"\n\u2713 {result.post_url}"
+        # Append cross-post results
+        for xp in result.cross_post_results:
+            label = html_mod.escape(_PLATFORM_LABELS.get(xp.platform, xp.platform))
+            if xp.status == "ok":
+                url_part = f" {xp.post_url}" if xp.post_url else ""
+                text += f"\n\u2713 {label}:{url_part}"
+            else:
+                error_safe = html_mod.escape(xp.error or "unknown error")
+                text += f"\n\u2717 {label}: {error_safe}"
         return text
-    return _REASON_TEMPLATES.get(result.reason, f"Ошибка автопубликации: {result.reason}")
+    reason_safe = html_mod.escape(result.reason or "unknown")
+    return _REASON_TEMPLATES.get(result.reason, f"Ошибка автопубликации: {reason_safe}")
 
 
 @require_qstash_signature

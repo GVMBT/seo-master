@@ -28,6 +28,10 @@
 }
 ```
 
+PublishService проверяет `cross_post_connection_ids` на schedule после успешной lead-публикации.
+Для каждого зависимого подключения: AI-адаптация (~10 ток) → publish → log с `content_type="cross_post"`.
+Partial failure OK: ведущий пост остаётся опубликованным, ошибочные кросс-посты рефундятся.
+
 ### 1.3 Верификация подписи QStash
 
 ```python
