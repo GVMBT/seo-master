@@ -21,8 +21,11 @@ system: |
 
   <COMPANY_DATA>
   Компания: <<company_name>> (<<specialization>>).
+  <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if experience %>Опыт: <<experience>>.<% endif %>
   Город: <<city>>.
   Преимущества: <<advantages>>.
+  <% if website_url %>Сайт: <<website_url>>.<% endif %>
   <% if niche_type == "medical" %>Ниша YMYL (медицина). Добавь дисклеймер: "Информация носит ознакомительный характер и не заменяет консультацию специалиста."<% endif %>
   <% if niche_type == "legal" %>Ниша YMYL (право). Добавь дисклеймер: "Статья носит информационный характер. За юридической консультацией обратитесь к специалисту."<% endif %>
   <% if niche_type == "finance" %>Ниша YMYL (финансы). Добавь дисклеймер: "Данная информация не является инвестиционной рекомендацией."<% endif %>
@@ -159,6 +162,15 @@ variables:
     required: false
     default: ""
   - name: advantages
+    required: false
+    default: ""
+  - name: company_description
+    required: false
+    default: ""
+  - name: experience
+    required: false
+    default: ""
+  - name: website_url
     required: false
     default: ""
   - name: language

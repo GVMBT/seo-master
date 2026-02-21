@@ -8,6 +8,9 @@ meta:
 system: |
   Ты — SEO-редактор. Анализируй и улучшай статьи на <<language>>.
   Компания: <<company_name>> (<<specialization>>).
+  <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if experience %>Опыт: <<experience>>.<% endif %>
+  <% if website_url %>Сайт: <<website_url>>.<% endif %>
 
 user: |
   Проанализируй статью и перепиши её, исправив слабые места.
@@ -68,6 +71,15 @@ variables:
     required: true
   - name: specialization
     required: true
+  - name: company_description
+    required: false
+    default: ""
+  - name: experience
+    required: false
+    default: ""
+  - name: website_url
+    required: false
+    default: ""
   - name: language
     required: true
     default: "ru"

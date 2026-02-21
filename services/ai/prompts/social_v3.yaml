@@ -8,6 +8,10 @@ meta:
 system: |
   Ты — SMM-копирайтер. Пиши на <<language>>.
   Компания: <<company_name>> (<<specialization>>).
+  <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if advantages %>Преимущества: <<advantages>>.<% endif %>
+  <% if experience %>Опыт: <<experience>>.<% endif %>
+  <% if website_url %>Сайт: <<website_url>>.<% endif %>
 
 user: |
   Напиши пост для <<platform>> на тему "<<keyword>>".
@@ -43,6 +47,22 @@ variables:
   - name: specialization
     source: projects.specialization
     required: true
+  - name: advantages
+    source: projects.advantages
+    required: false
+    default: ""
+  - name: company_description
+    source: projects.description
+    required: false
+    default: ""
+  - name: experience
+    source: projects.experience
+    required: false
+    default: ""
+  - name: website_url
+    source: projects.website_url
+    required: false
+    default: ""
   - name: language
     source: users.language
     required: true

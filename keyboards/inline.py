@@ -218,14 +218,14 @@ _EDIT_FIELDS: list[tuple[str, str]] = [
     ("name", "Название"),
     ("company_name", "Компания"),
     ("specialization", "Специализация"),
-    ("website_url", "Сайт"),
     ("description", "Описание"),
     ("advantages", "Преимущества"),
     ("experience", "Опыт"),
+    ("website_url", "Сайт"),
     ("company_city", "Город"),
-    ("company_address", "Адрес"),
     ("company_phone", "Телефон"),
     ("company_email", "Эл. почта"),
+    ("company_address", "Адрес"),
     ("timezone", "Часовой пояс"),
 ]
 
