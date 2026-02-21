@@ -66,6 +66,15 @@ def _patch_repos(
             new_callable=AsyncMock,
             return_value=None,
         ),
+        # F6.2: connection step replaced stubs, needs mock for tests focused on step 1/3
+        "conn_step": patch(
+            f"{_MODULE}._show_connection_step",
+            new_callable=AsyncMock,
+        ),
+        "conn_step_msg": patch(
+            f"{_MODULE}._show_connection_step_msg",
+            new_callable=AsyncMock,
+        ),
     }
     return patches, projects_mock, cat_mock
 
@@ -103,7 +112,7 @@ class TestPipelineSocialStart:
     ) -> None:
         p = make_project()
         patches, _, _cat_mock = _patch_repos(projects=[p], categories=[make_category()])
-        with patches["projects"], patches["cats"], patches["fsm_utils"]:
+        with patches["projects"], patches["cats"], patches["fsm_utils"], patches["conn_step"]:
             await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis)
 
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
@@ -160,7 +169,7 @@ class TestPipelineSelectProject:
         p = make_project(user_id=user.id)
         mock_callback.data = f"pipeline:social:{p.id}:select"
         patches, _, _cat_mock = _patch_repos(project=p, categories=[make_category()])
-        with patches["projects"], patches["cats"], patches["fsm_utils"]:
+        with patches["projects"], patches["cats"], patches["fsm_utils"], patches["conn_step"]:
             await pipeline_select_project(mock_callback, mock_state, user, MagicMock(), mock_redis)
 
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
@@ -251,7 +260,7 @@ class TestInlineProjectCreation:
             }
         )
         patches, _, _cat_mock = _patch_repos(created_project=p, categories=[make_category()])
-        with patches["projects"], patches["cats"]:
+        with patches["projects"], patches["cats"], patches["conn_step_msg"]:
             await pipeline_create_project_url(mock_message, mock_state, user, MagicMock(), mock_redis)
 
         # Should have created the project and updated state

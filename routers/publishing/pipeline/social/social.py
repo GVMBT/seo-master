@@ -5,7 +5,7 @@ UX: UX_PIPELINE.md §5 (steps 1-7, inline sub-flows).
 Rules: .claude/rules/pipeline.md.
 
 Step 1: Project selection (reuses same logic as article pipeline).
-Step 2: Connection selection (F6.2 — stub for now).
+Step 2: Connection selection (F6.2 — see connection.py).
 Step 3: Category selection (reuses same logic as article pipeline).
 """
 
@@ -36,6 +36,10 @@ from routers.publishing.pipeline._common import (
     SocialPipelineFSM,
     clear_checkpoint,
     save_checkpoint,
+)
+from routers.publishing.pipeline.social.connection import (
+    _show_connection_step,
+    _show_connection_step_msg,
 )
 
 log = structlog.get_logger()
@@ -90,7 +94,7 @@ async def pipeline_social_start(
     if len(projects) == 1:
         project = projects[0]
         await state.update_data(project_id=project.id, project_name=project.name)
-        await _show_connection_stub(callback, state, user, db, redis, project.id, project.name)
+        await _show_connection_step(callback, state, user, db, redis, project.id, project.name)
         await callback.answer()
         return
 
@@ -132,7 +136,7 @@ async def pipeline_select_project(
         return
 
     await state.update_data(project_id=project.id, project_name=project.name)
-    await _show_connection_stub(callback, state, user, db, redis, project.id, project.name)
+    await _show_connection_step(callback, state, user, db, redis, project.id, project.name)
     await callback.answer()
 
 
@@ -291,65 +295,16 @@ async def pipeline_create_project_url(
     await state.update_data(project_id=project.id, project_name=project.name)
     await message.answer(f"Проект «{html.escape(project.name)}» создан!")
 
-    # Proceed to step 2 (connection selection) — stub for F6.2
-    await _show_connection_stub_msg(message, state, user, db, redis, project.id, project.name)
+    # Proceed to step 2 (connection selection)
+    await _show_connection_step_msg(message, state, user, db, redis, project.id, project.name)
 
 
 # ---------------------------------------------------------------------------
-# Step 2: Connection selection — stub (F6.2)
+# Step 2: Connection selection (F6.2 — implemented in connection.py)
 # ---------------------------------------------------------------------------
 
-
-async def _show_connection_stub(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    project_id: int,
-    project_name: str,
-) -> None:
-    """Show connection selection (step 2) — stub until F6.2.
-
-    After F6.2: will show platform picker (TG/VK/Pinterest).
-    For now: go directly to step 3 (category selection) with no connection.
-    """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
-        return
-
-    # TODO F6.2: Replace with actual connection selection
-    await state.update_data(connection_id=None, platform_type=None)
-    await _show_category_step(
-        callback,
-        state,
-        user,
-        db=db,
-        redis=redis,
-        project_id=project_id,
-        project_name=project_name,
-    )
-
-
-async def _show_connection_stub_msg(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    project_id: int,
-    project_name: str,
-) -> None:
-    """Connection stub via message context."""
-    await state.update_data(connection_id=None, platform_type=None)
-    await _show_category_step_msg(
-        message,
-        state,
-        user,
-        db=db,
-        redis=redis,
-        project_id=project_id,
-        project_name=project_name,
-    )
+# _show_connection_step and _show_connection_step_msg are imported
+# from connection.py at module level below.
 
 
 # ---------------------------------------------------------------------------

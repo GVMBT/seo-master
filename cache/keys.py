@@ -43,6 +43,10 @@ class CacheKeys:
         return f"pinterest_auth:{nonce}"
 
     @staticmethod
+    def pinterest_oauth(nonce: str) -> str:
+        return f"pinterest_oauth:{nonce}"
+
+    @staticmethod
     def rate_limit(user_id: int, action: str) -> str:
         return f"rate:{user_id}:{action}"
 
