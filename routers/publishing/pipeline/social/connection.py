@@ -32,7 +32,7 @@ from aiogram.types import (
 
 from bot.validators import TG_CHANNEL_RE
 from cache.client import RedisClient
-from cache.keys import CacheKeys
+from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.models import PlatformConnectionCreate, User
 from keyboards.inline import cancel_kb
@@ -51,9 +51,6 @@ log = structlog.get_logger()
 router = Router()
 
 _TOTAL_STEPS = 5
-
-# Pinterest OAuth nonce TTL (seconds)
-_PINTEREST_NONCE_TTL = 600
 
 
 # ---------------------------------------------------------------------------
@@ -472,8 +469,9 @@ async def pipeline_connect_tg_verify(
         return
 
     # Validate bot token and check admin status (in handler — Bot is Aiogram dep)
-    temp_bot = Bot(token=token)
+    temp_bot: Bot | None = None
     try:
+        temp_bot = Bot(token=token)
         bot_info = await temp_bot.get_me()
 
         try:
@@ -507,7 +505,8 @@ async def pipeline_connect_tg_verify(
         await callback.answer()
         return
     finally:
-        await temp_bot.session.close()
+        if temp_bot:
+            await temp_bot.session.close()
 
     # Create connection
     conn_svc = ConnectionService(db, _get_http_client(callback))
@@ -782,7 +781,7 @@ async def pipeline_start_connect_pinterest(
     await redis.set(
         CacheKeys.pinterest_oauth(nonce),
         json.dumps(nonce_data),
-        ex=_PINTEREST_NONCE_TTL,
+        ex=PINTEREST_AUTH_TTL,
     )
 
     from bot.config import get_settings
@@ -804,7 +803,7 @@ async def pipeline_start_connect_pinterest(
     await callback.message.edit_text(
         f"Пост (2/{_TOTAL_STEPS}) — Подключение Pinterest\n\n"
         "Нажмите кнопку ниже для авторизации.\n"
-        f"Ссылка действительна {_PINTEREST_NONCE_TTL // 60} минут.",
+        f"Ссылка действительна {PINTEREST_AUTH_TTL // 60} минут.",
         reply_markup=kb,
     )
     await callback.answer()
