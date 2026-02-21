@@ -152,7 +152,7 @@ async def pipeline_select_project(
 
 @router.callback_query(
     ArticlePipelineFSM.select_project,
-    F.data.regexp(r"^page:pipeline_projects:\d+$"),
+    F.data.regexp(r"^page:pipeline_article_projects:\d+$"),
 )
 async def pipeline_projects_page(
     callback: CallbackQuery,

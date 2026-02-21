@@ -221,7 +221,7 @@ class TestConfirmGenerate:
         mock_redis: MagicMock,
     ) -> None:
         mock_state.get_data = AsyncMock(return_value=_make_fsm_data())
-        token_patch, token_mock = _patch_token_svc(balance=100, has_balance=False)
+        token_patch, _token_mock = _patch_token_svc(balance=100, has_balance=False)
         with _patch_settings(), token_patch, patch(f"{_MODULE}.RateLimiter") as rate_cls:
             rate_cls.return_value.check = AsyncMock()
             await confirm_generate(
@@ -928,11 +928,13 @@ async def test_change_topic_multiple_categories_shows_list(
     user = make_user()
     cats = [make_category(), make_category(id=11, name="Cat 2")]
     mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=cats)
-    mock_state.get_data = AsyncMock(return_value={
-        "project_id": 1,
-        "project_name": "Test",
-        "connection_id": 5,
-    })
+    mock_state.get_data = AsyncMock(
+        return_value={
+            "project_id": 1,
+            "project_name": "Test",
+            "connection_id": 5,
+        }
+    )
 
     await change_topic(mock_callback, mock_state, user, MagicMock(), mock_redis)
 
@@ -974,13 +976,15 @@ async def test_change_topic_single_category_clears_generation_data(
     """change_topic clears generation-specific data from state."""
     user = make_user()
     mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=[make_category()])
-    mock_state.get_data = AsyncMock(return_value={
-        "project_id": 1,
-        "project_name": "Test",
-        "connection_id": 5,
-        "preview_id": 99,
-        "keyword": "old keyword",
-    })
+    mock_state.get_data = AsyncMock(
+        return_value={
+            "project_id": 1,
+            "project_name": "Test",
+            "connection_id": 5,
+            "preview_id": 99,
+            "keyword": "old keyword",
+        }
+    )
 
     await change_topic(mock_callback, mock_state, user, MagicMock(), mock_redis)
 

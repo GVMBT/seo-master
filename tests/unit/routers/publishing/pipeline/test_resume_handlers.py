@@ -178,9 +178,17 @@ async def test_route_to_step_select_project(
     mock_repo_cls.return_value.get_by_user = AsyncMock(return_value=projects)
 
     await _route_to_step(
-        mock_callback, mock_state, user, MagicMock(), mock_redis,
-        step="select_project", project_id=None, project_name="",
-        category_id=None, connection_id=None, preview_id=None,
+        mock_callback,
+        mock_state,
+        user,
+        MagicMock(),
+        mock_redis,
+        step="select_project",
+        project_id=None,
+        project_name="",
+        category_id=None,
+        connection_id=None,
+        preview_id=None,
     )
 
     mock_callback.message.edit_text.assert_called_once()
@@ -202,9 +210,17 @@ async def test_route_to_step_select_category_multi(
     mock_repo_cls.return_value.get_by_project = AsyncMock(return_value=cats)
 
     await _route_to_step(
-        mock_callback, mock_state, user, MagicMock(), mock_redis,
-        step="select_category", project_id=1, project_name="Test",
-        category_id=None, connection_id=None, preview_id=None,
+        mock_callback,
+        mock_state,
+        user,
+        MagicMock(),
+        mock_redis,
+        step="select_category",
+        project_id=1,
+        project_name="Test",
+        category_id=None,
+        connection_id=None,
+        preview_id=None,
     )
 
     mock_callback.message.edit_text.assert_called_once()
@@ -222,9 +238,17 @@ async def test_route_to_step_select_wp(
     user = make_user()
 
     await _route_to_step(
-        mock_callback, mock_state, user, MagicMock(), mock_redis,
-        step="select_wp", project_id=1, project_name="Test",
-        category_id=None, connection_id=None, preview_id=None,
+        mock_callback,
+        mock_state,
+        user,
+        MagicMock(),
+        mock_redis,
+        step="select_wp",
+        project_id=1,
+        project_name="Test",
+        category_id=None,
+        connection_id=None,
+        preview_id=None,
     )
 
     mock_callback.message.edit_text.assert_called_once()
@@ -246,9 +270,17 @@ async def test_route_to_step_preview_with_connection(
     mock_repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
 
     await _route_to_step(
-        mock_callback, mock_state, user, MagicMock(), mock_redis,
-        step="preview", project_id=1, project_name="Test",
-        category_id=10, connection_id=5, preview_id=99,
+        mock_callback,
+        mock_state,
+        user,
+        MagicMock(),
+        mock_redis,
+        step="preview",
+        project_id=1,
+        project_name="Test",
+        category_id=10,
+        connection_id=5,
+        preview_id=99,
     )
 
     mock_callback.message.edit_text.assert_called_once()
@@ -270,9 +302,17 @@ async def test_route_to_step_preview_expired(
     mock_repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
 
     await _route_to_step(
-        mock_callback, mock_state, user, MagicMock(), mock_redis,
-        step="preview", project_id=1, project_name="Test",
-        category_id=10, connection_id=5, preview_id=99,
+        mock_callback,
+        mock_state,
+        user,
+        MagicMock(),
+        mock_redis,
+        step="preview",
+        project_id=1,
+        project_name="Test",
+        category_id=10,
+        connection_id=5,
+        preview_id=99,
     )
 
     mock_callback.message.edit_text.assert_called_once()
@@ -293,9 +333,17 @@ async def test_route_to_step_preview_no_connection(
     mock_repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
 
     await _route_to_step(
-        mock_callback, mock_state, user, MagicMock(), mock_redis,
-        step="preview", project_id=1, project_name="Test",
-        category_id=10, connection_id=None, preview_id=99,
+        mock_callback,
+        mock_state,
+        user,
+        MagicMock(),
+        mock_redis,
+        step="preview",
+        project_id=1,
+        project_name="Test",
+        category_id=10,
+        connection_id=None,
+        preview_id=99,
     )
 
     mock_callback.message.edit_text.assert_called_once()
@@ -316,9 +364,17 @@ async def test_route_to_step_readiness(
     user = make_user()
 
     await _route_to_step(
-        mock_callback, mock_state, user, MagicMock(), mock_redis,
-        step="readiness_check", project_id=1, project_name="Test",
-        category_id=10, connection_id=5, preview_id=None,
+        mock_callback,
+        mock_state,
+        user,
+        MagicMock(),
+        mock_redis,
+        step="readiness_check",
+        project_id=1,
+        project_name="Test",
+        category_id=10,
+        connection_id=5,
+        preview_id=None,
     )
 
     mock_readiness.assert_called_once()
@@ -335,9 +391,17 @@ async def test_route_to_step_confirm_cost_shows_readiness(
     user = make_user()
 
     await _route_to_step(
-        mock_callback, mock_state, user, MagicMock(), mock_redis,
-        step="confirm_cost", project_id=1, project_name="Test",
-        category_id=10, connection_id=5, preview_id=None,
+        mock_callback,
+        mock_state,
+        user,
+        MagicMock(),
+        mock_redis,
+        step="confirm_cost",
+        project_id=1,
+        project_name="Test",
+        category_id=10,
+        connection_id=5,
+        preview_id=None,
     )
 
     mock_readiness.assert_called_once()

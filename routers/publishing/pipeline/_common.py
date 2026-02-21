@@ -1,16 +1,20 @@
 """Shared FSM and helpers for Article/Social pipeline modules.
 
-Extracted to avoid circular imports between article.py and readiness.py.
+Extracted to avoid circular imports between article.py, readiness.py, and social/.
 """
 
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 from aiogram.fsm.state import State, StatesGroup
 
 from cache.client import RedisClient
 from cache.keys import PIPELINE_CHECKPOINT_TTL, CacheKeys
+
+# Pipeline type literal for checkpoint & ReadinessService
+PipelineType = Literal["article", "social"]
 
 # ---------------------------------------------------------------------------
 # FSM (FSM_SPEC.md §1 — ArticlePipelineFSM, 25 states)
@@ -57,6 +61,55 @@ class ArticlePipelineFSM(StatesGroup):
 
 
 # ---------------------------------------------------------------------------
+# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 28 states)
+# ---------------------------------------------------------------------------
+
+
+class SocialPipelineFSM(StatesGroup):
+    """Social pipeline FSM — 28 states for social post creation + cross-posting."""
+
+    # Step 1: Project selection
+    select_project = State()
+    create_project_name = State()
+    create_project_company = State()
+    create_project_spec = State()
+    create_project_url = State()
+
+    # Step 2: Connection selection (TG/VK/Pinterest)
+    select_connection = State()
+    connect_tg_channel = State()
+    connect_tg_token = State()
+    connect_tg_verify = State()
+    connect_vk_token = State()
+    connect_vk_group = State()
+    connect_pinterest_oauth = State()
+    connect_pinterest_board = State()
+
+    # Step 3: Category selection
+    select_category = State()
+    create_category_name = State()
+
+    # Step 4: Readiness check (simplified: keywords + description only)
+    readiness_check = State()
+    readiness_keywords_products = State()
+    readiness_keywords_geo = State()
+    readiness_keywords_qty = State()
+    readiness_keywords_generating = State()
+    readiness_description = State()
+
+    # Steps 5-7: Confirm, generate, review, publish
+    confirm_cost = State()
+    generating = State()
+    review = State()
+    publishing = State()
+    regenerating = State()
+
+    # Cross-posting (E52)
+    cross_post_review = State()
+    cross_post_publishing = State()
+
+
+# ---------------------------------------------------------------------------
 # Checkpoint helpers
 # ---------------------------------------------------------------------------
 
@@ -66,15 +119,20 @@ async def save_checkpoint(
     user_id: int,
     *,
     current_step: str,
+    pipeline_type: PipelineType = "article",
     project_id: int | None = None,
     project_name: str | None = None,
     connection_id: int | None = None,
     category_id: int | None = None,
     **extra: object,
 ) -> None:
-    """Save pipeline checkpoint to Redis (UX_PIPELINE.md §10.3)."""
+    """Save pipeline checkpoint to Redis (UX_PIPELINE.md §10.3).
+
+    Single key per user (§8.7: one pipeline at a time).
+    pipeline_type distinguishes article vs social for resume routing.
+    """
     data: dict[str, object] = {
-        "pipeline_type": "article",
+        "pipeline_type": pipeline_type,
         "current_step": current_step,
         "project_id": project_id,
         "project_name": project_name,
@@ -82,7 +140,7 @@ async def save_checkpoint(
         "category_id": category_id,
     }
     # step_label for Dashboard resume display
-    step_labels = {
+    _ARTICLE_LABELS: dict[str, str] = {
         "select_project": "выбор проекта",
         "select_wp": "выбор сайта",
         "select_category": "выбор темы",
@@ -93,7 +151,19 @@ async def save_checkpoint(
         "publishing": "публикация",
         "result": "результат",
     }
-    data["step_label"] = step_labels.get(current_step, current_step)
+    _SOCIAL_LABELS: dict[str, str] = {
+        "select_project": "выбор проекта",
+        "select_connection": "выбор подключения",
+        "select_category": "выбор темы",
+        "readiness_check": "подготовка",
+        "confirm_cost": "подтверждение",
+        "generating": "генерация",
+        "review": "ревью",
+        "publishing": "публикация",
+        "cross_post_review": "кросс-пост",
+    }
+    labels = _SOCIAL_LABELS if pipeline_type == "social" else _ARTICLE_LABELS
+    data["step_label"] = labels.get(current_step, current_step)
     data.update(extra)  # type: ignore[arg-type]
     await redis.set(
         CacheKeys.pipeline_state(user_id),

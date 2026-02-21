@@ -127,7 +127,7 @@ class TestPipelineProjectsKb:
         buttons = _flatten_buttons(kb)
         # Navigation row exists
         nav_cbs = [b.callback_data for b in buttons if b.callback_data and b.callback_data.startswith("page:")]
-        assert any("page:pipeline_projects:2" in cb for cb in nav_cbs)
+        assert any("page:pipeline_article_projects:2" in cb for cb in nav_cbs)
 
 
 class TestPipelineNoProjectsKb:
