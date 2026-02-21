@@ -227,3 +227,55 @@ class TestCrudDelegation:
         result = await svc.delete(99)
         repo.delete.assert_awaited_once_with(99)
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Cross-post cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupCrossPostRefs:
+    @patch("db.repositories.schedules.SchedulesRepository", autospec=True)
+    async def test_removes_connection_id_from_schedules(
+        self,
+        mock_sched_cls: MagicMock,
+    ) -> None:
+        """cleanup_cross_post_refs removes connection_id from cross_post_connection_ids."""
+        svc, _repo = _make_service()
+
+        mock_sched_repo = AsyncMock()
+        sched_1 = MagicMock(id=1, cross_post_connection_ids=[20, 30])
+        sched_2 = MagicMock(id=2, cross_post_connection_ids=[20])
+        mock_sched_repo.get_by_connection_cross_post = AsyncMock(return_value=[sched_1, sched_2])
+        mock_sched_repo.update = AsyncMock()
+        mock_sched_cls.return_value = mock_sched_repo
+
+        await svc.cleanup_cross_post_refs(20)
+
+        assert mock_sched_repo.update.await_count == 2
+        # First schedule: [20, 30] -> [30]
+        first_call = mock_sched_repo.update.call_args_list[0]
+        assert first_call.args[0] == 1
+        update_obj_1 = first_call.args[1]
+        assert update_obj_1.cross_post_connection_ids == [30]
+        # Second schedule: [20] -> []
+        second_call = mock_sched_repo.update.call_args_list[1]
+        assert second_call.args[0] == 2
+        update_obj_2 = second_call.args[1]
+        assert update_obj_2.cross_post_connection_ids == []
+
+    @patch("db.repositories.schedules.SchedulesRepository", autospec=True)
+    async def test_no_schedules_noop(
+        self,
+        mock_sched_cls: MagicMock,
+    ) -> None:
+        """cleanup_cross_post_refs with no matching schedules is a noop."""
+        svc, _repo = _make_service()
+
+        mock_sched_repo = AsyncMock()
+        mock_sched_repo.get_by_connection_cross_post = AsyncMock(return_value=[])
+        mock_sched_cls.return_value = mock_sched_repo
+
+        await svc.cleanup_cross_post_refs(99)
+
+        mock_sched_repo.update.assert_not_awaited()

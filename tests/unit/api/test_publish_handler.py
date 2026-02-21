@@ -180,3 +180,60 @@ def test_notification_text_unknown_reason() -> None:
     result = PublishOutcome(status="error", reason="something_weird")
     text = _build_notification_text(result)
     assert "something_weird" in text
+
+
+# ---------------------------------------------------------------------------
+# Cross-post notification tests
+# ---------------------------------------------------------------------------
+
+
+def test_notification_cross_post_results() -> None:
+    """Success notification includes cross-post results."""
+    from services.publish import CrossPostResult
+
+    result = PublishOutcome(
+        status="ok",
+        keyword="seo tips",
+        post_url="https://t.me/post",
+        cross_post_results=[
+            CrossPostResult(connection_id=20, platform="vk", status="ok", post_url="https://vk.com/wall123"),
+            CrossPostResult(connection_id=30, platform="pinterest", status="error", error="API timeout"),
+        ],
+    )
+    text = _build_notification_text(result)
+    assert "seo tips" in text
+    assert "VK" in text
+    assert "vk.com" in text
+    assert "Pinterest" in text
+    assert "API timeout" in text
+    assert "\u2713" in text  # checkmark for success
+    assert "\u2717" in text  # cross for error
+
+
+def test_notification_html_escapes_keyword() -> None:
+    """Keyword with HTML characters is escaped in notification."""
+    result = PublishOutcome(status="ok", keyword="<script>alert(1)</script>")
+    text = _build_notification_text(result)
+    assert "<script>" not in text
+    assert "&lt;script&gt;" in text
+
+
+def test_notification_html_escapes_cross_post_error() -> None:
+    """Cross-post error message with HTML is escaped."""
+    from services.publish import CrossPostResult
+
+    result = PublishOutcome(
+        status="ok",
+        keyword="test",
+        cross_post_results=[
+            CrossPostResult(
+                connection_id=20,
+                platform="vk",
+                status="error",
+                error='<img src=x onerror="alert(1)">',
+            ),
+        ],
+    )
+    text = _build_notification_text(result)
+    assert "<img" not in text
+    assert "&lt;img" in text

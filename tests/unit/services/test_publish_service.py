@@ -442,6 +442,189 @@ async def test_get_publisher_wordpress() -> None:
     assert isinstance(pub, WordPressPublisher)
 
 
+# ---------------------------------------------------------------------------
+# Cross-post tests
+# ---------------------------------------------------------------------------
+
+
+def _make_social_gen_result():
+    """Mock GenerationResult for social post adaptation."""
+    result = MagicMock()
+    result.content = {"text": "Adapted social post text", "hashtags": "#seo"}
+    return result
+
+
+@patch("services.ai.social_posts.SocialPostService", autospec=True)
+@patch("services.ai.content_validator.ContentValidator", autospec=True)
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_cross_post_happy_path(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+    mock_validator_cls: MagicMock,
+    mock_social_cls: MagicMock,
+) -> None:
+    """Cross-posts execute after lead publish for configured connections."""
+    svc = _make_service()
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(
+        return_value=_make_schedule(cross_post_connection_ids=[20, 30])
+    )
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=680)
+
+    # Lead generates with text
+    gen = MagicMock()
+    gen.content = {"text": "Lead post text", "images_meta": []}
+    svc._generate_and_publish = AsyncMock(return_value=(gen, _make_pub_result(), 0))
+
+    # Cross-post connections
+    vk_conn = _make_connection(id=20, platform_type="vk", identifier="VK Group")
+    pin_conn = _make_connection(id=30, platform_type="pinterest", identifier="Board")
+    conn_repo = MagicMock()
+    conn_repo.get_by_id = AsyncMock(side_effect=lambda cid: {5: _make_connection(), 20: vk_conn, 30: pin_conn}[cid])
+    mock_conn_cls.return_value = conn_repo
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    # SocialPostService.adapt_for_platform returns adapted text
+    mock_social_inst = MagicMock()
+    mock_social_inst.adapt_for_platform = AsyncMock(return_value=_make_social_gen_result())
+    mock_social_cls.return_value = mock_social_inst
+
+    # Validator passes
+    mock_val_inst = MagicMock()
+    mock_val_inst.validate.return_value = MagicMock(is_valid=True, errors=[])
+    mock_validator_cls.return_value = mock_val_inst
+
+    # Publisher succeeds
+    svc._get_publisher = MagicMock(return_value=MagicMock(
+        publish=AsyncMock(return_value=MagicMock(success=True, post_url="https://vk.com/wall123"))
+    ))
+
+    result = await svc.execute(_make_payload(platform_type="telegram"))
+    assert result.status == "ok"
+    assert len(result.cross_post_results) == 2
+    assert all(xp.status == "ok" for xp in result.cross_post_results)
+
+
+@patch("services.ai.social_posts.SocialPostService", autospec=True)
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_cross_post_inactive_connection_skipped(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+    mock_social_cls: MagicMock,
+) -> None:
+    """Inactive cross-post target is skipped with error."""
+    svc = _make_service()
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(
+        return_value=_make_schedule(cross_post_connection_ids=[20])
+    )
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=680)
+
+    gen = MagicMock()
+    gen.content = {"text": "Lead text", "images_meta": []}
+    svc._generate_and_publish = AsyncMock(return_value=(gen, _make_pub_result(), 0))
+
+    # Cross-post connection is inactive
+    inactive_conn = _make_connection(id=20, platform_type="vk", status="error")
+    conn_repo = MagicMock()
+    conn_repo.get_by_id = AsyncMock(side_effect=lambda cid: {5: _make_connection(), 20: inactive_conn}[cid])
+    mock_conn_cls.return_value = conn_repo
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    result = await svc.execute(_make_payload(platform_type="telegram"))
+    assert result.status == "ok"
+    assert len(result.cross_post_results) == 1
+    assert result.cross_post_results[0].status == "error"
+    assert result.cross_post_results[0].error == "connection_inactive"
+
+
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_cross_post_insufficient_balance_stops_remaining(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """Insufficient balance for cross-post stops remaining targets."""
+    svc = _make_service()
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(
+        return_value=_make_schedule(cross_post_connection_ids=[20, 30])
+    )
+    # Lead charge OK, but cross-post balance check fails
+    svc._tokens.check_balance = AsyncMock(side_effect=[True, False])
+    svc._tokens.charge = AsyncMock(return_value=680)
+
+    gen = MagicMock()
+    gen.content = {"text": "Lead text", "images_meta": []}
+    svc._generate_and_publish = AsyncMock(return_value=(gen, _make_pub_result(), 0))
+
+    vk_conn = _make_connection(id=20, platform_type="vk")
+    conn_repo = MagicMock()
+    conn_repo.get_by_id = AsyncMock(side_effect=lambda cid: {5: _make_connection(), 20: vk_conn}[cid])
+    mock_conn_cls.return_value = conn_repo
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    result = await svc.execute(_make_payload(platform_type="telegram"))
+    assert result.status == "ok"
+    # First cross-post fails with balance, second never attempted (break)
+    assert len(result.cross_post_results) == 1
+    assert result.cross_post_results[0].error == "insufficient_balance"
+
+
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_cross_post_empty_ids_no_cross_posts(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """Empty cross_post_connection_ids means no cross-posts attempted."""
+    svc = _make_service()
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(
+        return_value=_make_schedule(cross_post_connection_ids=[])
+    )
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=680)
+    svc._generate_and_publish = AsyncMock(return_value=(_make_gen_result(), _make_pub_result(), 0))
+
+    conn_repo = MagicMock()
+    conn_repo.get_by_id = AsyncMock(return_value=_make_connection())
+    mock_conn_cls.return_value = conn_repo
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    result = await svc.execute(_make_payload())
+    assert result.status == "ok"
+    assert result.cross_post_results == []
+
+
 async def test_get_publisher_telegram() -> None:
     """_get_publisher returns TelegramPublisher for telegram."""
     svc = _make_service()
