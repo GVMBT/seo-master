@@ -174,12 +174,12 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
             ]
         )
 
-    if "images" in report.missing_items or report.image_count > 0:
+    if "images" in report.missing_items:
         img_cost = report.image_count * COST_PER_IMAGE
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"Изображения: {report.image_count} AI ({img_cost} ток.)",
+                    text=f"Изображения: {report.image_count} шт. ({img_cost} ток.) — настроить",
                     callback_data="pipeline:readiness:images",
                 ),
             ]
@@ -533,6 +533,39 @@ def pipeline_keywords_options_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Назад к чеклисту",
                     callback_data="pipeline:readiness:back",
+                ),
+            ],
+        ]
+    )
+
+
+def pipeline_keywords_city_kb() -> InlineKeyboardMarkup:
+    """Quick city selection for auto-keywords when project has no company_city.
+
+    UX_PIPELINE.md §4a: "В каком городе ваш бизнес?"
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Москва",
+                    callback_data="pipeline:readiness:keywords:city:Москва",
+                ),
+                InlineKeyboardButton(
+                    text="Санкт-Петербург",
+                    callback_data="pipeline:readiness:keywords:city:СПб",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Вся Россия",
+                    callback_data="pipeline:readiness:keywords:city:Россия",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Назад к чеклисту",
+                    callback_data="pipeline:readiness:keywords:cancel",
                 ),
             ],
         ]

@@ -501,8 +501,9 @@ def _build_preview_text(
         f"Списано: {tokens_charged} ток.",
     ]
     if not telegraph_url:
-        # E05: Telegraph down — show inline snippet
-        snippet = (content.content_html or "")[:500]
+        # E05: Telegraph down — show inline snippet (strip HTML tags, Telegram rejects <h1> etc.)
+        raw = re.sub(r"<[^>]+>", "", content.content_html or "")
+        snippet = html.escape(raw[:500])
         lines.append(f"\n<i>(Превью недоступно, фрагмент ниже)</i>\n{snippet}...")
     return "\n".join(lines)
 

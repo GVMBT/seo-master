@@ -909,6 +909,20 @@ class TestBuildPreviewText:
         text = _build_preview_text(content, "seo tips", 320, None)
         assert "Превью недоступно" in text
 
+    def test_e05_strips_html_tags_from_snippet(self) -> None:
+        """HTML tags like <h1>, <h2>, <p> must be stripped — Telegram rejects them."""
+        content = ArticleContent(
+            title="Test",
+            content_html='<h1>Title</h1><h2>Section</h2><p>Paragraph with <b>bold</b></p>',
+            word_count=100,
+            images_count=0,
+        )
+        text = _build_preview_text(content, "kw", 50, None)
+        assert "<h1>" not in text
+        assert "<h2>" not in text
+        assert "<p>" not in text
+        assert "TitleSectionParagraph with bold" in text
+
 
 # ---------------------------------------------------------------------------
 # change_topic (F5.5: "Другая тема" button on error)
