@@ -290,9 +290,9 @@ class PublishService:
             log.exception("publish_generation_failed", user_id=user_id, keyword=keyword)
             try:
                 await self._tokens.refund(user_id, estimated_cost, reason="auto_publish_error")
-            except Exception:
+            except Exception as refund_exc:
                 log.critical("refund_failed_after_charge", user_id=user_id, amount=estimated_cost)
-                sentry_sdk.capture_exception(exc)
+                sentry_sdk.capture_exception(refund_exc)
 
             await self._publications.create_log(
                 PublicationLogCreate(
@@ -566,6 +566,7 @@ class PublishService:
         cm = CredentialManager(settings.encryption_key.get_secret_value())
         conn_repo = ConnectionsRepository(self._db, cm)
         social_service = SocialPostService(self._ai_orchestrator, self._db)
+        category = await self._categories.get_by_id(category_id)
         results: list[CrossPostResult] = []
 
         for conn_id in schedule.cross_post_connection_ids:
@@ -633,7 +634,6 @@ class PublishService:
                 ct: Literal["html", "telegram_html", "plain_text", "pin_text"] = self._get_content_type(
                     conn.platform_type
                 )  # type: ignore[assignment]
-                category = await self._categories.get_by_id(category_id)
                 pub_result = await publisher.publish(
                     PublishRequest(
                         connection=conn,
