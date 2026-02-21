@@ -15,7 +15,7 @@ from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
-from db.models import User
+from db.models import PlatformConnectionCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
@@ -37,6 +37,103 @@ router = Router()
 
 # Average article cost for "~N articles" estimate (UX_PIPELINE.md section 2.5)
 _AVG_ARTICLE_COST = 320
+
+
+# ---------------------------------------------------------------------------
+# Pinterest OAuth deep-link handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_pinterest_deep_link(
+    message: Message,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    nonce: str,
+) -> None:
+    """Handle Pinterest OAuth deep-link — read tokens, create connection.
+
+    Called when user returns from Pinterest OAuth via deep-link
+    /start pinterest_auth_{nonce}.  Tokens are in pinterest_auth:{nonce}
+    (written by auth_service), metadata in pinterest_oauth:{nonce}
+    (written by toolbox or pipeline connection wizard).
+    """
+    tokens_raw = await redis.get(CacheKeys.pinterest_auth(nonce))
+    if not tokens_raw:
+        log.warning("pinterest_deep_link_no_tokens", nonce=nonce, user_id=user.id)
+        await message.answer("Авторизация Pinterest не найдена или истекла. Попробуйте ещё раз.")
+        return
+
+    meta_raw = await redis.get(CacheKeys.pinterest_oauth(nonce))
+    if not meta_raw:
+        log.warning("pinterest_deep_link_no_meta", nonce=nonce, user_id=user.id)
+        await message.answer("Данные сессии Pinterest не найдены. Попробуйте ещё раз.")
+        return
+
+    try:
+        tokens = json.loads(tokens_raw)
+    except (json.JSONDecodeError, TypeError):  # fmt: skip
+        log.warning("pinterest_deep_link_invalid_tokens", nonce=nonce)
+        return
+
+    # Parse metadata — toolbox stores plain project_id, pipeline stores JSON dict
+    project_id: int | None = None
+    try:
+        meta = json.loads(meta_raw)
+        project_id = int(meta["project_id"]) if isinstance(meta, dict) else int(meta)
+    except (json.JSONDecodeError, ValueError, TypeError, KeyError):  # fmt: skip
+        try:
+            project_id = int(meta_raw)
+        except (ValueError, TypeError):  # fmt: skip
+            log.warning("pinterest_deep_link_invalid_meta", nonce=nonce)
+            await message.answer("Ошибка данных Pinterest. Попробуйте ещё раз.")
+            return
+
+    if not project_id:
+        return
+
+    projects_repo = ProjectsRepository(db)
+    project = await projects_repo.get_by_id(project_id)
+    if not project or project.user_id != user.id:
+        log.warning("pinterest_deep_link_wrong_owner", project_id=project_id, user_id=user.id)
+        await message.answer("Проект не найден.")
+        return
+
+    settings = get_settings()
+    cm = CredentialManager(settings.encryption_key.get_secret_value())
+    conn_repo = ConnectionsRepository(db, cm)
+
+    try:
+        conn = await conn_repo.create(
+            PlatformConnectionCreate(
+                project_id=project_id,
+                platform_type="pinterest",
+                identifier=f"pinterest_{user.id}_{project_id}",
+                metadata={},
+            ),
+            raw_credentials={
+                "access_token": tokens.get("access_token", ""),
+                "refresh_token": tokens.get("refresh_token", ""),
+                "expires_in": tokens.get("expires_in", 2592000),
+            },
+        )
+    except Exception:
+        log.exception("pinterest_create_connection_failed", project_id=project_id, user_id=user.id)
+        await message.answer("Не удалось создать подключение Pinterest. Возможно, оно уже существует.")
+        return
+
+    # Cleanup Redis keys
+    await redis.delete(CacheKeys.pinterest_auth(nonce))
+    await redis.delete(CacheKeys.pinterest_oauth(nonce))
+
+    safe_name = html.escape(project.name)
+    await message.answer(f"Pinterest подключён к проекту «{safe_name}»!")
+    log.info(
+        "pinterest_connected_via_deeplink",
+        connection_id=conn.id,
+        project_id=project_id,
+        user_id=user.id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +297,8 @@ async def cmd_start(
         log.info("deep_link_referral", referrer_arg=args)
         # Referral tracking handled by AuthMiddleware on user creation
     elif args.startswith("pinterest_auth_"):
-        log.info("deep_link_pinterest", nonce_arg=args)
-        # TODO Phase F2: handle Pinterest OAuth callback
+        nonce = args.removeprefix("pinterest_auth_")
+        await _handle_pinterest_deep_link(message, user, db, redis, nonce)
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis)
     if is_new_user:
@@ -511,7 +608,13 @@ async def _route_social_to_step(
         from routers.publishing.pipeline.social.connection import _show_connection_step
 
         await _show_connection_step(
-            callback, state, user, db, redis, project_id, project_name,
+            callback,
+            state,
+            user,
+            db,
+            redis,
+            project_id,
+            project_name,
         )
         return
 

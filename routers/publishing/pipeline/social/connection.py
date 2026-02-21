@@ -202,8 +202,8 @@ def _get_http_client(callback: CallbackQuery) -> httpx.AsyncClient:
         client = bot.workflow_data["http_client"]
         if isinstance(client, httpx.AsyncClient):
             return client
-    # Fallback: should not happen in prod, but safe for tests
-    return httpx.AsyncClient()
+    msg = "http_client not found in bot.workflow_data — check DBSessionMiddleware setup"
+    raise RuntimeError(msg)
 
 
 def _get_http_client_from_msg(message: Message) -> httpx.AsyncClient:
@@ -213,7 +213,8 @@ def _get_http_client_from_msg(message: Message) -> httpx.AsyncClient:
         client = bot.workflow_data["http_client"]
         if isinstance(client, httpx.AsyncClient):
             return client
-    return httpx.AsyncClient()
+    msg = "http_client not found in bot.workflow_data — check DBSessionMiddleware setup"
+    raise RuntimeError(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -779,7 +780,7 @@ async def pipeline_start_connect_pinterest(
     import json
 
     await redis.set(
-        CacheKeys.pinterest_auth(nonce),
+        CacheKeys.pinterest_oauth(nonce),
         json.dumps(nonce_data),
         ex=_PINTEREST_NONCE_TTL,
     )

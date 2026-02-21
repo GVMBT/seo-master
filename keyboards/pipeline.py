@@ -676,8 +676,9 @@ def social_connections_kb(
         }
         label = platform_labels.get(conn.platform_type, conn.platform_type)
         # P2-7: Show group_name for VK instead of raw club123456
-        if conn.platform_type == "vk" and conn.metadata.get("group_name"):
-            display = f"{label}: {conn.metadata['group_name']}"
+        metadata = conn.metadata or {}
+        if conn.platform_type == "vk" and metadata.get("group_name"):
+            display = f"{label}: {metadata['group_name']}"
         else:
             display = f"{label}: {conn.identifier}"
         rows.append(
@@ -728,9 +729,10 @@ def social_no_connections_kb(
     for text, cb, ptype, is_primary in platforms:
         if ptype in exclude:
             continue
-        btn = InlineKeyboardButton(text=text, callback_data=cb)
         if is_primary and not rows:
-            btn.style = ButtonStyle.PRIMARY
+            btn = InlineKeyboardButton(text=text, callback_data=cb, style=ButtonStyle.PRIMARY)
+        else:
+            btn = InlineKeyboardButton(text=text, callback_data=cb)
         rows.append([btn])
 
     rows.append(

@@ -87,10 +87,7 @@ async def show_project_card(
 # project:{id}:connections — handled by routers/platforms/connections.py
 
 
-@router.callback_query(F.data.regexp(r"^project:\d+:scheduler$"))
-async def project_scheduler(callback: CallbackQuery) -> None:
-    """Stub: Scheduler — coming in Phase F3."""
-    await callback.answer("Планировщик — скоро!", show_alert=True)
+# project:{id}:scheduler — handled by routers/publishing/scheduler.py
 
 
 # ---------------------------------------------------------------------------

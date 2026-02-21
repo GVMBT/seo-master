@@ -26,6 +26,8 @@ from keyboards.inline import (
     description_kb,
     description_review_kb,
 )
+from services.ai.description import DescriptionService
+from services.ai.orchestrator import AIOrchestrator
 from services.tokens import COST_DESCRIPTION, TokenService
 
 log = structlog.get_logger()
@@ -91,23 +93,6 @@ async def _show_description_screen(
     await msg.edit_text(
         text,
         reply_markup=description_kb(category_id, has_description=has_description),
-    )
-
-
-async def _generate_description_stub(
-    category_name: str,
-    company_name: str,
-    specialization: str,
-) -> str:
-    """Placeholder for AI description generation.
-
-    TODO Phase 10: wire AIOrchestrator and call DescriptionService.generate().
-    """
-    return (
-        f"{company_name} — {specialization}. "
-        f"Категория «{category_name}» включает полный спектр товаров и услуг "
-        "для наших клиентов. Мы гарантируем индивидуальный подход, "
-        "высокое качество и конкурентные цены."
     )
 
 
@@ -197,6 +182,7 @@ async def confirm_generate(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    ai_orchestrator: AIOrchestrator,
 ) -> None:
     """Confirm AI generation — E01 balance check, charge, generate."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -228,34 +214,15 @@ async def confirm_generate(
         description=f"Генерация описания (категория #{cat_id})",
     )
 
-    # Generate description
-    # TODO Phase 10: wire AIOrchestrator
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
-    if not category:
-        # Refund on error
-        await token_service.refund(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            reason="refund",
-            description=f"Возврат за описание (категория #{cat_id} не найдена)",
-        )
-        await state.clear()
-        await callback.message.edit_text("Категория не найдена.")
-        await callback.answer()
-        return
-
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    company_name = project.company_name if project else "Компания"
-    specialization = project.specialization if project else ""
-
+    # Generate description via AI
     try:
-        generated_text = await _generate_description_stub(
-            category_name=category.name,
-            company_name=company_name,
-            specialization=specialization,
+        desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
+        result = await desc_svc.generate(
+            user_id=user.id,
+            project_id=project_id,
+            category_id=cat_id,
         )
+        generated_text = result.content if isinstance(result.content, str) else str(result.content)
     except Exception:
         log.exception("description_generation_failed", cat_id=cat_id, user_id=user.id)
         await token_service.refund(
@@ -368,6 +335,7 @@ async def review_regenerate(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    ai_orchestrator: AIOrchestrator,
 ) -> None:
     """Regenerate description. First 2 are free, then charge again (FSM_SPEC 2.2)."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -400,26 +368,15 @@ async def review_regenerate(
             description=f"Перегенерация описания (категория #{cat_id}, попытка {regen_count + 1})",
         )
 
-    # Regenerate
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
-    if not category:
-        await state.clear()
-        await callback.message.edit_text("Категория не найдена.")
-        await callback.answer()
-        return
-
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    company_name = project.company_name if project else "Компания"
-    specialization = project.specialization if project else ""
-
+    # Regenerate via AI
     try:
-        generated_text = await _generate_description_stub(
-            category_name=category.name,
-            company_name=company_name,
-            specialization=specialization,
+        desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
+        result = await desc_svc.generate(
+            user_id=user.id,
+            project_id=project_id,
+            category_id=cat_id,
         )
+        generated_text = result.content if isinstance(result.content, str) else str(result.content)
     except Exception:
         log.exception("description_regen_failed", cat_id=cat_id, user_id=user.id)
         if regen_count >= 2:

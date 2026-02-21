@@ -760,7 +760,7 @@ class TestPinterestOAuth:
         mock_redis.set.assert_awaited_once()
         # Check nonce stored in Redis
         redis_key = mock_redis.set.call_args[0][0]
-        assert "pinterest_auth:" in redis_key
+        assert "pinterest_oauth:" in redis_key
 
 
 # ---------------------------------------------------------------------------
@@ -769,17 +769,17 @@ class TestPinterestOAuth:
 
 
 class TestNormalizeTGChannel:
-    def test_at_format(self) -> None:
+    async def test_at_format(self) -> None:
         assert _normalize_tg_channel("@mychannel") == "@mychannel"
 
-    def test_tme_link(self) -> None:
+    async def test_tme_link(self) -> None:
         assert _normalize_tg_channel("https://t.me/mychannel") == "@mychannel"
 
-    def test_tme_no_scheme(self) -> None:
+    async def test_tme_no_scheme(self) -> None:
         assert _normalize_tg_channel("t.me/mychannel") == "@mychannel"
 
-    def test_numeric_id(self) -> None:
+    async def test_numeric_id(self) -> None:
         assert _normalize_tg_channel("-1001234567890") == "-1001234567890"
 
-    def test_bare_name(self) -> None:
+    async def test_bare_name(self) -> None:
         assert _normalize_tg_channel("mychannel") == "@mychannel"
