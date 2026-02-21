@@ -3,18 +3,20 @@
   "permissions": {
     "allow": [
       "Read",
+      "Write",
+      "Edit",
       "Glob",
       "Grep",
-      "Bash(uv run *)",
-      "Bash(cd *)",
-      "Bash(ls *)",
-      "Bash(find *)",
-      "Bash(git *)",
+      "WebFetch",
+      "WebSearch",
+      "Bash(*)",
       "mcp__supabase__*",
       "mcp__upstash__*",
-      "mcp__context7__*"
+      "mcp__context7__*",
+      "mcp__Railway__*",
+      "mcp__acp__*"
     ],
-    "deny": ["Bash(rm -rf *)", "Bash(git push --force*)", "Bash(curl * | bash)"]
+    "deny": ["Bash(rm -rf /*)", "Bash(git push --force*)"]
   },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
