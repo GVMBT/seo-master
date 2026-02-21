@@ -18,10 +18,19 @@ from db.credential_manager import CredentialManager
 from db.models import User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
+from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.schedules import SchedulesRepository
-from keyboards.inline import admin_panel_kb, dashboard_kb, dashboard_resume_kb
+from keyboards.inline import admin_panel_kb, cancel_kb, dashboard_kb, dashboard_resume_kb
+from keyboards.pipeline import (
+    pipeline_categories_kb,
+    pipeline_no_projects_kb,
+    pipeline_no_wp_kb,
+    pipeline_preview_kb,
+    pipeline_projects_kb,
+)
 from keyboards.reply import main_menu_kb
+from routers.publishing.pipeline._common import ArticlePipelineFSM
 
 log = structlog.get_logger()
 router = Router()
@@ -250,6 +259,121 @@ async def nav_dashboard(
 
 
 # ---------------------------------------------------------------------------
+# Pipeline resume routing (E49)
+# ---------------------------------------------------------------------------
+
+
+async def _route_to_step(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    *,
+    step: str,
+    project_id: int | None,
+    project_name: str,
+    category_id: int | None,
+    connection_id: int | None,
+    preview_id: int | None,
+) -> None:
+    """Route user to the correct pipeline screen based on checkpoint step."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        return
+
+    # Steps 1-3: re-run from selection screen
+    if step in ("select_project", ""):
+        projects_repo = ProjectsRepository(db)
+        projects = await projects_repo.get_by_user(user.id)
+        if not projects:
+            await callback.message.edit_text(
+                "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+                reply_markup=pipeline_no_projects_kb(),
+            )
+        else:
+            await callback.message.edit_text(
+                "Статья (1/5) — Проект\n\nДля какого проекта?",
+                reply_markup=pipeline_projects_kb(projects),
+            )
+        await state.set_state(ArticlePipelineFSM.select_project)
+        return
+
+    if step == "select_wp":
+        await callback.message.edit_text(
+            "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
+            reply_markup=pipeline_no_wp_kb(),
+        )
+        await state.set_state(ArticlePipelineFSM.select_wp)
+        return
+
+    if step == "select_category":
+        if not project_id:
+            await callback.message.edit_text("Данные сессии устарели. Начните заново.")
+            return
+        cats_repo = CategoriesRepository(db)
+        categories = await cats_repo.get_by_project(project_id)
+        if not categories:
+            await callback.message.edit_text(
+                "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
+                reply_markup=cancel_kb("pipeline:article:cancel"),
+            )
+            await state.set_state(ArticlePipelineFSM.create_category_name)
+        elif len(categories) == 1:
+            cat = categories[0]
+            await state.update_data(category_id=cat.id, category_name=cat.name)
+            from routers.publishing.pipeline.readiness import show_readiness_check
+
+            await show_readiness_check(callback, state, user, db, redis)
+        else:
+            await callback.message.edit_text(
+                "Статья (3/5) — Тема\n\nКакая тема?",
+                reply_markup=pipeline_categories_kb(categories, project_id),
+            )
+            await state.set_state(ArticlePipelineFSM.select_category)
+        return
+
+    # Steps 4-5: readiness check or confirm
+    if step in ("readiness_check", "confirm_cost"):
+        from routers.publishing.pipeline.readiness import show_readiness_check
+
+        await show_readiness_check(callback, state, user, db, redis)
+        return
+
+    # Steps 6-7: preview resume — load from DB
+    if step == "preview" and preview_id:
+        previews_repo = PreviewsRepository(db)
+        preview = await previews_repo.get_by_id(preview_id)
+        if preview and preview.user_id == user.id and preview.status == "draft":
+            can_publish = bool(connection_id)
+            kb = pipeline_preview_kb(
+                preview.telegraph_url,
+                can_publish=can_publish,
+                regen_count=preview.regeneration_count,
+                regen_cost=preview.tokens_charged or 0,
+            )
+            lines = [
+                "Статья готова!\n",
+                f"<b>{html.escape(preview.title or '')}</b>\n",
+                f"Ключевая фраза: {html.escape(preview.keyword or '')}",
+                f"Объём: ~{preview.word_count or 0} слов | Изображения: {preview.images_count or 0}",
+                f"Списано: {preview.tokens_charged or 0} ток.",
+            ]
+            await callback.message.edit_text("\n".join(lines), reply_markup=kb)
+            await state.set_state(ArticlePipelineFSM.preview)
+            return
+
+        # Preview expired or already published
+        await callback.message.edit_text("Превью устарело. Начните заново.")
+        await redis.delete(CacheKeys.pipeline_state(user.id))
+        return
+
+    # Fallback: show dashboard
+    log.warning("pipeline.resume_unknown_step", step=step, user_id=user.id)
+    text, kb = await _build_dashboard(user, False, db, redis)
+    await callback.message.edit_text(text, reply_markup=kb)
+
+
+# ---------------------------------------------------------------------------
 # Pipeline stubs (remaining — article:start moved to pipeline/article.py)
 # ---------------------------------------------------------------------------
 
@@ -261,15 +385,81 @@ async def pipeline_social_start(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "pipeline:resume")
-async def pipeline_resume(callback: CallbackQuery) -> None:
-    """Stub: Resume pipeline — coming in Phase F5.5."""
-    await callback.answer("Возобновление — скоро!", show_alert=True)
+async def pipeline_resume(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Resume pipeline from checkpoint (E49, UX_PIPELINE §2.6).
+
+    Reads checkpoint from Redis, restores FSM state.data, and routes
+    the user to the appropriate step screen.
+    """
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    checkpoint_raw = await redis.get(CacheKeys.pipeline_state(user.id))
+    if not checkpoint_raw:
+        await callback.answer("Нет активного pipeline.", show_alert=True)
+        return
+
+    try:
+        checkpoint = json.loads(checkpoint_raw)
+    except json.JSONDecodeError, TypeError:
+        await callback.answer("Нет активного pipeline.", show_alert=True)
+        return
+
+    step = checkpoint.get("current_step", "")
+    project_id = checkpoint.get("project_id")
+    project_name = checkpoint.get("project_name", "")
+    connection_id = checkpoint.get("connection_id")
+    category_id = checkpoint.get("category_id")
+    preview_id = checkpoint.get("preview_id")
+
+    # Restore FSM data from checkpoint
+    await state.update_data(
+        project_id=project_id,
+        project_name=project_name,
+        connection_id=connection_id,
+        category_id=category_id,
+        preview_id=preview_id,
+    )
+
+    await callback.answer()
+    await _route_to_step(
+        callback,
+        state,
+        user,
+        db,
+        redis,
+        step=step,
+        project_id=project_id,
+        project_name=project_name,
+        category_id=category_id,
+        connection_id=connection_id,
+        preview_id=preview_id,
+    )
 
 
 @router.callback_query(F.data == "pipeline:restart")
-async def pipeline_restart(callback: CallbackQuery) -> None:
-    """Stub: Restart pipeline — coming in Phase F5.5."""
-    await callback.answer("Перезапуск — скоро!", show_alert=True)
+async def pipeline_restart(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    is_new_user: bool,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Restart pipeline — clear checkpoint and start fresh (E49)."""
+    await redis.delete(CacheKeys.pipeline_state(user.id))
+    await state.clear()
+    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+        text, kb = await _build_dashboard(user, is_new_user, db, redis)
+        await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "pipeline:cancel")

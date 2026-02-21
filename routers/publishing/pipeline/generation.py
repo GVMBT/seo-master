@@ -107,6 +107,7 @@ async def show_confirm(
         project_id=fsm_data.get("project_id"),
         project_name=fsm_data.get("project_name"),
         category_id=fsm_data.get("category_id"),
+        connection_id=fsm_data.get("connection_id"),
     )
 
 
@@ -130,6 +131,7 @@ async def show_confirm_msg(
         project_id=fsm_data.get("project_id"),
         project_name=fsm_data.get("project_name"),
         category_id=fsm_data.get("category_id"),
+        connection_id=fsm_data.get("connection_id"),
     )
 
 
@@ -457,6 +459,8 @@ async def _run_generation(
         project_id=project_id,
         project_name=fsm_data.get("project_name"),
         category_id=category_id,
+        connection_id=connection_id,
+        preview_id=preview.id,
     )
 
     log.info(
@@ -880,6 +884,7 @@ async def connect_wp_publish(
         await callback.answer()
         return
 
+    await state.update_data(from_preview=True)
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await callback.message.edit_text(
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
@@ -958,5 +963,77 @@ async def more_articles(
         current_step="select_category",
         project_id=project_id,
         project_name=project_name,
+        connection_id=data.get("connection_id"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pipeline:article:change_topic")
+async def change_topic(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Change topic after error — jump to step 3 (category), keeping project+WP.
+
+    Stateless filter: error can leave FSM in various states (confirm_cost etc.).
+    Reuses more_articles logic.
+    """
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    project_name = data.get("project_name", "")
+
+    if not project_id:
+        await callback.answer("Данные сессии устарели.", show_alert=True)
+        return
+
+    # Clear generation-specific data, keep project + connection
+    await state.update_data(
+        category_id=None,
+        category_name=None,
+        preview_id=None,
+        keyword=None,
+        tokens_charged=None,
+    )
+
+    cats_repo = CategoriesRepository(db)
+    categories = await cats_repo.get_by_project(project_id)
+
+    from keyboards.pipeline import pipeline_categories_kb
+
+    if not categories:
+        from keyboards.inline import cancel_kb
+
+        await callback.message.edit_text(
+            "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
+            reply_markup=cancel_kb("pipeline:article:cancel"),
+        )
+        await state.set_state(ArticlePipelineFSM.create_category_name)
+    elif len(categories) == 1:
+        cat = categories[0]
+        await state.update_data(category_id=cat.id, category_name=cat.name)
+        from routers.publishing.pipeline.readiness import show_readiness_check
+
+        await show_readiness_check(callback, state, user, db, redis)
+    else:
+        await callback.message.edit_text(
+            "Статья (3/5) — Тема\n\nКакая тема?",
+            reply_markup=pipeline_categories_kb(categories, project_id),
+        )
+        await state.set_state(ArticlePipelineFSM.select_category)
+
+    await save_checkpoint(
+        redis,
+        user.id,
+        current_step="select_category",
+        project_id=project_id,
+        project_name=project_name,
+        connection_id=data.get("connection_id"),
     )
     await callback.answer()

@@ -29,12 +29,14 @@ from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import CategoryCreate, PlatformConnectionCreate, ProjectCreate, User
 from db.repositories.categories import CategoriesRepository
+from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import cancel_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
     pipeline_no_wp_kb,
+    pipeline_preview_kb,
     pipeline_projects_kb,
 )
 from routers.publishing.pipeline._common import (
@@ -580,6 +582,12 @@ async def pipeline_connect_wp_password(
     await state.update_data(connection_id=conn.id, wp_identifier=conn.identifier)
     await message.answer(f"WordPress ({html.escape(identifier)}) подключён!")
 
+    # If connecting from preview (Variant B → publish), return to preview screen
+    if data.get("from_preview") and data.get("preview_id"):
+        await state.update_data(from_preview=False)
+        await _return_to_preview(message, state, user, db, redis, data["preview_id"], conn.id)
+        return
+
     # Proceed to step 3 (category) — message context
     await _show_category_step_msg(message, state, user, db, redis, project_id, project_name)
 
@@ -824,6 +832,63 @@ async def pipeline_create_category_name(
     # Proceed to readiness (step 4)
     # For text messages we can't edit — send new message
     await show_readiness_check_msg(message, state, user, db, redis)
+
+
+# ---------------------------------------------------------------------------
+# Return to preview after WP connection from Variant B (F5.5)
+# ---------------------------------------------------------------------------
+
+
+async def _return_to_preview(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    preview_id: int,
+    connection_id: int,
+) -> None:
+    """Return to preview screen after WP connection from Variant B.
+
+    Loads the preview from DB, updates connection_id in state, and shows
+    the preview with can_publish=True.
+    """
+    previews_repo = PreviewsRepository(db)
+    preview = await previews_repo.get_by_id(preview_id)
+    if not preview or preview.user_id != user.id or preview.status != "draft":
+        await message.answer("Превью устарело. Начните заново.")
+        await state.clear()
+        await clear_checkpoint(redis, user.id)
+        return
+
+    await state.update_data(connection_id=connection_id, preview_only=False)
+    await state.set_state(ArticlePipelineFSM.preview)
+
+    telegraph_url = preview.telegraph_url
+    kb = pipeline_preview_kb(
+        telegraph_url,
+        can_publish=True,
+        regen_count=preview.regeneration_count,
+        regen_cost=preview.tokens_charged or 0,
+    )
+
+    lines = [
+        "Статья готова!\n",
+        f"<b>{html.escape(preview.title or '')}</b>\n",
+        f"Ключевая фраза: {html.escape(preview.keyword or '')}",
+        f"Объём: ~{preview.word_count or 0} слов | Изображения: {preview.images_count or 0}",
+        f"Списано: {preview.tokens_charged or 0} ток.",
+    ]
+    await message.answer("\n".join(lines), reply_markup=kb)
+    await save_checkpoint(
+        redis,
+        user.id,
+        current_step="preview",
+        project_id=preview.project_id,
+        category_id=preview.category_id,
+        connection_id=connection_id,
+        preview_id=preview.id,
+    )
 
 
 # ---------------------------------------------------------------------------

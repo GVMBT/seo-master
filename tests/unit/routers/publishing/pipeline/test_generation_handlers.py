@@ -20,6 +20,7 @@ from routers.publishing.pipeline.generation import (
     _select_keyword,
     back_to_readiness,
     cancel_refund,
+    change_topic,
     confirm_generate,
     connect_wp_publish,
     copy_html,
@@ -887,3 +888,100 @@ class TestBuildPreviewText:
         )
         text = _build_preview_text(content, "seo tips", 320, None)
         assert "Превью недоступно" in text
+
+
+# ---------------------------------------------------------------------------
+# change_topic (F5.5: "Другая тема" button on error)
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{_MODULE}.CategoriesRepository")
+@patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
+async def test_change_topic_multiple_categories(
+    mock_save: AsyncMock,
+    mock_cats_cls: MagicMock,
+    mock_callback: MagicMock,
+    mock_state: MagicMock,
+    mock_redis: MagicMock,
+) -> None:
+    """change_topic with multiple categories shows category list."""
+    user = make_user()
+    cats = [make_category(), make_category(id=11, name="Cat 2")]
+    mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=cats)
+    mock_state.get_data = AsyncMock(return_value={
+        "project_id": 1,
+        "project_name": "Test",
+        "connection_id": 5,
+    })
+
+    await change_topic(mock_callback, mock_state, user, MagicMock(), mock_redis)
+
+    mock_callback.message.edit_text.assert_called_once()
+    text = mock_callback.message.edit_text.call_args[0][0]
+    assert "Тема" in text
+    mock_state.set_state.assert_called_with(ArticlePipelineFSM.select_category)
+
+
+@patch(f"{_MODULE}.CategoriesRepository")
+@patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
+async def test_change_topic_no_project_id(
+    mock_save: AsyncMock,
+    mock_cats_cls: MagicMock,
+    mock_callback: MagicMock,
+    mock_state: MagicMock,
+    mock_redis: MagicMock,
+) -> None:
+    """change_topic with no project_id shows stale alert."""
+    user = make_user()
+    mock_state.get_data = AsyncMock(return_value={})
+
+    await change_topic(mock_callback, mock_state, user, MagicMock(), mock_redis)
+
+    mock_callback.answer.assert_called_with("Данные сессии устарели.", show_alert=True)
+
+
+@patch(f"{_MODULE}.CategoriesRepository")
+@patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
+@patch("routers.publishing.pipeline.readiness.show_readiness_check", new_callable=AsyncMock)
+async def test_change_topic_clears_generation_data(
+    mock_readiness: AsyncMock,
+    mock_save: AsyncMock,
+    mock_cats_cls: MagicMock,
+    mock_callback: MagicMock,
+    mock_state: MagicMock,
+    mock_redis: MagicMock,
+) -> None:
+    """change_topic clears generation-specific data from state."""
+    user = make_user()
+    mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=[make_category()])
+    mock_state.get_data = AsyncMock(return_value={
+        "project_id": 1,
+        "project_name": "Test",
+        "connection_id": 5,
+        "preview_id": 99,
+        "keyword": "old keyword",
+    })
+
+    await change_topic(mock_callback, mock_state, user, MagicMock(), mock_redis)
+
+    # Check that update_data cleared generation fields
+    update_call = mock_state.update_data.call_args_list[0]
+    assert update_call[1]["preview_id"] is None
+    assert update_call[1]["keyword"] is None
+
+
+# ---------------------------------------------------------------------------
+# connect_wp_publish from_preview flag (F5.5)
+# ---------------------------------------------------------------------------
+
+
+async def test_connect_wp_publish_sets_from_preview(
+    mock_callback: MagicMock,
+    mock_state: MagicMock,
+) -> None:
+    """connect_wp_publish sets from_preview=True in state data."""
+    await connect_wp_publish(mock_callback, mock_state)
+
+    # Check that from_preview was set
+    mock_state.update_data.assert_called_with(from_preview=True)
+    mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_url)

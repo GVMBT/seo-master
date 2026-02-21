@@ -445,7 +445,10 @@ def pipeline_result_kb(post_url: str | None = None) -> InlineKeyboardMarkup:
 
 
 def pipeline_generation_error_kb() -> InlineKeyboardMarkup:
-    """Error keyboard after failed generation (E35)."""
+    """Error keyboard after failed generation (UX_PIPELINE §8.3, E35).
+
+    3 buttons: Повторить / Другая тема / Главное меню.
+    """
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -457,8 +460,14 @@ def pipeline_generation_error_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Отмена",
-                    callback_data="pipeline:article:cancel",
+                    text="Другая тема",
+                    callback_data="pipeline:article:change_topic",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Главное меню",
+                    callback_data="nav:dashboard",
                 ),
             ],
         ]
