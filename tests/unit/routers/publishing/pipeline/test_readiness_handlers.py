@@ -570,14 +570,20 @@ class TestDescriptionSubFlow:
         p_cats, cat_mock = _patch_cats_repo()
         p_settings = _patch_settings()
         p_show = patch(f"{_MODULE}.show_readiness_check", new_callable=AsyncMock)
+        p_desc = patch(f"{_MODULE}.DescriptionService")
+        mock_orchestrator = MagicMock()
 
-        with p_token, p_cats, p_settings, p_show as mock_show:
+        with p_token, p_cats, p_settings, p_show as mock_show, p_desc as desc_cls:
+            desc_cls.return_value.generate = AsyncMock(
+                return_value=MagicMock(content="Generated description")
+            )
             await readiness_description_ai(
                 mock_callback,
                 mock_state,
                 user,
                 mock_db,
                 mock_redis,
+                mock_orchestrator,
             )
 
         token_mock.check_balance.assert_called_once()
@@ -598,6 +604,7 @@ class TestDescriptionSubFlow:
 
         p_token, _ = _patch_token_svc(balance=5, has_balance=False)
         p_settings = _patch_settings()
+        mock_orchestrator = MagicMock()
 
         with p_token, p_settings:
             await readiness_description_ai(
@@ -606,6 +613,7 @@ class TestDescriptionSubFlow:
                 user,
                 mock_db,
                 mock_redis,
+                mock_orchestrator,
             )
 
         mock_callback.answer.assert_called_once()
@@ -626,14 +634,20 @@ class TestDescriptionSubFlow:
         p_cats, cat_mock = _patch_cats_repo()
         cat_mock.update = AsyncMock(return_value=None)
         p_settings = _patch_settings()
+        p_desc = patch(f"{_MODULE}.DescriptionService")
+        mock_orchestrator = MagicMock()
 
-        with p_token, p_cats, p_settings:
+        with p_token, p_cats, p_settings, p_desc as desc_cls:
+            desc_cls.return_value.generate = AsyncMock(
+                return_value=MagicMock(content="Generated description")
+            )
             await readiness_description_ai(
                 mock_callback,
                 mock_state,
                 user,
                 mock_db,
                 mock_redis,
+                mock_orchestrator,
             )
 
         cat_mock.update.assert_called_once()

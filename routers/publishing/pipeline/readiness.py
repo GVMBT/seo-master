@@ -12,6 +12,7 @@ import html
 
 import structlog
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
@@ -22,6 +23,7 @@ from db.models import CategoryUpdate, User
 from db.repositories.categories import CategoriesRepository
 from keyboards.inline import cancel_kb
 from keyboards.pipeline import (
+    pipeline_back_to_checklist_kb,
     pipeline_description_options_kb,
     pipeline_images_options_kb,
     pipeline_keywords_options_kb,
@@ -33,6 +35,8 @@ from routers.publishing.pipeline._common import (
     clear_checkpoint,
     save_checkpoint,
 )
+from services.ai.description import DescriptionService
+from services.ai.orchestrator import AIOrchestrator
 from services.readiness import ReadinessReport, ReadinessService
 from services.tokens import (
     COST_DESCRIPTION,
@@ -266,6 +270,7 @@ async def readiness_keywords_upload_start(
         "Загрузите TXT-файл с ключевыми фразами.\n"
         "Одна фраза на строку, максимум 500 фраз, до 1 МБ.\n\n"
         "Или отправьте фразы текстом (каждая с новой строки).",
+        reply_markup=pipeline_back_to_checklist_kb(),
     )
     await state.set_state(ArticlePipelineFSM.readiness_keywords_products)
     await callback.answer()
@@ -430,15 +435,17 @@ async def readiness_description_ai(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    ai_orchestrator: AIOrchestrator,
 ) -> None:
-    """Generate description via AI (Phase 10 stub — charges tokens, uses template)."""
+    """Generate category description via AI and save to DB."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
 
     data = await state.get_data()
     category_id = data.get("category_id")
-    if not category_id:
+    project_id = data.get("project_id")
+    if not category_id or not project_id:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
@@ -455,18 +462,29 @@ async def readiness_description_ai(
         )
         return
 
-    # Phase 10 stub: generate template description
-    project_name = data.get("project_name", "")
-    category_name = data.get("category_name", "")
-    generated = (
-        f"Компания «{project_name}» специализируется на теме «{category_name}». "
-        f"Мы предлагаем качественные решения для наших клиентов."
-    )
+    # Generate real description via DescriptionService
+    desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
+    try:
+        result = await desc_svc.generate(
+            user_id=user.id,
+            project_id=project_id,
+            category_id=category_id,
+        )
+    except Exception:
+        log.exception(
+            "pipeline.readiness.description_ai_failed",
+            user_id=user.id,
+            category_id=category_id,
+        )
+        await callback.answer("Ошибка генерации описания. Попробуйте позже.", show_alert=True)
+        return
+
+    generated = result.content if isinstance(result.content, str) else str(result.content)
 
     # Save FIRST, charge AFTER (if update fails, user is not billed)
     cats_repo = CategoriesRepository(db)
-    result = await cats_repo.update(category_id, CategoryUpdate(description=generated))
-    if not result:
+    save_result = await cats_repo.update(category_id, CategoryUpdate(description=generated))
+    if not save_result:
         log.error(
             "pipeline.readiness.description_save_failed",
             user_id=user.id,
@@ -508,6 +526,7 @@ async def readiness_description_manual_start(
 
     await callback.message.edit_text(
         "Введите описание компании/категории (10-2000 символов).\n\nЧем подробнее — тем точнее будут статьи.",
+        reply_markup=pipeline_back_to_checklist_kb(),
     )
     await state.set_state(ArticlePipelineFSM.readiness_description)
     await callback.answer()
@@ -588,6 +607,7 @@ async def readiness_prices_text_start(
         "Введите прайс-лист текстом.\n"
         "Формат: Товар — Цена (каждый с новой строки).\n\n"
         "<i>Пример:\nКухня Прага — от 120 000 руб.\nШкаф-купе — от 45 000 руб.</i>",
+        reply_markup=pipeline_back_to_checklist_kb(),
     )
     await state.set_state(ArticlePipelineFSM.readiness_prices)
     await callback.answer()
@@ -663,6 +683,7 @@ async def readiness_prices_excel_start(
         "Загрузите Excel-файл (.xlsx) с прайсом.\n"
         "Колонки: A — Название, B — Цена, C — Описание (опц.).\n"
         "Максимум 1000 строк, 5 МБ.",
+        reply_markup=pipeline_back_to_checklist_kb(),
     )
     await state.set_state(ArticlePipelineFSM.readiness_prices)
     await callback.answer()
@@ -811,6 +832,26 @@ async def readiness_images_select(
 # ---------------------------------------------------------------------------
 # Navigation: back to checklist, done
 # ---------------------------------------------------------------------------
+
+
+@router.callback_query(
+    StateFilter(
+        ArticlePipelineFSM.readiness_keywords_products,
+        ArticlePipelineFSM.readiness_description,
+        ArticlePipelineFSM.readiness_prices,
+    ),
+    F.data == "pipeline:readiness:back",
+)
+async def readiness_back_from_input(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Return to readiness checklist from text-input sub-flows (M5)."""
+    await show_readiness_check(callback, state, user, db, redis)
+    await callback.answer()
 
 
 @router.callback_query(

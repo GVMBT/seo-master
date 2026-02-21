@@ -77,9 +77,11 @@ async def test_resume_invalid_json_shows_alert(
     mock_callback.answer.assert_called_once_with("Нет активного pipeline.", show_alert=True)
 
 
+@patch(f"{_MODULE}.CategoriesRepository")
 @patch(f"{_MODULE}._route_to_step", new_callable=AsyncMock)
 async def test_resume_valid_checkpoint(
     mock_route: AsyncMock,
+    _mock_cats_cls: MagicMock,
     mock_callback: MagicMock,
     mock_state: MagicMock,
     mock_redis: MagicMock,
@@ -96,6 +98,9 @@ async def test_resume_valid_checkpoint(
         "preview_id": 99,
     }
     mock_redis.get = AsyncMock(return_value=json.dumps(checkpoint))
+    _mock_cats_cls.return_value.get_by_id = AsyncMock(
+        return_value=make_category(id=10, name="Test Cat"),
+    )
 
     await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis)
 
@@ -104,6 +109,7 @@ async def test_resume_valid_checkpoint(
         project_name="Test",
         connection_id=5,
         category_id=10,
+        category_name="Test Cat",
         preview_id=99,
     )
     mock_route.assert_called_once()

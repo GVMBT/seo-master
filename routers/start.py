@@ -421,12 +421,19 @@ async def pipeline_resume(
     category_id = checkpoint.get("category_id")
     preview_id = checkpoint.get("preview_id")
 
-    # Restore FSM data from checkpoint
+    # Restore FSM data from checkpoint (M1: load category_name from DB)
+    category_name = ""
+    if category_id:
+        cats_repo = CategoriesRepository(db)
+        cat = await cats_repo.get_by_id(category_id)
+        category_name = cat.name if cat else ""
+
     await state.update_data(
         project_id=project_id,
         project_name=project_name,
         connection_id=connection_id,
         category_id=category_id,
+        category_name=category_name,
         preview_id=preview_id,
     )
 

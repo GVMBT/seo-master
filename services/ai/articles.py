@@ -482,6 +482,7 @@ class ArticleService:
             "cluster_volume": cluster_volume,
             "company_name": project.company_name,
             "specialization": project.specialization,
+            "category_description": category.description or "",
             "city": project.company_city or "",
             "advantages": project.advantages or "",
             "language": "ru",

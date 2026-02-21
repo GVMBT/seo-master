@@ -25,7 +25,9 @@ from routers.publishing.pipeline._common import ArticlePipelineFSM
 log = structlog.get_logger()
 router = Router()
 
-# States where exit requires confirmation (steps 4-7)
+# States where exit requires confirmation (steps 4-7).
+# Excludes generating/publishing/regenerating — those have active coroutines;
+# clearing FSM mid-flight causes race conditions (M4).
 _PROTECTED_STATES = StateFilter(
     ArticlePipelineFSM.readiness_check,
     ArticlePipelineFSM.readiness_keywords_products,
@@ -36,10 +38,7 @@ _PROTECTED_STATES = StateFilter(
     ArticlePipelineFSM.readiness_prices,
     ArticlePipelineFSM.readiness_photos,
     ArticlePipelineFSM.confirm_cost,
-    ArticlePipelineFSM.generating,
     ArticlePipelineFSM.preview,
-    ArticlePipelineFSM.publishing,
-    ArticlePipelineFSM.regenerating,
 )
 
 
