@@ -114,6 +114,12 @@ class FSMInactivityMiddleware(BaseMiddleware):
             await state.clear()
             tg_user = data.get("event_from_user")
             log.info("fsm_inactivity_timeout", user_id=tg_user.id if tg_user else None)
+
+            # For /start and /cancel — don't block, let the handler show Dashboard.
+            # Pipeline checkpoint in Redis survives FSM clear (E49).
+            if isinstance(event, Message) and event.text and event.text.startswith(("/start", "/cancel")):
+                return await handler(event, data)
+
             await self._send_expired_message(event, data)
             return None  # drop event
 
