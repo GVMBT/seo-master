@@ -68,3 +68,4 @@ scripts/generate_session.py
 .DS_Store
 Thumbs.db
 nul
+.coverage

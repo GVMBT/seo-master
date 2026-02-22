@@ -257,7 +257,7 @@ def sanitize_html(raw_html: str) -> str:
                 try:
                     _json.loads(content_match.group(1))
                     safe_blocks.append(block)
-                except (ValueError, _json.JSONDecodeError):
+                except ValueError, _json.JSONDecodeError:
                     log.warning("invalid_jsonld_block_stripped")
         if safe_blocks:
             sanitized += "\n".join(safe_blocks)
@@ -357,6 +357,7 @@ class ArticleService:
         category_id: int,
         keyword: str,
         *,
+        image_count: int | None = None,
         cluster: dict[str, Any] | None = None,
         branding: dict[str, Any] | None = None,
         overrides: dict[str, Any] | None = None,
@@ -383,6 +384,7 @@ class ArticleService:
             project,
             category,
             keyword,
+            image_count=image_count,
             cluster=cluster,
             branding=branding,
             overrides=overrides,
@@ -433,6 +435,7 @@ class ArticleService:
         category: Any,
         keyword: str,
         *,
+        image_count: int | None,
         cluster: dict[str, Any] | None,
         branding: dict[str, Any] | None,
         overrides: dict[str, Any] | None,
@@ -500,7 +503,7 @@ class ArticleService:
             "serper_questions": serper_questions,
             "competitor_analysis": competitor_analysis,
             "competitor_gaps": competitor_gaps,
-            "images_count": image_settings.get("count", 4),
+            "images_count": image_count if image_count is not None else int(image_settings.get("count", 4)),
             "text_color": text_color,
             "accent_color": accent_color,
         }

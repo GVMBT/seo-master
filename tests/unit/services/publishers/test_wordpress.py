@@ -213,7 +213,7 @@ class TestPublish:
             title="Title",
             metadata={
                 "seo_title": "My SEO Title",
-                "seo_description": "My Desc",
+                "meta_description": "My Desc",
                 "focus_keyword": "keyword",
             },
         )

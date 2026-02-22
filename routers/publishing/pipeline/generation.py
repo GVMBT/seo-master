@@ -446,6 +446,7 @@ async def _run_generation(
             telegraph_path=telegraph_path,
             title=content.title,
             keyword=keyword,
+            meta_description=content.meta_description,
             word_count=content.word_count,
             images_count=actual_images,
             tokens_charged=tokens_charged,
