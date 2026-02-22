@@ -257,7 +257,7 @@ def sanitize_html(raw_html: str) -> str:
                 try:
                     _json.loads(content_match.group(1))
                     safe_blocks.append(block)
-                except ValueError, _json.JSONDecodeError:
+                except (ValueError, _json.JSONDecodeError):  # fmt: skip
                     log.warning("invalid_jsonld_block_stripped")
         if safe_blocks:
             sanitized += "\n".join(safe_blocks)
