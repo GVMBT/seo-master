@@ -388,6 +388,11 @@ class AIOrchestrator:
             )
         choice = response.choices[0]
         raw_content = choice.message.content or ""
+
+        # For image tasks, extract data URI from message.images
+        if request.task == "image":
+            raw_content = self._extract_image_content(choice.message, raw_content)
+
         model_used = response.model or chain[0]
         usage = response.usage
 
@@ -446,6 +451,31 @@ class AIOrchestrator:
             prompt_version=rendered.version,
             fallback_used=fallback_used,
         )
+
+    @staticmethod
+    def _extract_image_content(message: Any, fallback: str) -> str:
+        """Extract image data URI from OpenRouter message.images field.
+
+        OpenRouter returns generated images in message.images (not content):
+        [{"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}]
+        OpenAI SDK stores this in model_extra since it's not a standard field.
+        """
+        images_data = getattr(message, "images", None)
+        if not images_data or not isinstance(images_data, list):
+            return fallback
+
+        for img in images_data:
+            if isinstance(img, dict):
+                url: str = str(img.get("image_url", {}).get("url", ""))
+                if url.startswith("data:image/"):
+                    return url
+
+        log.warning(
+            "image_response_no_data_uri",
+            images_count=len(images_data),
+            first_type=type(images_data[0]).__name__ if images_data else "empty",
+        )
+        return fallback
 
     def _build_messages(
         self,
@@ -541,7 +571,7 @@ class AIOrchestrator:
             result = json.loads(text)
             if isinstance(result, (dict, list)):
                 return result
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):  # fmt: skip
             pass
         return None
 
