@@ -241,6 +241,8 @@ async def confirm_generate(
             description=f"Статья (категория #{category_id})",
         )
     await state.update_data(tokens_charged=cost, last_update_time=time.time())
+    # Sync local dict so _run_generation sees charged amount (same as regenerate path)
+    data["tokens_charged"] = cost
 
     await state.set_state(ArticlePipelineFSM.generating)
     await callback.answer()
@@ -324,7 +326,7 @@ async def _run_generation(
     category_id = fsm_data.get("category_id")
     project_id = fsm_data.get("project_id")
     image_count = fsm_data.get("image_count", 4)
-    tokens_charged = fsm_data.get("tokens_charged", 0)
+    tokens_charged = fsm_data.get("tokens_charged") or 0
     connection_id = fsm_data.get("connection_id")
     preview_only = fsm_data.get("preview_only", False)
 
@@ -553,11 +555,11 @@ async def _select_keyword(db: SupabaseClient, category_id: int) -> str | None:
 async def _try_refund(
     db: SupabaseClient,
     user: User,
-    amount: int,
+    amount: int | None,
     reason_suffix: str,
 ) -> None:
     """Attempt to refund tokens on error."""
-    if amount <= 0:
+    if not amount or amount <= 0:
         return
     settings = get_settings()
     is_god = user.id in settings.admin_ids
