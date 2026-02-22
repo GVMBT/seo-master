@@ -139,6 +139,69 @@ async def on_startup(bot: Bot, settings: Settings) -> None:
         log.warning("no_railway_url", msg="RAILWAY_PUBLIC_URL not set, webhook not configured")
 
 
+async def _refund_active_generations(
+    bot: Bot,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Refund tokens for generations interrupted by shutdown.
+
+    Scans Redis for generation:active:* keys, refunds each, and notifies users.
+    """
+    import json
+
+    from cache.keys import CacheKeys
+    from services.tokens import TokenService
+
+    settings = get_settings()
+
+    try:
+        keys = await redis.scan_keys(f"{CacheKeys.ACTIVE_GENERATION_PREFIX}*")
+    except Exception:
+        log.exception("shutdown_refund_scan_failed")
+        return
+
+    if not keys:
+        return
+
+    log.info("shutdown_refund_active_generations", count=len(keys))
+    token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
+
+    for key in keys:
+        try:
+            raw = await redis.get(key)
+            if not raw:
+                continue
+            data = json.loads(raw)
+            tokens = data.get("tokens", 0)
+            # Extract user_id from key: "generation:active:{user_id}"
+            user_id = int(key.rsplit(":", 1)[-1])
+
+            if tokens > 0 and user_id not in settings.admin_ids:
+                await token_svc.refund(
+                    user_id=user_id,
+                    amount=tokens,
+                    reason="refund",
+                    description="Возврат: генерация прервана обновлением сервера",
+                )
+
+            # Notify user (best-effort)
+            try:
+                await bot.send_message(
+                    user_id,
+                    "Генерация была прервана обновлением сервера.\n"
+                    f"Токены возвращены: {tokens} ток.\n\n"
+                    "Попробуйте снова — /start",
+                )
+            except Exception:
+                log.warning("shutdown_refund_notify_failed", user_id=user_id)
+
+            await redis.delete(key)
+            log.info("shutdown_refund_ok", user_id=user_id, tokens=tokens)
+        except Exception:
+            log.exception("shutdown_refund_failed", key=key)
+
+
 async def on_shutdown(
     bot: Bot,
     db: SupabaseClient,
@@ -167,6 +230,9 @@ async def on_shutdown(
     finally:
         for _ in range(acquired):
             PUBLISH_SEMAPHORE.release()
+
+    # Refund active generations interrupted by shutdown
+    await _refund_active_generations(bot, db, redis)
 
     # NOTE: do NOT call bot.delete_webhook() here.
     # During Railway zero-downtime deploys, the old container's shutdown
