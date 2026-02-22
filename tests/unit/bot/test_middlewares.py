@@ -226,6 +226,70 @@ class TestThrottlingMiddleware:
         assert result == "handler_result"
         redis.incr.assert_not_called()
 
+    async def test_callback_query_uses_separate_counter(self, redis: AsyncMock) -> None:
+        """Callback queries use 'callback' key, not 'message'."""
+        from aiogram.types import CallbackQuery
+
+        redis.incr.return_value = 1
+        mw = ThrottlingMiddleware(redis)
+        cb = MagicMock(spec=CallbackQuery)
+        data: dict = {"event_from_user": _make_tg_user()}
+
+        await mw(_make_handler(), cb, data)
+
+        key_arg = redis.incr.call_args[0][0]
+        assert ":callback" in key_arg
+        assert ":message" not in key_arg
+
+    async def test_callback_query_allows_up_to_60(self, redis: AsyncMock) -> None:
+        """Callback queries have a higher limit (60/min) than messages (30/min)."""
+        from aiogram.types import CallbackQuery
+
+        redis.incr.return_value = 60
+        mw = ThrottlingMiddleware(redis)
+        cb = MagicMock(spec=CallbackQuery)
+        handler = _make_handler()
+        data: dict = {"event_from_user": _make_tg_user()}
+
+        result = await mw(handler, cb, data)
+
+        assert result == "handler_result"
+        handler.assert_called_once()
+
+    async def test_callback_query_drops_over_60(self, redis: AsyncMock) -> None:
+        """Callback queries are dropped when exceeding 60/min."""
+        from aiogram.types import CallbackQuery
+
+        redis.incr.return_value = 61
+        mw = ThrottlingMiddleware(redis)
+        cb = MagicMock(spec=CallbackQuery)
+        handler = _make_handler()
+        data: dict = {"event_from_user": _make_tg_user()}
+
+        result = await mw(handler, cb, data)
+
+        assert result is None
+        handler.assert_not_called()
+
+    async def test_message_does_not_affect_callback_budget(self, redis: AsyncMock) -> None:
+        """Message and callback have independent counters."""
+        redis.incr.return_value = 1
+        mw = ThrottlingMiddleware(redis)
+        data: dict = {"event_from_user": _make_tg_user()}
+
+        # First call with message event
+        await mw(_make_handler(), _make_event(), data)
+        msg_key = redis.incr.call_args[0][0]
+
+        # Second call with callback event
+        from aiogram.types import CallbackQuery
+
+        cb = MagicMock(spec=CallbackQuery)
+        await mw(_make_handler(), cb, data)
+        cb_key = redis.incr.call_args[0][0]
+
+        assert msg_key != cb_key
+
 
 # === FSMInactivityMiddleware ===
 
