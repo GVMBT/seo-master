@@ -195,8 +195,9 @@ async def _show_connection_step_msg(
 def _get_http_client(callback: CallbackQuery) -> httpx.AsyncClient:
     """Extract shared httpx client from bot data (injected by DBSessionMiddleware)."""
     bot = callback.bot
-    if bot and hasattr(bot, "workflow_data") and "http_client" in bot.workflow_data:
-        client = bot.workflow_data["http_client"]
+    if bot:
+        wf_data: dict[str, object] = getattr(bot, "workflow_data", {})
+        client = wf_data.get("http_client")
         if isinstance(client, httpx.AsyncClient):
             return client
     msg = "http_client not found in bot.workflow_data — check DBSessionMiddleware setup"
@@ -206,8 +207,9 @@ def _get_http_client(callback: CallbackQuery) -> httpx.AsyncClient:
 def _get_http_client_from_msg(message: Message) -> httpx.AsyncClient:
     """Extract shared httpx client from message bot data."""
     bot = message.bot
-    if bot and hasattr(bot, "workflow_data") and "http_client" in bot.workflow_data:
-        client = bot.workflow_data["http_client"]
+    if bot:
+        wf_data: dict[str, object] = getattr(bot, "workflow_data", {})
+        client = wf_data.get("http_client")
         if isinstance(client, httpx.AsyncClient):
             return client
     msg = "http_client not found in bot.workflow_data — check DBSessionMiddleware setup"

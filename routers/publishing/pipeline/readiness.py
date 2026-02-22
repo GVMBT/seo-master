@@ -860,6 +860,8 @@ async def _run_pipeline_keyword_generation(
             log.debug("pipeline.readiness.delete_progress_failed")
 
         bot = msg.bot
+        if not bot:
+            return
         await bot.send_message(
             chat_id=msg.chat.id,
             text=(
@@ -890,6 +892,8 @@ async def _run_pipeline_keyword_generation(
         with contextlib.suppress(Exception):
             await msg.delete()
         bot = msg.bot
+        if not bot:
+            return
         await bot.send_message(
             chat_id=msg.chat.id,
             text="Ошибка при подборе фраз. Токены возвращены.\nПопробуйте позже.",

@@ -60,6 +60,7 @@ class WordPressPublisher(BasePublisher):
         try:
             # 1. Upload images -> attachment IDs (with SEO metadata from images_meta)
             attachment_ids: list[int] = []
+            wp_media_urls: list[str] = []
             for i, img_bytes in enumerate(request.images):
                 meta = request.images_meta[i] if i < len(request.images_meta) else {}
                 filename = f"{meta.get('filename', f'image-{i}')}.webp"
@@ -77,7 +78,9 @@ class WordPressPublisher(BasePublisher):
                     timeout=30,
                 )
                 resp.raise_for_status()
-                media_id = resp.json()["id"]
+                media_json = resp.json()
+                media_id = media_json["id"]
+                media_url = media_json.get("source_url", "")
 
                 # Update alt_text and caption via WP REST (Image SEO)
                 if alt_text or meta.get("figcaption"):
@@ -91,16 +94,24 @@ class WordPressPublisher(BasePublisher):
                         timeout=15,
                     )
                 attachment_ids.append(media_id)
+                wp_media_urls.append(media_url)
 
-            # 2. Create post
+            # 2. Replace Supabase Storage URLs in content with WP media URLs
+            content = request.content
+            storage_urls = request.metadata.get("storage_urls", [])
+            for i, storage_url in enumerate(storage_urls):
+                if i < len(wp_media_urls) and storage_url and wp_media_urls[i]:
+                    content = content.replace(storage_url, wp_media_urls[i])
+
+            # 3. Create post
             post_data: dict[str, object] = {
                 "title": request.title or "",
-                "content": request.content,
+                "content": content,
                 "status": "publish",
                 "featured_media": attachment_ids[0] if attachment_ids else 0,
                 "meta": {
                     "_yoast_wpseo_title": request.metadata.get("seo_title", request.title or ""),
-                    "_yoast_wpseo_metadesc": request.metadata.get("seo_description", ""),
+                    "_yoast_wpseo_metadesc": request.metadata.get("meta_description", ""),
                     "_yoast_wpseo_focuskw": request.metadata.get("focus_keyword", ""),
                 },
             }

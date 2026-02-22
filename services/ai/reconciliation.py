@@ -105,14 +105,18 @@ def reconcile_images(
             )
         )
 
-    # Replace {{IMAGE_N}} placeholders in markdown
+    # Replace {{IMAGE_N}} placeholders with indexed markers for later URL injection.
+    # After Storage upload, caller replaces {{RECONCILED_IMAGE_N}} with real URLs.
     # Placeholders are 1-indexed: {{IMAGE_1}}, {{IMAGE_2}}, etc.
     markdown = content_markdown
-    for i, _upload in enumerate(uploads):
+    for i, upload in enumerate(uploads):
         placeholder = f"{{{{IMAGE_{i + 1}}}}}"
-        # At this stage we don't have WP URLs yet -- leave placeholder for publisher
-        # to replace with actual uploaded media URL. Use empty string for now.
-        markdown = markdown.replace(placeholder, "")
+        # Replace with Markdown image syntax using a resolvable marker
+        alt = upload.alt_text.replace('"', '\\"')
+        escaped_caption = upload.caption.replace('"', '\\"') if upload.caption else ""
+        caption_attr = f' "{escaped_caption}"' if escaped_caption else ""
+        img_md = f"![{alt}]({{{{RECONCILED_IMAGE_{i + 1}}}}}{caption_attr})"
+        markdown = markdown.replace(placeholder, img_md)
 
     # Remove unreplaced image placeholders (if images < expected)
     # Pattern matches Markdown image syntax: ![alt]({{IMAGE_N}} "title") or ![alt]({{IMAGE_N}})

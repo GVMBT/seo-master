@@ -7,6 +7,7 @@ Zero Telegram/Aiogram dependencies.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -40,6 +41,7 @@ class ArticleContent:
     content_html: str
     word_count: int
     images_count: int
+    meta_description: str = ""
     stored_images: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -184,7 +186,7 @@ class PreviewService:
         category = await CategoriesRepository(self._db).get_by_id(category_id)
         project = await ProjectsRepository(self._db).get_by_id(project_id)
         if image_count is None:
-            image_count = (category.image_settings or {}).get("count", 4) if category else 4
+            image_count = int((category.image_settings or {}).get("count", 4) if category else 4)
 
         # Phase 1: Gather websearch data (Serper PAA + Firecrawl competitors)
         project_url = project.website_url if project else None
@@ -203,6 +205,7 @@ class PreviewService:
             project_id=project_id,
             category_id=category_id,
             keyword=keyword,
+            image_count=image_count,
             serper_data=websearch["serper_data"],
             competitor_pages=websearch["competitor_pages"],
             competitor_analysis=websearch["competitor_analysis"],
@@ -226,6 +229,7 @@ class PreviewService:
         content = text_result.content if isinstance(text_result.content, dict) else {}
         title = content.get("title", keyword)
         content_markdown = content.get("content_markdown", "")
+        meta_description: str = content.get("meta_description", "")
         images_meta: list[dict[str, str]] = content.get("images_meta", [])
 
         # Process images
@@ -244,11 +248,8 @@ class PreviewService:
             title=title,
         )
 
-        # Re-render after reconciliation
-        content_html = render_markdown(processed_md, branding={}, insert_toc=True)
-        content_html = sanitize_html(content_html)
-
-        # Upload images to Supabase Storage
+        # Upload images to Supabase Storage BEFORE rendering markdown→HTML
+        # so we can inject real URLs into {{RECONCILED_IMAGE_N}} placeholders
         stored_images: list[dict[str, Any]] = []
         for i, upload in enumerate(uploads):
             try:
@@ -270,12 +271,30 @@ class PreviewService:
             except Exception:
                 log.warning("image_upload_failed", index=i)
 
+        # Replace {{RECONCILED_IMAGE_N}} with real Storage URLs in markdown
+        for i, img_info in enumerate(stored_images):
+            placeholder = f"{{{{RECONCILED_IMAGE_{i + 1}}}}}"
+            processed_md = processed_md.replace(placeholder, img_info["url"])
+
+        # Remove any unreplaced reconciled placeholders (upload failures)
+        processed_md = re.sub(
+            r"!\[[^\]]*\]\(\{\{RECONCILED_IMAGE_\d+\}\}[^)]*\)",
+            "",
+            processed_md,
+        )
+        processed_md = re.sub(r"\{\{RECONCILED_IMAGE_\d+\}\}", "", processed_md)
+
+        # Render markdown→HTML with real image URLs embedded
+        content_html = render_markdown(processed_md, branding={}, insert_toc=True)
+        content_html = sanitize_html(content_html)
+
         word_count = len(content_markdown.split())
         return ArticleContent(
             title=title,
             content_html=content_html,
             word_count=word_count,
             images_count=len(stored_images),
+            meta_description=meta_description,
             stored_images=stored_images,
         )
 
@@ -294,6 +313,7 @@ class PreviewService:
         # Download images from Supabase Storage for WP upload
         image_bytes_list: list[bytes] = []
         images_meta_list: list[dict[str, str]] = []
+        storage_urls: list[str] = []
         for img_info in preview.images or []:
             storage_path = img_info.get("storage_path")
             if storage_path:
@@ -307,6 +327,7 @@ class PreviewService:
                             "figcaption": img_info.get("caption", ""),
                         }
                     )
+                    storage_urls.append(img_info.get("url", ""))
                 except Exception:
                     log.warning("image_download_failed", path=storage_path)
 
@@ -319,7 +340,11 @@ class PreviewService:
                 title=preview.title or "",
                 images=image_bytes_list,
                 images_meta=images_meta_list,
-                metadata={"focus_keyword": preview.keyword or ""},
+                metadata={
+                    "focus_keyword": preview.keyword or "",
+                    "meta_description": preview.meta_description or "",
+                    "storage_urls": storage_urls,
+                },
             )
         )
 

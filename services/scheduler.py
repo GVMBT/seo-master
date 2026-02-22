@@ -70,7 +70,7 @@ class SchedulerService:
                     body=json.dumps(body),
                     headers={"Content-Type": "application/json"},
                 )
-                sid = result.schedule_id if hasattr(result, "schedule_id") else str(result)
+                sid = str(getattr(result, "schedule_id", None) or result)
                 schedule_ids.append(sid)
                 log.info(
                     "qstash_schedule_created",

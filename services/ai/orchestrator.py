@@ -370,7 +370,7 @@ class AIOrchestrator:
                 max_tokens=rendered.meta.get("max_tokens", 4000),
                 temperature=rendered.meta.get("temperature", 0.7),
                 extra_body=extra_body,
-                timeout=60,
+                timeout=rendered.meta.get("timeout", 120),
                 **kwargs,
             )
         except Exception as exc:
@@ -387,6 +387,7 @@ class AIOrchestrator:
                 message="OpenRouter returned empty choices (content may have been filtered)",
             )
         choice = response.choices[0]
+        self._check_finish_reason(choice, request.task, rendered.meta)
         raw_content = choice.message.content or ""
 
         # For image tasks, extract data URI from message.images
@@ -451,6 +452,21 @@ class AIOrchestrator:
             prompt_version=rendered.version,
             fallback_used=fallback_used,
         )
+
+    @staticmethod
+    def _check_finish_reason(choice: Any, task: str, meta: dict[str, Any]) -> None:
+        """Raise if response was truncated (finish_reason=length)."""
+        finish_reason = getattr(choice, "finish_reason", None) or ""
+        if finish_reason == "length":
+            log.warning(
+                "generation_truncated",
+                task=task,
+                max_tokens=meta.get("max_tokens"),
+            )
+            raise AIGenerationError(
+                message=f"AI response truncated (max_tokens exceeded) for task={task}",
+                user_message="Генерация обрезана из-за лимита. Попробуйте ещё раз.",
+            )
 
     @staticmethod
     def _extract_image_content(message: Any, fallback: str) -> str:

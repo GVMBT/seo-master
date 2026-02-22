@@ -494,6 +494,7 @@ class ArticlePreview(BaseModel):
     telegraph_path: str | None = None
     title: str | None = None
     keyword: str | None = None
+    meta_description: str | None = None
     word_count: int | None = None
     images_count: int | None = None
     tokens_charged: int | None = None
@@ -514,6 +515,7 @@ class ArticlePreviewCreate(BaseModel):
     telegraph_path: str | None = None
     title: str | None = None
     keyword: str | None = None
+    meta_description: str | None = None
     word_count: int | None = None
     images_count: int | None = None
     tokens_charged: int | None = None
@@ -533,6 +535,7 @@ class ArticlePreviewUpdate(BaseModel):
     content_html: str | None = None
     images: list[dict[str, Any]] | None = None
     connection_id: int | None = None
+    meta_description: str | None = None
 
 
 # ---------------------------------------------------------------------------

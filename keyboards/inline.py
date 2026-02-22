@@ -1140,7 +1140,7 @@ def scheduler_conn_list_kb(
     for conn in connections:
         sched = schedules.get(conn.id)
         if sched and sched.enabled:
-            days_str = ", ".join(_DAY_LABELS.get(d, d) for d in sched.schedule_days)
+            days_str = ", ".join(_DAY_LABELS.get(d) or d for d in sched.schedule_days)
             label = f"{conn.identifier} ({days_str})"
         else:
             label = f"{conn.identifier} (нет расписания)"
@@ -1250,7 +1250,7 @@ def scheduler_social_conn_list_kb(
             continue
         sched = schedules.get(conn.id)
         if sched and sched.enabled:
-            days_str = ", ".join(_DAY_LABELS.get(d, d) for d in sched.schedule_days)
+            days_str = ", ".join(_DAY_LABELS.get(d) or d for d in sched.schedule_days)
             cross_count = len(sched.cross_post_connection_ids) if sched.cross_post_connection_ids else 0
             cross_badge = f" +{cross_count} кросс" if cross_count else ""
             label = f"{conn.identifier} ({days_str}{cross_badge})"
