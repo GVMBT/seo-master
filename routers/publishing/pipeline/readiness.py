@@ -123,10 +123,13 @@ async def show_readiness_check(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    *,
+    force_show: bool = False,
 ) -> None:
     """Render readiness checklist (step 4) or skip to step 5 if all filled.
 
     Called from article.py after category selection, and after each sub-flow completes.
+    When force_show=True (e.g. "back to checklist" from confirm), always show checklist.
     """
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         return
@@ -150,8 +153,8 @@ async def show_readiness_check(
     svc = ReadinessService(db)
     report = await svc.check(user.id, category_id, balance, image_count)
 
-    # Skip to step 5 if all required items filled and nothing to show
-    if report.all_filled and not report.missing_items:
+    # Skip to step 5 if all required items filled (unless forced back)
+    if not force_show and report.all_filled and not report.missing_items:
         from routers.publishing.pipeline.generation import show_confirm
 
         await show_confirm(callback, state, user, redis, report, data)

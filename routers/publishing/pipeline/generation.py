@@ -155,7 +155,7 @@ def _build_confirm_text(fsm_data: dict[str, Any], report: Any, user: User) -> st
         f"{project_name}"
         f"{' → ' + wp_display if wp_display else ''}\n"
         f"Тема: {category_name}\n"
-        f"Ключевики: {report.keyword_count} фраз | Изображения: {report.image_count} AI\n\n"
+        f"Ключевики: {report.keyword_count} фраз | Изображения: {report.image_count} шт.\n\n"
         f"{cost_line}\n"
         f"Баланс: {report.user_balance} ток."
     )
@@ -273,7 +273,7 @@ async def back_to_readiness(
     """Go back to readiness checklist (step 5 → step 4)."""
     from routers.publishing.pipeline.readiness import show_readiness_check
 
-    await show_readiness_check(callback, state, user, db, redis)
+    await show_readiness_check(callback, state, user, db, redis, force_show=True)
     await callback.answer()
 
 
