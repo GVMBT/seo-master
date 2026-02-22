@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import random
 import re
 import time
@@ -30,6 +31,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, InaccessibleMessage,
 from bot.config import get_settings
 from bot.exceptions import RateLimitError
 from cache.client import RedisClient
+from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.models import ArticlePreviewCreate, ArticlePreviewUpdate, PublicationLogCreate, User
 from db.repositories.categories import CategoriesRepository
@@ -343,6 +345,14 @@ async def _run_generation(
         await state.set_state(ArticlePipelineFSM.confirm_cost)
         return
 
+    # Register active generation for shutdown refund guard
+    gen_key = CacheKeys.active_generation(user.id)
+    await redis.set(
+        gen_key,
+        json.dumps({"tokens": tokens_charged, "ts": int(time.time())}),
+        ex=600,  # auto-expire after 10 min (safety net)
+    )
+
     # Start progress messages (G7)
     done_event = asyncio.Event()
     progress = asyncio.create_task(_progress_task(message, done_event))
@@ -381,6 +391,8 @@ async def _run_generation(
         done_event.set()
         if not progress.done():
             progress.cancel()
+        # Unregister active generation guard
+        await redis.delete(gen_key)
 
     # E34: partial/zero images — refund for missing images (including all-fail case)
     actual_images = content.images_count

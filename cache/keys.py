@@ -73,3 +73,9 @@ class CacheKeys:
     @staticmethod
     def pipeline_state(user_id: int) -> str:
         return f"pipeline:{user_id}:state"
+
+    @staticmethod
+    def active_generation(user_id: int) -> str:
+        return f"generation:active:{user_id}"
+
+    ACTIVE_GENERATION_PREFIX = "generation:active:"

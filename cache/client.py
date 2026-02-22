@@ -52,6 +52,17 @@ class RedisClient:
     async def ttl(self, key: str) -> int:
         return await self._redis.ttl(key)
 
+    async def scan_keys(self, pattern: str) -> list[str]:
+        """Return all keys matching *pattern* via SCAN (cursor-based)."""
+        keys: list[str] = []
+        cursor = 0
+        while True:
+            cursor, batch = await self._redis.scan(cursor, match=pattern, count=100)
+            keys.extend(batch)
+            if cursor == 0:
+                break
+        return keys
+
     async def ping(self) -> bool:
         """Check Redis connectivity. Returns True if healthy."""
         try:

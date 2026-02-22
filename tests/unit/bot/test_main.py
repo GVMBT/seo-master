@@ -1,12 +1,19 @@
-"""Tests for bot/main.py — dispatcher creation, middleware chain, error handler."""
+"""Tests for bot/main.py — dispatcher creation, middleware chain, error handler, shutdown."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiogram import Dispatcher
 from aiogram.types import ErrorEvent, Update
 
-from bot.main import _global_error_handler, create_bot, create_dispatcher, create_http_client
+from bot.main import (
+    _global_error_handler,
+    _refund_active_generations,
+    create_bot,
+    create_dispatcher,
+    create_http_client,
+)
 
 
 @pytest.fixture
@@ -187,3 +194,104 @@ class TestGlobalErrorHandler:
         with patch("bot.main.sentry_sdk") as mock_sentry:
             await _global_error_handler(event)
             mock_sentry.capture_exception.assert_called_once_with(event.exception)
+
+
+class TestRefundActiveGenerations:
+    """Tests for _refund_active_generations — shutdown refund guard."""
+
+    @pytest.fixture
+    def bot(self) -> AsyncMock:
+        mock = AsyncMock()
+        mock.send_message = AsyncMock()
+        return mock
+
+    @pytest.fixture
+    def mock_db(self) -> MagicMock:
+        return MagicMock()
+
+    @pytest.fixture
+    def mock_redis(self) -> AsyncMock:
+        mock = AsyncMock()
+        mock.scan_keys = AsyncMock(return_value=[])
+        mock.get = AsyncMock(return_value=None)
+        mock.delete = AsyncMock(return_value=1)
+        return mock
+
+    async def test_no_active_generations_does_nothing(
+        self, bot: AsyncMock, mock_db: MagicMock, mock_redis: AsyncMock
+    ) -> None:
+        mock_redis.scan_keys.return_value = []
+
+        with patch("bot.main.get_settings") as gs:
+            gs.return_value = MagicMock(admin_ids=[999])
+            await _refund_active_generations(bot, mock_db, mock_redis)
+
+        bot.send_message.assert_not_called()
+
+    async def test_refunds_active_generation(self, bot: AsyncMock, mock_db: MagicMock, mock_redis: AsyncMock) -> None:
+        mock_redis.scan_keys.return_value = ["generation:active:12345"]
+        mock_redis.get.return_value = json.dumps({"tokens": 260, "ts": 1700000000})
+
+        mock_token_svc = AsyncMock()
+        with (
+            patch("bot.main.get_settings") as gs,
+            patch("services.tokens.TokenService", return_value=mock_token_svc) as ts_cls,
+        ):
+            gs.return_value = MagicMock(admin_ids=[999])
+            await _refund_active_generations(bot, mock_db, mock_redis)
+
+        ts_cls.assert_called_once()
+        mock_token_svc.refund.assert_awaited_once_with(
+            user_id=12345,
+            amount=260,
+            reason="refund",
+            description="Возврат: генерация прервана обновлением сервера",
+        )
+        bot.send_message.assert_awaited_once()
+        msg_text = bot.send_message.call_args[0][1]
+        assert "260" in msg_text
+        mock_redis.delete.assert_awaited_once_with("generation:active:12345")
+
+    async def test_skips_refund_for_admin(self, bot: AsyncMock, mock_db: MagicMock, mock_redis: AsyncMock) -> None:
+        mock_redis.scan_keys.return_value = ["generation:active:999"]
+        mock_redis.get.return_value = json.dumps({"tokens": 260, "ts": 1700000000})
+
+        mock_token_svc = AsyncMock()
+        with (
+            patch("bot.main.get_settings") as gs,
+            patch("services.tokens.TokenService", return_value=mock_token_svc),
+        ):
+            gs.return_value = MagicMock(admin_ids=[999])
+            await _refund_active_generations(bot, mock_db, mock_redis)
+
+        mock_token_svc.refund.assert_not_awaited()
+        # Still notifies admin
+        bot.send_message.assert_awaited_once()
+        mock_redis.delete.assert_awaited_once()
+
+    async def test_scan_failure_does_not_crash(self, bot: AsyncMock, mock_db: MagicMock, mock_redis: AsyncMock) -> None:
+        mock_redis.scan_keys.side_effect = ConnectionError("Redis down")
+
+        with patch("bot.main.get_settings") as gs:
+            gs.return_value = MagicMock(admin_ids=[999])
+            await _refund_active_generations(bot, mock_db, mock_redis)
+
+        bot.send_message.assert_not_called()
+
+    async def test_notify_failure_does_not_prevent_refund(
+        self, bot: AsyncMock, mock_db: MagicMock, mock_redis: AsyncMock
+    ) -> None:
+        mock_redis.scan_keys.return_value = ["generation:active:12345"]
+        mock_redis.get.return_value = json.dumps({"tokens": 100, "ts": 1700000000})
+        bot.send_message.side_effect = Exception("Telegram down")
+
+        mock_token_svc = AsyncMock()
+        with (
+            patch("bot.main.get_settings") as gs,
+            patch("services.tokens.TokenService", return_value=mock_token_svc),
+        ):
+            gs.return_value = MagicMock(admin_ids=[999])
+            await _refund_active_generations(bot, mock_db, mock_redis)
+
+        mock_token_svc.refund.assert_awaited_once()
+        mock_redis.delete.assert_awaited_once()
