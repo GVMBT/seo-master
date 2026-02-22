@@ -856,9 +856,9 @@ async def _run_pipeline_keyword_generation(
         except Exception:
             log.debug("pipeline.readiness.delete_progress_failed")
 
-        chat = msg.chat
-        await chat.bot.send_message(  # type: ignore[union-attr]
-            chat_id=chat.id,
+        bot = msg.bot
+        await bot.send_message(
+            chat_id=msg.chat.id,
             text=(
                 f"Готово! Добавлено:\n"
                 f"Кластеров: {len(enriched)}\n"
@@ -886,9 +886,9 @@ async def _run_pipeline_keyword_generation(
         # Send error as new message (original may be expired)
         with contextlib.suppress(Exception):
             await msg.delete()
-        chat = msg.chat
-        await chat.bot.send_message(  # type: ignore[union-attr]
-            chat_id=chat.id,
+        bot = msg.bot
+        await bot.send_message(
+            chat_id=msg.chat.id,
             text="Ошибка при подборе фраз. Токены возвращены.\nПопробуйте позже.",
             reply_markup=pipeline_back_to_checklist_kb(),
         )
