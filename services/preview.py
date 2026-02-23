@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from db.client import SupabaseClient
+from db.repositories.audits import AuditsRepository
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from services.ai.orchestrator import AIOrchestrator
@@ -28,6 +29,11 @@ if TYPE_CHECKING:
     from services.publishers.base import PublishResult
 
 log = structlog.get_logger()
+
+# Truncation limits for competitor data passed to AI prompt
+_MAX_H2_PER_COMPETITOR = 12
+_MAX_SUMMARY_CHARS = 400
+_MAX_INTERNAL_LINKS = 20
 
 # Max competitor pages to scrape (cost: 1 Firecrawl credit each)
 _MAX_COMPETITOR_SCRAPE = 3
@@ -146,7 +152,7 @@ class PreviewService:
         # Format internal links
         map_result = responses.get("map")
         if map_result and not isinstance(map_result, BaseException):
-            urls = [u.get("url", "") for u in map_result.urls[:20] if u.get("url")]
+            urls = [u.get("url", "") for u in map_result.urls[:_MAX_INTERNAL_LINKS] if u.get("url")]
             result["internal_links"] = "\n".join(urls) if urls else ""
         elif isinstance(map_result, BaseException):
             log.warning("websearch_map_failed", error=str(map_result))
@@ -200,6 +206,15 @@ class PreviewService:
             "specialization": (project.specialization or "") if project else "",
             "image_settings": image_settings,
         }
+
+        # Load branding colors for image prompt (image_v1.yaml)
+        if project:
+            branding = await AuditsRepository(self._db).get_branding_by_project(project.id)
+            if branding and branding.colors:
+                colors = branding.colors
+                image_context["primary_color"] = colors.get("primary", "")
+                image_context["accent_color"] = colors.get("accent", "")
+                image_context["background_color"] = colors.get("background", "")
 
         # Phase 2: Parallel text + images (API_CONTRACTS.md parallel pipeline)
         text_task = article_service.generate(
@@ -373,9 +388,9 @@ def _format_competitor_analysis(pages: list[dict[str, Any]]) -> str:
         lines.append(f"Конкурент {i} ({page.get('url', '')}):")
         lines.append(f"  Объём: ~{page.get('word_count', 0)} слов")
         if page.get("summary"):
-            lines.append(f"  Тема: {page['summary'][:200]}")
+            lines.append(f"  Тема: {page['summary'][:_MAX_SUMMARY_CHARS]}")
         if h2_headings:
-            lines.append(f"  H2: {', '.join(h2_headings[:8])}")
+            lines.append(f"  H2: {', '.join(h2_headings[:_MAX_H2_PER_COMPETITOR])}")
         lines.append("")
     return "\n".join(lines)
 
@@ -394,7 +409,7 @@ def _identify_gaps(pages: list[dict[str, Any]]) -> str:
     for i, page in enumerate(pages, 1):
         h2_list = [str(h.get("text", "")) for h in page.get("headings", []) if h.get("level") == 2]
         if h2_list:
-            lines.append(f"Конкурент {i}: {', '.join(h2_list[:8])}")
+            lines.append(f"Конкурент {i}: {', '.join(h2_list[:_MAX_H2_PER_COMPETITOR])}")
 
     if not lines:
         return ""
