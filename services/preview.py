@@ -192,11 +192,13 @@ class PreviewService:
         project_url = project.website_url if project else None
         websearch = await self._gather_websearch_data(keyword, project_url)
 
+        image_settings = (category.image_settings or {}) if category else {}
         image_context: dict[str, Any] = {
             "keyword": keyword,
             "content_type": "article",
             "company_name": (project.company_name or "") if project else "",
             "specialization": (project.specialization or "") if project else "",
+            "image_settings": image_settings,
         }
 
         # Phase 2: Parallel text + images (API_CONTRACTS.md parallel pipeline)
