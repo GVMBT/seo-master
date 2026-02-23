@@ -66,6 +66,8 @@ async def _show_connection_step(
     redis: RedisClient,
     project_id: int,
     project_name: str,
+    *,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Show connection selection (step 2).
 
@@ -79,7 +81,7 @@ async def _show_connection_step(
 
     from routers.publishing.pipeline.social.social import _show_category_step
 
-    conn_svc = ConnectionService(db, _get_http_client(callback))
+    conn_svc = ConnectionService(db, http_client)
     social_conns = await conn_svc.get_social_connections(project_id)
 
     if len(social_conns) == 0:
@@ -135,11 +137,13 @@ async def _show_connection_step_msg(
     redis: RedisClient,
     project_id: int,
     project_name: str,
+    *,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Show connection selection via message (non-edit context)."""
     from routers.publishing.pipeline.social.social import _show_category_step_msg
 
-    conn_svc = ConnectionService(db, _get_http_client_from_msg(message))
+    conn_svc = ConnectionService(db, http_client)
     social_conns = await conn_svc.get_social_connections(project_id)
 
     if len(social_conns) == 0:
@@ -188,35 +192,6 @@ async def _show_connection_step_msg(
 
 
 # ---------------------------------------------------------------------------
-# Helpers for httpx client extraction
-# ---------------------------------------------------------------------------
-
-
-def _get_http_client(callback: CallbackQuery) -> httpx.AsyncClient:
-    """Extract shared httpx client from bot data (injected by DBSessionMiddleware)."""
-    bot = callback.bot
-    if bot:
-        wf_data: dict[str, object] = getattr(bot, "workflow_data", {})
-        client = wf_data.get("http_client")
-        if isinstance(client, httpx.AsyncClient):
-            return client
-    msg = "http_client not found in bot.workflow_data — check DBSessionMiddleware setup"
-    raise RuntimeError(msg)
-
-
-def _get_http_client_from_msg(message: Message) -> httpx.AsyncClient:
-    """Extract shared httpx client from message bot data."""
-    bot = message.bot
-    if bot:
-        wf_data: dict[str, object] = getattr(bot, "workflow_data", {})
-        client = wf_data.get("http_client")
-        if isinstance(client, httpx.AsyncClient):
-            return client
-    msg = "http_client not found in bot.workflow_data — check DBSessionMiddleware setup"
-    raise RuntimeError(msg)
-
-
-# ---------------------------------------------------------------------------
 # Handler: Select connection from list
 # ---------------------------------------------------------------------------
 
@@ -231,6 +206,7 @@ async def pipeline_select_connection(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Handle connection selection from list."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -252,7 +228,7 @@ async def pipeline_select_connection(
         await callback.answer("Проект не совпадает.", show_alert=True)
         return
 
-    conn_svc = ConnectionService(db, _get_http_client(callback))
+    conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.get_by_id(conn_id)
     if conn is None or conn.project_id != project_id:
         await callback.answer("Подключение не найдено.", show_alert=True)
@@ -298,6 +274,7 @@ async def pipeline_add_connection(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Show platform picker, hiding already connected types (P1-3 fix)."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -310,7 +287,7 @@ async def pipeline_add_connection(
         await callback.answer("Проект не выбран.", show_alert=True)
         return
 
-    conn_svc = ConnectionService(db, _get_http_client(callback))
+    conn_svc = ConnectionService(db, http_client)
     connected_types = set(await conn_svc.get_platform_types_by_project(project_id))
     social_types = {"telegram", "vk", "pinterest"}
     already_connected = connected_types & social_types
@@ -360,6 +337,7 @@ async def pipeline_connect_tg_channel(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """TG inline step 1: validate channel ID, check uniqueness."""
     text = (message.text or "").strip()
@@ -380,7 +358,7 @@ async def pipeline_connect_tg_channel(
         await message.answer("Проект не выбран. Начните заново.")
         return
 
-    conn_svc = ConnectionService(db, _get_http_client_from_msg(message))
+    conn_svc = ConnectionService(db, http_client)
 
     # Check 1 TG per project limit
     existing = await conn_svc.get_by_project_and_platform(project_id, "telegram")
@@ -454,6 +432,7 @@ async def pipeline_connect_tg_verify(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """TG inline step 3: verify bot is admin in channel, create connection."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -511,7 +490,7 @@ async def pipeline_connect_tg_verify(
             await temp_bot.session.close()
 
     # Create connection
-    conn_svc = ConnectionService(db, _get_http_client(callback))
+    conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.create(
         PlatformConnectionCreate(
             project_id=project_id,
@@ -584,6 +563,7 @@ async def pipeline_connect_vk_token(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """VK inline step 1: validate token, fetch groups."""
     text = (message.text or "").strip()
@@ -609,7 +589,7 @@ async def pipeline_connect_vk_token(
         return
 
     # Check 1 VK per project limit
-    conn_svc = ConnectionService(db, _get_http_client_from_msg(message))
+    conn_svc = ConnectionService(db, http_client)
     existing = await conn_svc.get_by_project_and_platform(project_id, "vk")
     if existing:
         await message.answer(
@@ -683,6 +663,7 @@ async def pipeline_select_vk_group(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """VK inline step 2: select group from list."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -711,7 +692,7 @@ async def pipeline_select_vk_group(
 
     group_name = group.get("name", f"Группа {group_id}")
 
-    conn_svc = ConnectionService(db, _get_http_client(callback))
+    conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.create(
         PlatformConnectionCreate(
             project_id=project_id,

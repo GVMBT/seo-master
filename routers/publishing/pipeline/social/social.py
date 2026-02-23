@@ -14,6 +14,7 @@ from __future__ import annotations
 import html
 import time
 
+import httpx
 import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -61,6 +62,7 @@ async def pipeline_social_start(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Start social pipeline — show project selection (step 1).
 
@@ -94,7 +96,16 @@ async def pipeline_social_start(
     if len(projects) == 1:
         project = projects[0]
         await state.update_data(project_id=project.id, project_name=project.name)
-        await _show_connection_step(callback, state, user, db, redis, project.id, project.name)
+        await _show_connection_step(
+            callback,
+            state,
+            user,
+            db,
+            redis,
+            project.id,
+            project.name,
+            http_client=http_client,
+        )
         await callback.answer()
         return
 
@@ -117,6 +128,7 @@ async def pipeline_select_project(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Handle project selection from list."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
@@ -136,7 +148,16 @@ async def pipeline_select_project(
         return
 
     await state.update_data(project_id=project.id, project_name=project.name)
-    await _show_connection_step(callback, state, user, db, redis, project.id, project.name)
+    await _show_connection_step(
+        callback,
+        state,
+        user,
+        db,
+        redis,
+        project.id,
+        project.name,
+        http_client=http_client,
+    )
     await callback.answer()
 
 
@@ -264,6 +285,7 @@ async def pipeline_create_project_url(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Inline project creation step 4: URL -> create project -> proceed to step 2."""
     text = (message.text or "").strip()
@@ -296,7 +318,16 @@ async def pipeline_create_project_url(
     await message.answer(f"Проект «{html.escape(project.name)}» создан!")
 
     # Proceed to step 2 (connection selection)
-    await _show_connection_step_msg(message, state, user, db, redis, project.id, project.name)
+    await _show_connection_step_msg(
+        message,
+        state,
+        user,
+        db,
+        redis,
+        project.id,
+        project.name,
+        http_client=http_client,
+    )
 
 
 # ---------------------------------------------------------------------------

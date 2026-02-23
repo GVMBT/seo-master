@@ -96,7 +96,7 @@ class TestPipelineSocialStart:
     ) -> None:
         patches, _, _ = _patch_repos(projects=[])
         with patches["projects"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis)
+            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_project)
         mock_callback.message.edit_text.assert_awaited_once()
@@ -113,7 +113,7 @@ class TestPipelineSocialStart:
         p = make_project()
         patches, _, _cat_mock = _patch_repos(projects=[p], categories=[make_category()])
         with patches["projects"], patches["cats"], patches["fsm_utils"], patches["conn_step"]:
-            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis)
+            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
 
@@ -128,7 +128,7 @@ class TestPipelineSocialStart:
         p2 = make_project(id=2, name="P2")
         patches, _, _ = _patch_repos(projects=[p1, p2])
         with patches["projects"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis)
+            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_project)
         mock_callback.message.edit_text.assert_awaited_once()
@@ -148,7 +148,7 @@ class TestPipelineSocialStart:
         callback.answer = AsyncMock()
         patches, _, _ = _patch_repos()
         with patches["projects"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_social_start(callback, mock_state, user, MagicMock(), mock_redis)
+            await pipeline_social_start(callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_state.set_state.assert_not_awaited()
 
@@ -170,7 +170,7 @@ class TestPipelineSelectProject:
         mock_callback.data = f"pipeline:social:{p.id}:select"
         patches, _, _cat_mock = _patch_repos(project=p, categories=[make_category()])
         with patches["projects"], patches["cats"], patches["fsm_utils"], patches["conn_step"]:
-            await pipeline_select_project(mock_callback, mock_state, user, MagicMock(), mock_redis)
+            await pipeline_select_project(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
 
@@ -185,7 +185,7 @@ class TestPipelineSelectProject:
         mock_callback.data = f"pipeline:social:{p.id}:select"
         patches, _, _ = _patch_repos(project=p)
         with patches["projects"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_project(mock_callback, mock_state, user, MagicMock(), mock_redis)
+            await pipeline_select_project(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_callback.answer.assert_awaited_once()
         assert "не найден" in mock_callback.answer.call_args[0][0]
@@ -261,7 +261,7 @@ class TestInlineProjectCreation:
         )
         patches, _, _cat_mock = _patch_repos(created_project=p, categories=[make_category()])
         with patches["projects"], patches["cats"], patches["conn_step_msg"]:
-            await pipeline_create_project_url(mock_message, mock_state, user, MagicMock(), mock_redis)
+            await pipeline_create_project_url(mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         # Should have created the project and updated state
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)

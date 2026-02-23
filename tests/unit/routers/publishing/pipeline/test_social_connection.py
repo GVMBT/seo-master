@@ -80,12 +80,8 @@ def _mock_conn_svc(
     return svc, p
 
 
-def _patch_http_client() -> Any:
-    return patch(f"{_MODULE}._get_http_client", return_value=MagicMock())
-
-
-def _patch_http_client_msg() -> Any:
-    return patch(f"{_MODULE}._get_http_client_from_msg", return_value=MagicMock())
+def _mock_http_client() -> MagicMock:
+    return MagicMock()
 
 
 def _patch_category_step() -> Any:
@@ -116,7 +112,7 @@ class TestShowConnectionStep:
         user: Any,
     ) -> None:
         _, svc_patch = _mock_conn_svc(social_conns=[])
-        with svc_patch, _patch_http_client():
+        with svc_patch:
             await _show_connection_step(
                 mock_callback,
                 mock_state,
@@ -125,6 +121,7 @@ class TestShowConnectionStep:
                 mock_redis,
                 1,
                 "Test",
+                http_client=_mock_http_client(),
             )
 
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_connection)
@@ -141,7 +138,7 @@ class TestShowConnectionStep:
     ) -> None:
         conn = _make_social_conn(id=5, platform_type="telegram")
         _, svc_patch = _mock_conn_svc(social_conns=[conn])
-        with svc_patch, _patch_http_client(), _patch_category_step() as cat_mock:
+        with svc_patch, _patch_category_step() as cat_mock:
             await _show_connection_step(
                 mock_callback,
                 mock_state,
@@ -150,6 +147,7 @@ class TestShowConnectionStep:
                 mock_redis,
                 1,
                 "Test",
+                http_client=_mock_http_client(),
             )
 
         mock_state.update_data.assert_any_await(connection_id=5, platform_type="telegram")
@@ -165,7 +163,7 @@ class TestShowConnectionStep:
         c1 = _make_social_conn(id=5, platform_type="telegram", identifier="@ch1")
         c2 = _make_social_conn(id=6, platform_type="vk", identifier="club123")
         _, svc_patch = _mock_conn_svc(social_conns=[c1, c2])
-        with svc_patch, _patch_http_client():
+        with svc_patch:
             await _show_connection_step(
                 mock_callback,
                 mock_state,
@@ -174,6 +172,7 @@ class TestShowConnectionStep:
                 mock_redis,
                 1,
                 "Test",
+                http_client=_mock_http_client(),
             )
 
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_connection)
@@ -198,13 +197,14 @@ class TestSelectConnection:
         mock_callback.data = "pipeline:social:1:conn:7"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "Test"})
         _, svc_patch = _mock_conn_svc(conn=conn)
-        with svc_patch, _patch_http_client(), _patch_category_step() as cat_mock:
+        with svc_patch, _patch_category_step() as cat_mock:
             await pipeline_select_connection(
                 mock_callback,
                 mock_state,
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
 
         mock_state.update_data.assert_any_await(connection_id=7, platform_type="telegram")
@@ -225,6 +225,7 @@ class TestSelectConnection:
             user,
             MagicMock(),
             mock_redis,
+            _mock_http_client(),
         )
         mock_callback.answer.assert_awaited()
         assert "не совпадает" in mock_callback.answer.call_args[0][0]
@@ -239,13 +240,14 @@ class TestSelectConnection:
         mock_callback.data = "pipeline:social:1:conn:999"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "Test"})
         _, svc_patch = _mock_conn_svc(conn=None)
-        with svc_patch, _patch_http_client():
+        with svc_patch:
             await pipeline_select_connection(
                 mock_callback,
                 mock_state,
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
         mock_callback.answer.assert_awaited()
         assert "не найдено" in mock_callback.answer.call_args[0][0]
@@ -265,8 +267,8 @@ class TestAddConnection:
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
         _, svc_patch = _mock_conn_svc(platform_types=["telegram"])
-        with svc_patch, _patch_http_client():
-            await pipeline_add_connection(mock_callback, mock_state, user, MagicMock())
+        with svc_patch:
+            await pipeline_add_connection(mock_callback, mock_state, user, MagicMock(), _mock_http_client())
 
         mock_callback.message.edit_text.assert_awaited_once()
         # Verify the keyboard was built with exclude_types
@@ -283,8 +285,8 @@ class TestAddConnection:
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
         _, svc_patch = _mock_conn_svc(platform_types=["telegram", "vk", "pinterest"])
-        with svc_patch, _patch_http_client():
-            await pipeline_add_connection(mock_callback, mock_state, user, MagicMock())
+        with svc_patch:
+            await pipeline_add_connection(mock_callback, mock_state, user, MagicMock(), _mock_http_client())
 
         mock_callback.answer.assert_awaited()
         assert "Все платформы" in mock_callback.answer.call_args[0][0]
@@ -311,7 +313,7 @@ class TestTGInlineChannel:
         user: Any,
     ) -> None:
         mock_message.text = "not-a-channel"
-        await pipeline_connect_tg_channel(mock_message, mock_state, user, MagicMock())
+        await pipeline_connect_tg_channel(mock_message, mock_state, user, MagicMock(), _mock_http_client())
         mock_message.answer.assert_awaited_once()
         assert "Неверный формат" in mock_message.answer.call_args[0][0]
 
@@ -324,8 +326,8 @@ class TestTGInlineChannel:
         mock_message.text = "@testchannel"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
         _, svc_patch = _mock_conn_svc(by_project_platform=[], by_identifier_global=None)
-        with svc_patch, _patch_http_client_msg():
-            await pipeline_connect_tg_channel(mock_message, mock_state, user, MagicMock())
+        with svc_patch:
+            await pipeline_connect_tg_channel(mock_message, mock_state, user, MagicMock(), _mock_http_client())
 
         mock_state.update_data.assert_any_await(tg_channel="@testchannel")
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_tg_token)
@@ -340,8 +342,8 @@ class TestTGInlineChannel:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
         existing_conn = _make_social_conn()
         _, svc_patch = _mock_conn_svc(by_project_platform=[existing_conn])
-        with svc_patch, _patch_http_client_msg():
-            await pipeline_connect_tg_channel(mock_message, mock_state, user, MagicMock())
+        with svc_patch:
+            await pipeline_connect_tg_channel(mock_message, mock_state, user, MagicMock(), _mock_http_client())
 
         mock_message.answer.assert_awaited_once()
         assert "уже есть" in mock_message.answer.call_args[0][0]
@@ -356,8 +358,8 @@ class TestTGInlineChannel:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
         dup = _make_social_conn()
         _, svc_patch = _mock_conn_svc(by_project_platform=[], by_identifier_global=dup)
-        with svc_patch, _patch_http_client_msg():
-            await pipeline_connect_tg_channel(mock_message, mock_state, user, MagicMock())
+        with svc_patch:
+            await pipeline_connect_tg_channel(mock_message, mock_state, user, MagicMock(), _mock_http_client())
 
         mock_message.answer.assert_awaited_once()
         assert "другим пользователем" in mock_message.answer.call_args[0][0]
@@ -451,7 +453,6 @@ class TestTGInlineVerify:
         with (
             patch(f"{_MODULE}.Bot", return_value=mock_bot),
             svc_patch,
-            _patch_http_client(),
             _patch_category_step_msg(),
         ):
             await pipeline_connect_tg_verify(
@@ -460,6 +461,7 @@ class TestTGInlineVerify:
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
 
         mock_state.update_data.assert_any_await(connection_id=10, platform_type="telegram")
@@ -497,6 +499,7 @@ class TestTGInlineVerify:
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
 
         text = mock_callback.message.edit_text.call_args[0][0]
@@ -531,6 +534,7 @@ class TestTGInlineVerify:
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
 
         text = mock_callback.message.edit_text.call_args[0][0]
@@ -567,6 +571,7 @@ class TestVKInlineConnect:
             user,
             MagicMock(),
             mock_redis,
+            _mock_http_client(),
         )
         mock_message.answer.assert_awaited_once()
         assert "короткий" in mock_message.answer.call_args[0][0]
@@ -585,13 +590,14 @@ class TestVKInlineConnect:
             validate_vk_result=("Недействительный токен.", []),
             by_project_platform=[],
         )
-        with svc_patch, _patch_http_client_msg():
+        with svc_patch:
             await pipeline_connect_vk_token(
                 mock_message,
                 mock_state,
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
         # Error message shown
         mock_message.answer.assert_awaited()
@@ -615,13 +621,14 @@ class TestVKInlineConnect:
             by_project_platform=[],
             created_conn=created,
         )
-        with svc_patch, _patch_http_client_msg(), _patch_category_step_msg():
+        with svc_patch, _patch_category_step_msg():
             await pipeline_connect_vk_token(
                 mock_message,
                 mock_state,
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
 
         mock_state.update_data.assert_any_await(connection_id=20, platform_type="vk")
@@ -641,13 +648,14 @@ class TestVKInlineConnect:
             validate_vk_result=(None, groups),
             by_project_platform=[],
         )
-        with svc_patch, _patch_http_client_msg():
+        with svc_patch:
             await pipeline_connect_vk_token(
                 mock_message,
                 mock_state,
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
 
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_group)
@@ -666,13 +674,14 @@ class TestVKInlineConnect:
             validate_vk_result=("err", []),
             by_project_platform=[],
         )
-        with svc_patch, _patch_http_client_msg():
+        with svc_patch:
             await pipeline_connect_vk_token(
                 mock_message,
                 mock_state,
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
         mock_message.delete.assert_awaited_once()
 
@@ -688,13 +697,14 @@ class TestVKInlineConnect:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "T"})
         existing = _make_social_conn(platform_type="vk")
         _, svc_patch = _mock_conn_svc(by_project_platform=[existing])
-        with svc_patch, _patch_http_client_msg():
+        with svc_patch:
             await pipeline_connect_vk_token(
                 mock_message,
                 mock_state,
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
         mock_message.answer.assert_awaited()
         calls = mock_message.answer.call_args_list
@@ -721,13 +731,14 @@ class TestVKGroupSelect:
             }
         )
         _, svc_patch = _mock_conn_svc(created_conn=created)
-        with svc_patch, _patch_http_client(), _patch_category_step_msg():
+        with svc_patch, _patch_category_step_msg():
             await pipeline_select_vk_group(
                 mock_callback,
                 mock_state,
                 user,
                 MagicMock(),
                 mock_redis,
+                _mock_http_client(),
             )
 
         mock_state.update_data.assert_any_await(connection_id=25, platform_type="vk")
