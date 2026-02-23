@@ -38,6 +38,52 @@ class GeneratedImage:
     height: int
 
 
+def _flatten_image_settings(context: dict[str, Any]) -> dict[str, Any]:
+    """Flatten nested image_settings into top-level prompt variables.
+
+    image_v1.yaml expects flat keys: style, tone, camera_instruction, etc.
+    ImageService receives image_settings as a nested dict from preview.py.
+    This function extracts the first value from each list-field and maps it
+    to the flat key expected by the prompt template.
+    """
+    flat = dict(context)
+    settings = flat.get("image_settings", {})
+
+    # styles[] or style (legacy flat string from UI) → style
+    styles = settings.get("styles", [])
+    if isinstance(styles, str):
+        styles = [styles]
+    if not styles:
+        legacy_style = settings.get("style")
+        if legacy_style:
+            styles = [legacy_style]
+    if styles:
+        flat.setdefault("style", styles[0])
+
+    # tones[] or tone (legacy) → tone
+    tones = settings.get("tones", [])
+    if isinstance(tones, str):
+        tones = [tones]
+    if not tones:
+        legacy_tone = settings.get("tone")
+        if legacy_tone:
+            tones = [legacy_tone]
+    if tones:
+        flat.setdefault("tone", tones[0])
+
+    # cameras[] → camera_instruction (join into one instruction)
+    cameras = settings.get("cameras", [])
+    if cameras:
+        flat.setdefault("camera_instruction", f"Камера: {', '.join(cameras)}.")
+
+    # text_on_image → text_on_image_instruction
+    text_on_image = settings.get("text_on_image")
+    if text_on_image:
+        flat.setdefault("text_on_image_instruction", text_on_image)
+
+    return flat
+
+
 class ImageService:
     """Generates images via Gemini models through OpenRouter."""
 
@@ -129,9 +175,12 @@ class ImageService:
         so individual calls go directly to the orchestrator without
         per-request rate limit checks (skip_rate_limit=True).
         """
+        # Flatten image_settings into top-level keys for prompt template (image_v1.yaml)
+        prompt_context = _flatten_image_settings(context)
+
         request = GenerationRequest(
             task="image",
-            context=context,
+            context=prompt_context,
             user_id=user_id,
         )
 
