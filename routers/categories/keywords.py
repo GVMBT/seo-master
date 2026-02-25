@@ -537,7 +537,7 @@ async def _run_generation_pipeline(
             db=db,
         )
 
-        # Step 1: Fetch raw phrases
+        # Step 1: Fetch raw phrases from DataForSEO
         await state.set_state(KeywordGenerationFSM.fetching)
         await msg.edit_text("Получаю реальные фразы из DataForSEO...")
 
@@ -551,16 +551,25 @@ async def _run_generation_pipeline(
 
         # Step 2: AI clustering
         await state.set_state(KeywordGenerationFSM.clustering)
-        await msg.edit_text(f"Получено {len(raw_phrases)} фраз. Группирую по интенту...")
-
-        clusters = await kw_service.cluster_phrases(
-            raw_phrases=raw_phrases,
-            products=products,
-            geography=geography,
-            quantity=quantity,
-            project_id=project_id,
-            user_id=user.id,
-        )
+        if raw_phrases:
+            await msg.edit_text(f"Получено {len(raw_phrases)} фраз. Группирую по интенту...")
+            clusters = await kw_service.cluster_phrases(
+                raw_phrases=raw_phrases,
+                products=products,
+                geography=geography,
+                quantity=quantity,
+                project_id=project_id,
+                user_id=user.id,
+            )
+        else:
+            await msg.edit_text("DataForSEO без данных. Генерирую фразы через AI...")
+            clusters = await kw_service.generate_clusters_direct(
+                products=products,
+                geography=geography,
+                quantity=quantity,
+                project_id=project_id,
+                user_id=user.id,
+            )
 
         # Step 3: Enrich with metrics
         await state.set_state(KeywordGenerationFSM.enriching)

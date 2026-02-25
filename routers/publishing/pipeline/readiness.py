@@ -809,7 +809,7 @@ async def _run_pipeline_keyword_generation(
             db=db,
         )
 
-        # Step 1: Fetch raw phrases (~1-3s)
+        # Step 1: Fetch raw phrases from DataForSEO (~1-3s)
         raw_phrases = await kw_service.fetch_raw_phrases(
             products=products,
             geography=geography,
@@ -818,16 +818,27 @@ async def _run_pipeline_keyword_generation(
             user_id=user.id,
         )
 
-        # Step 2: AI clustering (~60-90s for DeepSeek V3.2)
-        await _safe_edit(f"Получено {len(raw_phrases)} фраз. Группирую по интенту (до 1.5 мин)...")
-        clusters = await kw_service.cluster_phrases(
-            raw_phrases=raw_phrases,
-            products=products,
-            geography=geography,
-            quantity=quantity,
-            project_id=project_id,
-            user_id=user.id,
-        )
+        if raw_phrases:
+            # Step 2a: DataForSEO had data → AI clustering (~60-90s)
+            await _safe_edit(f"Получено {len(raw_phrases)} фраз. Группирую по интенту (до 1.5 мин)...")
+            clusters = await kw_service.cluster_phrases(
+                raw_phrases=raw_phrases,
+                products=products,
+                geography=geography,
+                quantity=quantity,
+                project_id=project_id,
+                user_id=user.id,
+            )
+        else:
+            # Step 2b: DataForSEO empty → single AI call generates clusters directly
+            await _safe_edit("DataForSEO без данных. Генерирую фразы через AI (до 1.5 мин)...")
+            clusters = await kw_service.generate_clusters_direct(
+                products=products,
+                geography=geography,
+                quantity=quantity,
+                project_id=project_id,
+                user_id=user.id,
+            )
 
         # Step 3: Enrich with metrics (~3s)
         await _safe_edit(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
