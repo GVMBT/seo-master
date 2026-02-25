@@ -547,7 +547,7 @@ class PromptVersion(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    task_type: str  # "article", "social_post", "keywords", "review", "image", "description", "competitor_analysis"
+    task_type: str  # "article", "social_post", "keywords", "review", "image", "description", "cross_post", "seed_normalize"
     version: str
     prompt_yaml: str
     is_active: bool = False
