@@ -106,7 +106,8 @@ class StarsPaymentService:
     # Pre-checkout validation (API_CONTRACTS.md §2.1 step 3)
     # ------------------------------------------------------------------
 
-    def validate_pre_checkout(self, user_id: int, payload: str) -> tuple[bool, str]:
+    @staticmethod
+    def validate_pre_checkout(user_id: int, payload: str) -> tuple[bool, str]:
         """Validate pre_checkout_query payload.
 
         Returns (ok, error_message). error_message is empty when ok=True.

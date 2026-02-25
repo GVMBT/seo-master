@@ -19,8 +19,7 @@ dependencies = [
     "openai>=2.20",
     # HTTP client
     "httpx>=0.28",
-    # External APIs
-    "firecrawl-py>=4.14",
+    # External APIs (Firecrawl v2 via native httpx — no SDK needed)
     "yookassa>=3.10",
     # Security
     "cryptography>=46.0",

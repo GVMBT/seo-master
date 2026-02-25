@@ -321,7 +321,7 @@ def create_app() -> web.Application:
         api_key=settings.openrouter_api_key.get_secret_value(),
         prompt_engine=prompt_engine,
         rate_limiter=rate_limiter,
-        site_url=settings.railway_public_url,
+        site_url=settings.railway_public_url or "https://seo-master-bot.up.railway.app",
     )
     image_storage = ImageStorage(
         supabase_url=settings.supabase_url,

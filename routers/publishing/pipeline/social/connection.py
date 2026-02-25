@@ -799,22 +799,31 @@ async def pipeline_start_connect_pinterest(
 async def pipeline_select_pinterest_board(
     callback: CallbackQuery,
     state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
-    """Pinterest board selection — stub (F6.2).
+    """Pinterest board selection — skip for now, return to connection step.
 
-    Full implementation requires:
-    - Completed OAuth callback handler in api/auth_service.py
-    - Pinterest API /boards call to list user's boards
-    - Publish logic with board context (F6.3)
+    Board selection will be implemented with full Pinterest publish (F6.3).
+    For now, connection is created without board context.
     """
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
 
-    await callback.message.edit_text(
-        "Выбор доски Pinterest — скоро! (F6.3)\nПодключение создано без выбора доски.",
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    project_name = data.get("project_name", "")
+    if not project_id:
+        await callback.answer("Данные сессии устарели.", show_alert=True)
+        return
+
+    await callback.answer("Доска не выбрана — подключение создано без неё.")
+    await _show_connection_step(
+        callback, state, user, db, redis, project_id, project_name, http_client=http_client,
     )
-    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
