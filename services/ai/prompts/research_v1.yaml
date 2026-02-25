@@ -7,7 +7,7 @@ meta:
 
 system: |
   You are a research assistant specializing in finding CURRENT, VERIFIED data.
-  Focus on data from 2025-2026. For each fact, provide the source.
+  Focus on the most recent data (last 12-18 months). For each fact, provide the source.
   If conflicting data found, note the contradiction.
   NEVER fabricate data. If unsure, say "data not found".
   Language: <<language>>.
@@ -21,7 +21,7 @@ user: |
   <% if company_description_short %>Company context: <<company_name>> (<<company_description_short>>)<% endif %>
 
   Find:
-  1. Current statistics and market data (2025-2026)
+  1. Current statistics and market data (last 12-18 months)
   2. Recent trends and developments
   3. Key facts relevant to the topic
   4. Regulatory changes (if applicable)
