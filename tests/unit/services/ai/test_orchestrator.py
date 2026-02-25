@@ -680,6 +680,7 @@ class TestModelChains:
             "social_post",
             "keywords",
             "keywords_fallback",
+            "seed_normalize",
             "review",
             "description",
             "cross_post",

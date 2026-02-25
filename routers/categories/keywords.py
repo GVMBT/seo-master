@@ -577,6 +577,9 @@ async def _run_generation_pipeline(
 
         enriched = await kw_service.enrich_clusters(clusters)
 
+        # Filter AI-invented zero-volume junk
+        enriched = kw_service.filter_low_quality(enriched)
+
         # Save to category (MERGE with existing)
         cats_repo = CategoriesRepository(db)
         category = await cats_repo.get_by_id(cat_id)
@@ -590,12 +593,20 @@ async def _run_generation_pipeline(
         total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
         total_volume = sum(c.get("total_volume", 0) for c in enriched)
 
+        quality_note = ""
+        if total_volume < 100:
+            quality_note = (
+                "\n\n⚠ Низкий объём поиска. DataForSEO не нашёл данных для "
+                "этой ниши — фразы могут быть неточными. Попробуйте более "
+                "конкретные товары/услуги."
+            )
+
         await msg.edit_text(
             f"Готово! Добавлено:\n"
             f"Кластеров: {len(enriched)}\n"
             f"Фраз: {total_phrases}\n"
             f"Общий объём: {total_volume:,}/мес\n\n"
-            f"Списано {cost} токенов.",
+            f"Списано {cost} токенов.{quality_note}",
             reply_markup=keywords_results_kb(cat_id),
         )
         # Use set_state(None) instead of clear() to preserve saved answers

@@ -844,6 +844,9 @@ async def _run_pipeline_keyword_generation(
         await _safe_edit(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
         enriched = await kw_service.enrich_clusters(clusters)
 
+        # Filter AI-invented zero-volume junk
+        enriched = kw_service.filter_low_quality(enriched)
+
         # Save (MERGE with existing)
         cats_repo = CategoriesRepository(db)
         category = await cats_repo.get_by_id(category_id)
@@ -972,6 +975,10 @@ async def readiness_description_ai(
         )
         return
 
+    # Answer callback immediately so the button stops "loading"
+    await callback.answer()
+    await callback.message.edit_text("Генерирую описание...")
+
     # Debit-first: charge before generation, refund on failure
     try:
         await token_svc.charge(
@@ -982,7 +989,7 @@ async def readiness_description_ai(
         )
     except Exception:
         log.exception("pipeline.readiness.description_charge_failed", user_id=user.id)
-        await callback.answer("Ошибка списания токенов.", show_alert=True)
+        await callback.message.edit_text("Ошибка списания токенов.")
         return
 
     # Generate + save; refund on any failure
@@ -1012,7 +1019,7 @@ async def readiness_description_ai(
             user_id=user.id,
             category_id=category_id,
         )
-        await callback.answer("Ошибка генерации описания. Токены возвращены.", show_alert=True)
+        await callback.message.edit_text("Ошибка генерации описания. Токены возвращены.")
         return
 
     log.info(
@@ -1022,7 +1029,6 @@ async def readiness_description_ai(
         cost=COST_DESCRIPTION,
     )
 
-    await callback.answer("Описание сгенерировано и сохранено.")
     await show_readiness_check(callback, state, user, db, redis)
 
 

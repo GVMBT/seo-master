@@ -29,6 +29,7 @@ TaskType = Literal[
     "social_post",
     "keywords",
     "keywords_fallback",
+    "seed_normalize",
     "review",
     "image",
     "description",
@@ -56,6 +57,10 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "anthropic/claude-sonnet-4.5",
     ],
     "keywords": [
+        "deepseek/deepseek-v3.2",
+        "openai/gpt-5.2",
+    ],
+    "seed_normalize": [
         "deepseek/deepseek-v3.2",
         "openai/gpt-5.2",
     ],
@@ -90,6 +95,7 @@ BUDGET_TASKS: set[str] = {
     "social_post",
     "keywords",
     "keywords_fallback",
+    "seed_normalize",
     "review",
     "description",
     "cross_post",
@@ -106,6 +112,7 @@ STRUCTURED_TASKS: set[str] = {
     "cross_post",
     "keywords",
     "keywords_fallback",
+    "seed_normalize",
     "review",
     "competitor_analysis",
 }
@@ -252,6 +259,7 @@ _RATE_ACTION: dict[str, str] = {
     "social_post": "text_generation",
     "keywords": "keyword_generation",
     "keywords_fallback": "keyword_generation",
+    "seed_normalize": "keyword_generation",
     "review": "text_generation",
     "description": "text_generation",
     "competitor_analysis": "text_generation",
