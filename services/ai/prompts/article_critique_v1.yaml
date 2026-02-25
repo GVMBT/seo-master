@@ -2,7 +2,7 @@ meta:
   task_type: article_critique
   version: v1
   model_tier: budget
-  max_tokens: 20000
+  max_tokens: 16000
   temperature: 0.3
 
 system: |
