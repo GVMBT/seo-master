@@ -31,6 +31,10 @@ user: |
   Преимущества: <<advantages>>
   </VERIFIED_DATA>
 
+  <% if current_research %>
+  <<current_research>>
+  <% endif %>
+
   Задачи:
   1. Исправь все проблемы из QUALITY_ISSUES
   2. Сохрани структуру (H2, H3, FAQ). content_markdown НЕ содержит # H1 — заголовок в поле title.
@@ -79,6 +83,9 @@ variables:
     required: false
     default: ""
   - name: website_url
+    required: false
+    default: ""
+  - name: current_research
     required: false
     default: ""
   - name: language

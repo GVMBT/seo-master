@@ -145,6 +145,121 @@ CRITIQUE_SCHEMA: dict[str, Any] = {
     },
 }
 
+RESEARCH_SCHEMA: dict[str, Any] = {
+    "name": "research_response",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "facts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "claim": {"type": "string"},
+                        "source": {"type": "string"},
+                        "year": {"type": "string"},
+                    },
+                    "required": ["claim", "source", "year"],
+                    "additionalProperties": False,
+                },
+            },
+            "trends": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "trend": {"type": "string"},
+                        "relevance": {"type": "string"},
+                    },
+                    "required": ["trend", "relevance"],
+                    "additionalProperties": False,
+                },
+            },
+            "statistics": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "metric": {"type": "string"},
+                        "value": {"type": "string"},
+                        "source": {"type": "string"},
+                    },
+                    "required": ["metric", "value", "source"],
+                    "additionalProperties": False,
+                },
+            },
+            "summary": {"type": "string"},
+        },
+        "required": ["facts", "trends", "statistics", "summary"],
+        "additionalProperties": False,
+    },
+}
+
+
+def format_research_for_prompt(research: dict[str, Any] | None, step: str) -> str:
+    """Format research data for insertion into AI prompts.
+
+    Args:
+        research: Parsed research JSON (facts, trends, statistics, summary).
+        step: One of "outline", "expand", "critique".
+
+    Returns:
+        Formatted string with <CURRENT_RESEARCH> block, or "" if no data.
+    """
+    if not research:
+        return ""
+
+    parts: list[str] = []
+    facts = research.get("facts") or []
+    if facts:
+        facts_text = "\n".join(
+            f"- {f.get('claim', '')} (источник: {f.get('source', '?')}, {f.get('year', '?')})"
+            for f in facts
+            if isinstance(f, dict) and f.get("claim")
+        )
+        if facts_text:
+            parts.append(f"Актуальные факты:\n{facts_text}")
+
+    trends = research.get("trends") or []
+    if trends:
+        trends_text = "\n".join(
+            f"- {t.get('trend', '')}" for t in trends if isinstance(t, dict) and t.get("trend")
+        )
+        if trends_text:
+            parts.append(f"Тренды:\n{trends_text}")
+
+    statistics = research.get("statistics") or []
+    if statistics:
+        stats_text = "\n".join(
+            f"- {s.get('metric', '')}: {s.get('value', '?')} ({s.get('source', '?')})"
+            for s in statistics
+            if isinstance(s, dict) and s.get("metric")
+        )
+        if stats_text:
+            parts.append(f"Статистика:\n{stats_text}")
+
+    summary = research.get("summary", "")
+    if summary:
+        parts.append(f"Резюме: {summary}")
+
+    if not parts:
+        return ""
+
+    context = "\n\n".join(parts)
+
+    instructions = {
+        "outline": "Используй эти данные для планирования разделов статьи.",
+        "expand": (
+            "Приоритизируй эти данные при противоречиях с собственными знаниями. "
+            "Дополняй своей экспертизой где research не покрывает."
+        ),
+        "critique": "Используй для верификации фактов в статье. Отмечай расхождения.",
+    }
+    instruction = instructions.get(step, instructions["expand"])
+    return f"<CURRENT_RESEARCH>\n{context}\n\n{instruction}\n</CURRENT_RESEARCH>"
+
+
 # --- nh3 sanitization config ---
 
 NH3_TAGS: set[str] = {
@@ -367,6 +482,7 @@ class ArticleService:
         competitor_gaps: str = "",
         internal_links: str = "",
         lsi_keywords: str = "",
+        research_data: dict[str, Any] | None = None,
     ) -> GenerationResult:
         """Generate an SEO article via multi-step pipeline.
 
@@ -394,6 +510,7 @@ class ArticleService:
             competitor_gaps=competitor_gaps,
             internal_links=internal_links,
             lsi_keywords=lsi_keywords,
+            research_data=research_data,
         )
 
         # Step 1: OUTLINE → Step 2: EXPAND
@@ -445,6 +562,7 @@ class ArticleService:
         competitor_gaps: str,
         internal_links: str,
         lsi_keywords: str,
+        research_data: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], str, str, dict[str, str]]:
         """Build prompt context from project/category/competitor data."""
         text_settings = overrides or category.text_settings or {}
@@ -507,6 +625,14 @@ class ArticleService:
             "text_color": text_color,
             "accent_color": accent_color,
         }
+
+        # Research data: formatted per-step (outline, expand, critique)
+        # Stored raw in context for per-step formatting later
+        if research_data:
+            context["_research_data"] = research_data
+            # Default: expand wording (used by article_v7.yaml)
+            context["current_research"] = format_research_for_prompt(research_data, "expand")
+
         branding_dict = {"text": text_color, "accent": accent_color}
         return context, main_phrase, secondary_phrases, branding_dict
 
@@ -518,7 +644,11 @@ class ArticleService:
     ) -> tuple[GenerationResult, str]:
         """Steps 1-2: Generate outline then expand to full article."""
         outline_text = ""
+        research_raw = context.get("_research_data")
         try:
+            # Override research wording for outline step
+            if research_raw:
+                context["current_research"] = format_research_for_prompt(research_raw, "outline")
             outline_result = await self._generate_outline(user_id, context)
             if isinstance(outline_result.content, dict):
                 outline_text = _format_outline(outline_result.content)
@@ -527,6 +657,9 @@ class ArticleService:
             log.warning("outline_skipped", keyword=keyword, exc_info=True)
 
         context["outline"] = outline_text
+        # Restore expand wording for article generation
+        if research_raw:
+            context["current_research"] = format_research_for_prompt(research_raw, "expand")
         result = await self._generate_article(user_id, context)
 
         content_markdown = ""
@@ -648,11 +781,15 @@ class ArticleService:
         quality_issues: list[str],
     ) -> GenerationResult:
         """Step 4: Critique and rewrite via DeepSeek (budget)."""
+        research_raw = context.get("_research_data")
         critique_context = {
             **context,
             "current_markdown": current_markdown,
             "quality_issues": "\n".join(f"- {issue}" for issue in quality_issues),
         }
+        # Override research wording for critique step (fact verification)
+        if research_raw:
+            critique_context["current_research"] = format_research_for_prompt(research_raw, "critique")
         request = GenerationRequest(
             task="article_critique",
             context=critique_context,

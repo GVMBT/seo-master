@@ -31,6 +31,7 @@ _PROMPT_MAP: dict[str, tuple[str, str]] = {
     "description_v1.yaml": ("description", "v1"),
     "cross_post_v1.yaml": ("cross_post", "v1"),
     "seed_normalize.yaml": ("seed_normalize", "v1"),
+    "research_v1.yaml": ("article_research", "v1"),
 }
 
 # Which versions are active by default
@@ -45,6 +46,7 @@ _ACTIVE: set[tuple[str, str]] = {
     ("review", "v1"),
     ("description", "v1"),
     ("seed_normalize", "v1"),
+    ("article_research", "v1"),
 }
 
 

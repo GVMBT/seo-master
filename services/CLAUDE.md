@@ -16,8 +16,9 @@ class ArticleService:
 
 ## services/ai/
 - orchestrator.py — AIOrchestrator: generate(), generate_stream()
-- MODEL_CHAINS по задачам (docs/API_CONTRACTS.md §3.1, 6 task types):
+- MODEL_CHAINS по задачам (docs/API_CONTRACTS.md §3.1, 11 task types):
   article: claude-sonnet-4.5 → gpt-5.2 → deepseek-v3.2
+  article_research: perplexity/sonar-pro (web research, JSON Schema, кеш 7д, graceful degradation E53)
   social_post: deepseek-v3.2 → claude-sonnet-4.5
   keywords: deepseek-v3.2 → gpt-5.2
   review: deepseek-v3.2 → claude-sonnet-4.5
@@ -29,6 +30,7 @@ class ArticleService:
 - Streaming через SSE
 - prompts/ — YAML-файлы с Jinja2 (разделители <<>>, <%%>)
 - **Phase 10 rework**: article_v5→v6 (clusters, images_meta), keywords_v2→v3 (data-first), WebP, parallel pipeline
+- **Phase 10.1 Research**: Perplexity Sonar Pro web research step. research_v1.yaml → JSON Schema (facts, trends, statistics). Redis cache 7d. Parallel with Serper. current_research → Outline + Expand + Critique. Graceful degradation E53
 
 ## services/publishers/
 - BasePublisher(ABC): validate_connection(), publish(), delete_post()

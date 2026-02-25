@@ -22,7 +22,7 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
 - docs/FSM_SPEC.md — 14 FSM StatesGroup, валидация, переходы
-- docs/EDGE_CASES.md — E01-E52, обработка ошибок
+- docs/EDGE_CASES.md — E01-E53, обработка ошибок
 - docs/UX_PIPELINE.md — Pipeline UX: Dashboard, статьи, соцсети, кросс-постинг
 - docs/UX_TOOLBOX.md — Toolbox UX: проекты, категории, подключения, профиль, токены
 
@@ -144,6 +144,13 @@ uv run vulture bot/ services/ db/ api/ cache/ platform_rules/ --min-confidence 8
 - **Partial QStash cleanup**: if schedule creation fails midway, already-created schedules are cleaned up
 - **Auto-publish notifications**: Russian templates per EDGE_CASES.md (_REASON_TEMPLATES in api/publish.py); no_keywords/connection_inactive/insufficient_balance all use `notify_publications` preference
 
+Решено (Phase 10.1 — Research step):
+- **Web Research**: Perplexity Sonar Pro (perplexity/sonar-pro) через OpenRouter. JSON Schema structured output
+- **Pipeline**: Research параллельно с Serper (шаг 2b). current_research → Outline + Expand + Critique (3 разных wording)
+- **Cache**: Redis `research:{md5(keyword)[:12]}`, TTL 7 дней. Cost ~$0.01/req, amortized ~$0.005
+- **Graceful degradation**: E53 — Sonar недоступен → pipeline продолжает без research, warning в лог
+- **Prompt wording**: Outline="используй для планирования", Expand="приоритизируй при противоречиях", Critique="используй для верификации"
+
 Нерешённые вопросы:
 - QStash Pro plan limits (#23) — проверить при росте числа расписаний (schedule limits не документированы публично)
 - ~~F34 streaming edge cases~~ — Закрыто: F34 replaced by progress messages (UX_PIPELINE.md §11), deferred to v3 via sendMessageDraft
@@ -162,6 +169,8 @@ Goal-Oriented Pipeline (Phase 13 — UX_PIPELINE.md):
 AI Pipeline Rework (Phase 10):
 - article_v6→v7: multi-step (outline→expand→critique), Markdown output, anti-slop, niche specialization
 - Multi-step: Outline (DeepSeek) → Expand (Claude) → Conditional Critique (DeepSeek, if score < 80)
+- **Research step (Phase 10.1)**: Perplexity Sonar Pro → JSON Schema (facts, trends, statistics) → current_research в Outline + Expand + Critique
+- Research parallel with Serper (шаг 2b), Redis cache 7d, graceful degradation E53
 - Markdown → HTML: mistune 3.x + SEORenderer (heading IDs, ToC, figure/figcaption, lazy loading)
 - ContentQualityScorer: программная SEO-оценка (0-100), 5 категорий, quality gates
 - Anti-hallucination: <VERIFIED_DATA> блок + regex fact-checking (цены, контакты, статистика)
@@ -176,7 +185,7 @@ AI Pipeline Rework (Phase 10):
 - NLP зависимости: razdel (токенизация), pymorphy3 (морфология), mistune (Markdown→HTML)
 - Персона: "контент-редактор в штате компании" (не "SEO-копирайтер")
 - Temperature: 0.6 для статей (не 0.7)
-- Cost per article: ~$0.30 avg (multi-step +$0.02), маржа ~91%
+- Cost per article: ~$0.31 avg (multi-step + research +$0.01), маржа ~91%
 
 P2 (Phase 11+):
 - **SERP intent check**: Serper → если >70% результатов e-commerce → пометить кластер "product_page" (не для статей)

@@ -1,0 +1,47 @@
+meta:
+  task_type: article_research
+  version: v1
+  model_tier: research
+  max_tokens: 4000
+  temperature: 0.3
+
+system: |
+  You are a research assistant specializing in finding CURRENT, VERIFIED data.
+  Focus on data from 2025-2026. For each fact, provide the source.
+  If conflicting data found, note the contradiction.
+  NEVER fabricate data. If unsure, say "data not found".
+  Language: <<language>>.
+
+user: |
+  Research the following topic for a professional article:
+
+  Topic: "<<main_phrase>>"
+  Industry: <<specialization>>
+  <% if geography %>Geography: <<geography>><% endif %>
+  <% if company_description_short %>Company context: <<company_name>> (<<company_description_short>>)<% endif %>
+
+  Find:
+  1. Current statistics and market data (2025-2026)
+  2. Recent trends and developments
+  3. Key facts relevant to the topic
+  4. Regulatory changes (if applicable)
+
+  Return JSON with facts, trends, statistics, and a brief summary.
+
+variables:
+  - name: main_phrase
+    required: true
+  - name: specialization
+    required: true
+  - name: geography
+    required: false
+    default: ""
+  - name: company_name
+    required: false
+    default: ""
+  - name: company_description_short
+    required: false
+    default: ""
+  - name: language
+    required: true
+    default: "ru"
