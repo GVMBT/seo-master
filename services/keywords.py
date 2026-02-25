@@ -20,6 +20,11 @@ from services.external.dataforseo import DataForSEOClient
 
 log = structlog.get_logger()
 
+# DataForSEO locations: Russia (2643) is BANNED.
+# Ukraine (2804) + language_code="ru" is primary, Kazakhstan (2398) is fallback.
+_DEFAULT_LOCATION = 2804  # Ukraine
+_FALLBACK_LOCATION = 2398  # Kazakhstan
+
 # Schema for AI clustering (structured output)
 CLUSTER_SCHEMA: dict[str, Any] = {
     "name": "cluster_response",
@@ -105,30 +110,52 @@ class KeywordService:
         project_id: int,
         user_id: int,
     ) -> list[dict[str, Any]]:
-        """Step 1: DataForSEO suggestions + related. Fallback to AI if empty (E03)."""
-        seed = products.split(",")[0].strip()[:100]
+        """Step 1: DataForSEO suggestions + related. Fallback to AI if empty (E03).
 
-        suggestions = await self._dataforseo.keyword_suggestions(seed, limit=quantity)
-        related = await self._dataforseo.related_keywords(seed, limit=min(quantity, 100))
+        Strategy:
+        1. Try each seed phrase from products (comma-separated)
+        2. If Ukraine (2804) returns 0, retry with Kazakhstan (2398)
+        3. If all DataForSEO attempts fail → AI fallback
+        """
+        seeds = [s.strip()[:100] for s in products.split(",") if s.strip()]
+        if not seeds:
+            seeds = [products.strip()[:100]]
 
         raw: list[dict[str, Any]] = []
         seen: set[str] = set()
-        for kw in [*suggestions, *related]:
-            phrase_lower = kw.phrase.lower()
-            if phrase_lower not in seen:
-                seen.add(phrase_lower)
-                raw.append(
-                    {
-                        "phrase": kw.phrase,
-                        "volume": kw.volume,
-                        "cpc": kw.cpc,
-                        "ai_suggested": False,
-                    }
+
+        # Try seeds with default location, then fallback location
+        locations = [_DEFAULT_LOCATION, _FALLBACK_LOCATION]
+        for location in locations:
+            for seed in seeds[:3]:  # max 3 seeds to avoid excessive API calls
+                suggestions = await self._dataforseo.keyword_suggestions(
+                    seed, location_code=location, limit=quantity,
                 )
+                related = await self._dataforseo.related_keywords(
+                    seed, location_code=location, limit=min(quantity, 100),
+                )
+
+                for kw in [*suggestions, *related]:
+                    phrase_lower = kw.phrase.lower()
+                    if phrase_lower not in seen:
+                        seen.add(phrase_lower)
+                        raw.append(
+                            {
+                                "phrase": kw.phrase,
+                                "volume": kw.volume,
+                                "cpc": kw.cpc,
+                                "ai_suggested": False,
+                            }
+                        )
+
+            if raw:
+                log.info("dataforseo_found", count=len(raw), location=location)
+                break
+            log.info("dataforseo_empty_location", location=location, seeds=seeds[:3])
 
         # E03 fallback: DataForSEO returned nothing → AI generates phrases
         if not raw:
-            log.info("dataforseo_empty_fallback_to_ai", seed=seed)
+            log.info("dataforseo_empty_fallback_to_ai", seeds=seeds[:3])
             raw = await self._ai_fallback_phrases(
                 products,
                 geography,
