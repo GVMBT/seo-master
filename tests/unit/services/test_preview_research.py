@@ -7,11 +7,11 @@ warmup_research_schema, _gather_websearch_data research parallel execution.
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cache.keys import RESEARCH_CACHE_TTL, CacheKeys
+from cache.keys import RESEARCH_CACHE_TTL
 from services.ai.articles import RESEARCH_SCHEMA
 from services.ai.orchestrator import GenerationResult
 from services.preview import PreviewService

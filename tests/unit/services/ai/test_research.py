@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from services.ai.articles import RESEARCH_SCHEMA, format_research_for_prompt
 
-
 # ---------------------------------------------------------------------------
 # RESEARCH_SCHEMA — structural validation
 # ---------------------------------------------------------------------------
