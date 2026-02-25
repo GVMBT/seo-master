@@ -97,20 +97,23 @@ class KeywordService:
         self,
         products: str,
         geography: str,
+        language: str = "ru",
     ) -> list[str]:
         """Ask AI to rephrase user input into Google Keyword Planner-friendly seeds.
 
         Called BEFORE DataForSEO to convert jargon/abbreviations into search-friendly
         phrases. Cost: ~$0.001 (budget model, ~100 tokens).
+        Uses generate_without_rate_limit — system call, not user-facing.
         Returns 3-5 seed variants or empty list on failure.
         """
         try:
-            result = await self._orchestrator.generate(
+            result = await self._orchestrator.generate_without_rate_limit(
                 GenerationRequest(
                     task="seed_normalize",
                     context={
                         "products": products,
                         "geography": geography,
+                        "language": language,
                     },
                     user_id=0,  # system call, no user charge
                     response_schema=SEED_NORMALIZE_SCHEMA,

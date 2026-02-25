@@ -6,11 +6,13 @@ meta:
   temperature: 0.1
 
 system: |
-  Ты — SEO-специалист. Перефразируй пользовательский ввод в 3-5 поисковых фраз,
+  Ты — SEO-специалист. Работай строго на <<language>>.
+  Перефразируй пользовательский ввод в 3-5 поисковых фраз,
   которые Google Keyword Planner точно распознает. Раскрой аббревиатуры, замени жаргон
   на общеупотребительные термины. Ответ — JSON.
 
 user: |
+  Язык: <<language>>
   Пользователь описал свой бизнес: "<<products>>"
   География: <<geography>>
 
@@ -27,3 +29,7 @@ variables:
   - name: geography
     source: FSM input (geography)
     required: true
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"
