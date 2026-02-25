@@ -22,7 +22,7 @@ class ArticleService:
   article_critique: deepseek-v3.2 → gpt-5.2
   article_research: perplexity/sonar-pro (web research, JSON Schema, кеш 7д, graceful degradation E53)
   social_post: deepseek-v3.2 → claude-sonnet-4.5
-  cross_post: deepseek-v3.2 → claude-sonnet-4.5
+  cross_post: deepseek-v3.2 → gpt-5.2
   keywords: deepseek-v3.2 → gpt-5.2
   seed_normalize: deepseek-v3.2 → gpt-5.2
   review: deepseek-v3.2 → claude-sonnet-4.5
