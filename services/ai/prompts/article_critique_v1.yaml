@@ -31,6 +31,10 @@ user: |
   Преимущества: <<advantages>>
   </VERIFIED_DATA>
 
+  <% if current_research %>
+  <<current_research>>
+  <% endif %>
+
   Задачи:
   1. Исправь все проблемы из QUALITY_ISSUES
   2. Сохрани общую структуру (H1, H2, FAQ)
@@ -78,6 +82,9 @@ variables:
     required: false
     default: ""
   - name: website_url
+    required: false
+    default: ""
+  - name: current_research
     required: false
     default: ""
   - name: language

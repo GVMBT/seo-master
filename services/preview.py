@@ -7,17 +7,21 @@ Zero Telegram/Aiogram dependencies.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from cache.keys import RESEARCH_CACHE_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.repositories.audits import AuditsRepository
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
-from services.ai.orchestrator import AIOrchestrator
+from services.ai.articles import RESEARCH_SCHEMA
+from services.ai.orchestrator import AIOrchestrator, GenerationRequest
 from services.external.firecrawl import FirecrawlClient
 from services.external.serper import SerperClient
 from services.storage import ImageStorage
@@ -25,6 +29,7 @@ from services.storage import ImageStorage
 if TYPE_CHECKING:
     import httpx
 
+    from cache.client import RedisClient
     from db.models import ArticlePreview, PlatformConnection
     from services.publishers.base import PublishResult
 
@@ -65,6 +70,7 @@ class PreviewService:
         http_client: httpx.AsyncClient,
         serper_client: SerperClient | None = None,
         firecrawl_client: FirecrawlClient | None = None,
+        redis: RedisClient | None = None,
     ) -> None:
         self._orchestrator = ai_orchestrator
         self._db = db
@@ -72,23 +78,90 @@ class PreviewService:
         self._http_client = http_client
         self._serper = serper_client
         self._firecrawl = firecrawl_client
+        self._redis = redis
+
+    async def _fetch_research(
+        self,
+        main_phrase: str,
+        specialization: str,
+        company_name: str,
+        geography: str = "",
+        company_description_short: str = "",
+    ) -> dict[str, Any] | None:
+        """Fetch web research via Perplexity Sonar Pro with Redis caching.
+
+        Returns parsed research dict or None on failure (graceful degradation E53).
+        """
+        keyword_hash = hashlib.md5(main_phrase.encode()).hexdigest()[:12]  # noqa: S324
+        cache_key = CacheKeys.research(keyword_hash)
+
+        # Check cache
+        if self._redis:
+            try:
+                cached = await self._redis.get(cache_key)
+                if cached:
+                    log.info("research_cache_hit", keyword=main_phrase[:50])
+                    parsed: dict[str, Any] = json.loads(cached)
+                    return parsed
+            except Exception:
+                log.warning("research_cache_read_failed", exc_info=True)
+
+        # Fetch from Sonar Pro (E53: graceful degradation on failure)
+        try:
+            context = {
+                "main_phrase": main_phrase,
+                "specialization": specialization,
+                "company_name": company_name,
+                "geography": geography,
+                "company_description_short": company_description_short[:200] if company_description_short else "",
+                "language": "ru",
+            }
+            request = GenerationRequest(
+                task="article_research",
+                context=context,
+                user_id=0,  # system-level request, no per-user rate limit
+                response_schema=RESEARCH_SCHEMA,
+            )
+            result = await self._orchestrator.generate_without_rate_limit(request)
+            research = result.content if isinstance(result.content, dict) else None
+            if not research:
+                return None
+        except Exception:
+            log.warning("research_fetch_failed", keyword=main_phrase[:50], exc_info=True)
+            return None
+
+        # Cache result
+        if self._redis:
+            try:
+                await self._redis.set(cache_key, json.dumps(research, ensure_ascii=False), ex=RESEARCH_CACHE_TTL)
+                log.info("research_cached", keyword=main_phrase[:50], ttl=RESEARCH_CACHE_TTL)
+            except Exception:
+                log.warning("research_cache_write_failed", exc_info=True)
+
+        return research
 
     async def _gather_websearch_data(
         self,
         keyword: str,
         project_url: str | None,
+        *,
+        specialization: str = "",
+        company_name: str = "",
+        geography: str = "",
+        company_description_short: str = "",
     ) -> dict[str, Any]:
-        """Gather Serper PAA + Firecrawl competitor data in parallel.
+        """Gather Serper PAA + Firecrawl competitor data + Research in parallel.
 
         Returns dict with keys: serper_data, competitor_pages, competitor_analysis,
-        competitor_gaps. All values gracefully degrade to empty on failure.
-        Cost: ~$0.001 (Serper) + ~$0.03 (3 Firecrawl scrapes).
+        competitor_gaps, research_data. All values gracefully degrade to empty on failure.
+        Cost: ~$0.001 (Serper) + ~$0.03 (3 Firecrawl scrapes) + ~$0.01 (Sonar Pro).
         """
         result: dict[str, Any] = {
             "serper_data": None,
             "competitor_pages": [],
             "competitor_analysis": "",
             "competitor_gaps": "",
+            "research_data": None,
         }
 
         tasks: dict[str, Any] = {}
@@ -96,6 +169,15 @@ class PreviewService:
         # Serper: PAA + organic results for the keyword
         if self._serper:
             tasks["serper"] = self._serper.search(keyword, num=10)
+
+        # Research: Perplexity Sonar Pro (parallel with Serper, §7a)
+        tasks["research"] = self._fetch_research(
+            main_phrase=keyword,
+            specialization=specialization,
+            company_name=company_name,
+            geography=geography,
+            company_description_short=company_description_short,
+        )
 
         # Firecrawl: internal links for the project site (if URL provided)
         if self._firecrawl and project_url:
@@ -108,6 +190,13 @@ class PreviewService:
         task_coros = list(tasks.values())
         gathered = await asyncio.gather(*task_coros, return_exceptions=True)
         responses = dict(zip(task_keys, gathered, strict=True))
+
+        # Process Research results (E53: graceful degradation)
+        research_result = responses.get("research")
+        if research_result and not isinstance(research_result, BaseException):
+            result["research_data"] = research_result
+        elif isinstance(research_result, BaseException):
+            log.warning("research_skipped", error=str(research_result))
 
         # Process Serper results
         serper_result = responses.get("serper")
@@ -160,6 +249,7 @@ class PreviewService:
         log.info(
             "websearch_data_gathered",
             has_serper=result["serper_data"] is not None,
+            has_research=result["research_data"] is not None,
             competitor_count=len(result["competitor_pages"]),
             has_internal_links=bool(result.get("internal_links")),
         )
@@ -194,9 +284,16 @@ class PreviewService:
         if image_count is None:
             image_count = int((category.image_settings or {}).get("count", 4) if category else 4)
 
-        # Phase 1: Gather websearch data (Serper PAA + Firecrawl competitors)
+        # Phase 1: Gather websearch + research data (Serper PAA + Firecrawl + Sonar Pro)
         project_url = project.website_url if project else None
-        websearch = await self._gather_websearch_data(keyword, project_url)
+        websearch = await self._gather_websearch_data(
+            keyword,
+            project_url,
+            specialization=(project.specialization or "") if project else "",
+            company_name=(project.company_name or "") if project else "",
+            geography=(project.company_city or "") if project else "",
+            company_description_short=((project.description or "")[:200]) if project else "",
+        )
 
         image_settings = (category.image_settings or {}) if category else {}
         image_context: dict[str, Any] = {
@@ -235,6 +332,7 @@ class PreviewService:
             competitor_analysis=websearch["competitor_analysis"],
             competitor_gaps=websearch["competitor_gaps"],
             internal_links=websearch.get("internal_links", ""),
+            research_data=websearch.get("research_data"),
         )
         image_task = image_service.generate(
             user_id=user_id,
@@ -321,6 +419,30 @@ class PreviewService:
             meta_description=meta_description,
             stored_images=stored_images,
         )
+
+    async def warmup_research_schema(self) -> None:
+        """Warm up Sonar Pro JSON Schema cache to avoid +30s on first user request.
+
+        Called once on bot startup. Sends a minimal research request that
+        compiles and caches the JSON Schema on Perplexity's side.
+        """
+        try:
+            context = {
+                "main_phrase": "SEO trends 2026",
+                "specialization": "digital marketing",
+                "company_name": "test",
+                "language": "en",
+            }
+            request = GenerationRequest(
+                task="article_research",
+                context=context,
+                user_id=0,
+                response_schema=RESEARCH_SCHEMA,
+            )
+            await self._orchestrator.generate_without_rate_limit(request)
+            log.info("research_schema_warmup_complete")
+        except Exception:
+            log.warning("research_schema_warmup_failed", exc_info=True)
 
     async def publish_to_wordpress(
         self,

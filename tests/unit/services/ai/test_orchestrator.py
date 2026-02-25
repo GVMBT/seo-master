@@ -677,6 +677,7 @@ class TestModelChains:
     def test_all_tasks_present(self) -> None:
         expected_tasks = {
             "article",
+            "article_research",
             "social_post",
             "keywords",
             "seed_normalize",
@@ -689,9 +690,19 @@ class TestModelChains:
         }
         assert set(MODEL_CHAINS.keys()) == expected_tasks
 
-    def test_each_chain_has_at_least_two_models(self) -> None:
+    def test_each_chain_has_at_least_one_model(self) -> None:
         for task, chain in MODEL_CHAINS.items():
-            assert len(chain) >= 2, f"Task {task} has fewer than 2 models"
+            assert len(chain) >= 1, f"Task {task} has no models"
+
+    def test_most_chains_have_fallbacks(self) -> None:
+        """Most tasks have 2+ models for fallback. article_research is an exception (single model)."""
+        single_model_tasks = {"article_research"}
+        for task, chain in MODEL_CHAINS.items():
+            if task not in single_model_tasks:
+                assert len(chain) >= 2, f"Task {task} has fewer than 2 models"
+
+    def test_article_research_uses_sonar_pro(self) -> None:
+        assert MODEL_CHAINS["article_research"] == ["perplexity/sonar-pro"]
 
     def test_article_primary_is_claude(self) -> None:
         assert MODEL_CHAINS["article"][0] == "anthropic/claude-sonnet-4.5"
@@ -790,6 +801,28 @@ class TestGenerateExtraBody:
         assert extra_body["modalities"] == ["image", "text"]
         assert extra_body["image_config"]["aspect_ratio"] == "16:9"
         assert extra_body["image_config"]["image_size"] == "2K"
+
+    async def test_generate_research_task_has_search_context_size(
+        self,
+        orchestrator: AIOrchestrator,
+        mock_openai_client: AsyncMock,
+    ) -> None:
+        """article_research task includes search_context_size=high in extra_body."""
+        mock_openai_client.chat.completions.create.return_value = _make_openai_response(
+            content='{"facts": [], "trends": [], "statistics": [], "summary": "test"}',
+            model="perplexity/sonar-pro",
+        )
+
+        request = GenerationRequest(
+            task="article_research",
+            context={"main_phrase": "SEO", "specialization": "digital"},
+            user_id=123,
+        )
+        await orchestrator.generate(request)
+
+        call_kwargs = mock_openai_client.chat.completions.create.call_args
+        extra_body = call_kwargs.kwargs["extra_body"]
+        assert extra_body["search_context_size"] == "high"
 
     async def test_models_array_excludes_primary(
         self,

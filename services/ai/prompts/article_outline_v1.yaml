@@ -28,6 +28,10 @@ user: |
   <<competitor_gaps>>
   <% endif %>
 
+  <% if current_research %>
+  <<current_research>>
+  <% endif %>
+
   Требования к плану:
   - H1: содержит "<<main_phrase>>"
   - 3-6 H2: каждый решает конкретную проблему читателя, включают дополнительные фразы
@@ -90,6 +94,9 @@ variables:
     required: false
     default: ""
   - name: website_url
+    required: false
+    default: ""
+  - name: current_research
     required: false
     default: ""
   - name: language

@@ -83,6 +83,10 @@ user: |
   </COMPETITOR_GAPS>
   <% endif %>
 
+  <% if current_research %>
+  <<current_research>>
+  <% endif %>
+
   <VERIFIED_DATA>
   Цены компании (используй ТОЛЬКО эти, не выдумывай): <<prices_excerpt>>
   Преимущества (используй ТОЛЬКО эти): <<advantages>>
@@ -195,6 +199,9 @@ variables:
     required: false
     default: ""
   - name: serper_questions
+    required: false
+    default: ""
+  - name: current_research
     required: false
     default: ""
   - name: images_count

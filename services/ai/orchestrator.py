@@ -26,6 +26,7 @@ TaskType = Literal[
     "article",
     "article_outline",
     "article_critique",
+    "article_research",
     "social_post",
     "keywords",
     "seed_normalize",
@@ -49,6 +50,9 @@ MODEL_CHAINS: dict[str, list[str]] = {
     "article_critique": [
         "deepseek/deepseek-v3.2",
         "openai/gpt-5.2",
+    ],
+    "article_research": [
+        "perplexity/sonar-pro",
     ],
     "social_post": [
         "deepseek/deepseek-v3.2",
@@ -90,6 +94,7 @@ BUDGET_TASKS: set[str] = {
     "cross_post",
     "article_outline",
     "article_critique",
+    "article_research",
 }
 
 # JSON schema responses (API_CONTRACTS.md structured outputs table)
@@ -97,6 +102,7 @@ STRUCTURED_TASKS: set[str] = {
     "article",
     "article_outline",
     "article_critique",
+    "article_research",
     "social_post",
     "cross_post",
     "keywords",
@@ -109,6 +115,7 @@ HEALING_TASKS: set[str] = {
     "article",
     "article_outline",
     "article_critique",
+    "article_research",
     "social_post",
     "keywords",
     "review",
@@ -330,20 +337,7 @@ class AIOrchestrator:
         if request.task in HEALING_TASKS:
             extra_body["plugins"] = [{"id": "response-healing"}]
 
-        # Image tasks use modalities
-        if request.task == "image":
-            extra_body["modalities"] = ["image", "text"]
-            image_settings = request.context.get("image_settings", {})
-            aspect_ratio = "1:1"
-            formats = image_settings.get("formats", [])
-            if formats:
-                aspect_ratio = formats[0]
-            quality = image_settings.get("quality", "HD")
-            size_map = {"HD": "1K", "Ultra HD": "2K", "8K": "4K"}
-            extra_body["image_config"] = {
-                "aspect_ratio": aspect_ratio,
-                "image_size": size_map.get(quality, "1K"),
-            }
+        self._apply_task_specific_params(request.task, extra_body, request.context)
 
         # Response format for structured tasks
         kwargs: dict[str, Any] = {}
@@ -444,6 +438,29 @@ class AIOrchestrator:
             prompt_version=rendered.version,
             fallback_used=fallback_used,
         )
+
+    @staticmethod
+    def _apply_task_specific_params(
+        task: str,
+        extra_body: dict[str, Any],
+        context: dict[str, Any],
+    ) -> None:
+        """Apply task-specific parameters to extra_body."""
+        if task == "image":
+            extra_body["modalities"] = ["image", "text"]
+            image_settings = context.get("image_settings", {})
+            aspect_ratio = "1:1"
+            formats = image_settings.get("formats", [])
+            if formats:
+                aspect_ratio = formats[0]
+            quality = image_settings.get("quality", "HD")
+            size_map = {"HD": "1K", "Ultra HD": "2K", "8K": "4K"}
+            extra_body["image_config"] = {
+                "aspect_ratio": aspect_ratio,
+                "image_size": size_map.get(quality, "1K"),
+            }
+        elif task == "article_research":
+            extra_body["search_context_size"] = "high"
 
     @staticmethod
     def _check_finish_reason(choice: Any, task: str, meta: dict[str, Any]) -> None:
