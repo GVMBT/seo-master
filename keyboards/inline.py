@@ -41,10 +41,8 @@ def dashboard_kb(
 ) -> InlineKeyboardMarkup:
     """Dashboard keyboard with pipeline CTAs and nav row.
 
-    PRIMARY CTA logic (UX_PIPELINE.md section 2.4):
-    - has WP, no social -> article is PRIMARY
-    - has social, no WP -> social is PRIMARY
-    - both or neither -> article is PRIMARY
+    Article button is always PRIMARY.
+    Social pipeline is not yet available (pipeline:social:soon).
     """
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -71,19 +69,18 @@ def dashboard_kb(
             [
                 InlineKeyboardButton(
                     text="Создать пост в соцсети",
-                    callback_data="pipeline:social:start",
+                    callback_data="pipeline:social:soon",
                 ),
             ]
         )
     else:
         # Pipeline CTAs
-        article_primary = not (has_social and not has_wp)
         rows.append(
             [
                 InlineKeyboardButton(
                     text="Написать статью на сайт",
                     callback_data="pipeline:article:start",
-                    style=ButtonStyle.PRIMARY if article_primary else None,
+                    style=ButtonStyle.PRIMARY,
                 ),
             ]
         )
@@ -91,8 +88,7 @@ def dashboard_kb(
             [
                 InlineKeyboardButton(
                     text="Создать пост в соцсети",
-                    callback_data="pipeline:social:start",
-                    style=ButtonStyle.PRIMARY if not article_primary else None,
+                    callback_data="pipeline:social:soon",
                 ),
             ]
         )

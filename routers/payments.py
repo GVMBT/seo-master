@@ -19,10 +19,7 @@ async def pre_checkout_handler(
     user: User,
 ) -> None:
     """Validate pre-checkout query (E10 duplicate protection)."""
-    settings = get_settings()
-    stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
-
-    ok, error_msg = stars_svc.validate_pre_checkout(
+    ok, error_msg = StarsPaymentService.validate_pre_checkout(
         user_id=query.from_user.id,
         payload=query.invoice_payload,
     )

@@ -30,7 +30,7 @@ from keyboards.pipeline import (
     pipeline_projects_kb,
 )
 from keyboards.reply import main_menu_kb
-from routers.publishing.pipeline._common import ArticlePipelineFSM, SocialPipelineFSM
+from routers.publishing.pipeline._common import ArticlePipelineFSM
 
 log = structlog.get_logger()
 router = Router()
@@ -479,6 +479,12 @@ async def _route_to_step(
 # ---------------------------------------------------------------------------
 
 
+@router.callback_query(F.data == "pipeline:social:soon")
+async def social_pipeline_soon(callback: CallbackQuery) -> None:
+    """Social pipeline placeholder — not yet available for production."""
+    await callback.answer("Социальные посты — скоро!", show_alert=True)
+
+
 ## pipeline:social:start is handled by routers/publishing/pipeline/social/social.py
 
 
@@ -534,9 +540,9 @@ async def pipeline_resume(
         preview_id=preview_id,
     )
 
-    await callback.answer()
-
     if pipeline_type == "social":
+        # Social pipeline not production-ready — answer with alert before redirect.
+        await callback.answer("Социальные посты — скоро!", show_alert=True)
         await _route_social_to_step(
             callback,
             state,
@@ -550,6 +556,7 @@ async def pipeline_resume(
             connection_id=connection_id,
         )
     else:
+        await callback.answer()
         await _route_to_step(
             callback,
             state,
@@ -583,83 +590,12 @@ async def _route_social_to_step(
         return
 
     # Steps 1-3: re-run from selection screen
-    if step in ("select_project", ""):
-        projects_repo = ProjectsRepository(db)
-        projects = await projects_repo.get_by_user(user.id)
-        if not projects:
-            await callback.message.edit_text(
-                "Пост (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
-                reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
-            )
-        else:
-            await callback.message.edit_text(
-                "Пост (1/5) — Проект\n\nДля какого проекта?",
-                reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
-            )
-        await state.set_state(SocialPipelineFSM.select_project)
-        return
-
-    if step == "select_connection":
-        if not project_id:
-            await callback.message.edit_text("Данные сессии устарели. Начните заново.")
-            await redis.delete(CacheKeys.pipeline_state(user.id))
-            await state.clear()
-            return
-        from routers.publishing.pipeline.social.connection import _show_connection_step
-
-        await _show_connection_step(
-            callback,
-            state,
-            user,
-            db,
-            redis,
-            project_id,
-            project_name,
-        )
-        return
-
-    if step == "select_category":
-        if not project_id:
-            await callback.message.edit_text("Данные сессии устарели. Начните заново.")
-            await redis.delete(CacheKeys.pipeline_state(user.id))
-            await state.clear()
-            return
-        cats_repo = CategoriesRepository(db)
-        categories = await cats_repo.get_by_project(project_id)
-        if not categories:
-            await callback.message.edit_text(
-                "Пост (3/5) — Тема\n\nО чём будет пост? Назовите тему.",
-                reply_markup=cancel_kb("pipeline:social:cancel"),
-            )
-            await state.set_state(SocialPipelineFSM.create_category_name)
-        elif len(categories) == 1:
-            cat = categories[0]
-            await state.update_data(category_id=cat.id, category_name=cat.name)
-            # TODO F6.3: call show_social_readiness_check
-            await callback.message.edit_text(
-                "Пост — Подготовка\n\nРедирект к чеклисту — скоро! (F6.3)",
-            )
-            await state.set_state(SocialPipelineFSM.readiness_check)
-        else:
-            await callback.message.edit_text(
-                "Пост (3/5) — Тема\n\nКакая тема?",
-                reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
-            )
-            await state.set_state(SocialPipelineFSM.select_category)
-        return
-
-    # Steps 4-5: readiness check or confirm
-    if step in ("readiness_check", "confirm_cost"):
-        # TODO F6.3: call show_social_readiness_check
-        await callback.message.edit_text(
-            "Пост — Подготовка\n\nРедирект к чеклисту — скоро! (F6.3)",
-        )
-        await state.set_state(SocialPipelineFSM.readiness_check)
-        return
-
-    # Fallback: show dashboard
-    log.warning("pipeline.social.resume_unknown_step", step=step, user_id=user.id)
-    text, kb = await _build_dashboard(user, False, db, redis)
+    # Social pipeline is not production-ready (F6.3 not implemented).
+    # Clear checkpoint and redirect to Dashboard with explanation.
+    log.info("pipeline.social.resume_not_ready", step=step, user_id=user.id)
+    await redis.delete(CacheKeys.pipeline_state(user.id))
+    await state.clear()
+    text, kb = await _build_dashboard(user, is_new_user=False, db=db, redis=redis)
     await callback.message.edit_text(text, reply_markup=kb)
 
 
