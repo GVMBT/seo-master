@@ -41,10 +41,8 @@ def dashboard_kb(
 ) -> InlineKeyboardMarkup:
     """Dashboard keyboard with pipeline CTAs and nav row.
 
-    PRIMARY CTA logic (UX_PIPELINE.md section 2.4):
-    - has WP, no social -> article is PRIMARY
-    - has social, no WP -> social is PRIMARY
-    - both or neither -> article is PRIMARY
+    Article button is always PRIMARY.
+    Social pipeline is not yet available (pipeline:social:soon).
     """
     rows: list[list[InlineKeyboardButton]] = []
 

@@ -540,9 +540,9 @@ async def pipeline_resume(
         preview_id=preview_id,
     )
 
-    await callback.answer()
-
     if pipeline_type == "social":
+        # Social pipeline not production-ready — answer with alert before redirect.
+        await callback.answer("Социальные посты — скоро!", show_alert=True)
         await _route_social_to_step(
             callback,
             state,
@@ -556,6 +556,7 @@ async def pipeline_resume(
             connection_id=connection_id,
         )
     else:
+        await callback.answer()
         await _route_to_step(
             callback,
             state,
@@ -594,9 +595,8 @@ async def _route_social_to_step(
     log.info("pipeline.social.resume_not_ready", step=step, user_id=user.id)
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await state.clear()
-    text, kb = await _build_dashboard(user, False, db, redis)
+    text, kb = await _build_dashboard(user, is_new_user=False, db=db, redis=redis)
     await callback.message.edit_text(text, reply_markup=kb)
-    await callback.answer("Социальные посты — скоро!", show_alert=True)
 
 
 @router.callback_query(F.data == "pipeline:restart")

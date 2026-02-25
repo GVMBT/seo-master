@@ -820,7 +820,7 @@ async def pipeline_select_pinterest_board(
         await callback.answer("Данные сессии устарели.", show_alert=True)
         return
 
-    await callback.answer("Доска не выбрана — подключение создано без неё.")
+    await callback.answer("Выбор доски пока недоступен.")
     await _show_connection_step(
         callback, state, user, db, redis, project_id, project_name, http_client=http_client,
     )
