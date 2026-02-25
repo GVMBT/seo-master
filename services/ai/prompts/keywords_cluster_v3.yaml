@@ -2,7 +2,7 @@ meta:
   task_type: keywords
   version: v3
   model_tier: budget
-  max_tokens: 6000
+  max_tokens: 12000
   temperature: 0.3
 
 system: |
