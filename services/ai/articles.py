@@ -222,7 +222,7 @@ def calculate_target_length(
 
 def _format_outline(outline: dict[str, Any]) -> str:
     """Format outline dict into readable text for article prompt."""
-    lines = [f"# {outline.get('h1', '')}"]
+    lines = [f"Title: {outline.get('h1', '')}"]
     for section in outline.get("sections", []):
         lines.append(f"\n## {section.get('h2', '')}")
         for h3 in section.get("h3_list", []):
