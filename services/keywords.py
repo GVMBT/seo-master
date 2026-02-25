@@ -63,32 +63,6 @@ CLUSTER_SCHEMA: dict[str, Any] = {
     },
 }
 
-# Schema for AI keyword generation fallback
-KEYWORDS_FALLBACK_SCHEMA: dict[str, Any] = {
-    "name": "keywords_response",
-    "strict": True,
-    "schema": {
-        "type": "object",
-        "properties": {
-            "keywords": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "phrase": {"type": "string"},
-                        "intent": {"type": "string"},
-                    },
-                    "required": ["phrase", "intent"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        "required": ["keywords"],
-        "additionalProperties": False,
-    },
-}
-
-
 class KeywordService:
     """Data-first keyword pipeline (API_CONTRACTS.md §8)."""
 
@@ -153,16 +127,10 @@ class KeywordService:
                 break
             log.info("dataforseo_empty_location", location=location, seeds=seeds[:3])
 
-        # E03 fallback: DataForSEO returned nothing → AI generates phrases
+        # E03 fallback: DataForSEO returned nothing → return empty
+        # Caller should use generate_clusters_direct() instead of the two-step pipeline
         if not raw:
             log.info("dataforseo_empty_fallback_to_ai", seeds=seeds[:3])
-            raw = await self._ai_fallback_phrases(
-                products,
-                geography,
-                quantity,
-                project_id,
-                user_id,
-            )
 
         return raw[:quantity]
 
@@ -269,7 +237,7 @@ class KeywordService:
 
         return clusters
 
-    async def _ai_fallback_phrases(
+    async def generate_clusters_direct(
         self,
         products: str,
         geography: str,
@@ -277,42 +245,51 @@ class KeywordService:
         project_id: int,
         user_id: int,
     ) -> list[dict[str, Any]]:
-        """AI fallback when DataForSEO is empty (E03).
+        """AI-only path: generate clusters directly in ONE call (E03 fallback).
 
-        Uses separate 'keywords_fallback' prompt (v2-style) that generates
-        phrases from scratch, unlike 'keywords' (v3) which clusters DataForSEO data.
+        Used when DataForSEO returns 0 results. Instead of two sequential AI
+        calls (fallback_phrases → cluster), this generates clustered keywords
+        in a single request. ~60-90s instead of ~300s.
         """
         project = await ProjectsRepository(self._db).get_by_id(project_id)
         company_name = (project.company_name or "") if project else ""
         specialization = (project.specialization or "") if project else ""
 
+        context = {
+            "raw_count": 0,
+            "raw_keywords_json": "[]",
+            "extra_count": quantity,
+            "products": products,
+            "geography": geography,
+            "company_name": company_name,
+            "specialization": specialization,
+            "language": "ru",
+        }
+
         result = await self._orchestrator.generate(
             GenerationRequest(
-                task="keywords_fallback",
-                context={
-                    "quantity": quantity,
-                    "products": products,
-                    "geography": geography,
-                    "company_name": company_name,
-                    "specialization": specialization,
-                    "language": "ru",
-                },
+                task="keywords",
+                context=context,
                 user_id=user_id,
-                response_schema=KEYWORDS_FALLBACK_SCHEMA,
+                response_schema=CLUSTER_SCHEMA,
             )
         )
 
-        phrases: list[dict[str, Any]] = []
+        clusters: list[dict[str, Any]] = []
         if isinstance(result.content, dict):
-            for kw in result.content.get("keywords", []):
-                phrases.append(
-                    {
-                        "phrase": kw.get("phrase", ""),
-                        "volume": 0,
-                        "cpc": 0.0,
-                        "ai_suggested": True,
-                        "intent": kw.get("intent", "informational"),
-                    }
-                )
+            clusters = result.content.get("clusters", [])
 
-        return phrases
+        # Mark all phrases as AI-suggested, assign defaults
+        for cluster in clusters:
+            total_vol = 0
+            for p in cluster.get("phrases", []):
+                p.setdefault("ai_suggested", True)
+                p.setdefault("volume", 0)
+                p.setdefault("difficulty", 0)
+                p.setdefault("cpc", 0.0)
+                p.setdefault("intent", "informational")
+                total_vol += p.get("volume", 0)
+            cluster.setdefault("total_volume", total_vol)
+            cluster.setdefault("avg_difficulty", 0)
+
+        return clusters
