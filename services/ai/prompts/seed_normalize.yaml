@@ -1,0 +1,35 @@
+meta:
+  task_type: seed_normalize
+  version: v1
+  model_tier: budget
+  max_tokens: 200
+  temperature: 0.1
+
+system: |
+  Ты — SEO-специалист. Работай строго на <<language>>.
+  Перефразируй пользовательский ввод в 3-5 поисковых фраз,
+  которые Google Keyword Planner точно распознает. Раскрой аббревиатуры, замени жаргон
+  на общеупотребительные термины. Ответ — JSON.
+
+user: |
+  Язык: <<language>>
+  Пользователь описал свой бизнес: "<<products>>"
+  География: <<geography>>
+
+  Придумай 3-5 вариантов поисковых фраз для Google Keyword Planner:
+  - Раскрой аббревиатуры (ИИ → искусственный интеллект, SMM → маркетинг в соцсетях)
+  - Замени жаргон на то, что люди реально ищут в Google
+  - Каждая фраза 2-4 слова, без города
+  - Формат: {"variants": ["фраза1", "фраза2", "фраза3"]}
+
+variables:
+  - name: products
+    source: FSM input (goods/services)
+    required: true
+  - name: geography
+    source: FSM input (geography)
+    required: true
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"

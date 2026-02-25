@@ -738,8 +738,10 @@ class TestDescriptionSubFlow:
         # Debit-first: charge called, then refund on save failure
         token_mock.charge.assert_called_once()
         token_mock.refund.assert_called_once()
-        mock_callback.answer.assert_called()
-        assert "возвращены" in mock_callback.answer.call_args[0][0]
+        # Error message shown via edit_text (answer() called early without text)
+        mock_callback.message.edit_text.assert_called()
+        last_edit = mock_callback.message.edit_text.call_args[0][0]
+        assert "возвращены" in last_edit
 
     async def test_manual_start_sets_state(
         self,

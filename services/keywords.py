@@ -1,7 +1,7 @@
 """Keyword generation service — data-first pipeline.
 
-Pipeline: DataForSEO suggestions/related → AI clustering → DataForSEO enrich.
-Fallback (E03): if DataForSEO unavailable → AI generates phrases → cluster → enrich.
+Pipeline: AI seed normalization → DataForSEO suggestions/related → AI clustering → enrich.
+Fallback (E03): if DataForSEO unavailable → AI generates clusters directly.
 Zero Telegram/Aiogram dependencies.
 """
 
@@ -24,6 +24,23 @@ log = structlog.get_logger()
 # Ukraine (2804) + language_code="ru" is primary, Kazakhstan (2398) is fallback.
 _DEFAULT_LOCATION = 2804  # Ukraine
 _FALLBACK_LOCATION = 2398  # Kazakhstan
+
+# Schema for AI seed normalization (structured output)
+SEED_NORMALIZE_SCHEMA: dict[str, Any] = {
+    "name": "seed_variants",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "variants": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        "required": ["variants"],
+        "additionalProperties": False,
+    },
+}
 
 # Schema for AI clustering (structured output)
 CLUSTER_SCHEMA: dict[str, Any] = {
@@ -76,6 +93,42 @@ class KeywordService:
         self._dataforseo = dataforseo
         self._db = db
 
+    async def _normalize_seeds_ai(
+        self,
+        products: str,
+        geography: str,
+        language: str = "ru",
+    ) -> list[str]:
+        """Ask AI to rephrase user input into Google Keyword Planner-friendly seeds.
+
+        Called BEFORE DataForSEO to convert jargon/abbreviations into search-friendly
+        phrases. Cost: ~$0.001 (budget model, ~100 tokens).
+        Uses generate_without_rate_limit — system call, not user-facing.
+        Returns 3-5 seed variants or empty list on failure.
+        """
+        try:
+            result = await self._orchestrator.generate_without_rate_limit(
+                GenerationRequest(
+                    task="seed_normalize",
+                    context={
+                        "products": products,
+                        "geography": geography,
+                        "language": language,
+                    },
+                    user_id=0,  # system call, no user charge
+                    response_schema=SEED_NORMALIZE_SCHEMA,
+                    max_retries=1,
+                )
+            )
+        except Exception:
+            log.warning("ai_seed_normalization_failed", products=products)
+            return []
+
+        if isinstance(result.content, dict):
+            variants = result.content.get("variants", [])
+            return [str(v)[:100] for v in variants[:5] if v]
+        return []
+
     async def fetch_raw_phrases(
         self,
         products: str,
@@ -84,24 +137,44 @@ class KeywordService:
         project_id: int,
         user_id: int,
     ) -> list[dict[str, Any]]:
-        """Step 1: DataForSEO suggestions + related. Fallback to AI if empty (E03).
+        """Step 1: AI normalize seeds → DataForSEO suggestions + related.
 
         Strategy:
-        1. Try each seed phrase from products (comma-separated)
-        2. If Ukraine (2804) returns 0, retry with Kazakhstan (2398)
-        3. If all DataForSEO attempts fail → AI fallback
+        1. Parse seed phrases from products (comma-separated)
+        2. AI normalizes seeds into Google Keyword Planner-friendly phrases
+        3. Single DataForSEO pass with AI-normalized seeds (Ukraine → Kazakhstan)
+        4. If DataForSEO still returns 0 → caller uses AI fallback (E03)
         """
-        seeds = [s.strip()[:100] for s in products.split(",") if s.strip()]
-        if not seeds:
-            seeds = [products.strip()[:100]]
+        original_seeds = [s.strip()[:100] for s in products.split(",") if s.strip()]
+        if not original_seeds:
+            original_seeds = [products.strip()[:100]]
+
+        # AI normalizes jargon/abbreviations into search-friendly phrases
+        ai_seeds = await self._normalize_seeds_ai(products, geography)
+
+        # Combine: AI-normalized seeds first (higher quality), then originals as backup
+        seeds: list[str] = []
+        seen_lower: set[str] = set()
+        for seed in [*ai_seeds, *original_seeds]:
+            lower = seed.lower()
+            if lower not in seen_lower:
+                seen_lower.add(lower)
+                seeds.append(seed)
+
+        log.info(
+            "keyword_seeds_prepared",
+            original=original_seeds,
+            ai_normalized=ai_seeds,
+            combined=seeds[:5],
+        )
 
         raw: list[dict[str, Any]] = []
         seen: set[str] = set()
 
-        # Try seeds with default location, then fallback location
+        # Single DataForSEO pass: try seeds with Ukraine, then Kazakhstan
         locations = [_DEFAULT_LOCATION, _FALLBACK_LOCATION]
         for location in locations:
-            for seed in seeds[:3]:  # max 3 seeds to avoid excessive API calls
+            for seed in seeds[:5]:  # max 5 seeds
                 suggestions = await self._dataforseo.keyword_suggestions(
                     seed, location_code=location, limit=quantity,
                 )
@@ -125,12 +198,11 @@ class KeywordService:
             if raw:
                 log.info("dataforseo_found", count=len(raw), location=location)
                 break
-            log.info("dataforseo_empty_location", location=location, seeds=seeds[:3])
+            log.info("dataforseo_empty_location", location=location, seeds=seeds[:5])
 
-        # E03 fallback: DataForSEO returned nothing → return empty
-        # Caller should use generate_clusters_direct() instead of the two-step pipeline
+        # E03 fallback: DataForSEO returned nothing even with AI-normalized seeds
         if not raw:
-            log.info("dataforseo_empty_fallback_to_ai", seeds=seeds[:3])
+            log.info("dataforseo_empty_fallback_to_ai", seeds=seeds[:5])
 
         return raw[:quantity]
 
@@ -237,6 +309,55 @@ class KeywordService:
 
         return clusters
 
+    def filter_low_quality(
+        self,
+        clusters: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Remove AI-suggested phrases confirmed as zero-volume by DataForSEO.
+
+        Keeps DataForSEO-sourced phrases (ai_suggested=False) even with volume=0,
+        since they represent real (if rare) searches. Only removes AI-invented
+        phrases that DataForSEO confirms nobody searches for.
+        """
+        filtered_total = 0
+        result: list[dict[str, Any]] = []
+
+        for cluster in clusters:
+            original_count = len(cluster.get("phrases", []))
+            kept: list[dict[str, Any]] = [
+                p for p in cluster.get("phrases", [])
+                if not (p.get("ai_suggested") and p.get("volume", 0) == 0)
+            ]
+            filtered_total += original_count - len(kept)
+
+            if not kept:
+                continue
+
+            cluster["phrases"] = kept
+            # Recalculate aggregates
+            total_vol = sum(p.get("volume", 0) for p in kept)
+            total_diff = sum(p.get("difficulty", 0) for p in kept)
+            cluster["total_volume"] = total_vol
+            cluster["avg_difficulty"] = total_diff // max(len(kept), 1)
+            # Update main_phrase if it was removed
+            main = cluster.get("main_phrase", "")
+            kept_phrases = {p["phrase"].lower() for p in kept}
+            if main.lower() not in kept_phrases:
+                best = max(kept, key=lambda p: p.get("volume", 0))
+                cluster["main_phrase"] = best["phrase"]
+
+            result.append(cluster)
+
+        if filtered_total:
+            log.info(
+                "keywords_filtered_low_quality",
+                removed=filtered_total,
+                clusters_before=len(clusters),
+                clusters_after=len(result),
+            )
+
+        return result
+
     async def generate_clusters_direct(
         self,
         products: str,
@@ -258,7 +379,7 @@ class KeywordService:
         context = {
             "raw_count": 0,
             "raw_keywords_json": "[]",
-            "extra_count": quantity,
+            "extra_count": min(quantity, 50),
             "products": products,
             "geography": geography,
             "company_name": company_name,
