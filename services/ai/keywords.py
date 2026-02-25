@@ -1,7 +1,6 @@
 """Keyword generation service — semantic core generation.
 
-Source of truth: API_CONTRACTS.md section 5 (keywords_v2.yaml for legacy, keywords_cluster_v3.yaml for data-first).
-Phase 10 will add KeywordService.cluster() with DataForSEO + AI clustering pipeline.
+Source of truth: API_CONTRACTS.md section 5 (keywords_cluster_v3.yaml for data-first pipeline).
 Zero Telegram/Aiogram dependencies.
 """
 

@@ -134,7 +134,7 @@ HEAL_MODEL = "deepseek/deepseek-v3.2"
 
 @dataclass
 class ClusterContext:
-    """Cluster-aware fields for article_v6 / keywords_cluster_v3."""
+    """Cluster-aware fields for article_v7 / keywords_cluster_v3."""
 
     main_phrase: str
     secondary_phrases: str = ""

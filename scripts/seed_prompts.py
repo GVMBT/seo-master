@@ -22,11 +22,9 @@ load_dotenv()
 # Map filename patterns to (task_type, version)
 _PROMPT_MAP: dict[str, tuple[str, str]] = {
     "article_v7.yaml": ("article", "v7"),
-    "article_v6.yaml": ("article", "v6"),
     "article_outline_v1.yaml": ("article_outline", "v1"),
     "article_critique_v1.yaml": ("article_critique", "v1"),
     "social_v3.yaml": ("social_post", "v3"),
-    "keywords_v2.yaml": ("keywords", "v2"),
     "keywords_cluster_v3.yaml": ("keywords", "v3"),
     "image_v1.yaml": ("image", "v1"),
     "review_v1.yaml": ("review", "v1"),
