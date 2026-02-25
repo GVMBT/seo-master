@@ -30,6 +30,7 @@ _PROMPT_MAP: dict[str, tuple[str, str]] = {
     "review_v1.yaml": ("review", "v1"),
     "description_v1.yaml": ("description", "v1"),
     "competitor_analysis_v1.yaml": ("competitor_analysis", "v1"),
+    "cross_post_v1.yaml": ("cross_post", "v1"),
     "seed_normalize.yaml": ("seed_normalize", "v1"),
 }
 
@@ -39,6 +40,7 @@ _ACTIVE: set[tuple[str, str]] = {
     ("article_outline", "v1"),
     ("article_critique", "v1"),
     ("social_post", "v3"),
+    ("cross_post", "v1"),
     ("keywords", "v3"),
     ("image", "v1"),
     ("review", "v1"),
