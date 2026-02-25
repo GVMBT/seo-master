@@ -1805,8 +1805,11 @@ async def generate_article_pipeline(cluster, category, project, connections):
 
     # Stage 1: Serper + Research ПАРАЛЛЕЛЬНО
     serper_task = serper.search(cluster.main_phrase)               # ~2с
-    research_task = _fetch_research(cluster.main_phrase,           # ~5-15с
-                                    category.specialization, redis)
+    research_task = preview._fetch_research(                       # ~5-15с
+        main_phrase=cluster.main_phrase,
+        specialization=category.specialization,
+        company_name=project.company_name,
+    )
     serper_result, research_data = await asyncio.gather(
         serper_task, research_task, return_exceptions=True,
     )
@@ -1835,11 +1838,14 @@ async def generate_article_pipeline(cluster, category, project, connections):
     competitor_gaps = detect_gaps(valid_pages)                # -> str (для <<competitor_gaps>> в промпте)
 
     # Stage 4: Текст и изображения ПАРАЛЛЕЛЬНО
-    # current_research передаётся в Outline, Expand и Critique
+    # research_data передаётся в ArticleService.generate() → per-step formatting:
+    # - Outline: format_research_for_prompt(data, "outline") — для планирования разделов
+    # - Expand: format_research_for_prompt(data, "expand") — приоритизация при противоречиях
+    # - Critique: format_research_for_prompt(data, "critique") — верификация фактов
     text_task = asyncio.create_task(
-        orchestrator.generate(build_article_request(
-            cluster, competitor_analysis, current_research=current_research, ...
-        ))
+        article_service.generate(
+            ..., research_data=research_data,  # raw dict, formatted per-step internally
+        )
     )
     images_task = asyncio.create_task(
         orchestrator.generate_images(cluster.main_phrase, category.image_settings)

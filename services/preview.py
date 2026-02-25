@@ -101,9 +101,11 @@ class PreviewService:
             try:
                 cached = await self._redis.get(cache_key)
                 if cached:
-                    log.info("research_cache_hit", keyword=main_phrase[:50])
-                    parsed: dict[str, Any] = json.loads(cached)
-                    return parsed
+                    parsed = json.loads(cached)
+                    if isinstance(parsed, dict):
+                        log.info("research_cache_hit", keyword=main_phrase[:50])
+                        return parsed
+                    log.warning("research_cache_invalid_type", type=type(parsed).__name__)
             except Exception:
                 log.warning("research_cache_read_failed", exc_info=True)
 
