@@ -428,3 +428,8 @@ def create_app() -> web.Application:
     app.router.add_get("/api/health", health_handler)
 
     return app
+
+
+if __name__ == "__main__":
+    settings = get_settings()
+    web.run_app(create_app(), host="0.0.0.0", port=settings.port)  # noqa: S104

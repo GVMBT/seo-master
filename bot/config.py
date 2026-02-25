@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     health_check_token: SecretStr = SecretStr("")
     usd_rub_rate: float = 92.5
 
+    # === Server ===
+    port: int = 8080
+
     # === Defaults ===
     default_timezone: str = "Europe/Moscow"
     fsm_ttl_seconds: int = 86400
