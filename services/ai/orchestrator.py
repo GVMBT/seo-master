@@ -28,13 +28,11 @@ TaskType = Literal[
     "article_critique",
     "social_post",
     "keywords",
-    "keywords_fallback",
     "seed_normalize",
     "review",
     "image",
     "description",
     "cross_post",
-    "competitor_analysis",
 ]
 
 # Model chains (API_CONTRACTS.md §3.1)
@@ -64,10 +62,6 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "deepseek/deepseek-v3.2",
         "openai/gpt-5.2",
     ],
-    "keywords_fallback": [
-        "deepseek/deepseek-v3.2",
-        "openai/gpt-5.2",
-    ],
     "review": [
         "deepseek/deepseek-v3.2",
         "anthropic/claude-sonnet-4.5",
@@ -80,10 +74,6 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "deepseek/deepseek-v3.2",
         "openai/gpt-5.2",
     ],
-    "competitor_analysis": [
-        "openai/gpt-5.2",
-        "anthropic/claude-sonnet-4.5",
-    ],
     "image": [
         "google/gemini-3-pro-image-preview",
         "google/gemini-2.5-flash-image",
@@ -94,7 +84,6 @@ MODEL_CHAINS: dict[str, list[str]] = {
 BUDGET_TASKS: set[str] = {
     "social_post",
     "keywords",
-    "keywords_fallback",
     "seed_normalize",
     "review",
     "description",
@@ -111,10 +100,8 @@ STRUCTURED_TASKS: set[str] = {
     "social_post",
     "cross_post",
     "keywords",
-    "keywords_fallback",
     "seed_normalize",
     "review",
-    "competitor_analysis",
 }
 
 # Tasks that use response-healing plugin
@@ -124,7 +111,6 @@ HEALING_TASKS: set[str] = {
     "article_critique",
     "social_post",
     "keywords",
-    "keywords_fallback",
     "review",
 }
 
@@ -134,7 +120,7 @@ HEAL_MODEL = "deepseek/deepseek-v3.2"
 
 @dataclass
 class ClusterContext:
-    """Cluster-aware fields for article_v6 / keywords_cluster_v3."""
+    """Cluster-aware fields for article_v7 / keywords_cluster_v3."""
 
     main_phrase: str
     secondary_phrases: str = ""
@@ -258,11 +244,9 @@ _RATE_ACTION: dict[str, str] = {
     "article": "text_generation",
     "social_post": "text_generation",
     "keywords": "keyword_generation",
-    "keywords_fallback": "keyword_generation",
     "seed_normalize": "keyword_generation",
     "review": "text_generation",
     "description": "text_generation",
-    "competitor_analysis": "text_generation",
     "image": "image_generation",
 }
 
@@ -338,7 +322,7 @@ class AIOrchestrator:
         if request.task in BUDGET_TASKS:
             extra_body["provider"]["sort"] = "price"
         else:
-            # Non-budget tasks (article, image, competitor_analysis) need
+            # Non-budget tasks (article, image) need
             # strict parameter matching for quality
             extra_body["provider"]["require_parameters"] = True
 
