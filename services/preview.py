@@ -209,12 +209,19 @@ class PreviewService:
 
         # Load branding colors for image prompt (image_v1.yaml)
         if project:
-            branding = await AuditsRepository(self._db).get_branding_by_project(project.id)
+            try:
+                branding = await AuditsRepository(self._db).get_branding_by_project(project.id)
+            except Exception:
+                log.warning("branding_load_failed", project_id=project.id, exc_info=True)
+                branding = None
             if branding and branding.colors:
                 colors = branding.colors
-                image_context["primary_color"] = colors.get("primary", "")
-                image_context["accent_color"] = colors.get("accent", "")
-                image_context["background_color"] = colors.get("background", "")
+                if colors.get("primary"):
+                    image_context["primary_color"] = colors["primary"]
+                if colors.get("accent"):
+                    image_context["accent_color"] = colors["accent"]
+                if colors.get("background"):
+                    image_context["background_color"] = colors["background"]
 
         # Phase 2: Parallel text + images (API_CONTRACTS.md parallel pipeline)
         text_task = article_service.generate(
