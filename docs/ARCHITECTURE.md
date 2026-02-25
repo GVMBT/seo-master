@@ -19,6 +19,7 @@
 | Аудит сайтов | Google PageSpeed API | Бесплатный, всесторонний аудит |
 | SEO-данные | DataForSEO API | Реальные объемы поиска, сложность ключевиков |
 | Web Search | Serper API | Актуальные данные Google для промптов статей |
+| Web Research | Perplexity Sonar Pro (OpenRouter) | Актуальные факты, тренды, статистика для статей |
 | Предпросмотр статей | Telegraph API | Бесплатное превью перед публикацией |
 | Markdown → HTML | mistune 3.x + SEORenderer | Детерминистичный HTML: heading IDs, ToC, figure, lazy loading |
 | NLP (русский) | razdel + pymorphy3 | Токенизация, морфология для ContentQualityScorer |
@@ -103,6 +104,7 @@ seo-master-bot-v2/
 │   │       ├── article_v7.yaml          # v7: multi-step, Markdown output, anti-slop, niche
 │   │       ├── article_outline_v1.yaml  # v1: outline generation (DeepSeek, multi-step stage 1)
 │   │       ├── article_critique_v1.yaml # v1: conditional critique (DeepSeek, stage 3)
+│   │       ├── research_v1.yaml         # v1: web research (Perplexity Sonar Pro, JSON Schema)
 │   │       ├── social_v3.yaml           # v3: social posts for TG/VK/Pinterest
 │   │       ├── keywords_cluster_v3.yaml  # v3: data-first clustering
 │   │       ├── keywords_v2.yaml         # v2: legacy AI-only (fallback при E03)

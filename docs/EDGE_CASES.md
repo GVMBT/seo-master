@@ -78,6 +78,7 @@
 | E46 | SimHash: content_hash collision (Hamming ≤ 3 с чужой статьёй) | Warning пользователю: "Статья похожа на ранее опубликованную. Рекомендуем переформулировать." Publish NOT blocked — только warning. Не сравнивать с другими user_id (только свои публикации) |
 | E47 | Markdown → HTML: mistune parse error | Fallback: использовать raw Markdown как plain text в `<pre>` блоке. Log "markdown_parse_failed". Редкий случай — mistune устойчив к невалидному Markdown |
 | E48 | Anti-hallucination: цена в тексте не совпадает с прайсом | Warning (не error): "Возможно выдуманная цена: {N} руб." Пользователь решает при превью. НЕ блокировать публикацию — может быть контекстная цена ("от 10 000 руб./мес" для услуги, не из прайса товаров) |
+| E53 | Perplexity Sonar Pro недоступен / ошибка research | Graceful degradation: pipeline продолжает БЕЗ research-данных (`current_research = ""`). Статья генерируется на знаниях модели + Serper + Firecrawl. Warning в лог: "research_skipped". НЕ уведомлять пользователя (не ошибка, а degradation). НЕ отключать расписание |
 
 ## Pipeline edge cases (UX_PIPELINE.md)
 

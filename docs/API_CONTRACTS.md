@@ -526,6 +526,7 @@ MODEL_CHAINS = {
     "article":              ["anthropic/claude-sonnet-4.5", "openai/gpt-5.2", "deepseek/deepseek-v3.2"],
     "article_outline":      ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # Stage 1: outline generation (budget)
     "article_critique":     ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # Stage 3: conditional critique (budget, only if score < 80)
+    "article_research":     ["perplexity/sonar-pro"],                              # Web research: current facts, trends, statistics
     "social_post":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "keywords":             ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # AI clustering (keywords_cluster.yaml v3), NOT data fetching
     "review":               ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
@@ -600,6 +601,7 @@ response = await openai_client.chat.completions.create(
 | Задача | sort | max_price (prompt/compl) | min_throughput |
 |--------|------|------------------------|----------------|
 | article (streaming) | `throughput` | 5/15 | 50 tok/s |
+| article_research | `latency` | 3/15 | — |
 | social_post | `price` | 0.03/0.02 | — |
 | keywords | `price` | 0.03/0.02 | — |
 | review | `price` | 0.03/0.02 | — |
@@ -656,6 +658,7 @@ response = await openai_client.chat.completions.create(
 | keywords | JSON Schema (strict) | Да (fallback) |
 | social_post | JSON Schema (strict) | Да |
 | article | JSON Schema (strict) | Да |
+| article_research | JSON Schema (strict) | Да (fallback) |
 | review | JSON Schema (strict) | Да |
 | description | Нет (plain text) | Нет |
 | image | Нет (modalities) | Нет |
@@ -1379,18 +1382,26 @@ def sanitize_variables(context: dict) -> dict:
 >
 > Изменения v5→v6 (сохранены): кластер фраз, динамическая длина, Firecrawl /scrape, competitor_gaps, anti-cannibalization, images_meta.
 
-#### Пайплайн генерации статьи (10 шагов, multi-step)
+#### Пайплайн генерации статьи (11 шагов, multi-step + research)
 
 ```
 Шаг 1.  Выбор кластера (не одной фразы) → rotation по кластерам (§6)
-Шаг 2.  Serper search(main_phrase) → топ-5 URL + People Also Ask + Related
+Шаг 2.  ПАРАЛЛЕЛЬНО:
+         2a. Serper search(main_phrase) → топ-5 URL + People Also Ask + Related
+         2b. RESEARCH: Perplexity Sonar Pro → актуальные факты, тренды, статистика (research_v1.yaml)
+             → JSON Schema: {facts[], trends[], statistics[], summary}
+             → Redis кеш: research:{md5(main_phrase)[:12]}, TTL 7 дней
+             → Graceful degradation: при ошибке Sonar — pipeline продолжает БЕЗ research (E53)
 Шаг 3.  Firecrawl /scrape → топ-3 URL → markdown (структура, длина, темы)
 Шаг 4.  AI анализирует конкурентов → определяет gaps + динамическую длину:
          target_words = median(competitor_word_counts) × 1.1, cap [1500, 5000]
 Шаг 5.  OUTLINE: DeepSeek генерирует план статьи (article_outline_v1.yaml)
          → H1, H2×3-6, H3 при необходимости, FAQ вопросы, ключевые тезисы
+         → Получает current_research для планирования разделов с учётом актуальных данных
 Шаг 6.  EXPAND: Claude расширяет outline в полную статью (article_v7.yaml)
          → Markdown-формат, images_meta, faq_schema
+         → Получает current_research: "Приоритизируй при противоречиях с собственными знаниями,
+           дополняй своей экспертизой где research не покрывает"
 Шаг 6a. BLOCK SPLIT: разбить текст на логические блоки (по H2/H3)
          → distribute_images(blocks, images_count) → block_indices
          → для каждого block_index: извлечь block_context (первые 200 слов секции)
@@ -1399,19 +1410,21 @@ def sanitize_variables(context: dict) -> dict:
          → score >= 80: pass | score 60-79: warn | score < 40: block
 Шаг 8.  CONDITIONAL CRITIQUE: если score < 80:
          → DeepSeek анализирует слабые места → Claude переписывает (1 попытка)
+         → Получает current_research для верификации фактов в статье (бесплатная проверка)
          → ~30% статей, +$0.02 avg cost
 Шаг 9.  Markdown → HTML: mistune + SEORenderer (§5.1)
          → auto heading IDs, ToC, figure/figcaption, lazy loading, branding CSS
 Шаг 10. Telegraph-превью → публикация (изображения вставляются в соответствующие блоки текста)
 ```
 
-**Стоимость multi-step:**
+**Стоимость multi-step + research:**
 | Шаг | Модель | Стоимость | Примечание |
 |-----|--------|-----------|------------|
+| Research (шаг 2b) | Perplexity Sonar Pro | ~$0.01 | Всегда (кеш 7д, amortized ~$0.005) |
 | Outline (шаг 5) | DeepSeek V3.2 | ~$0.01 | Всегда |
 | Expand (шаг 6) | Claude 4.5 Sonnet | ~$0.12 | Всегда |
 | Critique (шаг 8) | DeepSeek V3.2 | ~$0.02 | Только ~30% статей (score < 80) |
-| **Avg total AI** | | **~$0.14** | vs $0.12 one-shot = +17% за значительный прирост качества |
+| **Avg total AI** | | **~$0.15** | +$0.01 vs без research, значительный прирост актуальности |
 
 #### 5.1 Markdown → HTML Pipeline (SEORenderer)
 
@@ -1470,14 +1483,15 @@ system: |
   Ты — контент-редактор в штате компании <<company_name>>. Пиши на <<language>>.
 
   <SEO_CONSTITUTION>
-  1. Каждый абзац содержит конкретику компании (цены, кейсы, преимущества) — НЕ обобщения.
-  2. H1 содержит главную фразу кластера. H2 содержат дополнительные фразы.
-  3. Keyword density: 1.5-2.5% для главной фразы (не больше).
+  1. Используй ТОЛЬКО факты из VERIFIED_DATA, COMPANY_DATA и CURRENT_RESEARCH. НЕ выдумывай кейсы, цифры, ROI, клиентов, статистику.
+  2. Title (поле title) содержит главную фразу кластера. content_markdown начинается с ## H2 (НЕ # H1 — title уже является заголовком страницы).
+  3. Главная фраза: 2-3 точных вхождения + синонимы/парафразы в остальных местах. Дословное повторение >3 раз — keyword stuffing.
   4. Структура: вступление → основные разделы (H2) → FAQ → заключение с CTA.
   5. Каждый H2 решает конкретную проблему читателя.
-  6. Внутренние ссылки вставляются в контексте (не списком).
-  7. FAQ отвечает на реальные вопросы из поисковых систем.
-  8. Заключение содержит конкретный призыв к действию с упоминанием компании.
+  6. Название компании — максимум 3 раза в тексте: вступление, один экспертный раздел, заключение.
+  7. Внутренние ссылки вставляются в контексте (не списком).
+  8. FAQ отвечает на реальные вопросы из поисковых систем.
+  9. Заключение содержит конкретный призыв к действию с упоминанием компании.
   </SEO_CONSTITUTION>
 
   <COMPANY_DATA>
@@ -1507,12 +1521,13 @@ system: |
 
   <SELF_REVIEW>
   Перед отдачей ответа проверь:
-  - [ ] Главная фраза в H1, первом абзаце и заключении
+  - [ ] Главная фраза в title, первом абзаце и заключении (в тексте — синонимы и парафразы)
+  - [ ] content_markdown НЕ содержит # H1 — начинается с ## H2
   - [ ] Нет слов из ЗАПРЕЩЁННЫХ
-  - [ ] Каждый абзац содержит конкретику компании (не обобщения)
+  - [ ] Все факты, кейсы, цифры — ТОЛЬКО из VERIFIED_DATA, COMPANY_DATA и CURRENT_RESEARCH
   - [ ] FAQ основан на реальных вопросах, а не выдуманных
-  - [ ] Все цены и факты взяты из предоставленных данных, а не выдуманы
-  - [ ] Ровно один H1
+  - [ ] Название компании — максимум 3 раза в тексте
+  - [ ] Title НЕ содержит название компании
   </SELF_REVIEW>
 
 user: |
@@ -1522,13 +1537,27 @@ user: |
   Дополнительные фразы кластера: <<secondary_phrases>>
   Суммарный потенциал кластера: <<cluster_volume>> запросов/мес
 
+  <% if outline %>
+  <OUTLINE>
+  <<outline>>
+  </OUTLINE>
+  <% endif %>
+
+  <% if competitor_analysis %>
   <COMPETITOR_ANALYSIS>
   <<competitor_analysis>>
   </COMPETITOR_ANALYSIS>
+  <% endif %>
 
+  <% if competitor_gaps %>
   <COMPETITOR_GAPS>
   <<competitor_gaps>>
   </COMPETITOR_GAPS>
+  <% endif %>
+
+  <% if current_research %>
+  <<current_research>>
+  <% endif %>
 
   <VERIFIED_DATA>
   Цены компании (используй ТОЛЬКО эти, не выдумывай): <<prices_excerpt>>
@@ -1539,8 +1568,8 @@ user: |
   Требования:
   - Объём: <<words_min>>-<<words_max>> слов
   - Формат: **Markdown** (НЕ HTML). Заголовки через #, ##, ###. Изображения: ![alt]({{IMAGE_N}} "figcaption")
-  - Структура: # H1 (содержит "<<main_phrase>>"), ## H2 (3-6, включают дополнительные фразы кластера), ### H3 (по необходимости), ## FAQ (3-5 вопросов)
-  - Главная фраза "<<main_phrase>>" — в H1, первом абзаце, 2-3 H2, заключении
+  - Структура: ## H2 (3-6, включают дополнительные фразы кластера), ### H3 (по необходимости), ## FAQ (3-5 вопросов). content_markdown НЕ содержит # H1 — заголовок в поле title.
+  - Главная фраза "<<main_phrase>>" — в title, первом абзаце, 1-2 H2, заключении. В остальных местах используй синонимы и парафразы
   - Дополнительные фразы кластера — распредели по H2 и тексту естественно
   - LSI-фразы: <<lsi_keywords>>
   - FAQ на основе реальных вопросов: <<serper_questions>>
@@ -1712,14 +1741,11 @@ def calculate_target_length(
 "Статья похожа на ранее опубликованную. Рекомендуем переформулировать."
 Хранение: `publication_logs.content_hash BIGINT` (simhash).
 
-**P2 (Phase 11+):** AI Web Search fact-checking на этапе Critique.
-Модели OpenRouter с plugin `web_search` (или Perplexity) могут проверять факты из статьи в реальном времени.
-Применение: только на шаге Critique (~30% статей, score < 80) — критик получает доступ к интернету
-для верификации цен, дат, законов, статистики. Особенно ценно для YMYL-ниш (медицина, юриспруденция, финансы).
-Стоимость: ~$0.01-0.05 за запрос с web search. Не заменяет Serper+Firecrawl pipeline
-(PAA, конкуренты, гэпы по-прежнему собираются заранее), а дополняет его на этапе проверки качества.
-Реализация: `article_critique` chain → модель с web search plugin, промпт включает инструкцию
-"Проверь ключевые факты, цены и даты из статьи через поиск. Укажи найденные расхождения."
+**Решено (Phase 10.1):** Web Research step — выделенный шаг исследования через Perplexity Sonar Pro.
+Вместо встраивания web search в Critique — выделенный Research step (шаг 2b), результат которого
+передаётся во ВСЕ три AI-шага (Outline, Expand, Critique) как `<<current_research>>`.
+Это даёт актуальные факты 2025-2026 уже на этапе планирования, а не только при проверке.
+Подробности: research_v1.yaml (§3.10), JSON Schema, Redis кеш 7 дней, graceful degradation (E53).
 
 #### Image SEO
 
@@ -1755,17 +1781,19 @@ Google Images = 20-30% трафика для коммерческих ниш. Б
 | Обогащение volume/difficulty (разовое) | DataForSEO enrich | ~$0.02/200 фраз | Создание категории |
 | Кластеризация (разовая) | DeepSeek v3.2 | ~$0.001 | Создание категории |
 | Serper search | Serper | ~$0.001 | На статью |
+| **Web Research** | **Perplexity Sonar Pro** | **~$0.01** | **На статью (кеш 7д)** |
 | Скрейпинг конкурентов (3 URL) | Firecrawl /scrape | $0.003 | На статью |
 | Outline (шаг 5) | DeepSeek V3.2 | ~$0.01 | На статью |
 | Expand (шаг 6) | Claude 4.5 Sonnet | ~$0.12 | На статью |
 | Conditional critique (шаг 8, ~30%) | DeepSeek V3.2 | ~$0.02 × 30% = $0.006 avg | На статью |
 | Генерация 4 изображений | OpenRouter (Gemini) | ~$0.12-0.20 | На статью |
 | WebP-конвертация + загрузка | CPU + Supabase Storage | ~$0 | На статью |
-| **Итого за статью** | | **~$0.26-0.34** (avg ~$0.30) | |
+| **Итого за статью** | | **~$0.27-0.35** (avg ~$0.31) | |
 
 При цене 320 токенов = 320 руб (~$3.50) → маржинальность **~91%**.
 Ключевые фразы амортизируются по всем статьям категории (разовая операция).
-Multi-step добавляет ~$0.02 к стоимости (+7%), но значительно повышает качество.
+Multi-step + research добавляет ~$0.03 к стоимости one-shot, но значительно повышает качество и актуальность.
+Research кешируется 7 дней — при частой публикации одного кластера amortized cost ~$0.005.
 
 #### Параллельный пайплайн (оптимизация latency)
 
@@ -1773,10 +1801,20 @@ Multi-step добавляет ~$0.02 к стоимости (+7%), но знач�
 
 ```python
 async def generate_article_pipeline(cluster, category, project, connections):
-    """Full article generation pipeline with parallel stages."""
+    """Full article generation pipeline with parallel stages + research."""
 
-    # Stage 1: Serper (нужен для Firecrawl URLs)
-    serper_result = await serper.search(cluster.main_phrase)       # ~2с
+    # Stage 1: Serper + Research ПАРАЛЛЕЛЬНО
+    serper_task = serper.search(cluster.main_phrase)               # ~2с
+    research_task = _fetch_research(cluster.main_phrase,           # ~5-15с
+                                    category.specialization, redis)
+    serper_result, research_data = await asyncio.gather(
+        serper_task, research_task, return_exceptions=True,
+    )
+    # Graceful degradation: research failure → empty context (E53)
+    if isinstance(research_data, Exception):
+        log.warning("research_failed", error=str(research_data))
+        research_data = None
+    current_research = format_research_for_prompt(research_data)   # -> str or ""
 
     # Stage 2: Firecrawl scrape (параллельно 3 URL) + keyword data (уже в БД)
     top3_urls = [r["link"] for r in serper_result.organic[:3]]
@@ -1797,8 +1835,11 @@ async def generate_article_pipeline(cluster, category, project, connections):
     competitor_gaps = detect_gaps(valid_pages)                # -> str (для <<competitor_gaps>> в промпте)
 
     # Stage 4: Текст и изображения ПАРАЛЛЕЛЬНО
+    # current_research передаётся в Outline, Expand и Critique
     text_task = asyncio.create_task(
-        orchestrator.generate(build_article_request(cluster, competitor_analysis, ...))
+        orchestrator.generate(build_article_request(
+            cluster, competitor_analysis, current_research=current_research, ...
+        ))
     )
     images_task = asyncio.create_task(
         orchestrator.generate_images(cluster.main_phrase, category.image_settings)
@@ -1811,14 +1852,14 @@ async def generate_article_pipeline(cluster, category, project, connections):
     # ...
 ```
 
-**Ключевой инсайт:** Генерация изображений НЕ зависит от текста статьи — только от keyword + branding.
-Поэтому текст и картинки генерируются параллельно.
+**Ключевой инсайт:** Research и Serper запускаются параллельно на Stage 1. Research (~5-15с) завершается
+к началу Firecrawl scraping, не добавляя латентности к pipeline (Firecrawl+Analysis занимают ~6с).
 
 **Timeline:**
 ```
-Sequential:  Serper(2с) → Firecrawl(15с) → Analysis(1с) → Text(45с) → Images(30с) → Upload(3с) = 96с
-Parallel:    Serper(2с) → Firecrawl(5с) → Analysis(1с) → [Text(45с) || Images(30с)] → Upload(3с) = 56с
-                                                           ↑ параллельно ↑
+Sequential:  Serper(2с) → Research(10с) → Firecrawl(15с) → Analysis(1с) → Text(45с) → Images(30с) → Upload(3с) = 106с
+Parallel:    [Serper(2с) || Research(10с)] → Firecrawl(5с) → Analysis(1с) → [Text(45с) || Images(30с)] → Upload(3с) = 56с
+              ↑ параллельно ↑                                                ↑ параллельно ↑
 ```
 
 С progress indicator (F34 streaming): пользователь видит "Анализирую конкурентов... Пишу статью... Генерирую изображения..." — нормальный UX.
@@ -2528,6 +2569,217 @@ def post_process_image(img: Image.Image) -> Image.Image:
 |---------|--------|--------------------:|-----:|-------------------:|
 | 1 изображение (соцсеть) | Nano Banana | ~500 output | ~$0.015 | 30 |
 | 4 изображения (статья) | Nano Banana Pro | ~2000 output | ~$0.24 | 120 |
+
+---
+
+## 7a. Web Research Pipeline (Perplexity Sonar Pro)
+
+Выделенный шаг исследования через Perplexity Sonar Pro для актуализации данных в статьях.
+Sonar Pro — модель с встроенным веб-поиском, возвращает факты с источниками (citations).
+
+### 7a.1 Модель и маршрутизация
+
+```python
+MODEL_CHAINS["article_research"] = ["perplexity/sonar-pro"]
+# Без fallback — Sonar Pro единственная модель с нативным web search.
+# При недоступности — graceful degradation (E53): pipeline продолжает без research.
+
+# Sonar Pro параметры:
+# - Встроенный web search (НЕ plugin, НЕ :online suffix)
+# - Поддерживает JSON Schema structured outputs
+# - $3/M input, $15/M output, $5/1K search queries
+# - context: 200K tokens
+# - search_context_size: "high" для максимальной глубины
+```
+
+### 7a.2 JSON Schema для research response
+
+```python
+RESEARCH_SCHEMA: dict[str, Any] = {
+    "name": "research_response",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "facts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "claim": {"type": "string"},
+                        "source": {"type": "string"},
+                        "year": {"type": "string"},
+                    },
+                    "required": ["claim", "source", "year"],
+                    "additionalProperties": False,
+                },
+            },
+            "trends": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "trend": {"type": "string"},
+                        "relevance": {"type": "string"},
+                    },
+                    "required": ["trend", "relevance"],
+                    "additionalProperties": False,
+                },
+            },
+            "statistics": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "metric": {"type": "string"},
+                        "value": {"type": "string"},
+                        "source": {"type": "string"},
+                    },
+                    "required": ["metric", "value", "source"],
+                    "additionalProperties": False,
+                },
+            },
+            "summary": {"type": "string"},
+        },
+        "required": ["facts", "trends", "statistics", "summary"],
+        "additionalProperties": False,
+    },
+}
+```
+
+### 7a.3 Промпт (research_v1.yaml)
+
+```yaml
+meta:
+  task_type: article_research
+  version: v1
+  model_tier: research
+  max_tokens: 4000
+  temperature: 0.3
+
+system: |
+  You are a research assistant specializing in finding CURRENT, VERIFIED data.
+  Focus on data from 2025-2026. For each fact, provide the source.
+  If conflicting data found, note the contradiction.
+  NEVER fabricate data. If unsure, say "data not found".
+  Language: <<language>>.
+
+user: |
+  Research the following topic for a professional article:
+
+  Topic: "<<main_phrase>>"
+  Industry: <<specialization>>
+  Geography: <<geography>>
+  Company context: <<company_name>> (<<company_description_short>>)
+
+  Find:
+  1. Current statistics and market data (2025-2026)
+  2. Recent trends and developments
+  3. Key facts relevant to the topic
+  4. Regulatory changes (if applicable)
+
+  Return JSON with facts, trends, statistics, and a brief summary.
+
+variables:
+  - name: main_phrase
+    required: true
+  - name: specialization
+    required: true
+  - name: geography
+    required: false
+    default: "Россия"
+  - name: company_name
+    required: true
+  - name: company_description_short
+    required: false
+    default: ""
+  - name: language
+    required: true
+    default: "ru"
+```
+
+### 7a.4 Кеширование
+
+Research-данные кешируются в Redis с TTL 7 дней (по умолчанию):
+
+```python
+# Ключ: research:{md5(main_phrase)[:12]}
+# TTL: 7 дней (604800 сек), настраиваемый в будущем через category.text_settings
+cache_key = f"research:{hashlib.md5(main_phrase.encode()).hexdigest()[:12]}"
+
+# Check cache
+cached = await redis.get(cache_key)
+if cached:
+    return ResearchData.model_validate_json(cached)
+
+# Fetch from Sonar Pro
+result = await orchestrator.generate(research_request)
+research = ResearchData.model_validate_json(result.text)
+
+# Cache result
+await redis.set(cache_key, research.model_dump_json(), ex=604800)
+```
+
+### 7a.5 Форматирование для промптов
+
+Research-данные форматируются по-разному для каждого AI-шага:
+
+```python
+def format_research_for_prompt(research: ResearchData | None, step: str) -> str:
+    """Format research data for insertion into AI prompts."""
+    if not research:
+        return ""
+
+    parts = []
+    if research.facts:
+        facts_text = "\n".join(
+            f"- {f.claim} (источник: {f.source}, {f.year})" for f in research.facts
+        )
+        parts.append(f"Актуальные факты:\n{facts_text}")
+
+    if research.trends:
+        trends_text = "\n".join(f"- {t.trend}" for t in research.trends)
+        parts.append(f"Тренды:\n{trends_text}")
+
+    if research.statistics:
+        stats_text = "\n".join(
+            f"- {s.metric}: {s.value} ({s.source})" for s in research.statistics
+        )
+        parts.append(f"Статистика:\n{stats_text}")
+
+    if research.summary:
+        parts.append(f"Резюме: {research.summary}")
+
+    context = "\n\n".join(parts)
+
+    # Different instructions per step
+    if step == "outline":
+        return f"<CURRENT_RESEARCH>\n{context}\n\nИспользуй эти данные для планирования разделов статьи.\n</CURRENT_RESEARCH>"
+    elif step == "expand":
+        return f"<CURRENT_RESEARCH>\n{context}\n\nПриоритизируй эти данные при противоречиях с собственными знаниями. Дополняй своей экспертизой где research не покрывает.\n</CURRENT_RESEARCH>"
+    elif step == "critique":
+        return f"<CURRENT_RESEARCH>\n{context}\n\nИспользуй для верификации фактов в статье. Отмечай расхождения.\n</CURRENT_RESEARCH>"
+    return ""
+```
+
+### 7a.6 Graceful Degradation (E53)
+
+При недоступности Sonar Pro — pipeline продолжает без research-данных:
+- `current_research = ""` → Jinja2 conditional block не рендерится
+- Логирование: `research_skipped`, причина в metadata
+- Статья генерируется на основе знаний модели + Serper + Firecrawl (как было до Research step)
+- **НЕ является ошибкой** — предупреждение в логах, не уведомление пользователю
+
+### 7a.7 Себестоимость Research step
+
+| Параметр | Значение |
+|----------|----------|
+| Input tokens (prompt + search) | ~1000 |
+| Output tokens (JSON response) | ~500-1500 |
+| Search queries | ~1-3 |
+| Стоимость за запрос | ~$0.005-0.015 (avg $0.01) |
+| Redis cache hit rate | ~30-50% (для повторяющихся кластеров) |
+| Amortized cost per article | ~$0.005-0.01 |
 
 ---
 
