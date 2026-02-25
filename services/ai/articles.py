@@ -213,18 +213,31 @@ def format_research_for_prompt(research: dict[str, Any] | None, step: str) -> st
     parts: list[str] = []
     facts = research.get("facts") or []
     if facts:
-        facts_text = "\n".join(f"- {f['claim']} (источник: {f['source']}, {f['year']})" for f in facts)
-        parts.append(f"Актуальные факты:\n{facts_text}")
+        facts_text = "\n".join(
+            f"- {f.get('claim', '')} (источник: {f.get('source', '?')}, {f.get('year', '?')})"
+            for f in facts
+            if isinstance(f, dict) and f.get("claim")
+        )
+        if facts_text:
+            parts.append(f"Актуальные факты:\n{facts_text}")
 
     trends = research.get("trends") or []
     if trends:
-        trends_text = "\n".join(f"- {t['trend']}" for t in trends)
-        parts.append(f"Тренды:\n{trends_text}")
+        trends_text = "\n".join(
+            f"- {t.get('trend', '')}" for t in trends if isinstance(t, dict) and t.get("trend")
+        )
+        if trends_text:
+            parts.append(f"Тренды:\n{trends_text}")
 
     statistics = research.get("statistics") or []
     if statistics:
-        stats_text = "\n".join(f"- {s['metric']}: {s['value']} ({s['source']})" for s in statistics)
-        parts.append(f"Статистика:\n{stats_text}")
+        stats_text = "\n".join(
+            f"- {s.get('metric', '')}: {s.get('value', '?')} ({s.get('source', '?')})"
+            for s in statistics
+            if isinstance(s, dict) and s.get("metric")
+        )
+        if stats_text:
+            parts.append(f"Статистика:\n{stats_text}")
 
     summary = research.get("summary", "")
     if summary:

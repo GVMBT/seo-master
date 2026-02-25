@@ -1814,7 +1814,7 @@ async def generate_article_pipeline(cluster, category, project, connections):
     if isinstance(research_data, Exception):
         log.warning("research_failed", error=str(research_data))
         research_data = None
-    current_research = format_research_for_prompt(research_data)   # -> str or ""
+    current_research = format_research_for_prompt(research_data, step="expand")  # -> str or ""
 
     # Stage 2: Firecrawl scrape (параллельно 3 URL) + keyword data (уже в БД)
     top3_urls = [r["link"] for r in serper_result.organic[:3]]
@@ -1856,9 +1856,10 @@ async def generate_article_pipeline(cluster, category, project, connections):
 к началу Firecrawl scraping, не добавляя латентности к pipeline (Firecrawl+Analysis занимают ~6с).
 
 **Timeline:**
-```
+
+```text
 Sequential:  Serper(2с) → Research(10с) → Firecrawl(15с) → Analysis(1с) → Text(45с) → Images(30с) → Upload(3с) = 106с
-Parallel:    [Serper(2с) || Research(10с)] → Firecrawl(5с) → Analysis(1с) → [Text(45с) || Images(30с)] → Upload(3с) = 56с
+Parallel:    [Serper(2с) || Research(10с)] → Firecrawl(5с) → Analysis(1с) → [Text(45с) || Images(30с)] → Upload(3с) = 64с
               ↑ параллельно ↑                                                ↑ параллельно ↑
 ```
 
@@ -2703,9 +2704,10 @@ variables:
 Research-данные кешируются в Redis с TTL 7 дней (по умолчанию):
 
 ```python
-# Ключ: research:{md5(main_phrase)[:12]}
+# Ключ: research:{md5(main_phrase:specialization)[:12]}
 # TTL: 7 дней (604800 сек), настраиваемый в будущем через category.text_settings
-cache_key = f"research:{hashlib.md5(main_phrase.encode()).hexdigest()[:12]}"
+cache_input = f"{main_phrase}:{specialization}".lower()
+cache_key = f"research:{hashlib.md5(cache_input.encode()).hexdigest()[:12]}"
 
 # Check cache
 cached = await redis.get(cache_key)

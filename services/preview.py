@@ -92,7 +92,8 @@ class PreviewService:
 
         Returns parsed research dict or None on failure (graceful degradation E53).
         """
-        keyword_hash = hashlib.md5(main_phrase.encode()).hexdigest()[:12]  # noqa: S324
+        cache_input = f"{main_phrase}:{specialization}".lower()
+        keyword_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]  # noqa: S324
         cache_key = CacheKeys.research(keyword_hash)
 
         # Check cache

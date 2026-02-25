@@ -16,7 +16,7 @@ class ArticleService:
 
 ## services/ai/
 - orchestrator.py — AIOrchestrator: generate(), generate_stream()
-- MODEL_CHAINS по задачам (docs/API_CONTRACTS.md §3.1, 7 task types):
+- MODEL_CHAINS по задачам (docs/API_CONTRACTS.md §3.1, 11 task types):
   article: claude-sonnet-4.5 → gpt-5.2 → deepseek-v3.2
   article_research: perplexity/sonar-pro (web research, JSON Schema, кеш 7д, graceful degradation E53)
   social_post: deepseek-v3.2 → claude-sonnet-4.5
