@@ -71,11 +71,11 @@ class ConnectionService:
 
         Returns (error_msg, groups). error_msg is None on success.
         """
-        # Step 1: validate token via users.get
+        # Step 1: validate token via users.get (POST to keep token out of URL logs)
         try:
-            resp = await self._http.get(
-                "https://api.vk.com/method/users.get",
-                params={"access_token": token, "v": "5.199"},
+            resp = await self._http.post(
+                "https://api.vk.ru/method/users.get",
+                data={"access_token": token, "v": "5.199"},
                 timeout=10.0,
             )
             data = resp.json()
@@ -84,11 +84,11 @@ class ConnectionService:
         except Exception:
             return "Ошибка проверки токена. Попробуйте позже.", []
 
-        # Step 2: get user's groups
+        # Step 2: get user's groups (POST to keep token out of URL logs)
         try:
-            resp = await self._http.get(
-                "https://api.vk.com/method/groups.get",
-                params={
+            resp = await self._http.post(
+                "https://api.vk.ru/method/groups.get",
+                data={
                     "access_token": token,
                     "v": "5.199",
                     "filter": "admin,editor",

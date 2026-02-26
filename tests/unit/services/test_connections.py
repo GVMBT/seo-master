@@ -125,8 +125,8 @@ class TestValidateVkToken:
             },
         )
         svc, _ = _make_service(http_responses=[users_resp, users_resp, groups_resp])
-        # Override get to return side_effect sequence
-        svc._http.get = AsyncMock(side_effect=[users_resp, groups_resp])
+        # Override post to return side_effect sequence (VK uses POST for all API calls)
+        svc._http.post = AsyncMock(side_effect=[users_resp, groups_resp])
 
         error, groups = await svc.validate_vk_token("valid_token")
         assert error is None
@@ -135,7 +135,7 @@ class TestValidateVkToken:
     async def test_invalid_token_returns_error(self) -> None:
         error_resp = httpx.Response(200, json={"error": {"error_code": 5}})
         svc, _ = _make_service(http_responses=[error_resp])
-        svc._http.get = AsyncMock(return_value=error_resp)
+        svc._http.post = AsyncMock(return_value=error_resp)
 
         error, groups = await svc.validate_vk_token("bad_token")
         assert error is not None
@@ -146,7 +146,7 @@ class TestValidateVkToken:
         users_resp = httpx.Response(200, json={"response": [{"id": 1}]})
         groups_resp = httpx.Response(200, json={"response": {"count": 0, "items": []}})
         svc, _ = _make_service()
-        svc._http.get = AsyncMock(side_effect=[users_resp, groups_resp])
+        svc._http.post = AsyncMock(side_effect=[users_resp, groups_resp])
 
         error, groups = await svc.validate_vk_token("token_no_groups")
         assert error is not None
@@ -154,7 +154,8 @@ class TestValidateVkToken:
         assert groups == []
 
     async def test_network_error_on_users_get(self) -> None:
-        svc, _ = _make_service(http_error=httpx.ConnectError("refused"))
+        svc, _ = _make_service()
+        svc._http.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
 
         error, groups = await svc.validate_vk_token("token")
         assert error is not None
@@ -163,7 +164,7 @@ class TestValidateVkToken:
     async def test_network_error_on_groups_get(self) -> None:
         users_resp = httpx.Response(200, json={"response": [{"id": 1}]})
         svc, _ = _make_service()
-        svc._http.get = AsyncMock(side_effect=[users_resp, httpx.ConnectError("refused")])
+        svc._http.post = AsyncMock(side_effect=[users_resp, httpx.ConnectError("refused")])
 
         error, groups = await svc.validate_vk_token("token")
         assert error is not None

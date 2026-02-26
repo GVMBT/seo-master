@@ -24,7 +24,7 @@ pytestmark = pytest.mark.integration
 # Test data
 # ---------------------------------------------------------------------------
 
-_VK_API = "https://api.vk.com/method"
+_VK_API = "https://api.vk.ru/method"
 _VK_TOKEN = "vk1.a.fake_access_token_for_testing"
 _GROUP_ID = "12345"
 

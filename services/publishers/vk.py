@@ -17,13 +17,13 @@ from .base import BasePublisher, PublishRequest, PublishResult
 
 log = structlog.get_logger()
 
-_VK_API = "https://api.vk.com/method"
+_VK_API = "https://api.vk.ru/method"
 _VK_VERSION = "5.199"
 _VK_TEXT_LIMIT = 16384
 
 
 class VKPublisher(BasePublisher):
-    """VK API v5.199. Direct token (vkhost.github.io), one group per connection."""
+    """VK API v5.199. Direct token, one group per connection."""
 
     def __init__(self, http_client: httpx.AsyncClient) -> None:
         self._client = http_client
