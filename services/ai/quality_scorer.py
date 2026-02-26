@@ -241,12 +241,13 @@ class ContentQualityScorer:
                 elif density < 0.5:
                     self._issues.append(f"keyword_density too low: {density:.1f}%")
 
-        # keyword_in_h1 (max 6 points)
-        h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", lower_html, re.DOTALL)
-        if h1_match and main_lower in h1_match.group(1).lower():
+        # keyword_in_first_h2 (max 6 points)
+        # Note: H1 = post title (set separately in WP). Content body starts with H2.
+        h2_match = re.search(r"<h2[^>]*>(.*?)</h2>", lower_html, re.DOTALL)
+        if h2_match and main_lower in h2_match.group(1).lower():
             points += 6
         else:
-            self._issues.append("main_phrase not in H1")
+            self._issues.append("main_phrase not in first H2")
 
         # keyword_in_first_paragraph (max 5 points)
         first_p = re.search(r"<p[^>]*>(.*?)</p>", lower_html, re.DOTALL)
@@ -348,12 +349,12 @@ class ContentQualityScorer:
     def _score_structure(self, html: str, lower_html: str) -> int:
         points = 0
 
-        # h1_count: exactly 1 (max 4 points)
+        # h1_absent: content body must NOT contain H1 (WordPress adds H1 from post title)
         h1_count = len(re.findall(r"<h1[^>]*>", html, re.IGNORECASE))
-        if h1_count == 1:
+        if h1_count == 0:
             points += 4
         else:
-            self._issues.append(f"h1_count: {h1_count} (expected 1)")
+            self._issues.append(f"h1_count: {h1_count} (expected 0, H1 = post title)")
 
         # h2_count: 3-6 (max 4 points)
         h2_count = len(re.findall(r"<h2[^>]*>", html, re.IGNORECASE))

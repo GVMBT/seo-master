@@ -33,8 +33,9 @@ class WordPressRule(PlatformRule):
             if len(content) < min_len:
                 errors.append(f"Текст слишком короткий ({len(content)} символов, мин. {min_len})")
 
-            if not re.search(r"<h1[^>]*>", content):
-                errors.append("Отсутствует H1-заголовок")
+            # WordPress adds H1 from post title. Content body starts with H2.
+            if not re.search(r"<h2[^>]*>", content):
+                errors.append("Отсутствует H2-заголовок (контент должен начинаться с H2)")
 
             if not re.search(r"<p[^>]*>.{50,}", content):
                 errors.append("Нет абзацев связного текста (мин. 50 символов)")
