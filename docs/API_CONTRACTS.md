@@ -906,8 +906,8 @@ class TelegramPublisher(BasePublisher):
 
 ```python
 class VKPublisher(BasePublisher):
-    """VK API v5.199. Прямой токен (vkhost.github.io), одна группа per connection."""
-    VK_API = "https://api.vk.com/method"
+    """VK API v5.199. Прямой токен, одна группа per connection."""
+    VK_API = "https://api.vk.ru/method"
     VK_VERSION = "5.199"
 
     async def publish(self, request: PublishRequest) -> PublishResult:
