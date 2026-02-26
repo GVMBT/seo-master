@@ -75,6 +75,15 @@ def _patch_repos(
             f"{_MODULE}._show_connection_step_msg",
             new_callable=AsyncMock,
         ),
+        # F6.3: readiness check functions are now called instead of stubs
+        "readiness_check": patch(
+            f"{_MODULE}.show_social_readiness_check",
+            new_callable=AsyncMock,
+        ),
+        "readiness_check_msg": patch(
+            f"{_MODULE}.show_social_readiness_check_msg",
+            new_callable=AsyncMock,
+        ),
     }
     return patches, projects_mock, cat_mock
 
@@ -284,11 +293,11 @@ class TestCategorySelection:
         mock_callback.data = f"pipeline:social:1:cat:{cat.id}"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "Test"})
         patches, _, _cat_mock = _patch_repos(category=cat)
-        with patches["projects"], patches["cats"]:
+        with patches["projects"], patches["cats"], patches["readiness_check"] as mock_readiness:
             await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis)
 
         mock_state.update_data.assert_any_await(category_id=cat.id, category_name=cat.name)
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.readiness_check)
+        mock_readiness.assert_awaited_once()
 
     async def test_category_wrong_project_shows_alert(
         self,
@@ -318,11 +327,11 @@ class TestCategorySelection:
         mock_message.text = "New Topic"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "Test"})
         patches, _, _ = _patch_repos(created_category=cat)
-        with patches["projects"], patches["cats"]:
+        with patches["projects"], patches["cats"], patches["readiness_check_msg"] as mock_readiness_msg:
             await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
 
         mock_state.update_data.assert_any_await(category_id=cat.id, category_name=cat.name)
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.readiness_check)
+        mock_readiness_msg.assert_awaited_once()
 
     async def test_inline_category_too_short(
         self,
