@@ -42,6 +42,10 @@ from routers.publishing.pipeline.social.connection import (
     _show_connection_step,
     _show_connection_step_msg,
 )
+from routers.publishing.pipeline.social.readiness import (
+    show_social_readiness_check,
+    show_social_readiness_check_msg,
+)
 
 log = structlog.get_logger()
 router = Router()
@@ -384,24 +388,11 @@ async def _show_category_step(
     if len(categories) == 1:
         cat = categories[0]
         await state.update_data(category_id=cat.id, category_name=cat.name)
-        # TODO F6.3: call show_social_readiness_check
-        await callback.message.edit_text(
-            f"Пост — Подготовка\n\nТема «{html.escape(cat.name)}» выбрана.\nШаг подготовки — скоро! (F6.3)",
-        )
-        await state.set_state(SocialPipelineFSM.readiness_check)
-        await save_checkpoint(
-            redis,
-            user.id,
-            current_step="readiness_check",
-            pipeline_type="social",
-            project_id=project_id,
-            project_name=project_name,
-            category_id=cat.id,
-        )
+        await show_social_readiness_check(callback, state, user, db, redis)
         return
 
     await callback.message.edit_text(
-        f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
+        f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
     await state.set_state(SocialPipelineFSM.select_category)
@@ -430,7 +421,7 @@ async def _show_category_step_msg(
 
     if not categories:
         await message.answer(
-            f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nО чём будет пост? Назовите тему.",
+            f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nО чём будет пост? Назовите тему.",
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         await state.set_state(SocialPipelineFSM.create_category_name)
@@ -447,23 +438,11 @@ async def _show_category_step_msg(
     if len(categories) == 1:
         cat = categories[0]
         await state.update_data(category_id=cat.id, category_name=cat.name)
-        await message.answer(
-            f"Пост — Подготовка\n\nТема «{html.escape(cat.name)}» выбрана.\nШаг подготовки — скоро! (F6.3)",
-        )
-        await state.set_state(SocialPipelineFSM.readiness_check)
-        await save_checkpoint(
-            redis,
-            user.id,
-            current_step="readiness_check",
-            pipeline_type="social",
-            project_id=project_id,
-            project_name=project_name,
-            category_id=cat.id,
-        )
+        await show_social_readiness_check_msg(message, state, user, db, redis)
         return
 
     await message.answer(
-        f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
+        f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
     await state.set_state(SocialPipelineFSM.select_category)
@@ -515,22 +494,8 @@ async def pipeline_select_category(
         return
 
     await state.update_data(category_id=category.id, category_name=category.name)
-    project_name = data.get("project_name", "")
 
-    # TODO F6.3: call show_social_readiness_check
-    await callback.message.edit_text(
-        f"Пост — Подготовка\n\nТема «{html.escape(category.name)}» выбрана.\nШаг подготовки — скоро! (F6.3)",
-    )
-    await state.set_state(SocialPipelineFSM.readiness_check)
-    await save_checkpoint(
-        redis,
-        user.id,
-        current_step="readiness_check",
-        pipeline_type="social",
-        project_id=project_id,
-        project_name=project_name,
-        category_id=category.id,
-    )
+    await show_social_readiness_check(callback, state, user, db, redis)
     await callback.answer()
 
 
@@ -603,21 +568,7 @@ async def pipeline_create_category_name(
     await state.update_data(category_id=category.id, category_name=category.name)
     await message.answer(f"Тема «{html.escape(category.name)}» создана.")
 
-    project_name = data.get("project_name", "")
-    # TODO F6.3: call show_social_readiness_check_msg
-    await message.answer(
-        f"Пост — Подготовка\n\nТема «{html.escape(category.name)}» выбрана.\nШаг подготовки — скоро! (F6.3)",
-    )
-    await state.set_state(SocialPipelineFSM.readiness_check)
-    await save_checkpoint(
-        redis,
-        user.id,
-        current_step="readiness_check",
-        pipeline_type="social",
-        project_id=project_id,
-        project_name=project_name,
-        category_id=category.id,
-    )
+    await show_social_readiness_check_msg(message, state, user, db, redis)
 
 
 # ---------------------------------------------------------------------------

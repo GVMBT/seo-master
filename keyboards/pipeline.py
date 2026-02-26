@@ -507,39 +507,39 @@ def pipeline_exit_confirm_kb() -> InlineKeyboardMarkup:
 # ---------------------------------------------------------------------------
 
 
-def pipeline_keywords_options_kb() -> InlineKeyboardMarkup:
+def pipeline_keywords_options_kb(prefix: str = "pipeline:readiness") -> InlineKeyboardMarkup:
     """Keyword generation options in readiness sub-flow."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="Подобрать автоматически (100 фраз — 100 ток.)",
-                    callback_data="pipeline:readiness:keywords:auto",
+                    callback_data=f"{prefix}:keywords:auto",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Настроить параметры",
-                    callback_data="pipeline:readiness:keywords:configure",
+                    callback_data=f"{prefix}:keywords:configure",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Загрузить свои",
-                    callback_data="pipeline:readiness:keywords:upload",
+                    callback_data=f"{prefix}:keywords:upload",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Назад к чеклисту",
-                    callback_data="pipeline:readiness:back",
+                    callback_data=f"{prefix}:back",
                 ),
             ],
         ]
     )
 
 
-def pipeline_keywords_city_kb() -> InlineKeyboardMarkup:
+def pipeline_keywords_city_kb(prefix: str = "pipeline:readiness") -> InlineKeyboardMarkup:
     """Quick city selection for auto-keywords when project has no company_city.
 
     UX_PIPELINE.md §4a: "В каком городе ваш бизнес?"
@@ -549,64 +549,68 @@ def pipeline_keywords_city_kb() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="Москва",
-                    callback_data="pipeline:readiness:keywords:city:Москва",
+                    callback_data=f"{prefix}:keywords:city:Москва",
                 ),
                 InlineKeyboardButton(
                     text="Санкт-Петербург",
-                    callback_data="pipeline:readiness:keywords:city:СПб",
+                    callback_data=f"{prefix}:keywords:city:СПб",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Вся Россия",
-                    callback_data="pipeline:readiness:keywords:city:Россия",
+                    callback_data=f"{prefix}:keywords:city:Россия",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Назад к чеклисту",
-                    callback_data="pipeline:readiness:keywords:cancel",
+                    callback_data=f"{prefix}:keywords:cancel",
                 ),
             ],
         ]
     )
 
 
-def pipeline_keywords_qty_kb() -> InlineKeyboardMarkup:
+def pipeline_keywords_qty_kb(prefix: str = "pipeline:readiness") -> InlineKeyboardMarkup:
     """Keyword quantity selection for pipeline readiness sub-flow."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="50 фраз (50 ток.)",
-                    callback_data="pipeline:readiness:keywords:qty_50",
+                    callback_data=f"{prefix}:keywords:qty_50",
                 ),
                 InlineKeyboardButton(
                     text="100 фраз (100 ток.)",
-                    callback_data="pipeline:readiness:keywords:qty_100",
+                    callback_data=f"{prefix}:keywords:qty_100",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="150 фраз (150 ток.)",
-                    callback_data="pipeline:readiness:keywords:qty_150",
+                    callback_data=f"{prefix}:keywords:qty_150",
                 ),
                 InlineKeyboardButton(
                     text="200 фраз (200 ток.)",
-                    callback_data="pipeline:readiness:keywords:qty_200",
+                    callback_data=f"{prefix}:keywords:qty_200",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Назад к чеклисту",
-                    callback_data="pipeline:readiness:back",
+                    callback_data=f"{prefix}:back",
                 ),
             ],
         ]
     )
 
 
-def pipeline_keywords_confirm_kb(cost: int, balance: int) -> InlineKeyboardMarkup:
+def pipeline_keywords_confirm_kb(
+    cost: int,
+    balance: int,
+    prefix: str = "pipeline:readiness",
+) -> InlineKeyboardMarkup:
     """Confirm keyword generation cost in pipeline readiness sub-flow."""
     rows: list[list[InlineKeyboardButton]] = []
     if balance >= cost:
@@ -614,7 +618,7 @@ def pipeline_keywords_confirm_kb(cost: int, balance: int) -> InlineKeyboardMarku
             [
                 InlineKeyboardButton(
                     text=f"Подобрать ({cost} ток.)",
-                    callback_data="pipeline:readiness:keywords:confirm",
+                    callback_data=f"{prefix}:keywords:confirm",
                     style=ButtonStyle.SUCCESS,
                 ),
             ]
@@ -633,7 +637,7 @@ def pipeline_keywords_confirm_kb(cost: int, balance: int) -> InlineKeyboardMarku
         [
             InlineKeyboardButton(
                 text="Назад к чеклисту",
-                callback_data="pipeline:readiness:keywords:cancel",
+                callback_data=f"{prefix}:keywords:cancel",
             ),
         ]
     )
@@ -645,26 +649,26 @@ def pipeline_keywords_confirm_kb(cost: int, balance: int) -> InlineKeyboardMarku
 # ---------------------------------------------------------------------------
 
 
-def pipeline_description_options_kb() -> InlineKeyboardMarkup:
+def pipeline_description_options_kb(prefix: str = "pipeline:readiness") -> InlineKeyboardMarkup:
     """Description options in readiness sub-flow."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=f"Сгенерировать AI ({COST_DESCRIPTION} токенов)",
-                    callback_data="pipeline:readiness:description:ai",
+                    callback_data=f"{prefix}:description:ai",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Написать вручную",
-                    callback_data="pipeline:readiness:description:manual",
+                    callback_data=f"{prefix}:description:manual",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Назад к чеклисту",
-                    callback_data="pipeline:readiness:back",
+                    callback_data=f"{prefix}:back",
                 ),
             ],
         ]
@@ -739,14 +743,14 @@ def pipeline_images_options_kb(current_count: int = 4) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def pipeline_back_to_checklist_kb() -> InlineKeyboardMarkup:
+def pipeline_back_to_checklist_kb(prefix: str = "pipeline:readiness") -> InlineKeyboardMarkup:
     """Single 'Back to checklist' button for text-input sub-flows (M5)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="Назад к чеклисту",
-                    callback_data="pipeline:readiness:back",
+                    callback_data=f"{prefix}:back",
                 ),
             ],
         ]
@@ -937,3 +941,170 @@ def social_exit_confirm_kb() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# Social Pipeline: Confirm / Insufficient / Review / Result (F6.3, steps 5-7)
+# ---------------------------------------------------------------------------
+
+
+def social_confirm_kb() -> InlineKeyboardMarkup:
+    """Confirmation keyboard for social pipeline step 5."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Создать пост",
+                    callback_data="pipeline:social:confirm",
+                    style=ButtonStyle.SUCCESS,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Вернуться к чеклисту",
+                    callback_data="pipeline:social:back_readiness",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Отмена",
+                    callback_data="pipeline:social:cancel",
+                ),
+            ],
+        ]
+    )
+
+
+def social_insufficient_balance_kb() -> InlineKeyboardMarkup:
+    """Insufficient balance for social post — offer to top up (E01)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Пополнить баланс",
+                    callback_data="nav:tokens",
+                    style=ButtonStyle.PRIMARY,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Отмена",
+                    callback_data="pipeline:social:cancel",
+                ),
+            ],
+        ]
+    )
+
+
+def social_review_kb(regen_count: int = 0, regen_cost: int = 40) -> InlineKeyboardMarkup:
+    """Review keyboard for social post after generation (step 6).
+
+    Args:
+        regen_count: How many times regenerated so far (0-based).
+        regen_cost: Token cost for paid regeneration.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Опубликовать",
+                callback_data="pipeline:social:publish",
+                style=ButtonStyle.SUCCESS,
+            ),
+        ]
+    )
+
+    # Regen button: free for first 2, then costs tokens
+    if regen_count < 2:
+        remaining = 2 - regen_count
+        regen_text = f"Перегенерировать (осталось {remaining})"
+    else:
+        regen_text = f"Перегенерировать ({regen_cost} ток.)"
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=regen_text,
+                callback_data="pipeline:social:regen",
+            ),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Отмена — вернуть токены",
+                callback_data="pipeline:social:cancel_refund",
+                style=ButtonStyle.DANGER,
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def social_result_kb(
+    post_url: str | None,
+    crosspost_connections: list[dict[str, Any]] | None = None,
+) -> InlineKeyboardMarkup:
+    """Result keyboard after successful social post publication.
+
+    Args:
+        post_url: Direct link to the published post (None if unavailable).
+        crosspost_connections: List of dicts with 'id' and 'platform' keys
+            for cross-posting options.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if post_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Открыть пост",
+                    url=post_url,
+                ),
+            ]
+        )
+
+    # Cross-post buttons
+    if crosspost_connections:
+        platform_labels = {
+            "telegram": "Телеграм",
+            "vk": "ВКонтакте",
+            "pinterest": "Пинтерест",
+        }
+        for conn in crosspost_connections:
+            label = platform_labels.get(conn["platform"], conn["platform"])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"Адаптировать для {label} (~10 ток.)",
+                        callback_data=f"pipeline:crosspost:{conn['id']}",
+                    ),
+                ]
+            )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Ещё пост",
+                callback_data="pipeline:social:more",
+                style=ButtonStyle.PRIMARY,
+            ),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Настроить автопубликацию",
+                callback_data="nav:scheduler",
+            ),
+            InlineKeyboardButton(
+                text="Главное меню",
+                callback_data="nav:dashboard",
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
