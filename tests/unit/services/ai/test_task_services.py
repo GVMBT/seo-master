@@ -1352,3 +1352,74 @@ class TestImageExtractImage:
 
         result = ImageService._extract_image({})
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# calculate_target_length
+# ---------------------------------------------------------------------------
+
+
+class TestCalculateTargetLength:
+    """Tests for services.ai.articles.calculate_target_length."""
+
+    def test_user_settings_override_competitors(self) -> None:
+        """User-defined words_min/words_max take priority over competitor data."""
+        from services.ai.articles import calculate_target_length
+
+        result = calculate_target_length(
+            competitor_word_counts=[3000, 4000, 5000],
+            text_settings={"words_min": 800, "words_max": 1000},
+        )
+        assert result == (800, 1000)
+
+    def test_user_max_only_overrides_competitors(self) -> None:
+        """Only words_max set — should use default min but user max."""
+        from services.ai.articles import calculate_target_length
+
+        result = calculate_target_length(
+            competitor_word_counts=[3000, 4000],
+            text_settings={"words_max": 1200},
+        )
+        assert result == (1500, 1200)
+
+    def test_user_min_only_overrides_competitors(self) -> None:
+        """Only words_min set — should use user min and default max."""
+        from services.ai.articles import calculate_target_length
+
+        result = calculate_target_length(
+            competitor_word_counts=[3000, 4000],
+            text_settings={"words_min": 500},
+        )
+        assert result == (500, 5000)
+
+    def test_no_user_settings_uses_competitors(self) -> None:
+        """Without user settings, competitor-based calculation is used."""
+        from services.ai.articles import calculate_target_length
+
+        result = calculate_target_length(
+            competitor_word_counts=[2000, 3000],
+            text_settings={},
+        )
+        # median = 2500, target_min = max(1500, 2750) = 2750
+        assert result[0] >= 1500
+        assert result[1] <= 5000
+
+    def test_no_competitors_no_settings_uses_defaults(self) -> None:
+        """No competitors, no user settings — returns defaults 1500/2500."""
+        from services.ai.articles import calculate_target_length
+
+        result = calculate_target_length(
+            competitor_word_counts=[],
+            text_settings={},
+        )
+        assert result == (1500, 2500)
+
+    def test_no_competitors_with_settings_returns_settings(self) -> None:
+        """No competitors but user settings — returns user settings."""
+        from services.ai.articles import calculate_target_length
+
+        result = calculate_target_length(
+            competitor_word_counts=[],
+            text_settings={"words_min": 600, "words_max": 1000},
+        )
+        assert result == (600, 1000)

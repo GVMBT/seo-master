@@ -326,9 +326,23 @@ def calculate_target_length(
     competitor_word_counts: list[int],
     text_settings: dict[str, Any],
 ) -> tuple[int, int]:
-    """Calculate target article length from competitor analysis."""
+    """Calculate target article length from competitor analysis.
+
+    User-defined words_min/words_max in text_settings take priority.
+    Competitor-based calculation is only used when user hasn't set limits.
+    """
+    user_min = text_settings.get("words_min")
+    user_max = text_settings.get("words_max")
+
+    # User-defined limits take priority over competitor analysis
+    if user_min is not None or user_max is not None:
+        effective_min = int(user_min) if user_min is not None else 1500
+        effective_max = int(user_max) if user_max is not None else 5000
+        return effective_min, effective_max
+
+    # No user settings — fall back to competitor-based or defaults
     if not competitor_word_counts:
-        return text_settings.get("words_min", 1500), text_settings.get("words_max", 2500)
+        return 1500, 2500
     median_words = int(statistics.median(competitor_word_counts))
     target_min = max(1500, int(median_words * 1.1))
     target_max = min(5000, target_min + 500)
@@ -568,11 +582,10 @@ class ArticleService:
         text_settings = overrides or category.text_settings or {}
         image_settings = category.image_settings or {}
 
-        words_min, words_max = text_settings.get("words_min", 1500), text_settings.get("words_max", 2500)
+        competitor_word_counts: list[int] = []
         if competitor_pages:
-            word_counts = [p.get("word_count", 0) for p in competitor_pages if p.get("word_count")]
-            if word_counts:
-                words_min, words_max = calculate_target_length(word_counts, text_settings)
+            competitor_word_counts = [p.get("word_count", 0) for p in competitor_pages if p.get("word_count")]
+        words_min, words_max = calculate_target_length(competitor_word_counts, text_settings)
 
         niche_type = _detect_niche_safe(project.specialization or "")
         main_phrase, secondary_phrases, main_volume, main_difficulty, cluster_volume = _extract_keyword_data(

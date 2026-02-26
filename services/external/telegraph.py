@@ -18,6 +18,9 @@ log = structlog.get_logger()
 
 TELEGRAPH_API_BASE = "https://api.telegra.ph"
 
+# Telegraph API content field limit (~64KB). Use 60KB as safe threshold.
+_MAX_CONTENT_BYTES = 60_000
+
 # Tags that Telegraph API accepts (all others are stripped, children kept).
 _ALLOWED_TAGS = frozenset(
     {
@@ -123,6 +126,23 @@ def html_to_telegraph_nodes(html: str) -> str:
     return json.dumps(parser.get_nodes(), ensure_ascii=False)
 
 
+def _truncate_telegraph_content(content_json: str) -> str:
+    """Truncate Telegraph node array to fit within API size limit.
+
+    Removes nodes from the end until the JSON fits in _MAX_CONTENT_BYTES,
+    then appends a continuation notice.
+    """
+    nodes: list[Any] = json.loads(content_json)
+    continuation = {"tag": "p", "children": ["[...продолжение в полной статье]"]}
+
+    # Remove nodes from the end until we fit
+    while len(json.dumps(nodes + [continuation], ensure_ascii=False).encode()) > _MAX_CONTENT_BYTES and len(nodes) > 1:
+        nodes.pop()
+
+    nodes.append(continuation)
+    return json.dumps(nodes, ensure_ascii=False)
+
+
 @dataclass(frozen=True, slots=True)
 class TelegraphPage:
     """Result of a Telegraph page creation."""
@@ -190,6 +210,9 @@ class TelegraphClient:
 
         try:
             content_json = html_to_telegraph_nodes(html)
+            if len(content_json.encode()) > _MAX_CONTENT_BYTES:
+                log.warning("telegraph.content_truncated", original_bytes=len(content_json.encode()))
+                content_json = _truncate_telegraph_content(content_json)
             resp = await self._http.post(
                 f"{TELEGRAPH_API_BASE}/createPage",
                 data={
