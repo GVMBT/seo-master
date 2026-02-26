@@ -246,8 +246,8 @@ async def show_category_card(
     lines.append(f"Цены: {'есть' if category.prices else 'не заданы'}")
 
     # Image settings
-    img_count = category.image_settings.get("images_per_article", 0) if category.image_settings else 0
-    lines.append(f"Изображений: {img_count}/статью" if img_count else "Изображения: по умолчанию")
+    img_count = category.image_settings.get("count") if category.image_settings else None
+    lines.append(f"Изображений: {img_count}/статью" if img_count is not None else "Изображения: по умолчанию")
 
     text = "\n".join(lines)
     await callback.message.edit_text(text, reply_markup=category_card_kb(category_id, category.project_id))
