@@ -18,7 +18,7 @@ from services.ai.content_validator import (
 # ---------------------------------------------------------------------------
 
 VALID_ARTICLE_CONTENT = (
-    "<h1>SEO Guide for Beginners</h1>"
+    "<h2>SEO Guide for Beginners</h2>"
     "<p>" + "A" * 60 + "</p>"
     "<p>" + "B" * 400 + "</p>"
     "<h2>FAQ</h2>"
@@ -105,14 +105,14 @@ class TestValidContent:
 class TestPlaceholderDetection:
     def test_insert_placeholder_detected_error(self) -> None:
         v = _validator()
-        content = "<h1>Title</h1><p>" + "A" * 500 + " [INSERT KEYWORD HERE]</p><h2>faq</h2>"
+        content = "<h2>Title</h2><p>" + "A" * 500 + " [INSERT KEYWORD HERE]</p><h2>faq</h2>"
         result = v.validate(content, "article", "wordpress")
         assert result.is_valid is False
         assert any("INSERT" in e for e in result.errors)
 
     def test_lorem_ipsum_detected_error(self) -> None:
         v = _validator()
-        content = "<h1>Title</h1><p>" + "A" * 500 + " Lorem ipsum dolor sit amet</p><h2>faq</h2>"
+        content = "<h2>Title</h2><p>" + "A" * 500 + " Lorem ipsum dolor sit amet</p><h2>faq</h2>"
         result = v.validate(content, "article", "wordpress")
         assert result.is_valid is False
         assert any("Lorem ipsum" in e for e in result.errors)
@@ -143,7 +143,7 @@ class TestPlaceholderDetection:
 
     def test_html_placeholder_detected_error(self) -> None:
         v = _validator()
-        content = "<h1>Title</h1><p>" + "A" * 500 + " <placeholder> text</p><h2>faq</h2>"
+        content = "<h2>Title</h2><p>" + "A" * 500 + " <placeholder> text</p><h2>faq</h2>"
         result = v.validate(content, "article", "wordpress")
         assert result.is_valid is False
         assert any("placeholder" in e for e in result.errors)
@@ -177,7 +177,7 @@ class TestPlaceholderDetection:
 class TestArticleMinimumLength:
     def test_article_below_500_chars_error(self) -> None:
         v = _validator()
-        short_content = "<h1>Hi</h1><p>Short</p>"
+        short_content = "<h2>Hi</h2><p>Short</p>"
         result = v.validate(short_content, "article", "wordpress")
         assert result.is_valid is False
         assert any("500" in e for e in result.errors)
@@ -185,8 +185,8 @@ class TestArticleMinimumLength:
     def test_article_exactly_500_chars_no_length_error(self) -> None:
         v = _validator()
         # Build content that is exactly 500 chars with required structure
-        filler = "X" * (500 - len("<h1>T</h1><p>") - len("</p>faq"))
-        content = "<h1>T</h1><p>" + filler + "</p>faq"
+        filler = "X" * (500 - len("<h2>T</h2><p>") - len("</p>faq"))
+        content = "<h2>T</h2><p>" + filler + "</p>faq"
         assert len(content) == 500
         result = v.validate(content, "article", "wordpress")
         # Should not have length error (but may have structure errors)
@@ -205,41 +205,41 @@ class TestArticleMinimumLength:
 
 
 class TestWordPressStructure:
-    def test_wordpress_article_without_h1_error(self) -> None:
+    def test_wordpress_article_without_h2_error(self) -> None:
         v = _validator()
-        content = "<h2>Subheading</h2><p>" + "A" * 500 + "</p><h2>faq</h2>"
+        content = "<p>" + "A" * 500 + "</p>"
         result = v.validate(content, "article", "wordpress")
         assert result.is_valid is False
-        assert any("H1" in e for e in result.errors)
+        assert any("H2" in e for e in result.errors)
 
     def test_wordpress_article_without_long_paragraph_error(self) -> None:
         v = _validator()
         # <p> near end with <50 chars after it, so regex <p[^>]*>.{50,} won't match
-        content = "<h1>Title</h1>" + "x" * 480 + "<p>Hi</p>faq"
+        content = "<h2>Section</h2>" + "x" * 480 + "<p>Hi</p>faq"
         assert len(content) >= 500
         result = v.validate(content, "article", "wordpress")
         assert result.is_valid is False
         assert any("50" in e for e in result.errors)
 
-    def test_wordpress_article_with_h1_and_paragraph_no_structure_errors(self) -> None:
+    def test_wordpress_article_with_h2_and_paragraph_no_structure_errors(self) -> None:
         v = _validator()
         result = v.validate(VALID_ARTICLE_CONTENT, "article", "wordpress")
-        assert not any("H1" in e for e in result.errors)
+        assert not any("H2" in e for e in result.errors)
         assert not any("50 символов" in e for e in result.errors)
 
     def test_non_wordpress_article_no_structure_check(self) -> None:
         """WordPress structure checks should not apply to other platforms."""
         v = _validator()
-        content = "A" * 600 + " faq"  # No <h1>, no <p> — but not wordpress
+        content = "A" * 600 + " faq"  # No <h2>, no <p> — but not wordpress
         result = v.validate(content, "article", "telegram")
-        assert not any("H1" in e for e in result.errors)
+        assert not any("H2" in e for e in result.errors)
         assert not any("50 символов" in e for e in result.errors)
 
     def test_non_article_wordpress_no_structure_check(self) -> None:
         """WordPress structure checks apply only to articles."""
         v = _validator()
         result = v.validate("Short post", "social_post", "wordpress")
-        assert not any("H1" in e for e in result.errors)
+        assert not any("H2" in e for e in result.errors)
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +290,7 @@ class TestPlatformLengthLimits:
     def test_telegram_article_over_4096_no_platform_error(self) -> None:
         """Platform length check applies only to social_post content_type."""
         v = _validator()
-        content = "<h1>T</h1><p>" + "A" * 5000 + "</p>faq"
+        content = "<h2>T</h2><p>" + "A" * 5000 + "</p>faq"
         result = v.validate(content, "article", "telegram")
         assert not any("Telegram" in e for e in result.errors)
 
@@ -303,7 +303,7 @@ class TestPlatformLengthLimits:
 class TestFAQWarning:
     def test_article_without_faq_warning(self) -> None:
         v = _validator()
-        content = "<h1>Title</h1><p>" + "A" * 500 + "</p>"
+        content = "<h2>Title</h2><p>" + "A" * 500 + "</p>"
         result = v.validate(content, "article", "wordpress")
         assert any("FAQ" in w for w in result.warnings)
         # Warning is non-blocking — should not cause is_valid=False by itself
@@ -317,7 +317,7 @@ class TestFAQWarning:
     def test_article_with_faq_case_insensitive(self) -> None:
         """FAQ check is case-insensitive ('faq' in content.lower())."""
         v = _validator()
-        content = "<h1>Title</h1><p>" + "A" * 500 + "</p><h2>FAQ Section</h2>"
+        content = "<h2>Title</h2><p>" + "A" * 500 + "</p><h2>FAQ Section</h2>"
         result = v.validate(content, "article", "wordpress")
         assert not any("FAQ" in w for w in result.warnings)
 
@@ -331,7 +331,7 @@ class TestFAQWarning:
         """Warnings are non-blocking: is_valid should still be True."""
         v = _validator()
         # Valid article structure, no placeholders, but no FAQ
-        content = "<h1>Title</h1><p>" + "A" * 500 + "</p>"
+        content = "<h2>Title</h2><p>" + "A" * 500 + "</p>"
         result = v.validate(content, "article", "wordpress")
         # Has warning but no errors
         assert result.is_valid is True
@@ -358,17 +358,17 @@ class TestMultipleErrors:
 
     def test_all_wordpress_structure_errors_collected(self) -> None:
         v = _validator()
-        # No H1, no long paragraph, short
+        # No H2, no long paragraph, short
         content = "<p>Short</p>"
         result = v.validate(content, "article", "wordpress")
         assert result.is_valid is False
-        # Should have: short + no H1 + no paragraph >= 50
+        # Should have: short + no H2 + no paragraph >= 50
         assert len(result.errors) >= 3
 
     def test_errors_and_warnings_independent(self) -> None:
         v = _validator()
         # Valid structure but has placeholder + no FAQ
-        content = "<h1>Title</h1><p>" + "A" * 500 + " [INSERT KEYWORD]</p>"
+        content = "<h2>Title</h2><p>" + "A" * 500 + " [INSERT KEYWORD]</p>"
         result = v.validate(content, "article", "wordpress")
         assert result.is_valid is False  # has error
         assert len(result.errors) >= 1

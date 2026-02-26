@@ -1043,13 +1043,10 @@ class ContentValidator:
             if re.search(pattern, content, re.IGNORECASE):
                 errors.append(f"Обнаружен placeholder-текст: {pattern}")
         
-        # WordPress-специфичные
+        # WordPress-специфичные (H1 = post title, content starts with H2)
         if platform == "wordpress" and content_type == "article":
-            if not re.search(r"<h1[^>]*>", content):
-                errors.append("Отсутствует H1-заголовок")
-            h1_count = len(re.findall(r"<h1[^>]*>", content))
-            if h1_count > 1:
-                errors.append(f"Несколько H1-заголовков ({h1_count}) — допускается только один")
+            if not re.search(r"<h2[^>]*>", content):
+                errors.append("Отсутствует H2-заголовок (контент должен начинаться с H2)")
             if not re.search(r"<p[^>]*>.{50,}", content):
                 errors.append("Нет абзацев связного текста (мин. 50 символов)")
         
