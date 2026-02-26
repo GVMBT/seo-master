@@ -1,0 +1,33 @@
+# Dev/test — not needed in production container
+tests/
+docs/
+scripts/
+.claude/
+.progress/
+screens/
+
+# Dev config & notes
+*.md
+!README.md
+.coderabbit.yaml
+semgrep.yml
+osv-scanner.toml
+audit.md
+audit-plan.md
+
+# Git & editor
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Caches
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.py[cod]
+
+# Environment
+.env
+.env.*
