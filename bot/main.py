@@ -432,4 +432,4 @@ def create_app() -> web.Application:
 
 if __name__ == "__main__":
     settings = get_settings()
-    web.run_app(create_app(), host="0.0.0.0", port=settings.port)  # noqa: S104
+    web.run_app(create_app(), host="0.0.0.0", port=settings.port)  # noqa: S104  # nosec B104 — Railway requires binding to all interfaces
