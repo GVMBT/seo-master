@@ -627,13 +627,23 @@ async def regenerate_social(
         return
 
     data = await state.get_data()
-    regen_count = data.get("regen_count", 0)
+    regen_count = int(data.get("regen_count", 0) or 0)
+    total_charged = int(data.get("tokens_charged", 0) or 0)
     cost = estimate_social_post_cost()
 
     settings = get_settings()
     is_god = user.id in settings.admin_ids
 
+    # E25: rate limit check before any generation attempt
+    rate_limiter = RateLimiter(redis)
+    try:
+        await rate_limiter.check(user.id, "text_generation")
+    except RateLimitError as exc:
+        await callback.answer(exc.user_message, show_alert=True)
+        return
+
     # E10: charge for regeneration after free attempts
+    charged_now = 0
     if regen_count >= MAX_REGENERATIONS_FREE and not is_god:
         token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
         has_balance = await token_svc.check_balance(user.id, cost)
@@ -652,9 +662,15 @@ async def regenerate_social(
             operation_type="social_post",
             description=f"Перегенерация #{regen_count + 1} (social post)",
         )
+        charged_now = cost
 
     new_regen_count = regen_count + 1
-    await state.update_data(regen_count=new_regen_count, last_update_time=time.time())
+    new_total = total_charged + charged_now
+    await state.update_data(
+        regen_count=new_regen_count,
+        tokens_charged=new_total,
+        last_update_time=time.time(),
+    )
     await state.set_state(SocialPipelineFSM.regenerating)
     await callback.message.edit_text("Пост -- Перегенерация...\n\nСоздаю новый пост...")
     await callback.answer()
@@ -677,7 +693,7 @@ async def regenerate_social(
         redis,
         data,
         ai_orchestrator=ai_orchestrator,
-        cost=cost if regen_count >= MAX_REGENERATIONS_FREE else 0,
+        cost=charged_now,
     )
 
 
