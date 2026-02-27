@@ -74,6 +74,13 @@ class TestAuthMiddleware:
         user = MagicMock()
         user.id = 123
         user.balance = 1500
+        user.role = "user"
+        user.model_copy = lambda update: MagicMock(
+            id=update.get("id", user.id),
+            balance=update.get("balance", user.balance),
+            role=update.get("role", user.role),
+            model_dump=MagicMock(return_value={"id": update.get("id", user.id), "role": update.get("role", user.role), "balance": user.balance}),
+        )
         return user
 
     async def test_registers_user_and_injects_data(self, mock_user: MagicMock) -> None:
@@ -138,9 +145,40 @@ class TestAuthMiddleware:
 
         with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
             repo_cls.return_value.get_or_create = AsyncMock(return_value=(mock_user, False))
+            repo_cls.return_value.update = AsyncMock(return_value=mock_user)
             await mw(_make_handler(), _make_event(), data)
 
         assert data["is_admin"] is True
+
+    async def test_admin_auto_promote_updates_role_in_db(self, mock_user: MagicMock) -> None:
+        """ADMIN_IDS is single source of truth: auto-promote role in DB."""
+        mock_user.id = 999
+        mock_user.role = "user"
+        mw = AuthMiddleware(admin_ids=[999])
+        redis = _make_mock_redis()
+        data: dict = {"event_from_user": _make_tg_user(999), "db": MagicMock(), "redis": redis}
+
+        with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
+            repo_cls.return_value.get_or_create = AsyncMock(return_value=(mock_user, False))
+            repo_cls.return_value.update = AsyncMock(return_value=mock_user)
+            await mw(_make_handler(), _make_event(), data)
+            repo_cls.return_value.update.assert_called_once()
+
+        assert data["user"].role == "admin"
+
+    async def test_admin_no_promote_when_already_admin(self, mock_user: MagicMock) -> None:
+        """Skip DB update if role is already admin."""
+        mock_user.id = 999
+        mock_user.role = "admin"
+        mw = AuthMiddleware(admin_ids=[999])
+        redis = _make_mock_redis()
+        data: dict = {"event_from_user": _make_tg_user(999), "db": MagicMock(), "redis": redis}
+
+        with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
+            repo_cls.return_value.get_or_create = AsyncMock(return_value=(mock_user, False))
+            repo_cls.return_value.update = AsyncMock()
+            await mw(_make_handler(), _make_event(), data)
+            repo_cls.return_value.update.assert_not_called()
 
     async def test_no_user_passes_through(self) -> None:
         mw = AuthMiddleware(admin_ids=[999])
