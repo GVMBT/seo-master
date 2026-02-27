@@ -38,9 +38,31 @@ paths:
 - SIM — simplify (упрощение условий, циклов)
 - RUF — ruff-specific (unused noqa, ambiguous characters)
 
-## Mypy
+## Mypy — ZERO TOLERANCE
 `mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs --no-error-summary`
+- **0 ошибок mypy — обязательное условие. Ошибки type checker — это реальные баги, не шум.**
 - Проверяет тела функций даже без аннотаций
 - Все публичные функции ДОЛЖНЫ иметь полные type hints
 - `| None` вместо `Optional[]`
 - Используй `TYPE_CHECKING` для импортов, нужных только типам
+- Новый код НЕ может добавлять ошибки mypy — проверяй ПЕРЕД коммитом
+
+## callback.message — обязательный паттерн
+```python
+# ПРАВИЛЬНО: используй msg после safe_message()
+msg = safe_message(callback)
+if not msg:
+    await callback.answer()
+    return
+await msg.edit_text(text)  # msg — это Message, type checker доволен
+
+# ЗАПРЕЩЕНО: callback.message.* после safe_message() guard
+msg = safe_message(callback)
+if not msg:
+    await callback.answer()
+    return
+await callback.message.edit_text(text)  # BUG: callback.message всё ещё Message|InaccessibleMessage|None
+```
+- `callback.message` — тип `Message | InaccessibleMessage | None`
+- `InaccessibleMessage` (сообщения >48ч) НЕ имеет `.edit_text()`, `.delete()`, `.answer()` — это runtime crash
+- `safe_message()` из `bot/helpers.py` возвращает `Message | None` — используй ТОЛЬКО результат
