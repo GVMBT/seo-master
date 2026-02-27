@@ -42,7 +42,6 @@ def dashboard_kb(
     """Dashboard keyboard with pipeline CTAs and nav row.
 
     Article button is always PRIMARY.
-    Social pipeline is not yet available (pipeline:social:soon).
     """
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -69,7 +68,7 @@ def dashboard_kb(
             [
                 InlineKeyboardButton(
                     text="Создать пост в соцсети",
-                    callback_data="pipeline:social:soon",
+                    callback_data="pipeline:social:start",
                 ),
             ]
         )
@@ -88,7 +87,7 @@ def dashboard_kb(
             [
                 InlineKeyboardButton(
                     text="Создать пост в соцсети",
-                    callback_data="pipeline:social:soon",
+                    callback_data="pipeline:social:start",
                 ),
             ]
         )

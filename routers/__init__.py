@@ -1,6 +1,7 @@
 """Router setup — includes all sub-routers."""
 
-from aiogram import Router
+from aiogram import F, Router
+from aiogram.enums import ChatType
 
 from routers import payments, profile, start, tariffs
 from routers.admin import router as admin_router
@@ -16,7 +17,9 @@ def setup_routers() -> Router:
     Order matters: specific routers first, start.router LAST
     (it contains catch-all handlers like pipeline_stale_catchall).
     """
-    router = Router()
+    router = Router(name="main")
+    router.message.filter(F.chat.type == ChatType.PRIVATE)
+    router.callback_query.filter(F.message.chat.type == ChatType.PRIVATE)
     router.include_router(projects_router)
     router.include_router(categories_router)
     router.include_router(platforms_router)

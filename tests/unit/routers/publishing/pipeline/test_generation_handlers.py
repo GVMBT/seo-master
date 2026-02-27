@@ -717,6 +717,84 @@ class TestCancelRefund:
     ) -> None:
         preview = _make_preview(tokens_charged=320)
         mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
+        mock_http = MagicMock()
+        mock_storage = MagicMock()
+        mock_storage.cleanup_by_paths = AsyncMock()
+
+        with (
+            patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
+            _patch_settings(),
+            patch(f"{_MODULE}._try_refund", new_callable=AsyncMock) as refund_mock,
+            patch(f"{_MODULE}.TelegraphClient") as telegraph_cls,
+        ):
+            telegraph_cls.return_value.delete_page = AsyncMock(return_value=True)
+            repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
+            repo_cls.return_value.update = AsyncMock()
+            await cancel_refund(
+                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_http, mock_storage,
+            )
+
+        mock_state.clear.assert_called_once()
+        refund_mock.assert_called_once()
+        mock_callback.message.edit_text.assert_called_once()
+        assert "отменена" in mock_callback.message.edit_text.call_args.args[0].lower()
+        # C14: Telegraph page should be cleaned up
+        telegraph_cls.return_value.delete_page.assert_called_once_with("test-123")
+
+    async def test_cleanup_telegraph_error_does_not_block_refund(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """C14: Telegraph cleanup failure must not block token refund."""
+        preview = _make_preview(tokens_charged=320, telegraph_path="broken-path")
+        mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
+        mock_http = MagicMock()
+        mock_storage = MagicMock()
+        mock_storage.cleanup_by_paths = AsyncMock()
+
+        with (
+            patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
+            _patch_settings(),
+            patch(f"{_MODULE}._try_refund", new_callable=AsyncMock) as refund_mock,
+            patch(f"{_MODULE}.TelegraphClient") as telegraph_cls,
+        ):
+            telegraph_cls.return_value.delete_page = AsyncMock(
+                side_effect=RuntimeError("API error"),
+            )
+            repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
+            repo_cls.return_value.update = AsyncMock()
+            await cancel_refund(
+                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_http, mock_storage,
+            )
+
+        # Refund must still happen despite Telegraph error
+        refund_mock.assert_called_once()
+        mock_state.clear.assert_called_once()
+
+    async def test_cleanup_storage_images_on_cancel(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """C14: Storage images are cleaned up on cancel."""
+        images = [
+            {"storage_path": "123/1/img_0.webp", "url": "https://example.com/img0"},
+            {"storage_path": "123/1/img_1.webp", "url": "https://example.com/img1"},
+        ]
+        preview = _make_preview(tokens_charged=320, images=images, telegraph_path=None)
+        mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
+        mock_http = MagicMock()
+        mock_storage = MagicMock()
+        mock_storage.cleanup_by_paths = AsyncMock()
 
         with (
             patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
@@ -725,12 +803,15 @@ class TestCancelRefund:
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
             repo_cls.return_value.update = AsyncMock()
-            await cancel_refund(mock_callback, mock_state, user, mock_db, mock_redis)
+            await cancel_refund(
+                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_http, mock_storage,
+            )
 
-        mock_state.clear.assert_called_once()
         refund_mock.assert_called_once()
-        mock_callback.message.edit_text.assert_called_once()
-        assert "отменена" in mock_callback.message.edit_text.call_args.args[0].lower()
+        mock_storage.cleanup_by_paths.assert_called_once_with(
+            ["123/1/img_0.webp", "123/1/img_1.webp"],
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -231,9 +231,9 @@ def test_estimate_weekly_cost_wordpress() -> None:
 
 
 def test_estimate_weekly_cost_telegram() -> None:
-    """Non-WP uses social post cost (default ~40 per post)."""
+    """Non-WP uses social post cost (text only, no images = 10 per post)."""
     cost = SchedulerService.estimate_weekly_cost(days=7, posts_per_day=2, platform_type="telegram")
-    assert cost == 7 * 2 * 40  # 7 days * 2 posts * 40 tokens
+    assert cost == 7 * 2 * 10  # 7 days * 2 posts * 10 tokens (no images in auto-publish)
 
 
 # ---------------------------------------------------------------------------

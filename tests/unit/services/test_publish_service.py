@@ -163,9 +163,20 @@ async def test_publish_happy_path(
 # ---------------------------------------------------------------------------
 
 
+async def test_schedule_disabled_h13() -> None:
+    """H13: Disabled schedule returns skipped."""
+    svc = _make_service()
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(enabled=False))
+
+    result = await svc.execute(_make_payload())
+    assert result.status == "skipped"
+    assert result.reason == "schedule_disabled"
+
+
 async def test_user_not_found() -> None:
     """Missing user returns error."""
     svc = _make_service()
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule())
     svc._users.get_by_id = AsyncMock(return_value=None)
 
     result = await svc.execute(_make_payload())
@@ -174,19 +185,22 @@ async def test_user_not_found() -> None:
 
 
 async def test_category_not_found() -> None:
-    """Missing category returns error."""
+    """Missing category returns error with notify."""
     svc = _make_service()
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule())
     svc._users.get_by_id = AsyncMock(return_value=_make_user())
     svc._categories.get_by_id = AsyncMock(return_value=None)
 
     result = await svc.execute(_make_payload())
     assert result.status == "error"
     assert result.reason == "category_not_found"
+    assert result.notify is True
 
 
 async def test_no_keywords_e17() -> None:
     """E17: No keywords configured returns error with notify=True."""
     svc = _make_service()
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule())
     svc._users.get_by_id = AsyncMock(return_value=_make_user(notify_publications=True))
     svc._categories.get_by_id = AsyncMock(return_value=_make_category(keywords=[]))
 
@@ -199,6 +213,7 @@ async def test_no_keywords_e17() -> None:
 async def test_no_keywords_e17_notify_off() -> None:
     """E17: No keywords with notify_publications=False does not notify."""
     svc = _make_service()
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule())
     svc._users.get_by_id = AsyncMock(return_value=_make_user(notify_publications=False))
     svc._categories.get_by_id = AsyncMock(return_value=_make_category(keywords=[]))
 
@@ -218,6 +233,7 @@ async def test_connection_inactive(
 ) -> None:
     """Inactive connection returns error."""
     svc = _make_service()
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule())
     svc._users.get_by_id = AsyncMock(return_value=_make_user())
     svc._categories.get_by_id = AsyncMock(return_value=_make_category())
 
@@ -271,6 +287,7 @@ async def test_no_available_keyword(
 ) -> None:
     """No available keyword after rotation returns error."""
     svc = _make_service()
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule())
     svc._users.get_by_id = AsyncMock(return_value=_make_user())
     svc._categories.get_by_id = AsyncMock(return_value=_make_category())
     svc._publications.get_rotation_keyword = AsyncMock(return_value=(None, True))
@@ -283,6 +300,7 @@ async def test_no_available_keyword(
     result = await svc.execute(_make_payload())
     assert result.status == "error"
     assert result.reason == "no_available_keyword"
+    assert result.notify is True  # H5: user gets notified on error
 
 
 @patch("services.publish.get_settings")
@@ -365,6 +383,7 @@ async def test_refund_on_generation_error(
 ) -> None:
     """Error after charge triggers refund + error log."""
     svc = _make_service()
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule())
     svc._users.get_by_id = AsyncMock(return_value=_make_user())
     svc._categories.get_by_id = AsyncMock(return_value=_make_category())
     svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))

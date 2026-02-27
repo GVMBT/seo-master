@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Annotated
 
+from cryptography.fernet import Fernet
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -64,6 +65,21 @@ class Settings(BaseSettings):
             msg = "ADMIN_IDS must contain at least one admin ID"
             raise ValueError(msg)
         return ids
+
+    @field_validator("encryption_key")
+    @classmethod
+    def _validate_encryption_key(cls, v: SecretStr) -> SecretStr:
+        """Validate that ENCRYPTION_KEY is a valid Fernet key at startup."""
+        raw = v.get_secret_value()
+        if not raw:
+            msg = "ENCRYPTION_KEY must not be empty"
+            raise ValueError(msg)
+        try:
+            Fernet(raw.encode() if isinstance(raw, str) else raw)
+        except Exception as exc:
+            msg = f"ENCRYPTION_KEY is not a valid Fernet key: {exc}"
+            raise ValueError(msg) from exc
+        return v
 
     @field_validator("supabase_url")
     @classmethod
