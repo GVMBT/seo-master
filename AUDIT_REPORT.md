@@ -390,30 +390,31 @@
 - [x] CR-78c: Research cache key includes company_name
 - [x] CR-78d: DRY research helpers in services/research_helpers.py
 
-### Sprint 4: Performance (2-3 days)
-- [ ] C19: Parallelize DataForSEO calls (2h)
-- [ ] C20: Batch profile stats queries (2h)
-- [ ] H24: Batch digest queries (2h)
-- [ ] S3: Replace `select("*")` (8h)
-- [ ] S5: Fix branding CSS stripping (4h)
+### Sprint 4: Performance (2-3 days) — DONE (PR #80)
+- [x] C19: Parallelize DataForSEO calls — asyncio.gather() + Semaphore(5) in keywords.py
+- [x] C20: Batch profile stats queries — get_by_projects() eliminates 2N queries in tokens.py
+- [x] H24: Batch digest queries — get_stats_by_users_batch() in notifications.py
+- [x] S3: Replace `select("*")` — get_list_by_project() without credentials in connections repo
+- [x] S5: Fix branding CSS stripping — inline style="" attributes in markdown_renderer.py
 
-### Sprint 5: Test Coverage (3-5 days)
-- [ ] C21: Scheduler router tests (16h)
-- [ ] C22: KeywordService tests (8h)
-- [ ] C23: PreviewService tests (8h)
-- [ ] H27: 15 missing edge case tests (16h)
+### Sprint 5: Test Coverage (3-5 days) — DONE (PR #80)
+- [x] C21: Scheduler router tests — 40 tests in test_scheduler.py
+- [x] C22: KeywordService tests — 25 tests in test_keywords.py
+- [x] C23: PreviewService tests — 16 tests in test_preview.py
+- [x] H27: Edge case tests — 16 tests in test_edge_cases.py
 
-### Sprint 6: Architecture & DRY (5-7 days)
-- [ ] S1: InaccessibleMessage filter (2h, saves 530 lines)
-- [ ] S1: Extract readiness common module (8h, saves 800 lines)
-- [ ] S1: Ownership helper + bot/constants.py (4h)
-- [ ] H23: Extract write ops to services (40h)
-- [ ] S6: Consistent DI via workflow_data (8h)
+### Sprint 6: Architecture & DRY (5-7 days) — DONE (PR #80)
+- [x] S1a: InaccessibleMessage → safe_message() helper in bot/helpers.py (21 router files refactored)
+- [x] S1b: Extract readiness common module — _readiness_common.py (shared keyword gen + description AI)
+- [x] S1c: Ownership helper get_owned_project/get_owned_category + bot/constants.py (platform constants)
+- [ ] H23: Extract write ops to services (40h) — **DEFERRED** (too large, phased migration post-launch)
+- [x] S6: Consistent DI via workflow_data — TokenServiceFactory + ConnectionServiceFactory in bot/service_factory.py
 
 ### Deferred (v3 or post-launch)
 - C3: SimHash implementation (8h)
 - C18: OpenRouter cost tracking (8h)
 - H19: Full image pipeline (16h)
+- H23: Extract write ops to services (40h) — phased migration
 - S4: Content moderation for auto-publish (16h)
 - Cross-posting implementation (F6.4)
 
@@ -469,7 +470,7 @@ Additional findings from resumed agents (merged into main report above):
 9. **Structured logging** -- structlog JSON with correlation_id everywhere
 10. **Fernet encryption** -- credentials encrypted in DB, decrypt only in repository layer
 11. **All 16 FSM StatesGroup match spec exactly** -- 0 state count mismatches
-12. **Tests: 1673 passed, 0 failed** -- stable, no flaky tests
+12. **Tests: 2020 passed, 0 failed** -- stable, no flaky tests (up from 1673 after Sprint 5)
 13. **API coverage 95.4%** -- payment/webhook handlers well tested
 14. **All dependencies have permissive licenses** (pymorphy3 is MIT, not LGPL)
 15. **Graceful shutdown implemented** -- SIGTERM -> drain -> refund active generations
