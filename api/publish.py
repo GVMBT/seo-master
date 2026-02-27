@@ -104,6 +104,8 @@ async def publish_handler(request: web.Request) -> web.Response:
                     image_storage=request.app["image_storage"],
                     admin_ids=request.app["settings"].admin_ids,
                     scheduler_service=request.app.get("scheduler_service"),
+                    serper_client=request.app.get("serper_client"),
+                    firecrawl_client=request.app.get("firecrawl_client"),
                 )
                 result = await service.execute(payload)
 

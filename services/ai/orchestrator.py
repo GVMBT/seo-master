@@ -5,6 +5,7 @@ Uses AsyncOpenAI with base_url="https://openrouter.ai/api/v1".
 """
 
 import asyncio
+import contextlib
 import json
 import re
 import time
@@ -13,7 +14,7 @@ from typing import Any, Literal
 
 import httpx
 import structlog
-from openai import AsyncOpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 
 from bot.exceptions import AIGenerationError
 from services.ai.prompt_engine import PromptEngine
@@ -305,7 +306,7 @@ class AIOrchestrator:
         raise NotImplementedError("Streaming deferred to Phase 7+")
 
     async def _do_generate(self, request: GenerationRequest) -> GenerationResult:
-        """Internal generation with prompt rendering and API call."""
+        """Internal generation with prompt rendering, API call, and retry (C12)."""
         # Render prompt
         rendered = await self._prompt_engine.render(request.task, request.context)
 
@@ -347,23 +348,16 @@ class AIOrchestrator:
                 "json_schema": request.response_schema,
             }
 
-        # Call OpenRouter
+        # Call OpenRouter with retry (C12: use request.max_retries)
         start_time = time.monotonic()
-        try:
-            response = await self._client.chat.completions.create(
-                model=chain[0] if chain else "deepseek/deepseek-v3.2",
-                messages=messages,  # type: ignore[arg-type]
-                max_tokens=rendered.meta.get("max_tokens", 4000),
-                temperature=rendered.meta.get("temperature", 0.7),
-                extra_body=extra_body,
-                timeout=rendered.meta.get("timeout", 120),
-                **kwargs,
-            )
-        except Exception as exc:
-            log.error("openrouter_api_error", task=request.task, error=str(exc))
-            raise AIGenerationError(
-                message=f"OpenRouter API error: {exc}",
-            ) from exc
+        response = await self._call_with_retry(
+            request=request,
+            chain=chain,
+            messages=messages,
+            rendered=rendered,
+            extra_body=extra_body,
+            kwargs=kwargs,
+        )
 
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
@@ -438,6 +432,114 @@ class AIOrchestrator:
             prompt_version=rendered.version,
             fallback_used=fallback_used,
         )
+
+    async def _call_with_retry(
+        self,
+        *,
+        request: GenerationRequest,
+        chain: list[str],
+        messages: list[dict[str, Any]],
+        rendered: Any,
+        extra_body: dict[str, Any],
+        kwargs: dict[str, Any],
+    ) -> Any:
+        """Call OpenRouter API with retry on transient errors (C12).
+
+        Retries on: network errors, 429, 5xx.
+        No retry on: 401, 403, other 4xx.
+        Respects Retry-After header (cap 60s).
+        """
+        max_retries = request.max_retries
+        base_delay = 1.0
+        max_retry_after = 60.0
+        last_exc: Exception | None = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                return await self._client.chat.completions.create(
+                    model=chain[0] if chain else "deepseek/deepseek-v3.2",
+                    messages=messages,  # type: ignore[arg-type]
+                    max_tokens=rendered.meta.get("max_tokens", 4000),
+                    temperature=rendered.meta.get("temperature", 0.7),
+                    extra_body=extra_body,
+                    timeout=rendered.meta.get("timeout", 120),
+                    **kwargs,
+                )
+            except (APITimeoutError, APIConnectionError) as exc:
+                # Network errors — always retryable
+                last_exc = exc
+                if attempt >= max_retries:
+                    log.error("openrouter_api_error", task=request.task, error=str(exc))
+                    raise AIGenerationError(
+                        message=f"OpenRouter API error: {exc}",
+                    ) from exc
+                delay = min(base_delay * (2**attempt), max_retry_after)
+                log.warning(
+                    "http_retry",
+                    operation="openrouter_generate",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    status=None,
+                    delay_s=round(delay, 2),
+                    error=str(exc)[:200],
+                )
+                await asyncio.sleep(delay)
+            except APIStatusError as exc:
+                last_exc = exc
+                status = exc.status_code
+
+                # Auth errors — never retry
+                if status in (401, 403):
+                    log.error("openrouter_api_error", task=request.task, error=str(exc))
+                    raise AIGenerationError(
+                        message=f"OpenRouter API error: {exc}",
+                    ) from exc
+
+                # Retryable status codes: 429, 5xx
+                if status not in (429, 500, 502, 503, 504):
+                    log.error("openrouter_api_error", task=request.task, error=str(exc))
+                    raise AIGenerationError(
+                        message=f"OpenRouter API error: {exc}",
+                    ) from exc
+
+                if attempt >= max_retries:
+                    log.error("openrouter_api_error", task=request.task, error=str(exc))
+                    raise AIGenerationError(
+                        message=f"OpenRouter API error: {exc}",
+                    ) from exc
+
+                # Calculate delay: Retry-After for 429, backoff for 5xx
+                delay = base_delay * (2**attempt)
+                if status == 429:
+                    retry_after_raw = exc.response.headers.get("Retry-After")
+                    if retry_after_raw:
+                        with contextlib.suppress(ValueError, TypeError):
+                            delay = float(retry_after_raw)
+                delay = min(delay, max_retry_after)
+
+                log.warning(
+                    "http_retry",
+                    operation="openrouter_generate",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    status=status,
+                    delay_s=round(delay, 2),
+                    error=str(exc)[:200],
+                )
+                await asyncio.sleep(delay)
+            except Exception as exc:
+                # Non-HTTP exceptions (e.g. parsing) — do not retry
+                log.error("openrouter_api_error", task=request.task, error=str(exc))
+                raise AIGenerationError(
+                    message=f"OpenRouter API error: {exc}",
+                ) from exc
+
+        # Should not reach here but satisfy type checker
+        if last_exc is not None:
+            raise AIGenerationError(
+                message=f"OpenRouter API error: {last_exc}",
+            ) from last_exc
+        raise AIGenerationError(message="Unexpected retry state")  # pragma: no cover
 
     @staticmethod
     def _apply_task_specific_params(

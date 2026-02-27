@@ -15,13 +15,12 @@ from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
-from db.models import PlatformConnectionCreate, User, UserUpdate
+from db.models import PlatformConnectionCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.schedules import SchedulesRepository
-from db.repositories.users import UsersRepository
 from keyboards.inline import admin_panel_kb, cancel_kb, dashboard_kb, dashboard_resume_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
@@ -32,6 +31,7 @@ from keyboards.pipeline import (
 )
 from keyboards.reply import main_menu_kb
 from routers.publishing.pipeline._common import ArticlePipelineFSM
+from services.users import UsersService
 
 log = structlog.get_logger()
 router = Router()
@@ -306,19 +306,11 @@ async def cmd_start(
     args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
     if args.startswith("referrer_"):
         referrer_id = _parse_referrer_id(args)
-        if is_new_user and referrer_id and referrer_id != user.id:
+        if is_new_user and referrer_id:
             # Link referrer to newly created user (C4: referral was dead before this fix)
-            users_repo = UsersRepository(db)
-            referrer = await users_repo.get_by_id(referrer_id)
-            if referrer:
-                await users_repo.update(user.id, UserUpdate(referrer_id=referrer_id))
-                log.info("referral_linked", user_id=user.id, referrer_id=referrer_id)
-                # Invalidate cached user so downstream sees referrer_id
-                await redis.delete(CacheKeys.user_cache(user.id))
-            else:
-                log.warning("referral_invalid_referrer", referrer_id=referrer_id)
-        elif referrer_id and referrer_id == user.id:
-            log.warning("referral_self_referral_blocked", user_id=user.id)
+            # CR-77b: delegate to UsersService (thin router rule)
+            users_svc = UsersService(db)
+            await users_svc.link_referrer(user.id, referrer_id, redis)
         else:
             log.info("deep_link_referral_ignored", referrer_arg=args, is_new_user=is_new_user)
     elif args.startswith("pinterest_auth_"):

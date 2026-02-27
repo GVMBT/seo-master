@@ -2,6 +2,7 @@
 
 Source of truth: docs/API_CONTRACTS.md section 3.6.
 Credentials include refresh_token + expires_at (30-day token refresh).
+Retry: C10/C11 — retry on 429/5xx with backoff, no retry on 401/403.
 """
 
 from __future__ import annotations
@@ -15,10 +16,15 @@ import httpx
 import structlog
 
 from db.models import PlatformConnection
+from services.http_retry import retry_with_backoff
 
 from .base import BasePublisher, PublishRequest, PublishResult
 
 log = structlog.get_logger()
+
+# Retry settings for Pinterest publish (C11)
+_PUBLISH_MAX_RETRIES = 2
+_PUBLISH_BASE_DELAY = 1.0
 
 _BASE_URL = "https://api.pinterest.com/v5"
 _TITLE_LIMIT = 100
@@ -137,32 +143,11 @@ class PinterestPublisher(BasePublisher):
                     error="Pinterest requires at least one image",
                 )
 
-            pin_data: dict[str, Any] = {
-                "board_id": request.metadata["board_id"],
-                "title": request.metadata.get("pin_title", "")[:_TITLE_LIMIT],
-                "description": request.content[:_DESCRIPTION_LIMIT],
-                "media_source": {
-                    "source_type": "image_base64",
-                    "content_type": "image/png",
-                    "data": base64.b64encode(request.images[0]).decode(),
-                },
-            }
-            if link := request.metadata.get("link"):
-                pin_data["link"] = link
-
-            resp = await self._client.post(
-                f"{_BASE_URL}/pins",
-                json=pin_data,
-                headers=self._headers(token),
-                timeout=30,
-            )
-            resp.raise_for_status()
-            pin = resp.json()
-
-            return PublishResult(
-                success=True,
-                post_url=f"https://pinterest.com/pin/{pin['id']}",
-                platform_post_id=str(pin["id"]),
+            result = await retry_with_backoff(
+                lambda: self._do_publish(request, token),
+                max_retries=_PUBLISH_MAX_RETRIES,
+                base_delay=_PUBLISH_BASE_DELAY,
+                operation="pinterest_publish",
             )
         except httpx.HTTPStatusError as exc:
             log.error(
@@ -174,6 +159,42 @@ class PinterestPublisher(BasePublisher):
         except httpx.HTTPError as exc:
             log.error("pinterest_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
+        else:
+            return result
+
+    async def _do_publish(
+        self,
+        request: PublishRequest,
+        token: str,
+    ) -> PublishResult:
+        """Execute the actual Pinterest publish flow (called inside retry_with_backoff)."""
+        pin_data: dict[str, Any] = {
+            "board_id": request.metadata["board_id"],
+            "title": request.metadata.get("pin_title", "")[:_TITLE_LIMIT],
+            "description": request.content[:_DESCRIPTION_LIMIT],
+            "media_source": {
+                "source_type": "image_base64",
+                "content_type": "image/png",
+                "data": base64.b64encode(request.images[0]).decode(),
+            },
+        }
+        if link := request.metadata.get("link"):
+            pin_data["link"] = link
+
+        resp = await self._client.post(
+            f"{_BASE_URL}/pins",
+            json=pin_data,
+            headers=self._headers(token),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        pin = resp.json()
+
+        return PublishResult(
+            success=True,
+            post_url=f"https://pinterest.com/pin/{pin['id']}",
+            platform_post_id=str(pin["id"]),
+        )
 
     async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         creds = connection.credentials

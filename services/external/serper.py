@@ -2,6 +2,7 @@
 
 Spec: docs/API_CONTRACTS.md section 8.3
 Edge case E04: Serper unavailable -> return empty result, article generated without Serper data.
+Retry: C10 — retry on 429/5xx with backoff, Retry-After support.
 
 Caching: 24h in Redis (key: serper:{md5(query)}).
 All public methods return empty result on failure (graceful degradation).
@@ -9,6 +10,8 @@ All public methods return empty result on failure (graceful degradation).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hashlib
 import json
 from dataclasses import dataclass
@@ -18,6 +21,8 @@ import httpx
 import structlog
 
 log = structlog.get_logger()
+
+_MAX_RETRY_AFTER = 60.0
 
 SERPER_API_BASE = "https://google.serper.dev"
 _SERPER_TIMEOUT = 10.0
@@ -103,7 +108,12 @@ class SerperClient:
         hl: str,
         attempts: int,
     ) -> SerperResult:
-        """Execute search with retry logic."""
+        """Execute search with retry logic.
+
+        Handles 429 with Retry-After header (C10).
+        Retries on: timeout, connect, 429, 5xx.
+        No retry on: 401/403 (auth errors).
+        """
         last_error: str = ""
 
         for attempt in range(1, attempts + 1):
@@ -152,6 +162,52 @@ class SerperClient:
                 )
                 return result
 
+            except httpx.HTTPStatusError as exc:
+                last_error = str(exc)
+                status = exc.response.status_code
+                # No retry on auth errors
+                if status in (401, 403):
+                    log.warning(
+                        "serper.search_auth_failed",
+                        query=query,
+                        status=status,
+                    )
+                    break
+                # Retry on 429 with Retry-After
+                if status == 429 and attempt < attempts:
+                    delay = 1.0
+                    retry_after = exc.response.headers.get("Retry-After")
+                    if retry_after:
+                        with contextlib.suppress(ValueError, TypeError):
+                            delay = min(float(retry_after), _MAX_RETRY_AFTER)
+                    log.warning(
+                        "http_retry",
+                        operation="serper_search",
+                        attempt=attempt,
+                        max_retries=attempts - 1,
+                        status=status,
+                        delay_s=round(delay, 2),
+                        error=last_error[:200],
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                # Retry on 5xx
+                if status in (500, 502, 503, 504) and attempt < attempts:
+                    log.warning(
+                        "http_retry",
+                        operation="serper_search",
+                        attempt=attempt,
+                        max_retries=attempts - 1,
+                        status=status,
+                        error=last_error[:200],
+                    )
+                    continue
+                log.warning(
+                    "serper.search_attempt_failed",
+                    query=query,
+                    attempt=attempt,
+                    error=last_error,
+                )
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 last_error = str(exc)
                 log.warning(

@@ -240,6 +240,64 @@ class StarsPaymentService:
         }
 
     # ------------------------------------------------------------------
+    # Refund processing (API_CONTRACTS.md §2.3)
+    # ------------------------------------------------------------------
+
+    async def process_refund(
+        self,
+        user_id: int,
+        telegram_payment_charge_id: str,
+    ) -> dict[str, str | int | bool]:
+        """Process Stars refund — debit tokens, update payment status.
+
+        Per API_CONTRACTS.md §2.3: balance may go negative.
+        Uses force_debit_balance to allow negative balance.
+
+        Returns dict with: tokens_debited, new_balance, error (optional).
+        """
+        # Find original payment by charge_id
+        payment = await self._payments.get_by_telegram_charge_id(telegram_payment_charge_id)
+        if not payment:
+            log.warning("refund_payment_not_found", charge_id=telegram_payment_charge_id)
+            return {"tokens_debited": 0, "error": "Payment not found"}
+
+        if payment.status == "refunded":
+            log.warning("refund_already_processed", charge_id=telegram_payment_charge_id)
+            return {"tokens_debited": 0, "already_refunded": True}
+
+        tokens_to_debit = payment.tokens_amount
+
+        # Debit tokens (allows negative balance per API_CONTRACTS §2.3)
+        new_balance = await self._users.force_debit_balance(user_id, tokens_to_debit)
+
+        # Update payment status to refunded
+        await self._payments.update(payment.id, PaymentUpdate(status="refunded"))
+
+        # Record expense (negative = deduction)
+        await self._payments.create_expense(
+            TokenExpenseCreate(
+                user_id=user_id,
+                amount=-tokens_to_debit,
+                operation_type="stars_refund",
+                description=f"Возврат Stars: {payment.package_name or 'unknown'} ({tokens_to_debit} токенов)",
+            )
+        )
+
+        log.info(
+            "stars_refund_processed",
+            user_id=user_id,
+            charge_id=telegram_payment_charge_id,
+            tokens_debited=tokens_to_debit,
+            new_balance=new_balance,
+            payment_id=payment.id,
+        )
+
+        return {
+            "tokens_debited": tokens_to_debit,
+            "new_balance": new_balance,
+        }
+
+    # ------------------------------------------------------------------
     # Display helpers (return formatted strings for router)
     # ------------------------------------------------------------------
 

@@ -2,13 +2,15 @@
 
 Spec: docs/API_CONTRACTS.md section 8.4
 Mapping: PSI JSON -> site_audits table columns.
+Retry: C10 — 2 attempts, 429 Retry-After support.
 
 Free tier: 25,000 requests/day (no API key needed, but rate limited).
-Retry: 2 attempts. On timeout (>30s) -> save partial data.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +18,8 @@ import httpx
 import structlog
 
 log = structlog.get_logger()
+
+_MAX_RETRY_AFTER = 60.0
 
 PSI_API_BASE = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
 _PSI_TIMEOUT = 60.0  # PSI can be slow
@@ -179,7 +183,12 @@ class PageSpeedClient:
         strategy: str,
         attempts: int,
     ) -> AuditResult | None:
-        """Execute audit with retry logic."""
+        """Execute audit with retry logic.
+
+        Handles 429 with Retry-After header (C10).
+        Retries on: timeout, 429, 5xx.
+        No retry on: 401/403.
+        """
         last_error: str = ""
 
         for attempt in range(1, attempts + 1):
@@ -211,6 +220,37 @@ class PageSpeedClient:
                     "pagespeed.audit_timeout",
                     url=url,
                     attempt=attempt,
+                )
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                last_error = str(exc)
+                # No retry on auth errors
+                if status in (401, 403):
+                    log.warning("pagespeed.audit_auth_failed", url=url, status=status)
+                    break
+                # Retry on 429 with Retry-After
+                if status == 429 and attempt < attempts:
+                    delay = 1.0
+                    retry_after = exc.response.headers.get("Retry-After")
+                    if retry_after:
+                        with contextlib.suppress(ValueError, TypeError):
+                            delay = min(float(retry_after), _MAX_RETRY_AFTER)
+                    log.warning(
+                        "http_retry",
+                        operation="pagespeed_audit",
+                        attempt=attempt,
+                        max_retries=attempts - 1,
+                        status=status,
+                        delay_s=round(delay, 2),
+                        error=last_error[:200],
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                log.warning(
+                    "pagespeed.audit_attempt_failed",
+                    url=url,
+                    attempt=attempt,
+                    error=last_error,
                 )
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 last_error = str(exc)

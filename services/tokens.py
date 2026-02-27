@@ -65,6 +65,28 @@ def estimate_keywords_cost(quantity: int) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Platform cost estimates (C17: differentiate WP articles vs social posts)
+# ---------------------------------------------------------------------------
+
+# Average token cost per scheduled post, by platform type.
+# wordpress: article (2000 words + 4 images) = ~320 tokens
+# telegram/vk/pinterest: social post (100 words + 1 image) = ~40 tokens
+_PLATFORM_COST: dict[str, int] = {
+    "wordpress": 320,
+    "telegram": 40,
+    "vk": 40,
+    "pinterest": 40,
+}
+
+_DEFAULT_PLATFORM_COST = 40
+
+
+def _avg_cost_by_platform(platform_type: str) -> int:
+    """Return average token cost per post for the given platform."""
+    return _PLATFORM_COST.get(platform_type, _DEFAULT_PLATFORM_COST)
+
+
+# ---------------------------------------------------------------------------
 # Token service
 # ---------------------------------------------------------------------------
 
@@ -215,6 +237,10 @@ class TokenService:
 
         Returns dict with keys: project_count, category_count, schedule_count,
         referral_count, posts_per_week, tokens_per_week, tokens_per_month.
+
+        Cost forecast differentiates by platform_type:
+        - wordpress: ~320 tokens (2000 words + 4 images)
+        - telegram/vk/pinterest: ~40 tokens (social post)
         """
         projects_repo = ProjectsRepository(self._db)
         schedules_repo = SchedulesRepository(self._db)
@@ -227,6 +253,7 @@ class TokenService:
         category_count = 0
         schedule_count = 0
         posts_per_week = 0
+        tokens_per_week = 0
         for project in projects:
             cats = await categories_repo.get_by_project(project.id)
             category_count += len(cats)
@@ -238,13 +265,15 @@ class TokenService:
                     schedule_count += 1
                     # posts_per_day * days per week for this schedule
                     days_count = len(s.schedule_days) if s.schedule_days else 7
-                    posts_per_week += s.posts_per_day * days_count
+                    weekly_posts = s.posts_per_day * days_count
+                    posts_per_week += weekly_posts
+
+                    # Differentiate cost by platform_type (C17)
+                    avg_cost = _avg_cost_by_platform(s.platform_type)
+                    tokens_per_week += weekly_posts * avg_cost
 
         referral_count = await self._users.get_referral_count(user.id)
 
-        # Cost forecast: average ~40 tokens per scheduled post
-        avg_cost_per_post = 40
-        tokens_per_week = posts_per_week * avg_cost_per_post
         tokens_per_month = tokens_per_week * 4
 
         return {

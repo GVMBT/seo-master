@@ -3,16 +3,21 @@
 Executes the full publish pipeline: load data, rotate keyword,
 check balance, charge, generate, validate, publish, log.
 Parallel pipeline: text + images via asyncio.gather (96s→56s).
+Web research: Serper + Firecrawl + Perplexity in parallel (C1).
+Cluster context: matching cluster from category.keywords (C2).
 Zero dependencies on Telegram/Aiogram.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from dataclasses import dataclass
 from dataclasses import field as dataclasses_field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlparse
 
 import sentry_sdk
 import structlog
@@ -21,6 +26,7 @@ from api.models import PublishPayload
 from bot.config import get_settings
 from bot.exceptions import InsufficientBalanceError
 from cache.client import RedisClient
+from cache.keys import RESEARCH_CACHE_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
 from db.models import PlatformScheduleUpdate, PublicationLogCreate
@@ -31,7 +37,7 @@ from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from db.repositories.schedules import SchedulesRepository
 from db.repositories.users import UsersRepository
-from services.ai.orchestrator import AIOrchestrator
+from services.ai.orchestrator import AIOrchestrator, GenerationRequest
 from services.publishers.base import PublishRequest, PublishResult
 from services.storage import ImageStorage
 from services.tokens import TokenService, estimate_article_cost, estimate_cross_post_cost, estimate_social_post_cost
@@ -39,9 +45,21 @@ from services.tokens import TokenService, estimate_article_cost, estimate_cross_
 if TYPE_CHECKING:
     import httpx
 
+    from services.external.firecrawl import FirecrawlClient
+    from services.external.serper import SerperClient
     from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
+
+# Truncation limits for competitor data passed to AI prompt
+_MAX_H2_PER_COMPETITOR = 12
+_MAX_SUMMARY_CHARS = 400
+
+# Max competitor pages to scrape (cost: 1 Firecrawl credit each)
+_MAX_COMPETITOR_SCRAPE = 3
+
+# Max internal links to include in prompt
+_MAX_INTERNAL_LINKS = 20
 
 
 @dataclass
@@ -82,6 +100,8 @@ class PublishService:
         image_storage: ImageStorage,
         admin_ids: list[int],
         scheduler_service: SchedulerService | None = None,
+        serper_client: SerperClient | None = None,
+        firecrawl_client: FirecrawlClient | None = None,
     ) -> None:
         self._db = db
         self._redis = redis
@@ -90,6 +110,8 @@ class PublishService:
         self._image_storage = image_storage
         self._admin_ids = admin_ids
         self._scheduler_service = scheduler_service
+        self._serper = serper_client
+        self._firecrawl = firecrawl_client
         self._tokens = TokenService(db, admin_ids)
         self._users = UsersRepository(db)
         self._categories = CategoriesRepository(db)
@@ -171,6 +193,15 @@ class PublishService:
         if low_pool:
             log.warning("publish_low_keyword_pool", category_id=payload.category_id, keyword=keyword)
 
+        # 5b. Find matching cluster for keyword context (C2)
+        cluster = self._find_matching_cluster(keyword, category.keywords)
+        if cluster:
+            log.info(
+                "publish_cluster_found",
+                keyword=keyword,
+                cluster_name=cluster.get("cluster_name", ""),
+            )
+
         # 6. Estimate cost (social auto-publish does not generate images)
         if content_type == "article":
             estimated_cost = estimate_article_cost()
@@ -179,7 +210,7 @@ class PublishService:
 
         # 7. Check balance (E01): pause schedule per EDGE_CASES.md
         if not await self._tokens.check_balance(user_id, estimated_cost):
-            await self._pause_schedule_insufficient_balance(payload.schedule_id, user_id, estimated_cost)
+            await self._pause_schedule_insufficient_balance(schedule, user_id, estimated_cost)
             return PublishOutcome(
                 status="error",
                 reason="insufficient_balance",
@@ -217,6 +248,8 @@ class PublishService:
             keyword=keyword,
             content_type=content_type,
             estimated_cost=estimated_cost,
+            schedule=schedule,
+            cluster=cluster,
         )
 
     async def _publish_and_log(
@@ -228,6 +261,8 @@ class PublishService:
         keyword: str,
         content_type: str,
         estimated_cost: int,
+        schedule: Any,
+        cluster: dict[str, Any] | None = None,
     ) -> PublishOutcome:
         """Generate content, publish, log result, and execute cross-posts."""
         user_id = payload.user_id
@@ -240,6 +275,7 @@ class PublishService:
                 connection=connection,
                 content_type=content_type,
                 category=category,
+                cluster=cluster,
             )
 
             # E34: refund for failed images (30 tokens per image)
@@ -280,8 +316,7 @@ class PublishService:
 
             # Execute cross-posts if configured (social posts only)
             cross_results: list[CrossPostResult] = []
-            schedule = await self._schedules.get_by_id(payload.schedule_id)
-            if schedule and schedule.cross_post_connection_ids and payload.platform_type != "wordpress":
+            if schedule.cross_post_connection_ids and payload.platform_type != "wordpress":
                 lead_text = ""
                 if isinstance(gen_result.content, dict):
                     lead_text = gen_result.content.get("text", "")
@@ -345,17 +380,16 @@ class PublishService:
 
     async def _pause_schedule_insufficient_balance(
         self,
-        schedule_id: int,
+        schedule: Any,
         user_id: int,
         required: int,
     ) -> None:
         """E01: Disable schedule + delete QStash crons on insufficient balance."""
         log.warning("publish_insufficient_balance", user_id=user_id, required=required)
-        schedule = await self._schedules.get_by_id(schedule_id)
-        if schedule and schedule.qstash_schedule_ids and self._scheduler_service:
+        if schedule.qstash_schedule_ids and self._scheduler_service:
             await self._scheduler_service.delete_qstash_schedules(schedule.qstash_schedule_ids)
         await self._schedules.update(
-            schedule_id,
+            schedule.id,
             PlatformScheduleUpdate(status="error", enabled=False, qstash_schedule_ids=[]),
         )
 
@@ -368,6 +402,7 @@ class PublishService:
         connection: Any,
         content_type: str,
         category: Any,
+        cluster: dict[str, Any] | None = None,
     ) -> tuple[Any, PublishResult, int]:
         """Generate content + images in parallel, then publish.
 
@@ -383,6 +418,7 @@ class PublishService:
                 keyword,
                 connection,
                 category,
+                cluster=cluster,
             )
 
         result, pub = await self._generate_social_post(
@@ -403,9 +439,12 @@ class PublishService:
         keyword: str,
         connection: Any,
         category: Any,
+        cluster: dict[str, Any] | None = None,
     ) -> tuple[Any, PublishResult, int]:
-        """Parallel article pipeline: text + images via asyncio.gather (96s→56s).
+        """Parallel article pipeline: websearch + text + images (C1, C2).
 
+        Phase 1: Gather web research (Serper + Firecrawl + Perplexity) in parallel.
+        Phase 2: Generate text + images in parallel via asyncio.gather (96s->56s).
         Returns (gen_result, pub_result, failed_image_count).
         """
         from services.ai.articles import ArticleService
@@ -431,12 +470,30 @@ class PublishService:
             image_context["company_name"] = project.company_name or ""
             image_context["specialization"] = project.specialization or ""
 
-        # Parallel: text + images
+        # Phase 1: Gather web research data (C1 — Serper + Firecrawl + Perplexity)
+        project_url = project.website_url if project else None
+        websearch = await self._gather_websearch_data(
+            keyword=keyword,
+            project_url=project_url,
+            specialization=(project.specialization or "") if project else "",
+            company_name=(project.company_name or "") if project else "",
+            geography=(project.company_city or "") if project else "",
+            company_description_short=((project.description or "")[:200]) if project else "",
+        )
+
+        # Phase 2: Parallel text + images
         text_task = article_service.generate(
             user_id=user_id,
             project_id=project_id,
             category_id=category_id,
             keyword=keyword,
+            cluster=cluster,
+            serper_data=websearch["serper_data"],
+            competitor_pages=websearch["competitor_pages"],
+            competitor_analysis=websearch["competitor_analysis"],
+            competitor_gaps=websearch["competitor_gaps"],
+            internal_links=websearch.get("internal_links", ""),
+            research_data=websearch.get("research_data"),
         )
         image_task = image_service.generate(
             user_id=user_id,
@@ -740,6 +797,206 @@ class PublishService:
 
         return results
 
+    @staticmethod
+    def _find_matching_cluster(
+        keyword: str,
+        keywords: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Find cluster in category.keywords where keyword matches main_phrase or phrases.
+
+        category.keywords is a JSON array of clusters:
+        [{cluster_name, cluster_type, main_phrase, phrases: [{phrase, volume, ...}]}]
+        """
+        keyword_lower = keyword.lower()
+        for cluster in keywords:
+            if not isinstance(cluster, dict):
+                continue
+            # Match main_phrase
+            if cluster.get("main_phrase", "").lower() == keyword_lower:
+                return cluster
+            # Match in phrases array
+            for phrase_entry in cluster.get("phrases", []):
+                if isinstance(phrase_entry, dict) and phrase_entry.get("phrase", "").lower() == keyword_lower:
+                    return cluster
+        return None
+
+    async def _fetch_research(
+        self,
+        main_phrase: str,
+        specialization: str,
+        company_name: str,
+        geography: str = "",
+        company_description_short: str = "",
+    ) -> dict[str, Any] | None:
+        """Fetch web research via Perplexity Sonar Pro with Redis caching.
+
+        Returns parsed research dict or None on failure (graceful degradation E53).
+        """
+        from services.ai.articles import RESEARCH_SCHEMA
+
+        cache_input = f"{main_phrase}:{specialization}".lower()
+        keyword_hash = hashlib.md5(cache_input.encode(), usedforsecurity=False).hexdigest()[:12]
+        cache_key = CacheKeys.research(keyword_hash)
+
+        # Check cache
+        try:
+            cached = await self._redis.get(cache_key)
+            if cached:
+                parsed = json.loads(cached)
+                if isinstance(parsed, dict):
+                    log.info("research_cache_hit", keyword=main_phrase[:50])
+                    return parsed
+                log.warning("research_cache_invalid_type", type=type(parsed).__name__)
+        except Exception:
+            log.warning("research_cache_read_failed", exc_info=True)
+
+        # Fetch from Sonar Pro (E53: graceful degradation on failure)
+        try:
+            context = {
+                "main_phrase": main_phrase,
+                "specialization": specialization,
+                "company_name": company_name,
+                "geography": geography,
+                "company_description_short": company_description_short[:200] if company_description_short else "",
+                "language": "ru",
+            }
+            request = GenerationRequest(
+                task="article_research",
+                context=context,
+                user_id=0,  # system-level request
+                response_schema=RESEARCH_SCHEMA,
+            )
+            result = await self._ai_orchestrator.generate_without_rate_limit(request)
+            research = result.content if isinstance(result.content, dict) else None
+            if not research:
+                return None
+        except Exception:
+            log.warning("research_fetch_failed", keyword=main_phrase[:50], exc_info=True)
+            return None
+
+        # Cache result
+        try:
+            await self._redis.set(cache_key, json.dumps(research, ensure_ascii=False), ex=RESEARCH_CACHE_TTL)
+            log.info("research_cached", keyword=main_phrase[:50], ttl=RESEARCH_CACHE_TTL)
+        except Exception:
+            log.warning("research_cache_write_failed", exc_info=True)
+
+        return research
+
+    async def _gather_websearch_data(
+        self,
+        keyword: str,
+        project_url: str | None,
+        *,
+        specialization: str = "",
+        company_name: str = "",
+        geography: str = "",
+        company_description_short: str = "",
+    ) -> dict[str, Any]:
+        """Gather Serper PAA + Firecrawl competitor data + Perplexity research in parallel.
+
+        Mirrors PreviewService._gather_websearch_data() logic (C1).
+        Returns dict with keys: serper_data, competitor_pages, competitor_analysis,
+        competitor_gaps, research_data. All values gracefully degrade to empty on failure.
+        """
+        result: dict[str, Any] = {
+            "serper_data": None,
+            "competitor_pages": [],
+            "competitor_analysis": "",
+            "competitor_gaps": "",
+            "research_data": None,
+        }
+
+        tasks: dict[str, Any] = {}
+
+        # Serper: PAA + organic results for the keyword
+        if self._serper:
+            tasks["serper"] = self._serper.search(keyword, num=10)
+
+        # Research: Perplexity Sonar Pro (parallel with Serper, API_CONTRACTS.md section 7a)
+        tasks["research"] = self._fetch_research(
+            main_phrase=keyword,
+            specialization=specialization,
+            company_name=company_name,
+            geography=geography,
+            company_description_short=company_description_short,
+        )
+
+        # Firecrawl: internal links for the project site (if URL provided)
+        if self._firecrawl and project_url:
+            tasks["map"] = self._firecrawl.map_site(project_url, limit=100)
+
+        if not tasks:
+            return result
+
+        task_keys = list(tasks.keys())
+        task_coros = list(tasks.values())
+        gathered = await asyncio.gather(*task_coros, return_exceptions=True)
+        responses = dict(zip(task_keys, gathered, strict=True))
+
+        # Process Research results (E53: graceful degradation)
+        research_result = responses.get("research")
+        if research_result and not isinstance(research_result, BaseException):
+            result["research_data"] = research_result
+        elif isinstance(research_result, BaseException):
+            log.warning("research_skipped", error=str(research_result))
+
+        # Process Serper results
+        serper_result = responses.get("serper")
+        if serper_result and not isinstance(serper_result, BaseException):
+            result["serper_data"] = {
+                "organic": serper_result.organic,
+                "people_also_ask": serper_result.people_also_ask,
+                "related_searches": serper_result.related_searches,
+            }
+
+            # Scrape top-3 competitor pages via Firecrawl
+            if self._firecrawl and serper_result.organic:
+                competitor_urls = [
+                    r["link"]
+                    for r in serper_result.organic
+                    if r.get("link") and not _is_own_site(r["link"], project_url)
+                ][:_MAX_COMPETITOR_SCRAPE]
+                if competitor_urls:
+                    scrape_tasks = [self._firecrawl.scrape_content(url) for url in competitor_urls]
+                    scrape_results = await asyncio.gather(*scrape_tasks, return_exceptions=True)
+                    pages: list[dict[str, Any]] = []
+                    for sr in scrape_results:
+                        if sr and not isinstance(sr, BaseException):
+                            pages.append(
+                                {
+                                    "url": sr.url,
+                                    "word_count": sr.word_count,
+                                    "headings": sr.headings,
+                                    "summary": sr.summary or "",
+                                }
+                            )
+                    result["competitor_pages"] = pages
+
+                    # Format competitor analysis for prompt
+                    if pages:
+                        result["competitor_analysis"] = _format_competitor_analysis(pages)
+                        result["competitor_gaps"] = _identify_gaps(pages)
+        elif isinstance(serper_result, BaseException):
+            log.warning("websearch_serper_failed", error=str(serper_result))
+
+        # Format internal links
+        map_result = responses.get("map")
+        if map_result and not isinstance(map_result, BaseException):
+            urls = [u.get("url", "") for u in map_result.urls[:_MAX_INTERNAL_LINKS] if u.get("url")]
+            result["internal_links"] = "\n".join(urls) if urls else ""
+        elif isinstance(map_result, BaseException):
+            log.warning("websearch_map_failed", error=str(map_result))
+
+        log.info(
+            "websearch_data_gathered",
+            has_serper=result["serper_data"] is not None,
+            has_research=result["research_data"] is not None,
+            competitor_count=len(result["competitor_pages"]),
+            has_internal_links=bool(result.get("internal_links")),
+        )
+        return result
+
     def _get_publisher(self, platform_type: str) -> Any:
         """Get publisher instance for platform type."""
         from services.publishers.pinterest import PinterestPublisher
@@ -769,3 +1026,47 @@ class PublishService:
             "pinterest": "pin_text",
         }
         return content_types.get(platform_type, "plain_text")
+
+
+def _is_own_site(url: str, project_url: str | None) -> bool:
+    """Check if a URL belongs to the project's own site (skip in competitor scraping)."""
+    if not project_url:
+        return False
+    try:
+        own_domain = urlparse(project_url).netloc.lower().replace("www.", "")
+        url_domain = urlparse(url).netloc.lower().replace("www.", "")
+        return own_domain == url_domain
+    except (ValueError, AttributeError):  # fmt: skip
+        return False
+
+
+def _format_competitor_analysis(pages: list[dict[str, Any]]) -> str:
+    """Format competitor scrape results into a text block for AI prompt."""
+    lines: list[str] = []
+    for i, page in enumerate(pages, 1):
+        h2_headings = [h["text"] for h in page.get("headings", []) if h.get("level") == 2]
+        lines.append(f"Конкурент {i} ({page.get('url', '')}):")
+        lines.append(f"  Объём: ~{page.get('word_count', 0)} слов")
+        if page.get("summary"):
+            lines.append(f"  Тема: {page['summary'][:_MAX_SUMMARY_CHARS]}")
+        if h2_headings:
+            lines.append(f"  H2: {', '.join(h2_headings[:_MAX_H2_PER_COMPETITOR])}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _identify_gaps(pages: list[dict[str, Any]]) -> str:
+    """Summarize competitor structure for AI to identify content gaps."""
+    if not pages:
+        return ""
+    lines: list[str] = []
+    for i, page in enumerate(pages, 1):
+        h2_list = [str(h.get("text", "")) for h in page.get("headings", []) if h.get("level") == 2]
+        if h2_list:
+            lines.append(f"Конкурент {i}: {', '.join(h2_list[:_MAX_H2_PER_COMPETITOR])}")
+    if not lines:
+        return ""
+    return (
+        "Структура H2 конкурентов (определи, какие темы НЕ раскрыты "
+        "ни одним конкурентом — это твоя уникальная ценность):\n" + "\n".join(lines)
+    )
