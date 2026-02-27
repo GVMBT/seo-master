@@ -4,7 +4,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
@@ -70,6 +70,63 @@ def _make_conn_repo(db: SupabaseClient) -> ConnectionsRepository:
     settings = get_settings()
     cm = CredentialManager(settings.encryption_key.get_secret_value())
     return ConnectionsRepository(db, cm)
+
+
+# ---------------------------------------------------------------------------
+# Entry: from nav:scheduler (pipeline result screen, H4 fix)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "nav:scheduler")
+async def nav_scheduler(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+    """Navigate to scheduler from pipeline result (no project context).
+
+    If user has 1 project — go directly to its scheduler.
+    If multiple — show project selection list.
+    """
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    repo = ProjectsRepository(db)
+    projects = await repo.get_by_user(user.id)
+    if not projects:
+        await callback.answer("Сначала создайте проект", show_alert=True)
+        return
+
+    if len(projects) == 1:
+        project = projects[0]
+        cats = await CategoriesRepository(db).get_by_project(project.id)
+        if not cats:
+            await callback.answer("Сначала создайте категорию", show_alert=True)
+            return
+        await msg.edit_text(
+            "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
+            reply_markup=scheduler_cat_list_kb(cats, project.id),
+        )
+        await callback.answer()
+        return
+
+    # Multiple projects — show selection
+    rows: list[list[InlineKeyboardButton]] = []
+    for p in projects:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=p.name,
+                    callback_data=f"project:{p.id}:scheduler",
+                ),
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")]
+    )
+    await msg.edit_text(
+        "<b>Планировщик</b>\n\nВыберите проект:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
