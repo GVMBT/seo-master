@@ -226,36 +226,13 @@ async def run_keyword_generation(
             cost=cost,
         )
 
-        # Delete progress message and send results as a NEW message
-        # (original callback message may be stale after 90s)
-        try:
-            await msg.delete()
-        except Exception:
-            log.debug(f"{log_prefix}.delete_progress_failed")
-
-        bot = msg.bot
-        if not bot:
-            return
-        await bot.send_message(
-            chat_id=msg.chat.id,
-            text=(
-                f"Готово! Добавлено:\n"
-                f"Кластеров: {len(enriched)}\n"
-                f"Фраз: {total_phrases}\n"
-                f"Общий объём: {total_volume:,}/мес\n\n"
-                f"Списано {cost} токенов."
-            ),
-        )
-        await asyncio.sleep(1)
-        await on_success(msg, state, user, db, redis)
-
     except Exception:
         log.exception(
             f"{log_prefix}.keywords_failed",
             user_id=user.id,
             category_id=category_id,
         )
-        # Refund on error
+        # Refund on error — only if keywords were NOT saved yet
         await token_service.refund(
             user_id=user.id,
             amount=cost,
@@ -274,6 +251,31 @@ async def run_keyword_generation(
             reply_markup=pipeline_back_to_checklist_kb(prefix=back_kb_prefix),
         )
         await state.set_state(readiness_state)
+        return
+
+    # Post-success UI: outside refundable try so DB-saved keywords aren't refunded
+    try:
+        await msg.delete()
+    except Exception:
+        log.debug(f"{log_prefix}.delete_progress_failed")
+
+    bot = msg.bot
+    if not bot:
+        return
+    with contextlib.suppress(Exception):
+        await bot.send_message(
+            chat_id=msg.chat.id,
+            text=(
+                f"Готово! Добавлено:\n"
+                f"Кластеров: {len(enriched)}\n"
+                f"Фраз: {total_phrases}\n"
+                f"Общий объём: {total_volume:,}/мес\n\n"
+                f"Списано {cost} токенов."
+            ),
+        )
+    await asyncio.sleep(1)
+    with contextlib.suppress(Exception):
+        await on_success(msg, state, user, db, redis)
 
 
 # ---------------------------------------------------------------------------
@@ -919,12 +921,21 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             return
 
         # Charge tokens
-        await token_svc.charge(
-            user_id=user.id,
-            amount=cost,
-            operation_type="keywords",
-            description=f"Подбор ключевых фраз ({quantity} шт., {cfg.charge_suffix})",
-        )
+        try:
+            await token_svc.charge(
+                user_id=user.id,
+                amount=cost,
+                operation_type="keywords",
+                description=f"Подбор ключевых фраз ({quantity} шт., {cfg.charge_suffix})",
+            )
+        except Exception:
+            log.exception(
+                f"{log_prefix}.keywords_charge_failed",
+                user_id=user.id,
+                category_id=category_id,
+            )
+            await callback.answer("Ошибка списания токенов. Попробуйте позже.", show_alert=True)
+            return
 
         await state.set_state(fsm.readiness_keywords_generating)
         await callback.message.edit_text("Получаю реальные фразы из DataForSEO...")
