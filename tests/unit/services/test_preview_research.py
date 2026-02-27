@@ -1,7 +1,7 @@
-"""Tests for research integration in services/preview.py.
+"""Tests for research functions in services/research_helpers.py.
 
-Covers: _fetch_research cache hit/miss, graceful degradation (E53),
-warmup_research_schema, _gather_websearch_data research parallel execution.
+Covers: fetch_research cache hit/miss, graceful degradation (E53),
+warmup_research_schema (PreviewService), cache key determinism.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from cache.keys import RESEARCH_CACHE_TTL
 from services.ai.articles import RESEARCH_SCHEMA
 from services.ai.orchestrator import GenerationResult
 from services.preview import PreviewService
+from services.research_helpers import fetch_research
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -63,31 +64,21 @@ def preview_service(mock_orchestrator: AsyncMock, mock_redis: AsyncMock) -> Prev
     )
 
 
-@pytest.fixture
-def preview_service_no_redis(mock_orchestrator: AsyncMock) -> PreviewService:
-    return PreviewService(
-        ai_orchestrator=mock_orchestrator,
-        db=MagicMock(),
-        image_storage=MagicMock(),
-        http_client=MagicMock(),
-        redis=None,
-    )
-
-
 # ---------------------------------------------------------------------------
-# _fetch_research — cache miss (API call)
+# fetch_research — cache miss (API call)
 # ---------------------------------------------------------------------------
 
 
 class TestFetchResearchCacheMiss:
     async def test_fetches_from_api_on_cache_miss(
         self,
-        preview_service: PreviewService,
         mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """On cache miss, calls generate_without_rate_limit and returns result."""
-        result = await preview_service._fetch_research(
+        result = await fetch_research(
+            mock_orchestrator,
+            mock_redis,
             main_phrase="SEO optimization",
             specialization="digital marketing",
             company_name="TestCo",
@@ -101,11 +92,13 @@ class TestFetchResearchCacheMiss:
 
     async def test_caches_result_in_redis(
         self,
-        preview_service: PreviewService,
+        mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """After API call, result is cached in Redis with correct TTL."""
-        await preview_service._fetch_research(
+        await fetch_research(
+            mock_orchestrator,
+            mock_redis,
             main_phrase="SEO optimization",
             specialization="digital marketing",
             company_name="TestCo",
@@ -123,21 +116,22 @@ class TestFetchResearchCacheMiss:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_research — cache hit
+# fetch_research — cache hit
 # ---------------------------------------------------------------------------
 
 
 class TestFetchResearchCacheHit:
     async def test_returns_cached_data_without_api_call(
         self,
-        preview_service: PreviewService,
         mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """On cache hit, returns cached data and does NOT call API."""
         mock_redis.get.return_value = json.dumps(_SAMPLE_RESEARCH)
 
-        result = await preview_service._fetch_research(
+        result = await fetch_research(
+            mock_orchestrator,
+            mock_redis,
             main_phrase="SEO optimization",
             specialization="digital marketing",
             company_name="TestCo",
@@ -148,20 +142,22 @@ class TestFetchResearchCacheHit:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_research — graceful degradation (E53)
+# fetch_research — graceful degradation (E53)
 # ---------------------------------------------------------------------------
 
 
 class TestFetchResearchGracefulDegradation:
     async def test_api_error_returns_none(
         self,
-        preview_service: PreviewService,
         mock_orchestrator: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
         """When Sonar Pro API fails, returns None (E53: graceful degradation)."""
         mock_orchestrator.generate_without_rate_limit.side_effect = Exception("Sonar Pro unavailable")
 
-        result = await preview_service._fetch_research(
+        result = await fetch_research(
+            mock_orchestrator,
+            mock_redis,
             main_phrase="SEO optimization",
             specialization="digital marketing",
             company_name="TestCo",
@@ -171,8 +167,8 @@ class TestFetchResearchGracefulDegradation:
 
     async def test_non_dict_response_returns_none(
         self,
-        preview_service: PreviewService,
         mock_orchestrator: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
         """When API returns non-dict content, returns None."""
         mock_orchestrator.generate_without_rate_limit.return_value = GenerationResult(
@@ -186,7 +182,9 @@ class TestFetchResearchGracefulDegradation:
             generation_time_ms=500,
         )
 
-        result = await preview_service._fetch_research(
+        result = await fetch_research(
+            mock_orchestrator,
+            mock_redis,
             main_phrase="SEO optimization",
             specialization="digital marketing",
             company_name="TestCo",
@@ -196,14 +194,15 @@ class TestFetchResearchGracefulDegradation:
 
     async def test_redis_read_error_falls_through_to_api(
         self,
-        preview_service: PreviewService,
         mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """Redis read error is swallowed, falls through to API call."""
         mock_redis.get.side_effect = Exception("Redis connection lost")
 
-        result = await preview_service._fetch_research(
+        result = await fetch_research(
+            mock_orchestrator,
+            mock_redis,
             main_phrase="SEO optimization",
             specialization="digital marketing",
             company_name="TestCo",
@@ -214,13 +213,15 @@ class TestFetchResearchGracefulDegradation:
 
     async def test_redis_write_error_does_not_fail(
         self,
-        preview_service: PreviewService,
+        mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """Redis write error is swallowed, result is still returned."""
         mock_redis.set.side_effect = Exception("Redis connection lost")
 
-        result = await preview_service._fetch_research(
+        result = await fetch_research(
+            mock_orchestrator,
+            mock_redis,
             main_phrase="SEO optimization",
             specialization="digital marketing",
             company_name="TestCo",
@@ -230,18 +231,19 @@ class TestFetchResearchGracefulDegradation:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_research — no Redis
+# fetch_research — no Redis
 # ---------------------------------------------------------------------------
 
 
 class TestFetchResearchNoRedis:
     async def test_works_without_redis(
         self,
-        preview_service_no_redis: PreviewService,
         mock_orchestrator: AsyncMock,
     ) -> None:
         """When redis=None, skips cache and calls API directly."""
-        result = await preview_service_no_redis._fetch_research(
+        result = await fetch_research(
+            mock_orchestrator,
+            None,
             main_phrase="SEO optimization",
             specialization="digital marketing",
             company_name="TestCo",
@@ -252,74 +254,73 @@ class TestFetchResearchNoRedis:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_research — cache key determinism
+# fetch_research — cache key determinism
 # ---------------------------------------------------------------------------
 
 
 class TestFetchResearchCacheKey:
+    @staticmethod
+    async def _call(
+        orch: AsyncMock,
+        redis: AsyncMock,
+        *,
+        phrase: str = "SEO",
+        spec: str = "marketing",
+        company: str = "Co",
+    ) -> str:
+        """Call fetch_research and return the cache key used for redis.get."""
+        await fetch_research(
+            orch, redis, main_phrase=phrase, specialization=spec, company_name=company,
+        )
+        return redis.get.call_args[0][0]
+
     async def test_same_inputs_same_cache_key(
         self,
-        preview_service: PreviewService,
+        mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """Same main_phrase + specialization + company_name produces same cache key."""
-        await preview_service._fetch_research("SEO", "marketing", "Co")
-        first_key = mock_redis.get.call_args[0][0]
-
+        first_key = await self._call(mock_orchestrator, mock_redis)
         mock_redis.reset_mock()
-        await preview_service._fetch_research("SEO", "marketing", "Co")
-        second_key = mock_redis.get.call_args[0][0]
-
+        second_key = await self._call(mock_orchestrator, mock_redis)
         assert first_key == second_key
 
     async def test_different_company_different_cache_key(
         self,
-        preview_service: PreviewService,
+        mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """Different company_name produces different cache key (CR-78c)."""
-        await preview_service._fetch_research("SEO", "marketing", "Co")
-        first_key = mock_redis.get.call_args[0][0]
-
+        first_key = await self._call(mock_orchestrator, mock_redis)
         mock_redis.reset_mock()
-        await preview_service._fetch_research("SEO", "marketing", "Different")
-        second_key = mock_redis.get.call_args[0][0]
-
+        second_key = await self._call(mock_orchestrator, mock_redis, company="Different")
         assert first_key != second_key
 
     async def test_different_keyword_different_cache_key(
         self,
-        preview_service: PreviewService,
+        mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """Different main_phrase produces different cache key."""
-        await preview_service._fetch_research("SEO", "marketing", "Co")
-        first_key = mock_redis.get.call_args[0][0]
-
+        first_key = await self._call(mock_orchestrator, mock_redis)
         mock_redis.reset_mock()
-        await preview_service._fetch_research("PPC", "marketing", "Co")
-        second_key = mock_redis.get.call_args[0][0]
-
+        second_key = await self._call(mock_orchestrator, mock_redis, phrase="PPC")
         assert first_key != second_key
 
     async def test_different_specialization_different_cache_key(
         self,
-        preview_service: PreviewService,
+        mock_orchestrator: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
         """Different specialization for same keyword produces different cache key."""
-        await preview_service._fetch_research("SEO", "marketing", "Co")
-        first_key = mock_redis.get.call_args[0][0]
-
+        first_key = await self._call(mock_orchestrator, mock_redis)
         mock_redis.reset_mock()
-        await preview_service._fetch_research("SEO", "medicine", "Co")
-        second_key = mock_redis.get.call_args[0][0]
-
+        second_key = await self._call(mock_orchestrator, mock_redis, spec="medicine")
         assert first_key != second_key
 
 
 # ---------------------------------------------------------------------------
-# warmup_research_schema — smoke test
+# warmup_research_schema — smoke test (still on PreviewService)
 # ---------------------------------------------------------------------------
 
 

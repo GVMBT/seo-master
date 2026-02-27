@@ -262,24 +262,22 @@ class TestE44ImagePartialFailure:
 class TestE04SerperUnavailable:
     async def test_serper_failure_generates_article_without_serper(self) -> None:
         """E04: Serper down -> websearch returns empty serper_data."""
-        from services.preview import PreviewService
+        from services.research_helpers import gather_websearch_data
 
         mock_orch = AsyncMock()
         mock_orch.generate_without_rate_limit.return_value = _gen_result({"summary": "test"})
         mock_serper = AsyncMock()
         mock_serper.search.side_effect = Exception("429 Serper quota exceeded")
+        mock_redis = AsyncMock(get=AsyncMock(return_value=None), set=AsyncMock())
 
-        svc = PreviewService(
-            ai_orchestrator=mock_orch,
-            db=MagicMock(),
-            image_storage=MagicMock(),
-            http_client=MagicMock(),
-            serper_client=mock_serper,
-            firecrawl_client=None,
-            redis=AsyncMock(get=AsyncMock(return_value=None), set=AsyncMock()),
+        result = await gather_websearch_data(
+            "test",
+            None,
+            serper=mock_serper,
+            firecrawl=None,
+            orchestrator=mock_orch,
+            redis=mock_redis,
         )
-
-        result = await svc._gather_websearch_data("test", None)
 
         assert result["serper_data"] is None
         assert result["competitor_pages"] == []
@@ -295,7 +293,7 @@ class TestE31FirecrawlTimeout:
         """E31: Firecrawl timeout -> article without competitor analysis."""
         from dataclasses import dataclass
 
-        from services.preview import PreviewService
+        from services.research_helpers import gather_websearch_data
 
         @dataclass
         class FakeSerperResult:
@@ -314,18 +312,16 @@ class TestE31FirecrawlTimeout:
         mock_firecrawl = AsyncMock()
         mock_firecrawl.map_site = AsyncMock(side_effect=Exception("Map timeout"))
         mock_firecrawl.scrape_content = AsyncMock(side_effect=Exception("Scrape timeout"))
+        mock_redis = AsyncMock(get=AsyncMock(return_value=None), set=AsyncMock())
 
-        svc = PreviewService(
-            ai_orchestrator=mock_orch,
-            db=MagicMock(),
-            image_storage=MagicMock(),
-            http_client=MagicMock(),
-            serper_client=mock_serper,
-            firecrawl_client=mock_firecrawl,
-            redis=AsyncMock(get=AsyncMock(return_value=None), set=AsyncMock()),
+        result = await gather_websearch_data(
+            "test",
+            "https://mysite.com",
+            serper=mock_serper,
+            firecrawl=mock_firecrawl,
+            orchestrator=mock_orch,
+            redis=mock_redis,
         )
-
-        result = await svc._gather_websearch_data("test", "https://mysite.com")
 
         assert result["competitor_pages"] == []
         assert result["serper_data"] is not None
@@ -388,23 +384,19 @@ class TestE35ImageOkTextFailed:
 class TestE53ResearchUnavailable:
     async def test_research_failure_returns_none(self) -> None:
         """E53: Sonar Pro down -> research_data=None, pipeline continues."""
-        from services.preview import PreviewService
+        from services.research_helpers import fetch_research
 
         mock_orch = AsyncMock()
         mock_orch.generate_without_rate_limit.side_effect = Exception("Sonar down")
         mock_redis = AsyncMock()
         mock_redis.get.return_value = None
 
-        svc = PreviewService(
-            ai_orchestrator=mock_orch,
-            db=MagicMock(),
-            image_storage=MagicMock(),
-            http_client=MagicMock(),
-            redis=mock_redis,
-        )
-
-        result = await svc._fetch_research(
-            main_phrase="test", specialization="SEO", company_name="Co"
+        result = await fetch_research(
+            mock_orch,
+            mock_redis,
+            main_phrase="test",
+            specialization="SEO",
+            company_name="Co",
         )
 
         assert result is None

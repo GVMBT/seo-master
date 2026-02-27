@@ -7,15 +7,12 @@ Zero Telegram/Aiogram dependencies.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from cache.keys import RESEARCH_CACHE_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.repositories.audits import AuditsRepository
 from db.repositories.categories import CategoriesRepository
@@ -24,7 +21,7 @@ from services.ai.articles import RESEARCH_SCHEMA
 from services.ai.orchestrator import AIOrchestrator, GenerationRequest
 from services.external.firecrawl import FirecrawlClient
 from services.external.serper import SerperClient
-from services.research_helpers import format_competitor_analysis, identify_gaps, is_own_site
+from services.research_helpers import gather_websearch_data
 from services.storage import ImageStorage
 
 if TYPE_CHECKING:
@@ -35,11 +32,6 @@ if TYPE_CHECKING:
     from services.publishers.base import PublishResult
 
 log = structlog.get_logger()
-
-_MAX_INTERNAL_LINKS = 20
-
-# Max competitor pages to scrape (cost: 1 Firecrawl credit each)
-_MAX_COMPETITOR_SCRAPE = 3
 
 
 @dataclass
@@ -78,184 +70,6 @@ class PreviewService:
         self._firecrawl = firecrawl_client
         self._redis = redis
 
-    async def _fetch_research(
-        self,
-        main_phrase: str,
-        specialization: str,
-        company_name: str,
-        geography: str = "",
-        company_description_short: str = "",
-    ) -> dict[str, Any] | None:
-        """Fetch web research via Perplexity Sonar Pro with Redis caching.
-
-        Returns parsed research dict or None on failure (graceful degradation E53).
-        """
-        cache_input = f"{main_phrase}|{specialization}|{company_name}".lower()
-        keyword_hash = hashlib.md5(cache_input.encode(), usedforsecurity=False).hexdigest()[:12]
-        cache_key = CacheKeys.research(keyword_hash)
-
-        # Check cache
-        if self._redis:
-            try:
-                cached = await self._redis.get(cache_key)
-                if cached:
-                    parsed = json.loads(cached)
-                    if isinstance(parsed, dict):
-                        log.info("research_cache_hit", keyword=main_phrase[:50])
-                        return parsed
-                    log.warning("research_cache_invalid_type", type=type(parsed).__name__)
-            except Exception:
-                log.warning("research_cache_read_failed", exc_info=True)
-
-        # Fetch from Sonar Pro (E53: graceful degradation on failure)
-        try:
-            context = {
-                "main_phrase": main_phrase,
-                "specialization": specialization,
-                "company_name": company_name,
-                "geography": geography,
-                "company_description_short": company_description_short[:200] if company_description_short else "",
-                "language": "ru",
-            }
-            request = GenerationRequest(
-                task="article_research",
-                context=context,
-                user_id=0,  # system-level request, no per-user rate limit
-                response_schema=RESEARCH_SCHEMA,
-            )
-            result = await self._orchestrator.generate_without_rate_limit(request)
-            research = result.content if isinstance(result.content, dict) else None
-            if not research:
-                return None
-        except Exception:
-            log.warning("research_fetch_failed", keyword=main_phrase[:50], exc_info=True)
-            return None
-
-        # Cache result
-        if self._redis:
-            try:
-                await self._redis.set(cache_key, json.dumps(research, ensure_ascii=False), ex=RESEARCH_CACHE_TTL)
-                log.info("research_cached", keyword=main_phrase[:50], ttl=RESEARCH_CACHE_TTL)
-            except Exception:
-                log.warning("research_cache_write_failed", exc_info=True)
-
-        return research
-
-    async def _gather_websearch_data(
-        self,
-        keyword: str,
-        project_url: str | None,
-        *,
-        specialization: str = "",
-        company_name: str = "",
-        geography: str = "",
-        company_description_short: str = "",
-    ) -> dict[str, Any]:
-        """Gather Serper PAA + Firecrawl competitor data + Research in parallel.
-
-        Returns dict with keys: serper_data, competitor_pages, competitor_analysis,
-        competitor_gaps, research_data. All values gracefully degrade to empty on failure.
-        Cost: ~$0.001 (Serper) + ~$0.03 (3 Firecrawl scrapes) + ~$0.01 (Sonar Pro).
-        """
-        result: dict[str, Any] = {
-            "serper_data": None,
-            "competitor_pages": [],
-            "competitor_analysis": "",
-            "competitor_gaps": "",
-            "research_data": None,
-        }
-
-        tasks: dict[str, Any] = {}
-
-        # Serper: PAA + organic results for the keyword
-        if self._serper:
-            tasks["serper"] = self._serper.search(keyword, num=10)
-
-        # Research: Perplexity Sonar Pro (parallel with Serper, §7a)
-        tasks["research"] = self._fetch_research(
-            main_phrase=keyword,
-            specialization=specialization,
-            company_name=company_name,
-            geography=geography,
-            company_description_short=company_description_short,
-        )
-
-        # Firecrawl: internal links for the project site (if URL provided)
-        if self._firecrawl and project_url:
-            tasks["map"] = self._firecrawl.map_site(project_url, limit=100)
-
-        if not tasks:
-            return result
-
-        task_keys = list(tasks.keys())
-        task_coros = list(tasks.values())
-        gathered = await asyncio.gather(*task_coros, return_exceptions=True)
-        responses = dict(zip(task_keys, gathered, strict=True))
-
-        # Process Research results (E53: graceful degradation)
-        research_result = responses.get("research")
-        if research_result and not isinstance(research_result, BaseException):
-            result["research_data"] = research_result
-        elif isinstance(research_result, BaseException):
-            log.warning("research_skipped", error=str(research_result))
-
-        # Process Serper results
-        serper_result = responses.get("serper")
-        if serper_result and not isinstance(serper_result, BaseException):
-            result["serper_data"] = {
-                "organic": serper_result.organic,
-                "people_also_ask": serper_result.people_also_ask,
-                "related_searches": serper_result.related_searches,
-            }
-
-            # Scrape top-3 competitor pages via Firecrawl
-            # Filter own site first, then slice to ensure full count
-            if self._firecrawl and serper_result.organic:
-                competitor_urls = [
-                    r["link"]
-                    for r in serper_result.organic
-                    if r.get("link") and not is_own_site(r["link"], project_url)
-                ][:_MAX_COMPETITOR_SCRAPE]
-                if competitor_urls:
-                    scrape_tasks = [self._firecrawl.scrape_content(url) for url in competitor_urls]
-                    scrape_results = await asyncio.gather(*scrape_tasks, return_exceptions=True)
-                    pages: list[dict[str, Any]] = []
-                    for sr in scrape_results:
-                        if sr and not isinstance(sr, BaseException):
-                            pages.append(
-                                {
-                                    "url": sr.url,
-                                    "word_count": sr.word_count,
-                                    "headings": sr.headings,
-                                    "summary": sr.summary or "",
-                                }
-                            )
-                    result["competitor_pages"] = pages
-
-                    # Format competitor analysis for prompt
-                    if pages:
-                        result["competitor_analysis"] = format_competitor_analysis(pages)
-                        result["competitor_gaps"] = identify_gaps(pages)
-        elif isinstance(serper_result, BaseException):
-            log.warning("websearch_serper_failed", error=str(serper_result))
-
-        # Format internal links
-        map_result = responses.get("map")
-        if map_result and not isinstance(map_result, BaseException):
-            urls = [u.get("url", "") for u in map_result.urls[:_MAX_INTERNAL_LINKS] if u.get("url")]
-            result["internal_links"] = "\n".join(urls) if urls else ""
-        elif isinstance(map_result, BaseException):
-            log.warning("websearch_map_failed", error=str(map_result))
-
-        log.info(
-            "websearch_data_gathered",
-            has_serper=result["serper_data"] is not None,
-            has_research=result["research_data"] is not None,
-            competitor_count=len(result["competitor_pages"]),
-            has_internal_links=bool(result.get("internal_links")),
-        )
-        return result
-
     async def generate_article_content(
         self,
         user_id: int,
@@ -287,9 +101,13 @@ class PreviewService:
 
         # Phase 1: Gather websearch + research data (Serper PAA + Firecrawl + Sonar Pro)
         project_url = project.website_url if project else None
-        websearch = await self._gather_websearch_data(
+        websearch = await gather_websearch_data(
             keyword,
             project_url,
+            serper=self._serper,
+            firecrawl=self._firecrawl,
+            orchestrator=self._orchestrator,
+            redis=self._redis,
             specialization=(project.specialization or "") if project else "",
             company_name=(project.company_name or "") if project else "",
             geography=(project.company_city or "") if project else "",

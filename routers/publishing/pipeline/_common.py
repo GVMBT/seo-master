@@ -6,12 +6,21 @@ Extracted to avoid circular imports between article.py, readiness.py, and social
 from __future__ import annotations
 
 import json
+import random
 from typing import Literal
 
+import structlog
 from aiogram.fsm.state import State, StatesGroup
 
+from bot.config import get_settings
 from cache.client import RedisClient
 from cache.keys import PIPELINE_CHECKPOINT_TTL, CacheKeys
+from db.client import SupabaseClient
+from db.models import User
+from db.repositories.categories import CategoriesRepository
+from services.tokens import TokenService
+
+log = structlog.get_logger()
 
 # Pipeline type literal for checkpoint & ReadinessService
 PipelineType = Literal["article", "social"]
@@ -175,3 +184,61 @@ async def save_checkpoint(
 async def clear_checkpoint(redis: RedisClient, user_id: int) -> None:
     """Remove pipeline checkpoint from Redis."""
     await redis.delete(CacheKeys.pipeline_state(user_id))
+
+
+# ---------------------------------------------------------------------------
+# Shared generation helpers (Zone 3 extraction from article + social)
+# ---------------------------------------------------------------------------
+
+
+async def select_keyword(db: SupabaseClient, category_id: int) -> str | None:
+    """Select a keyword from category for generation.
+
+    Supports both flat format [{phrase}] and cluster format [{main_phrase, phrases}].
+    Phase 10 will implement full cluster rotation (API_CONTRACTS S6).
+    """
+    cats_repo = CategoriesRepository(db)
+    category = await cats_repo.get_by_id(category_id)
+    if not category or not category.keywords:
+        return None
+
+    keywords = category.keywords
+    phrases: list[str] = []
+    for kw in keywords:
+        if isinstance(kw, dict):
+            if "main_phrase" in kw:
+                phrases.append(kw["main_phrase"])
+            elif "phrase" in kw:
+                phrases.append(kw["phrase"])
+        elif isinstance(kw, str):
+            phrases.append(kw)
+
+    if not phrases:
+        return None
+
+    return random.choice(phrases)  # noqa: S311
+
+
+async def try_refund(
+    db: SupabaseClient,
+    user: User,
+    amount: int | None,
+    reason_suffix: str,
+) -> None:
+    """Attempt to refund tokens on error (with GOD_MODE bypass)."""
+    if not amount or amount <= 0:
+        return
+    settings = get_settings()
+    is_god = user.id in settings.admin_ids
+    if is_god:
+        return
+    try:
+        token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
+        await token_svc.refund(
+            user_id=user.id,
+            amount=amount,
+            reason="refund",
+            description=f"Возврат: {reason_suffix}",
+        )
+    except Exception:
+        log.exception("pipeline.refund_failed", user_id=user.id, amount=amount)
