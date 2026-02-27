@@ -369,8 +369,9 @@ async def nav_dashboard(
 ) -> None:
     """Navigate to Dashboard via editMessageText."""
     text, kb = await _build_dashboard(user, is_new_user, db, redis)
-    if safe_message(callback):
-        await callback.message.edit_text(text, reply_markup=kb)
+    msg = safe_message(callback)
+    if msg:
+        await msg.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 
@@ -625,9 +626,10 @@ async def pipeline_restart(
     """Restart pipeline — clear checkpoint and start fresh (E49)."""
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await state.clear()
-    if safe_message(callback):
+    msg = safe_message(callback)
+    if msg:
         text, kb = await _build_dashboard(user, is_new_user, db, redis)
-        await callback.message.edit_text(text, reply_markup=kb)
+        await msg.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 
@@ -636,8 +638,9 @@ async def pipeline_cancel(callback: CallbackQuery, redis: RedisClient, user: Use
     """Cancel active pipeline checkpoint."""
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await callback.answer("Pipeline отменён.")
-    if safe_message(callback):
-        await callback.message.delete()
+    msg = safe_message(callback)
+    if msg:
+        await msg.delete()
 
 
 @router.callback_query(F.data.startswith("pipeline:"))
