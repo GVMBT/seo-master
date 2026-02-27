@@ -13,7 +13,7 @@ from aiogram.types import CallbackQuery, InaccessibleMessage, Message, TelegramO
 from cache.client import RedisClient
 from cache.keys import USER_CACHE_TTL, CacheKeys
 from db.client import SupabaseClient
-from db.models import User, UserCreate
+from db.models import User, UserCreate, UserUpdate
 from db.repositories.users import UsersRepository
 
 log = structlog.get_logger()
@@ -64,6 +64,12 @@ class AuthMiddleware(BaseMiddleware):
                 last_name=tg_user.last_name,
             )
         )
+
+        # Auto-promote: ADMIN_IDS is the single source of truth for admin role
+        if user.id in self._admin_ids and user.role != "admin":
+            await repo.update(user.id, UserUpdate(role="admin"))
+            user = user.model_copy(update={"role": "admin"})
+            log.info("admin_auto_promoted", user_id=user.id)
 
         # Cache user in Redis (5 min TTL)
         await redis.set(
