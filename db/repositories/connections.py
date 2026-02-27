@@ -139,6 +139,41 @@ class ConnectionsRepository(BaseRepository):
         rows = self._rows(resp)
         return self._to_connection(rows[0]) if rows else None
 
+    async def get_list_by_project(self, project_id: int) -> list[dict[str, Any]]:
+        """Get connection summaries for a project WITHOUT decrypting credentials (S3).
+
+        Returns lightweight dicts: {id, platform_type, identifier, status, metadata, project_id}.
+        Use this for list/card views where credentials are not needed.
+        """
+        _LIST_COLS = "id,project_id,platform_type,identifier,status,metadata,created_at"
+        resp = (
+            await self._table(_TABLE)
+            .select(_LIST_COLS)
+            .eq("project_id", project_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return self._rows(resp)
+
+    async def exists_by_identifier(
+        self, identifier: str, platform_type: str, project_ids: list[int] | None = None
+    ) -> bool:
+        """Check if a connection exists by identifier+platform without loading credentials (S3).
+
+        If project_ids is provided, only checks within those projects.
+        If None, checks globally (all projects).
+        """
+        query = (
+            self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .eq("platform_type", platform_type)
+            .eq("identifier", identifier)
+        )
+        if project_ids is not None:
+            query = query.in_("project_id", project_ids)
+        resp = await query.limit(1).execute()
+        return self._count(resp) > 0
+
     async def get_platform_types_by_project(self, project_id: int) -> list[str]:
         """Get distinct active platform types for a project (no credential decryption)."""
         resp = (

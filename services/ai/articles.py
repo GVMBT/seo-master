@@ -298,14 +298,15 @@ NH3_TAGS: set[str] = {
 }
 NH3_ATTRS: dict[str, set[str]] = {
     "span": {"style"},
-    "a": {"href", "title", "target"},
+    "p": {"style"},  # S5: inline branding text color
+    "a": {"href", "title", "target", "style"},  # S5: inline branding accent
     "img": {"src", "alt", "width", "height", "loading"},
     "td": {"colspan", "rowspan"},
     "th": {"colspan", "rowspan"},
-    "h1": {"id"},
-    "h2": {"id"},
-    "h3": {"id"},
-    "h4": {"id"},
+    "h1": {"id", "style"},  # S5: inline branding accent
+    "h2": {"id", "style"},
+    "h3": {"id", "style"},
+    "h4": {"id", "style"},
     "li": {"class"},
     "nav": {"class"},
 }

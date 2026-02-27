@@ -20,7 +20,6 @@ from api.yookassa import _YOOKASSA_IDEMPOTENCY_TTL, yookassa_webhook
 from cache.keys import CacheKeys
 from db.repositories.categories import CategoriesRepository
 from db.repositories.payments import PaymentsRepository
-from db.repositories.projects import ProjectsRepository
 from routers.categories.manage import MAX_CATEGORIES_PER_PROJECT
 from routers.projects.create import MAX_PROJECTS_PER_USER
 from services.ai.rate_limiter import RATE_LIMITS
@@ -489,13 +488,9 @@ class TestCategoryLimit:
         project = MagicMock(id=1, user_id=42)
 
         with (
-            patch("routers.categories.manage.ProjectsRepository") as mock_proj_cls,
+            patch("routers.categories.manage.get_owned_project", new_callable=AsyncMock, return_value=project),
             patch("routers.categories.manage.CategoriesRepository") as mock_cat_cls,
         ):
-            mock_proj = MagicMock()
-            mock_proj_cls.return_value = mock_proj
-            mock_proj.get_by_id = AsyncMock(return_value=project)
-
             mock_cat = MagicMock()
             mock_cat_cls.return_value = mock_cat
             mock_cat.get_count_by_project = AsyncMock(return_value=MAX_CATEGORIES_PER_PROJECT)
@@ -529,14 +524,10 @@ class TestCategoryLimit:
         project = MagicMock(id=1, user_id=42)
 
         with (
-            patch("routers.categories.manage.ProjectsRepository") as mock_proj_cls,
+            patch("routers.categories.manage.get_owned_project", new_callable=AsyncMock, return_value=project),
             patch("routers.categories.manage.CategoriesRepository") as mock_cat_cls,
             patch("routers.categories.manage.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None),
         ):
-            mock_proj = MagicMock()
-            mock_proj_cls.return_value = mock_proj
-            mock_proj.get_by_id = AsyncMock(return_value=project)
-
             mock_cat = MagicMock()
             mock_cat_cls.return_value = mock_cat
             mock_cat.get_count_by_project = AsyncMock(return_value=10)

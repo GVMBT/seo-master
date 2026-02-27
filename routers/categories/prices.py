@@ -8,9 +8,10 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from db.client import SupabaseClient
 from db.models import Category, CategoryUpdate, Project, User
 from db.repositories.categories import CategoriesRepository
@@ -98,7 +99,8 @@ async def show_prices(
     db: SupabaseClient,
 ) -> None:
     """Show prices screen (UX_TOOLBOX.md section 11)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -133,7 +135,8 @@ async def start_text(
     db: SupabaseClient,
 ) -> None:
     """Start text-based price input (section 11.1)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -235,7 +238,8 @@ async def start_excel(
     db: SupabaseClient,
 ) -> None:
     """Start Excel-based price upload (section 11.2)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -415,7 +419,8 @@ async def delete_prices(
     db: SupabaseClient,
 ) -> None:
     """Delete prices (set to NULL)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -455,7 +460,8 @@ async def cancel_prices_inline(
     db: SupabaseClient,
 ) -> None:
     """Cancel price input via inline button — return to category card."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

@@ -216,6 +216,27 @@ class PublicationsRepository(BaseRepository):
         )
         return self._count(resp)
 
+    async def get_stats_by_users_batch(self, user_ids: list[int]) -> dict[int, int]:
+        """Get total successful publication counts for multiple users in one query (H24: batch).
+
+        Returns dict mapping user_id -> total_publications count.
+        """
+        if not user_ids:
+            return {}
+        resp = (
+            await self._table(_TABLE)
+            .select("user_id")
+            .in_("user_id", user_ids)
+            .eq("status", "success")
+            .execute()
+        )
+        rows: list[dict[str, Any]] = self._rows(resp)
+        counts: dict[int, int] = {}
+        for row in rows:
+            uid = int(row["user_id"])
+            counts[uid] = counts.get(uid, 0) + 1
+        return counts
+
     async def get_stats_by_user(self, user_id: int) -> dict[str, int]:
         """Get aggregated publication stats for a user."""
         resp = (

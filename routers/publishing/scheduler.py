@@ -4,10 +4,11 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
 from db.models import User
@@ -79,7 +80,8 @@ def _make_conn_repo(db: SupabaseClient) -> ConnectionsRepository:
 @router.callback_query(F.data.regexp(r"^project:\d+:scheduler$"))
 async def scheduler_entry(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Legacy entry — redirect to articles scheduler."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -105,7 +107,8 @@ async def scheduler_entry(callback: CallbackQuery, user: User, db: SupabaseClien
 @router.callback_query(F.data.regexp(r"^project:\d+:sched_articles$"))
 async def scheduler_articles_entry(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Articles scheduler entry — filters WP-only connections downstream."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -131,7 +134,8 @@ async def scheduler_articles_entry(callback: CallbackQuery, user: User, db: Supa
 @router.callback_query(F.data.regexp(r"^project:\d+:sched_social$"))
 async def scheduler_social_entry(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Social scheduler entry — filters social connections."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -169,7 +173,8 @@ async def scheduler_social_entry(callback: CallbackQuery, user: User, db: Supaba
 @router.callback_query(F.data.regexp(r"^scheduler:\d+:cat:\d+$"))
 async def scheduler_category(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show connections with schedule summaries."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -206,7 +211,8 @@ async def scheduler_category(callback: CallbackQuery, user: User, db: SupabaseCl
 @router.callback_query(F.data.regexp(r"^scheduler:\d+:conn_list$"))
 async def scheduler_conn_list_back(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Navigate back to connection list -- reconstruct category context."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -241,7 +247,8 @@ async def scheduler_conn_list_back(callback: CallbackQuery, user: User, db: Supa
 @router.callback_query(F.data.regexp(r"^scheduler:\d+:conn:\d+$"))
 async def scheduler_connection(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show schedule config for a connection."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -289,7 +296,8 @@ async def scheduler_preset(
     scheduler_service: SchedulerService,
 ) -> None:
     """Apply preset schedule."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -365,7 +373,8 @@ async def scheduler_disable(
     scheduler_service: SchedulerService,
 ) -> None:
     """Disable and delete schedule."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -403,7 +412,8 @@ async def scheduler_disable(
 @router.callback_query(F.data.regexp(r"^sched:\d+:\d+:manual$"))
 async def scheduler_manual(callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext) -> None:
     """Enter manual schedule setup FSM."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -456,7 +466,8 @@ async def scheduler_manual(callback: CallbackQuery, user: User, db: SupabaseClie
 )
 async def schedule_day_toggle(callback: CallbackQuery, state: FSMContext) -> None:
     """Toggle day selection in FSM."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -482,7 +493,8 @@ async def schedule_day_toggle(callback: CallbackQuery, state: FSMContext) -> Non
 @router.callback_query(ScheduleSetupFSM.select_days, F.data == "sched:days:done")
 async def schedule_days_done(callback: CallbackQuery, state: FSMContext) -> None:
     """Validate at least 1 day selected, move to count."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -509,7 +521,8 @@ async def schedule_days_done(callback: CallbackQuery, state: FSMContext) -> None
 @router.callback_query(ScheduleSetupFSM.select_count, F.data.regexp(r"^sched:count:[1-5]$"))
 async def schedule_count_select(callback: CallbackQuery, state: FSMContext) -> None:
     """Store count, move to time selection."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -532,7 +545,8 @@ async def schedule_count_select(callback: CallbackQuery, state: FSMContext) -> N
 @router.callback_query(ScheduleSetupFSM.select_times, F.data.regexp(r"^sched:time:\d{2}:00$"))
 async def schedule_time_toggle(callback: CallbackQuery, state: FSMContext) -> None:
     """Toggle time slot selection."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -571,7 +585,8 @@ async def schedule_times_done(
     scheduler_service: SchedulerService,
 ) -> None:
     """Validate time count, create schedule."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -655,7 +670,8 @@ async def schedule_times_done(
 @router.callback_query(F.data.regexp(r"^sched_social:\d+:cat:\d+$"))
 async def scheduler_social_category(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show social connections with schedule summaries for a category."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -688,7 +704,8 @@ async def scheduler_social_category(callback: CallbackQuery, user: User, db: Sup
 @router.callback_query(F.data.regexp(r"^scheduler:\d+:social_conn_list$"))
 async def scheduler_social_conn_list_back(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Navigate back to social connection list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -724,7 +741,8 @@ async def scheduler_social_conn_list_back(callback: CallbackQuery, user: User, d
 @router.callback_query(F.data.regexp(r"^sched_social:\d+:conn:\d+$"))
 async def scheduler_social_connection(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show social schedule config with cross-post option."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -777,7 +795,8 @@ async def scheduler_social_connection(callback: CallbackQuery, user: User, db: S
 @router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:config$"))
 async def scheduler_crosspost_config(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Show cross-post toggle screen."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -827,7 +846,8 @@ async def scheduler_crosspost_config(callback: CallbackQuery, user: User, db: Su
 @router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:\d+:toggle$"))
 async def scheduler_crosspost_toggle(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Toggle a cross-post target connection."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -872,7 +892,8 @@ async def scheduler_crosspost_toggle(callback: CallbackQuery, user: User, db: Su
 @router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:save$"))
 async def scheduler_crosspost_save(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
     """Save cross_post_connection_ids to schedule."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -934,7 +955,8 @@ async def scheduler_crosspost_save(callback: CallbackQuery, user: User, db: Supa
 @router.callback_query(F.data == "sched:cancel", ScheduleSetupFSM.select_times)
 async def schedule_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """Cancel manual schedule setup, return to connection config."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

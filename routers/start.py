@@ -7,10 +7,11 @@ import structlog
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from bot.texts.legal import LEGAL_NOTICE
 from cache.client import RedisClient
 from cache.keys import CacheKeys
@@ -368,7 +369,7 @@ async def nav_dashboard(
 ) -> None:
     """Navigate to Dashboard via editMessageText."""
     text, kb = await _build_dashboard(user, is_new_user, db, redis)
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+    if safe_message(callback):
         await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
@@ -398,7 +399,7 @@ async def _route_to_step(
     preview_id: int | None,
 ) -> None:
     """Route user to the correct pipeline screen based on checkpoint step."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     # Steps 1-3: re-run from selection screen
@@ -513,7 +514,8 @@ async def pipeline_resume(
     Reads checkpoint from Redis, restores FSM state.data, and routes
     the user to the appropriate step screen.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -598,7 +600,7 @@ async def _route_social_to_step(
     connection_id: int | None,
 ) -> None:
     """Route user to the correct social pipeline screen based on checkpoint step."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     # Steps 1-3: re-run from selection screen
@@ -623,7 +625,7 @@ async def pipeline_restart(
     """Restart pipeline — clear checkpoint and start fresh (E49)."""
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await state.clear()
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+    if safe_message(callback):
         text, kb = await _build_dashboard(user, is_new_user, db, redis)
         await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
@@ -634,7 +636,7 @@ async def pipeline_cancel(callback: CallbackQuery, redis: RedisClient, user: Use
     """Cancel active pipeline checkpoint."""
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await callback.answer("Pipeline отменён.")
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+    if safe_message(callback):
         await callback.message.delete()
 
 

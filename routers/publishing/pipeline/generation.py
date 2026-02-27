@@ -26,10 +26,11 @@ import structlog
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from bot.config import get_settings
 from bot.exceptions import RateLimitError
+from bot.helpers import safe_message
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
@@ -95,7 +96,7 @@ async def show_confirm(
 
     Called from readiness.py when all required items are filled.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     text = _build_confirm_text(fsm_data, report, user)
@@ -195,7 +196,8 @@ async def confirm_generate(
     firecrawl_client: Any = None,
 ) -> None:
     """User confirmed — charge and start generation (step 5 → step 6)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -654,7 +656,8 @@ async def publish_article(
     image_storage: Any,
 ) -> None:
     """Publish article to WordPress (step 7 → step 8)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -794,7 +797,8 @@ async def regenerate_article(
     Free for first MAX_REGENERATIONS_FREE (2), then charges tokens (E10).
     Uses tokens_charged from first generation as fixed cost (P1-12).
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -909,7 +913,8 @@ async def cancel_refund(
     users from copying the preview URL, cancelling, and repeating for free content.
     Cleanup errors must NOT block the refund — refund is more important.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1002,7 +1007,8 @@ async def copy_html(
     db: SupabaseClient,
 ) -> None:
     """Send article HTML as a downloadable .html file."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1043,7 +1049,8 @@ async def connect_wp_publish(
 
     Reuses existing WP connection states from article.py.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1071,7 +1078,8 @@ async def _jump_to_category_selection(
 
     Shared by more_articles and change_topic handlers.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

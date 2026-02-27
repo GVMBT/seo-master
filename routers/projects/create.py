@@ -7,9 +7,10 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from bot.validators import URL_RE
 from db.client import SupabaseClient
 from db.models import Project, ProjectCreate, ProjectUpdate, User
@@ -93,7 +94,8 @@ async def start_create(
     db: SupabaseClient,
 ) -> None:
     """Start project creation flow."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -253,7 +255,8 @@ async def show_edit_screen(
     db: SupabaseClient,
 ) -> None:
     """Show project edit screen with field buttons."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -302,7 +305,8 @@ async def start_field_edit(
     db: SupabaseClient,
 ) -> None:
     """Start editing a specific field — enter ProjectEditFSM."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -422,7 +426,8 @@ async def cancel_create(
     state: FSMContext,
 ) -> None:
     """Cancel project creation via inline button."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -439,7 +444,8 @@ async def cancel_edit(
     db: SupabaseClient,
 ) -> None:
     """Cancel project field edit via inline button — return to edit screen."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

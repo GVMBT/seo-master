@@ -455,7 +455,8 @@ class TestGetProfileStats:
             mock_proj_cls.return_value = proj_repo
 
             cat_repo = AsyncMock()
-            cat_repo.get_by_project.return_value = [
+            # C20: batch method get_by_projects (plural)
+            cat_repo.get_by_projects.return_value = [
                 Category(id=1, project_id=1, name="Cat1"),
             ]
             mock_cat_cls.return_value = cat_repo
@@ -504,7 +505,8 @@ class TestGetProfileStats:
             mock_proj_cls.return_value = proj_repo
 
             cat_repo = AsyncMock()
-            cat_repo.get_by_project.return_value = [
+            # C20: batch method get_by_projects (plural)
+            cat_repo.get_by_projects.return_value = [
                 Category(id=1, project_id=1, name="Cat1"),
                 Category(id=2, project_id=1, name="Cat2"),
             ]
@@ -570,7 +572,8 @@ class TestGetProfileStats:
             mock_proj_cls.return_value = proj_repo
 
             cat_repo = AsyncMock()
-            cat_repo.get_by_project.return_value = [
+            # C20: batch method get_by_projects (plural)
+            cat_repo.get_by_projects.return_value = [
                 Category(id=1, project_id=1, name="Cat1"),
             ]
             mock_cat_cls.return_value = cat_repo

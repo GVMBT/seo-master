@@ -10,8 +10,6 @@ Rules: .claude/rules/pipeline.md — inline handlers, NOT FSM delegation.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import html
 from typing import Any
 
@@ -19,9 +17,10 @@ import structlog
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
+from bot.helpers import safe_message
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import CategoryUpdate, User
@@ -42,13 +41,10 @@ from routers.publishing.pipeline._common import (
     clear_checkpoint,
     save_checkpoint,
 )
-from services.ai.description import DescriptionService
 from services.ai.orchestrator import AIOrchestrator
 from services.external.dataforseo import DataForSEOClient
-from services.keywords import KeywordService
 from services.readiness import ReadinessReport, ReadinessService
 from services.tokens import (
-    COST_DESCRIPTION,
     TokenService,
     estimate_keywords_cost,
 )
@@ -131,7 +127,7 @@ async def show_social_readiness_check(
     Called from social.py after category selection, and after each sub-flow completes.
     When force_show=True (e.g. "back to checklist" from confirm), always show checklist.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     data = await state.get_data()
@@ -234,7 +230,8 @@ async def show_social_readiness_check_msg(
 )
 async def social_readiness_keywords_menu(callback: CallbackQuery) -> None:
     """Show keyword generation options."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -256,7 +253,8 @@ async def social_readiness_keywords_auto(
     db: SupabaseClient,
 ) -> None:
     """Auto keyword generation -- quick path (100 phrases, defaults from DB)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -326,7 +324,8 @@ async def social_readiness_keywords_configure(
     state: FSMContext,
 ) -> None:
     """Configure keyword generation -- full path (products -> geo -> qty -> confirm)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -351,7 +350,8 @@ async def social_readiness_keywords_upload_start(
     state: FSMContext,
 ) -> None:
     """Start keyword upload sub-flow -- prompt for TXT file."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -537,7 +537,8 @@ async def social_readiness_keywords_city_select(
 
     Saves city to project and proceeds to confirm screen.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -629,7 +630,8 @@ async def social_readiness_keywords_qty_select(
     db: SupabaseClient,
 ) -> None:
     """Select keyword quantity and show cost confirmation."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -684,7 +686,8 @@ async def social_readiness_keywords_confirm(
     dataforseo_client: DataForSEOClient,
 ) -> None:
     """Confirm keyword generation: E01 balance check -> charge -> run pipeline."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -784,135 +787,29 @@ async def _run_pipeline_keyword_generation(
     ai_orchestrator: AIOrchestrator,
     dataforseo_client: DataForSEOClient,
 ) -> None:
-    """Run keyword pipeline: fetch -> cluster -> enrich -> save -> return to checklist.
+    """Run keyword pipeline (delegates to _readiness_common.run_keyword_generation)."""
+    from routers.publishing.pipeline._readiness_common import run_keyword_generation
 
-    Adapted from article readiness._run_pipeline_keyword_generation.
-    AI clustering (DeepSeek) can take 60-90 seconds. Progress updates use _safe_edit
-    (tolerates Telegram errors) and the final result is sent as a NEW message.
-    """
-    msg = callback.message
-    if not msg or isinstance(msg, InaccessibleMessage):
-        return
-
-    async def _safe_edit(text: str) -> None:
-        """Edit message, silently ignoring Telegram errors (expired message, etc.)."""
-        try:
-            await msg.edit_text(text)  # type: ignore[union-attr]
-        except Exception:
-            log.debug("pipeline.social.readiness.edit_failed", text=text[:50])
-
-    try:
-        kw_service = KeywordService(
-            orchestrator=ai_orchestrator,
-            dataforseo=dataforseo_client,
-            db=db,
-        )
-
-        # Step 1: Fetch raw phrases from DataForSEO (~1-3s)
-        raw_phrases = await kw_service.fetch_raw_phrases(
-            products=products,
-            geography=geography,
-            quantity=quantity,
-            project_id=project_id,
-            user_id=user.id,
-        )
-
-        if raw_phrases:
-            # Step 2a: DataForSEO had data -> AI clustering (~60-90s)
-            await _safe_edit(f"Получено {len(raw_phrases)} фраз. Группирую по интенту (до 1.5 мин)...")
-            clusters = await kw_service.cluster_phrases(
-                raw_phrases=raw_phrases,
-                products=products,
-                geography=geography,
-                quantity=quantity,
-                project_id=project_id,
-                user_id=user.id,
-            )
-        else:
-            # Step 2b: DataForSEO empty -> single AI call generates clusters directly
-            await _safe_edit("DataForSEO без данных. Генерирую фразы через AI (до 1.5 мин)...")
-            clusters = await kw_service.generate_clusters_direct(
-                products=products,
-                geography=geography,
-                quantity=quantity,
-                project_id=project_id,
-                user_id=user.id,
-            )
-
-        # Step 3: Enrich with metrics (~3s)
-        await _safe_edit(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
-        enriched = await kw_service.enrich_clusters(clusters)
-
-        # Filter AI-invented zero-volume junk
-        enriched = kw_service.filter_low_quality(enriched)
-
-        # Save (MERGE with existing)
-        cats_repo = CategoriesRepository(db)
-        category = await cats_repo.get_by_id(category_id)
-        existing: list[dict[str, Any]] = (category.keywords if category else []) or []
-        merged = existing + enriched
-        await cats_repo.update_keywords(category_id, merged)
-
-        total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
-        total_volume = sum(c.get("total_volume", 0) for c in enriched)
-
-        log.info(
-            "pipeline.social.readiness.keywords_generated",
-            user_id=user.id,
-            category_id=category_id,
-            clusters=len(enriched),
-            phrases=total_phrases,
-            cost=cost,
-        )
-
-        # Delete progress message and send results as a NEW message
-        # (original callback message may be stale after 90s)
-        try:
-            await msg.delete()
-        except Exception:
-            log.debug("pipeline.social.readiness.delete_progress_failed")
-
-        bot = msg.bot
-        if not bot:
-            return
-        await bot.send_message(
-            chat_id=msg.chat.id,
-            text=(
-                f"Готово! Добавлено:\n"
-                f"Кластеров: {len(enriched)}\n"
-                f"Фраз: {total_phrases}\n"
-                f"Общий объём: {total_volume:,}/мес\n\n"
-                f"Списано {cost} токенов."
-            ),
-        )
-        await asyncio.sleep(1)
-        await show_social_readiness_check_msg(msg, state, user, db, redis)
-
-    except Exception:
-        log.exception(
-            "pipeline.social.readiness.keywords_failed",
-            user_id=user.id,
-            category_id=category_id,
-        )
-        # Refund on error
-        await token_service.refund(
-            user_id=user.id,
-            amount=cost,
-            reason="refund",
-            description=f"Возврат: ошибка подбора фраз (social pipeline, категория #{category_id})",
-        )
-        # Send error as new message (original may be expired)
-        with contextlib.suppress(Exception):
-            await msg.delete()
-        bot = msg.bot
-        if not bot:
-            return
-        await bot.send_message(
-            chat_id=msg.chat.id,
-            text="Ошибка при подборе фраз. Токены возвращены.\nПопробуйте позже.",
-            reply_markup=pipeline_back_to_checklist_kb(prefix=_PREFIX),
-        )
-        await state.set_state(SocialPipelineFSM.readiness_check)
+    await run_keyword_generation(
+        callback=callback,
+        state=state,
+        user=user,
+        db=db,
+        redis=redis,
+        category_id=category_id,
+        project_id=project_id,
+        products=products,
+        geography=geography,
+        quantity=quantity,
+        cost=cost,
+        token_service=token_service,
+        ai_orchestrator=ai_orchestrator,
+        dataforseo_client=dataforseo_client,
+        log_prefix="pipeline.social.readiness",
+        readiness_state=SocialPipelineFSM.readiness_check,
+        back_kb_prefix=_PREFIX,
+        on_success=show_social_readiness_check_msg,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -926,7 +823,8 @@ async def _run_pipeline_keyword_generation(
 )
 async def social_readiness_description_menu(callback: CallbackQuery) -> None:
     """Show description options."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -949,86 +847,19 @@ async def social_readiness_description_ai(
     redis: RedisClient,
     ai_orchestrator: AIOrchestrator,
 ) -> None:
-    """Generate category description via AI and save to DB."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
-        await callback.answer()
-        return
+    """Generate category description via AI (delegates to _readiness_common)."""
+    from routers.publishing.pipeline._readiness_common import generate_description_ai
 
-    data = await state.get_data()
-    category_id = data.get("category_id")
-    project_id = data.get("project_id")
-    if not category_id or not project_id:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    settings = get_settings()
-    token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-
-    # E01: balance check
-    has_balance = await token_svc.check_balance(user.id, COST_DESCRIPTION)
-    if not has_balance:
-        balance = await token_svc.get_balance(user.id)
-        await callback.answer(
-            token_svc.format_insufficient_msg(COST_DESCRIPTION, balance),
-            show_alert=True,
-        )
-        return
-
-    # Answer callback immediately so the button stops "loading"
-    await callback.answer()
-    await callback.message.edit_text("Генерирую описание...")
-
-    # Debit-first: charge before generation, refund on failure
-    try:
-        await token_svc.charge(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            operation_type="description",
-            description=f"Описание (social pipeline, категория #{category_id})",
-        )
-    except Exception:
-        log.exception("pipeline.social.readiness.description_charge_failed", user_id=user.id)
-        await callback.message.edit_text("Ошибка списания токенов.")
-        return
-
-    # Generate + save; refund on any failure
-    desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
-    try:
-        result = await desc_svc.generate(
-            user_id=user.id,
-            project_id=project_id,
-            category_id=category_id,
-        )
-        generated = result.content if isinstance(result.content, str) else str(result.content)
-
-        cats_repo = CategoriesRepository(db)
-        save_result = await cats_repo.update(category_id, CategoryUpdate(description=generated))
-        if not save_result:
-            raise RuntimeError("description_save_failed")
-    except Exception:
-        # Refund on any error after charge
-        await token_svc.refund(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            reason="refund",
-            description=f"Возврат: ошибка описания (social pipeline, категория #{category_id})",
-        )
-        log.exception(
-            "pipeline.social.readiness.description_ai_failed",
-            user_id=user.id,
-            category_id=category_id,
-        )
-        await callback.message.edit_text("Ошибка генерации описания. Токены возвращены.")
-        return
-
-    log.info(
-        "pipeline.social.readiness.description_generated",
-        user_id=user.id,
-        category_id=category_id,
-        cost=COST_DESCRIPTION,
+    await generate_description_ai(
+        callback=callback,
+        state=state,
+        user=user,
+        db=db,
+        redis=redis,
+        ai_orchestrator=ai_orchestrator,
+        log_prefix="pipeline.social.readiness",
+        on_success=show_social_readiness_check,
     )
-
-    await show_social_readiness_check(callback, state, user, db, redis)
 
 
 @router.callback_query(
@@ -1040,7 +871,8 @@ async def social_readiness_description_manual_start(
     state: FSMContext,
 ) -> None:
     """Start manual description input."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1142,7 +974,8 @@ async def social_readiness_done(
     redis: RedisClient,
 ) -> None:
     """Proceed to step 5 (confirmation). Keywords are required blocker."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

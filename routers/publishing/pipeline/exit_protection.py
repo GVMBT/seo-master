@@ -15,8 +15,9 @@ from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
+from bot.helpers import safe_message
 from cache.client import RedisClient
 from db.models import User
 from keyboards.pipeline import pipeline_exit_confirm_kb, social_exit_confirm_kb
@@ -112,7 +113,7 @@ async def exit_confirm(
     """User confirmed exit — clear FSM, keep checkpoint for resume."""
     await state.clear()
     # Checkpoint survives in Redis — user can resume from Dashboard
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+    if safe_message(callback):
         await callback.message.edit_text("Pipeline приостановлен. Можете продолжить с Dashboard.")
     await callback.answer()
     log.info("pipeline.exit_confirmed", user_id=user.id)
@@ -121,7 +122,7 @@ async def exit_confirm(
 @router.callback_query(F.data.in_({"pipeline:article:exit_cancel", "pipeline:social:exit_cancel"}))
 async def exit_cancel(callback: CallbackQuery) -> None:
     """User chose to continue — dismiss confirmation dialog."""
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+    if safe_message(callback):
         try:
             await callback.message.delete()
         except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound):  # fmt: skip

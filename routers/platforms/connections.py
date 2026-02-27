@@ -13,7 +13,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
-    InaccessibleMessage,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -21,6 +20,7 @@ from aiogram.types import (
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from bot.validators import TG_CHANNEL_RE, URL_RE
 from cache.client import RedisClient
 from db.client import SupabaseClient
@@ -79,7 +79,8 @@ async def show_connections(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Show connection list for a project (UX_TOOLBOX.md section 5.1)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -114,7 +115,8 @@ async def connections_list_back(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Back navigation to connection list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -154,7 +156,8 @@ async def manage_connection(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Show connection detail (UX_TOOLBOX.md section 5.2)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -189,7 +192,8 @@ async def confirm_connection_delete(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Show connection delete confirmation."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -225,7 +229,8 @@ async def execute_connection_delete(
     scheduler_service: SchedulerService,
 ) -> None:
     """Delete connection with E24 cleanup: cancel QStash schedules."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -281,7 +286,8 @@ async def start_wp_connect(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Start WordPress connection wizard."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -460,7 +466,8 @@ async def start_tg_connect(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Start Telegram connection wizard."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -652,7 +659,8 @@ async def start_vk_connect(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Start VK connection wizard."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -763,7 +771,8 @@ async def vk_select_group(
     http_client: httpx.AsyncClient,
 ) -> None:
     """VK step 2: group selected — create connection."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -832,7 +841,8 @@ async def start_pinterest_connect(
     redis: RedisClient,
 ) -> None:
     """Start Pinterest OAuth connection wizard."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -900,7 +910,8 @@ async def _cancel_connection_wizard(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Common cancel logic for connection wizards."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

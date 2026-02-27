@@ -93,23 +93,61 @@ def slugify(text: str) -> str:
 
 
 class SEORenderer(mistune.HTMLRenderer):  # type: ignore[misc]
-    """Custom renderer: heading IDs, ToC collection, figure/figcaption, lazy loading."""
+    """Custom renderer: heading IDs, ToC collection, figure/figcaption, lazy loading.
+
+    S5: Applies branding via inline styles (not <style> block) so nh3 sanitization
+    preserves the colors. nh3 allows style="" on specific elements.
+    """
 
     def __init__(self, branding: dict[str, str] | None = None) -> None:
         super().__init__()
         self._toc: list[dict[str, Any]] = []
         self._branding = branding or {}
+        # Pre-compute inline style fragments
+        self._heading_style = self._build_inline("accent")
+        self._link_style = self._build_inline("accent")
+        self._body_style = self._build_inline("text", "background")
+
+    def _build_inline(self, *keys: str) -> str:
+        """Build an inline style string from branding keys.
+
+        Maps: "text" -> color, "accent" -> color, "background" -> background-color.
+        """
+        props: list[str] = []
+        for key in keys:
+            val = self._branding.get(key, "")
+            if not val:
+                continue
+            if key == "background":
+                props.append(f"background-color: {val}")
+            else:
+                props.append(f"color: {val}")
+        if not props:
+            return ""
+        return f' style="{"; ".join(props)}"'
 
     def heading(self, text: str, level: int, **_attrs: Any) -> str:
-        """Render heading with auto-generated slug ID."""
+        """Render heading with auto-generated slug ID and inline branding color."""
         slug = slugify(text)
         self._toc.append({"level": level, "text": text, "id": slug})
-        return f'<h{level} id="{slug}">{text}</h{level}>\n'
+        style = self._heading_style
+        return f'<h{level} id="{slug}"{style}>{text}</h{level}>\n'
+
+    def link(self, text: str, url: str, title: str | None = None) -> str:
+        """Render link with inline branding color."""
+        title_attr = f' title="{title}"' if title else ""
+        style = self._link_style
+        return f'<a href="{url}"{title_attr}{style}>{text}</a>'
 
     def image(self, alt: str, url: str, title: str | None = None) -> str:
         """Render image as <figure> with lazy loading and figcaption."""
         caption = title or alt
         return f'<figure><img src="{url}" alt="{alt}" loading="lazy"><figcaption>{caption}</figcaption></figure>\n'
+
+    def paragraph(self, text: str) -> str:
+        """Render paragraph with inline body text color."""
+        style = self._body_style
+        return f"<p{style}>{text}</p>\n"
 
     def render_toc(self) -> str:
         """Generate Table of Contents HTML from collected headings (H2/H3 only).
@@ -176,12 +214,13 @@ def render_markdown(
     """Convert Markdown to HTML with SEO features.
 
     Pipeline:
-    1. Create SEORenderer with branding
+    1. Create SEORenderer with branding (inline styles on elements)
     2. Parse markdown via mistune.create_markdown(renderer=renderer)
     3. Insert ToC after first H1 (if insert_toc and enough headings)
-    4. Add branding CSS <style> block if branding colors provided
-    5. Return final HTML
+    4. Return final HTML
 
+    S5: Branding colors are applied as inline styles (not <style> block)
+    so they survive nh3 sanitization.
     E47: On mistune parse error -> fallback to raw markdown in <pre> block.
     """
     renderer = SEORenderer(branding=branding)
@@ -208,11 +247,5 @@ def render_markdown(
             else:
                 # No H1 found — prepend ToC
                 html = toc_html + html
-
-    # Add branding CSS
-    if branding:
-        css = _build_branding_css(branding)
-        if css:
-            html = css + html
 
     return html

@@ -50,6 +50,7 @@ from routers.publishing.pipeline.readiness import (
 from services.readiness import ReadinessReport
 
 _MODULE = "routers.publishing.pipeline.readiness"
+_COMMON = "routers.publishing.pipeline._readiness_common"
 
 
 # ---------------------------------------------------------------------------
@@ -671,11 +672,22 @@ class TestDescriptionSubFlow:
         """AI description: checks balance, charges tokens, saves to category."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        p_token, token_mock = _patch_token_svc(balance=1500, has_balance=True)
-        p_cats, cat_mock = _patch_cats_repo()
-        p_settings = _patch_settings()
+        # Patches target _COMMON (generate_description_ai lives in _readiness_common)
+        token_mock = MagicMock()
+        token_mock.get_balance = AsyncMock(return_value=1500)
+        token_mock.check_balance = AsyncMock(return_value=True)
+        token_mock.charge = AsyncMock()
+        token_mock.refund = AsyncMock(return_value=1500)
+        token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
+        p_token = patch(f"{_COMMON}.TokenService", return_value=token_mock)
+        cat_mock = MagicMock()
+        cat_mock.update = AsyncMock()
+        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_mock)
+        settings_mock = MagicMock()
+        settings_mock.admin_ids = [999]
+        p_settings = patch(f"{_COMMON}.get_settings", return_value=settings_mock)
         p_show = patch(f"{_MODULE}.show_readiness_check", new_callable=AsyncMock)
-        p_desc = patch(f"{_MODULE}.DescriptionService")
+        p_desc = patch(f"{_COMMON}.DescriptionService")
         mock_orchestrator = MagicMock()
 
         with p_token, p_cats, p_settings, p_show as mock_show, p_desc as desc_cls:
@@ -705,8 +717,15 @@ class TestDescriptionSubFlow:
         """AI description with insufficient balance -> show_alert."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        p_token, _ = _patch_token_svc(balance=5, has_balance=False)
-        p_settings = _patch_settings()
+        # Patches target _COMMON
+        token_mock = MagicMock()
+        token_mock.get_balance = AsyncMock(return_value=5)
+        token_mock.check_balance = AsyncMock(return_value=False)
+        token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
+        p_token = patch(f"{_COMMON}.TokenService", return_value=token_mock)
+        settings_mock = MagicMock()
+        settings_mock.admin_ids = [999]
+        p_settings = patch(f"{_COMMON}.get_settings", return_value=settings_mock)
         mock_orchestrator = MagicMock()
 
         with p_token, p_settings:
@@ -733,11 +752,21 @@ class TestDescriptionSubFlow:
         """If category update returns None, tokens are refunded (debit-first)."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        p_token, token_mock = _patch_token_svc(balance=1500, has_balance=True)
-        p_cats, cat_mock = _patch_cats_repo()
+        # Patches target _COMMON
+        token_mock = MagicMock()
+        token_mock.get_balance = AsyncMock(return_value=1500)
+        token_mock.check_balance = AsyncMock(return_value=True)
+        token_mock.charge = AsyncMock()
+        token_mock.refund = AsyncMock(return_value=1500)
+        token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
+        p_token = patch(f"{_COMMON}.TokenService", return_value=token_mock)
+        cat_mock = MagicMock()
         cat_mock.update = AsyncMock(return_value=None)
-        p_settings = _patch_settings()
-        p_desc = patch(f"{_MODULE}.DescriptionService")
+        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_mock)
+        settings_mock = MagicMock()
+        settings_mock.admin_ids = [999]
+        p_settings = patch(f"{_COMMON}.get_settings", return_value=settings_mock)
+        p_desc = patch(f"{_COMMON}.DescriptionService")
         mock_orchestrator = MagicMock()
 
         with p_token, p_cats, p_settings, p_desc as desc_cls:
@@ -1689,12 +1718,15 @@ class TestRunPipelineKeywordGeneration:
         mock_db: MagicMock,
         mock_redis: MagicMock,
     ) -> None:
-        """Successful generation: fetch→cluster→enrich→save→checklist."""
+        """Successful generation: fetch->cluster->enrich->save->checklist."""
         kw_mock = self._make_kw_service_mock()
         cat_obj = MagicMock()
         cat_obj.keywords = []
-        p_kw = patch(f"{_MODULE}.KeywordService", return_value=kw_mock)
-        p_cats, cat_repo_mock = _patch_cats_repo(category=cat_obj)
+        p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
+        cat_repo_mock = MagicMock()
+        cat_repo_mock.get_by_id = AsyncMock(return_value=cat_obj)
+        cat_repo_mock.update_keywords = AsyncMock()
+        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_repo_mock)
         p_show = patch(f"{_MODULE}.show_readiness_check_msg", new_callable=AsyncMock)
         token_mock = MagicMock()
         token_mock.refund = AsyncMock()
@@ -1742,8 +1774,11 @@ class TestRunPipelineKeywordGeneration:
         kw_mock = self._make_kw_service_mock(raw_phrases=[])
         cat_obj = MagicMock()
         cat_obj.keywords = []
-        p_kw = patch(f"{_MODULE}.KeywordService", return_value=kw_mock)
-        p_cats, _ = _patch_cats_repo(category=cat_obj)
+        p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
+        cat_repo_mock = MagicMock()
+        cat_repo_mock.get_by_id = AsyncMock(return_value=cat_obj)
+        cat_repo_mock.update_keywords = AsyncMock()
+        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_repo_mock)
         p_show = patch(f"{_MODULE}.show_readiness_check_msg", new_callable=AsyncMock)
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()
@@ -1781,7 +1816,7 @@ class TestRunPipelineKeywordGeneration:
         """Generation error -> refund tokens, show error, return to readiness_check."""
         kw_mock = MagicMock()
         kw_mock.fetch_raw_phrases = AsyncMock(side_effect=RuntimeError("API down"))
-        p_kw = patch(f"{_MODULE}.KeywordService", return_value=kw_mock)
+        p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
         token_mock = MagicMock()
         token_mock.refund = AsyncMock()
         mock_callback.message.bot = MagicMock()
@@ -1835,8 +1870,11 @@ class TestRunPipelineKeywordGeneration:
         kw_mock = self._make_kw_service_mock(enriched=new_enriched)
         cat_obj = MagicMock()
         cat_obj.keywords = existing_kw
-        p_kw = patch(f"{_MODULE}.KeywordService", return_value=kw_mock)
-        p_cats, cat_repo_mock = _patch_cats_repo(category=cat_obj)
+        p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
+        cat_repo_mock = MagicMock()
+        cat_repo_mock.get_by_id = AsyncMock(return_value=cat_obj)
+        cat_repo_mock.update_keywords = AsyncMock()
+        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_repo_mock)
         p_show = patch(f"{_MODULE}.show_readiness_check_msg", new_callable=AsyncMock)
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()

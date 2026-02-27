@@ -8,13 +8,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
-    InaccessibleMessage,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
 )
 
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.payments import PaymentsRepository
@@ -52,7 +52,8 @@ async def admin_panel(callback: CallbackQuery, user: User, db: SupabaseClient, s
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -79,7 +80,8 @@ async def admin_monitoring(callback: CallbackQuery, user: User, db: SupabaseClie
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -114,7 +116,8 @@ async def admin_api_costs(callback: CallbackQuery, user: User, db: SupabaseClien
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -145,7 +148,8 @@ async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -178,7 +182,8 @@ async def broadcast_audience(callback: CallbackQuery, user: User, db: SupabaseCl
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -230,7 +235,8 @@ async def broadcast_confirm(callback: CallbackQuery, user: User, db: SupabaseCli
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
