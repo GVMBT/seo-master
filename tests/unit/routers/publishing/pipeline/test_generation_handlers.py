@@ -14,11 +14,10 @@ import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from routers.publishing.pipeline._common import ArticlePipelineFSM
+from routers.publishing.pipeline._common import ArticlePipelineFSM, select_keyword
 from routers.publishing.pipeline.generation import (
     MAX_REGENERATIONS_FREE,
     _build_preview_text,
-    _select_keyword,
     back_to_readiness,
     cancel_refund,
     change_topic,
@@ -36,6 +35,7 @@ from services.readiness import ReadinessReport
 from tests.unit.routers.conftest import make_category, make_connection, make_user
 
 _MODULE = "routers.publishing.pipeline.generation"
+_COMMON_MODULE = "routers.publishing.pipeline._common"
 
 
 # ---------------------------------------------------------------------------
@@ -416,18 +416,18 @@ class TestBackToReadiness:
 
 
 # ---------------------------------------------------------------------------
-# Step 6: _select_keyword
+# Step 6: select_keyword (extracted to _common.py)
 # ---------------------------------------------------------------------------
 
 
 class TestSelectKeyword:
-    """_select_keyword extracts phrases from flat and cluster formats."""
+    """select_keyword extracts phrases from flat and cluster formats."""
 
     async def test_flat_format(self, mock_db: MagicMock) -> None:
         cat = make_category(keywords=[{"phrase": "seo tips"}, {"phrase": "marketing"}])
-        with patch(f"{_MODULE}.CategoriesRepository") as cls:
+        with patch(f"{_COMMON_MODULE}.CategoriesRepository") as cls:
             cls.return_value.get_by_id = AsyncMock(return_value=cat)
-            result = await _select_keyword(mock_db, 10)
+            result = await select_keyword(mock_db, 10)
         assert result in ("seo tips", "marketing")
 
     async def test_cluster_format(self, mock_db: MagicMock) -> None:
@@ -436,22 +436,22 @@ class TestSelectKeyword:
                 {"main_phrase": "seo tools", "phrases": ["seo tools", "best seo"]},
             ]
         )
-        with patch(f"{_MODULE}.CategoriesRepository") as cls:
+        with patch(f"{_COMMON_MODULE}.CategoriesRepository") as cls:
             cls.return_value.get_by_id = AsyncMock(return_value=cat)
-            result = await _select_keyword(mock_db, 10)
+            result = await select_keyword(mock_db, 10)
         assert result == "seo tools"
 
     async def test_no_keywords_returns_none(self, mock_db: MagicMock) -> None:
         cat = make_category(keywords=[])
-        with patch(f"{_MODULE}.CategoriesRepository") as cls:
+        with patch(f"{_COMMON_MODULE}.CategoriesRepository") as cls:
             cls.return_value.get_by_id = AsyncMock(return_value=cat)
-            result = await _select_keyword(mock_db, 10)
+            result = await select_keyword(mock_db, 10)
         assert result is None
 
     async def test_no_category_returns_none(self, mock_db: MagicMock) -> None:
-        with patch(f"{_MODULE}.CategoriesRepository") as cls:
+        with patch(f"{_COMMON_MODULE}.CategoriesRepository") as cls:
             cls.return_value.get_by_id = AsyncMock(return_value=None)
-            result = await _select_keyword(mock_db, 10)
+            result = await select_keyword(mock_db, 10)
         assert result is None
 
 
@@ -767,7 +767,7 @@ class TestCancelRefund:
         with (
             patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
             _patch_settings(),
-            patch(f"{_MODULE}._try_refund", new_callable=AsyncMock) as refund_mock,
+            patch(f"{_MODULE}.try_refund", new_callable=AsyncMock) as refund_mock,
             patch(f"{_MODULE}.TelegraphClient") as telegraph_cls,
         ):
             telegraph_cls.return_value.delete_page = AsyncMock(return_value=True)
@@ -803,7 +803,7 @@ class TestCancelRefund:
         with (
             patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
             _patch_settings(),
-            patch(f"{_MODULE}._try_refund", new_callable=AsyncMock) as refund_mock,
+            patch(f"{_MODULE}.try_refund", new_callable=AsyncMock) as refund_mock,
             patch(f"{_MODULE}.TelegraphClient") as telegraph_cls,
         ):
             telegraph_cls.return_value.delete_page = AsyncMock(
@@ -842,7 +842,7 @@ class TestCancelRefund:
         with (
             patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
             _patch_settings(),
-            patch(f"{_MODULE}._try_refund", new_callable=AsyncMock) as refund_mock,
+            patch(f"{_MODULE}.try_refund", new_callable=AsyncMock) as refund_mock,
         ):
             repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
             repo_cls.return_value.update = AsyncMock()
@@ -900,7 +900,7 @@ class TestCancelRefund:
         with (
             patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
             _patch_settings(),
-            patch(f"{_MODULE}._try_refund", new_callable=AsyncMock),
+            patch(f"{_MODULE}.try_refund", new_callable=AsyncMock),
             patch(f"{_MODULE}.TelegraphClient") as telegraph_cls,
         ):
             telegraph_cls.return_value.delete_page = AsyncMock(return_value=True)

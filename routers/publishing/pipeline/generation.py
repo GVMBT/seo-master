@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import html
 import json
-import random
 import re
 import time
 from typing import Any
@@ -50,6 +49,8 @@ from routers.publishing.pipeline._common import (
     ArticlePipelineFSM,
     clear_checkpoint,
     save_checkpoint,
+    select_keyword,
+    try_refund,
 )
 from services.ai.rate_limiter import RateLimiter
 from services.connections import ConnectionService
@@ -377,9 +378,9 @@ async def _run_generation(
         return
 
     # Select keyword for generation
-    keyword = await _select_keyword(db, category_id)
+    keyword = await select_keyword(db, category_id)
     if not keyword:
-        await _try_refund(db, user, tokens_charged, "Нет ключевых фраз")
+        await try_refund(db, user, tokens_charged, "Нет ключевых фраз")
         await message.edit_text(
             "Нет доступных ключевых фраз. Добавьте их в категорию.",
             reply_markup=pipeline_generation_error_kb(),
@@ -422,7 +423,7 @@ async def _run_generation(
         done_event.set()
         progress.cancel()
         log.exception("pipeline.generation_failed", user_id=user.id, error=str(exc))
-        await _try_refund(db, user, tokens_charged, "Ошибка генерации")
+        await try_refund(db, user, tokens_charged, "Ошибка генерации")
         await message.edit_text(
             "Ошибка генерации. Токены возвращены.\n\nПопробуйте ещё раз.",
             reply_markup=pipeline_generation_error_kb(),
@@ -580,60 +581,6 @@ async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None
         except (ValueError, TypeError):
             return None
     return None
-
-
-async def _select_keyword(db: SupabaseClient, category_id: int) -> str | None:
-    """Select a keyword from category for generation.
-
-    Phase 10 will implement full cluster rotation (API_CONTRACTS §6).
-    Currently: random selection from flat keyword list.
-    """
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-    if not category or not category.keywords:
-        return None
-
-    keywords = category.keywords
-    # Support both flat format [{phrase}] and cluster format [{main_phrase, phrases}]
-    phrases: list[str] = []
-    for kw in keywords:
-        if isinstance(kw, dict):
-            if "main_phrase" in kw:
-                phrases.append(kw["main_phrase"])
-            elif "phrase" in kw:
-                phrases.append(kw["phrase"])
-        elif isinstance(kw, str):
-            phrases.append(kw)
-
-    if not phrases:
-        return None
-
-    return random.choice(phrases)  # noqa: S311
-
-
-async def _try_refund(
-    db: SupabaseClient,
-    user: User,
-    amount: int | None,
-    reason_suffix: str,
-) -> None:
-    """Attempt to refund tokens on error."""
-    if not amount or amount <= 0:
-        return
-    settings = get_settings()
-    is_god = user.id in settings.admin_ids
-    if is_god:
-        return
-    try:
-        token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-        await token_svc.refund(
-            user_id=user.id,
-            amount=amount,
-            reason="refund",
-            description=f"Возврат: {reason_suffix}",
-        )
-    except Exception:
-        log.exception("pipeline.refund_failed", user_id=user.id, amount=amount)
 
 
 # ---------------------------------------------------------------------------
@@ -849,11 +796,11 @@ async def regenerate_article(
         log.exception("pipeline.increment_regen_failed", preview_id=preview_id)
         # Refund if charge happened
         if regen_count >= MAX_REGENERATIONS_FREE and not is_god:
-            await _try_refund(db, user, tokens_charged, "increment_regen_failed")
+            await try_refund(db, user, tokens_charged, "increment_regen_failed")
         await callback.answer("Ошибка обновления счётчика. Попробуйте снова.", show_alert=True)
         return
 
-    # For free regenerations: set tokens_charged=0 so _try_refund won't refund
+    # For free regenerations: set tokens_charged=0 so try_refund won't refund
     # tokens that were never charged. For paid regens, tokens_charged is the actual
     # amount charged above (C2 fix: prevent free regen refund leak).
     actually_charged = tokens_charged if (regen_count >= MAX_REGENERATIONS_FREE and not is_god) else 0
@@ -993,7 +940,7 @@ async def _do_cancel_refund(
     await previews_repo.update(preview_id, ArticlePreviewUpdate(status="cancelled"))
     # Refund tokens
     if preview.tokens_charged and preview.tokens_charged > 0:
-        await _try_refund(db, user, preview.tokens_charged, "Отмена пользователем")
+        await try_refund(db, user, preview.tokens_charged, "Отмена пользователем")
 
 
 @router.callback_query(

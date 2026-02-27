@@ -13,7 +13,6 @@ Rules: .claude/rules/pipeline.md -- inline handlers, NOT FSM delegation.
 from __future__ import annotations
 
 import html
-import random
 import time
 from typing import Any, Literal
 
@@ -41,6 +40,8 @@ from routers.publishing.pipeline._common import (
     SocialPipelineFSM,
     clear_checkpoint,
     save_checkpoint,
+    select_keyword,
+    try_refund,
 )
 from services.ai.orchestrator import AIOrchestrator
 from services.ai.rate_limiter import RateLimiter
@@ -296,9 +297,9 @@ async def _run_social_generation(
         return
 
     # Select keyword for generation
-    keyword = await _select_keyword(db, category_id)
+    keyword = await select_keyword(db, category_id)
     if not keyword:
-        await _try_refund(db, user, cost, "Нет ключевых фраз")
+        await try_refund(db, user, cost, "Нет ключевых фраз")
         await message.edit_text(
             "Нет доступных ключевых фраз. Добавьте их в категорию.",
         )
@@ -367,7 +368,7 @@ async def _run_social_generation(
 
     except Exception as exc:
         log.exception("pipeline.social.generation_failed", user_id=user.id, error=str(exc))
-        await _try_refund(db, user, cost, "Ошибка генерации поста")
+        await try_refund(db, user, cost, "Ошибка генерации поста")
         await message.edit_text(
             "Ошибка генерации поста. Токены возвращены.\n\nПопробуйте ещё раз.",
         )
@@ -392,58 +393,6 @@ def _build_review_text(
         lines.append("\n" + " ".join(f"#{html.escape(h.lstrip('#'))}" for h in hashtags))
     lines.append("---")
     return "\n".join(lines)
-
-
-async def _select_keyword(db: SupabaseClient, category_id: int) -> str | None:
-    """Select a keyword from category for social post generation.
-
-    Random selection from flat list or cluster main_phrases.
-    """
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-    if not category or not category.keywords:
-        return None
-
-    keywords = category.keywords
-    phrases: list[str] = []
-    for kw in keywords:
-        if isinstance(kw, dict):
-            if "main_phrase" in kw:
-                phrases.append(kw["main_phrase"])
-            elif "phrase" in kw:
-                phrases.append(kw["phrase"])
-        elif isinstance(kw, str):
-            phrases.append(kw)
-
-    if not phrases:
-        return None
-
-    return random.choice(phrases)  # noqa: S311
-
-
-async def _try_refund(
-    db: SupabaseClient,
-    user: User,
-    amount: int | None,
-    reason_suffix: str,
-) -> None:
-    """Attempt to refund tokens on error."""
-    if not amount or amount <= 0:
-        return
-    settings = get_settings()
-    is_god = user.id in settings.admin_ids
-    if is_god:
-        return
-    try:
-        token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-        await token_svc.refund(
-            user_id=user.id,
-            amount=amount,
-            reason="refund",
-            description=f"Возврат: {reason_suffix}",
-        )
-    except Exception:
-        log.exception("pipeline.social.refund_failed", user_id=user.id, amount=amount)
 
 
 # ---------------------------------------------------------------------------
@@ -722,7 +671,7 @@ async def cancel_refund_social(
     tokens_charged = data.get("tokens_charged", 0)
 
     if tokens_charged and tokens_charged > 0:
-        await _try_refund(db, user, tokens_charged, "Отмена поста пользователем")
+        await try_refund(db, user, tokens_charged, "Отмена поста пользователем")
 
     await state.clear()
     await clear_checkpoint(redis, user.id)

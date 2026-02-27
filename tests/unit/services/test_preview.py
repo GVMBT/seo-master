@@ -14,6 +14,7 @@ import pytest
 
 from services.ai.orchestrator import GenerationResult
 from services.preview import ArticleContent, PreviewService
+from services.research_helpers import gather_websearch_data
 
 # ---------------------------------------------------------------------------
 # Test data
@@ -186,11 +187,14 @@ def preview_service(
 
 class TestGatherWebsearchData:
     async def test_gathers_serper_and_research_in_parallel(
-        self, preview_service: PreviewService, mock_serper: AsyncMock
+        self, mock_orchestrator: AsyncMock, mock_serper: AsyncMock, mock_redis: AsyncMock
     ) -> None:
-        result = await preview_service._gather_websearch_data(
+        result = await gather_websearch_data(
             keyword="seo optimization",
             project_url="https://example.com",
+            serper=mock_serper,
+            orchestrator=mock_orchestrator,
+            redis=mock_redis,
             specialization="SEO",
             company_name="TestCo",
         )
@@ -201,62 +205,102 @@ class TestGatherWebsearchData:
         mock_serper.search.assert_awaited_once()
 
     async def test_gathers_firecrawl_map(
-        self, preview_service: PreviewService, mock_firecrawl: AsyncMock
+        self,
+        mock_orchestrator: AsyncMock,
+        mock_serper: AsyncMock,
+        mock_firecrawl: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
-        result = await preview_service._gather_websearch_data(
-            keyword="test", project_url="https://example.com"
+        result = await gather_websearch_data(
+            keyword="test",
+            project_url="https://example.com",
+            serper=mock_serper,
+            firecrawl=mock_firecrawl,
+            orchestrator=mock_orchestrator,
+            redis=mock_redis,
         )
 
         assert "internal_links" in result
         mock_firecrawl.map_site.assert_awaited_once()
 
     async def test_no_firecrawl_without_project_url(
-        self, preview_service: PreviewService, mock_firecrawl: AsyncMock
+        self,
+        mock_orchestrator: AsyncMock,
+        mock_serper: AsyncMock,
+        mock_firecrawl: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
-        result = await preview_service._gather_websearch_data(
-            keyword="test", project_url=None
+        result = await gather_websearch_data(
+            keyword="test",
+            project_url=None,
+            serper=mock_serper,
+            firecrawl=mock_firecrawl,
+            orchestrator=mock_orchestrator,
+            redis=mock_redis,
         )
 
         mock_firecrawl.map_site.assert_not_awaited()
         assert result.get("internal_links") is None
 
     async def test_serper_failure_degrades_gracefully(
-        self, preview_service: PreviewService, mock_serper: AsyncMock
+        self, mock_orchestrator: AsyncMock, mock_serper: AsyncMock, mock_redis: AsyncMock
     ) -> None:
         """E04: Serper unavailable -> empty serper_data, no competitor pages."""
         mock_serper.search.side_effect = Exception("Serper quota exceeded")
 
-        result = await preview_service._gather_websearch_data(
-            keyword="test", project_url=None
+        result = await gather_websearch_data(
+            keyword="test",
+            project_url=None,
+            serper=mock_serper,
+            orchestrator=mock_orchestrator,
+            redis=mock_redis,
         )
 
         assert result["serper_data"] is None
         assert result["competitor_pages"] == []
 
     async def test_research_failure_degrades_gracefully_e53(
-        self, preview_service: PreviewService, mock_orchestrator: AsyncMock
+        self, mock_orchestrator: AsyncMock, mock_redis: AsyncMock
     ) -> None:
         """E53: Sonar Pro unavailable -> research_data=None, pipeline continues."""
         mock_orchestrator.generate_without_rate_limit.side_effect = Exception("Sonar down")
 
-        result = await preview_service._gather_websearch_data(
-            keyword="test", project_url=None, specialization="SEO", company_name="Co"
+        result = await gather_websearch_data(
+            keyword="test",
+            project_url=None,
+            orchestrator=mock_orchestrator,
+            redis=mock_redis,
+            specialization="SEO",
+            company_name="Co",
         )
 
         assert result["research_data"] is None
 
     async def test_scrapes_competitor_pages(
-        self, preview_service: PreviewService, mock_firecrawl: AsyncMock
+        self,
+        mock_orchestrator: AsyncMock,
+        mock_serper: AsyncMock,
+        mock_firecrawl: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
-        result = await preview_service._gather_websearch_data(
-            keyword="test", project_url="https://mysite.com"
+        result = await gather_websearch_data(
+            keyword="test",
+            project_url="https://mysite.com",
+            serper=mock_serper,
+            firecrawl=mock_firecrawl,
+            orchestrator=mock_orchestrator,
+            redis=mock_redis,
         )
 
         assert len(result["competitor_pages"]) >= 1
         mock_firecrawl.scrape_content.assert_awaited()
 
     async def test_filters_own_site_from_competitors(
-        self, preview_service: PreviewService, mock_serper: AsyncMock, mock_firecrawl: AsyncMock
+        self,
+        mock_orchestrator: AsyncMock,
+        mock_serper: AsyncMock,
+        mock_firecrawl: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
         """Own site URLs are excluded from competitor scraping."""
         mock_serper.search.return_value = _MockSerperResult(
@@ -268,8 +312,13 @@ class TestGatherWebsearchData:
             related_searches=[],
         )
 
-        await preview_service._gather_websearch_data(
-            keyword="test", project_url="https://example.com"
+        await gather_websearch_data(
+            keyword="test",
+            project_url="https://example.com",
+            serper=mock_serper,
+            firecrawl=mock_firecrawl,
+            orchestrator=mock_orchestrator,
+            redis=mock_redis,
         )
 
         # scrape_content should only be called for competitor.com, not example.com
@@ -277,36 +326,39 @@ class TestGatherWebsearchData:
         scraped_urls = [c.args[0] for c in scrape_calls]
         assert all("example.com" not in url for url in scraped_urls)
 
-    async def test_no_serper_client_returns_defaults(
+    async def test_no_clients_returns_defaults(
         self,
-        mock_orchestrator: AsyncMock,
-        mock_db: MagicMock,
-        mock_image_storage: AsyncMock,
-        mock_http_client: MagicMock,
         mock_redis: AsyncMock,
     ) -> None:
-        svc = PreviewService(
-            ai_orchestrator=mock_orchestrator,
-            db=mock_db,
-            image_storage=mock_image_storage,
-            http_client=mock_http_client,
-            serper_client=None,
-            firecrawl_client=None,
+        result = await gather_websearch_data(
+            "test",
+            None,
+            serper=None,
+            firecrawl=None,
+            orchestrator=None,
             redis=mock_redis,
         )
-        result = await svc._gather_websearch_data("test", None)
 
         assert result["serper_data"] is None
         assert result["competitor_pages"] == []
 
     async def test_firecrawl_scrape_failure_graceful(
-        self, preview_service: PreviewService, mock_firecrawl: AsyncMock
+        self,
+        mock_orchestrator: AsyncMock,
+        mock_serper: AsyncMock,
+        mock_firecrawl: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
         """E31: Firecrawl /scrape timeout -> no competitor data."""
         mock_firecrawl.scrape_content.side_effect = Exception("Timeout")
 
-        result = await preview_service._gather_websearch_data(
-            keyword="test", project_url="https://mysite.com"
+        result = await gather_websearch_data(
+            keyword="test",
+            project_url="https://mysite.com",
+            serper=mock_serper,
+            firecrawl=mock_firecrawl,
+            orchestrator=mock_orchestrator,
+            redis=mock_redis,
         )
 
         # No competitor pages, but overall call succeeds

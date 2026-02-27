@@ -8,7 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from api.models import PublishPayload
 from db.models import Category, PlatformConnection, PlatformSchedule, User
 from services.publish import PublishService
-from services.research_helpers import format_competitor_analysis, identify_gaps, is_own_site
+from services.research_helpers import (
+    fetch_research,
+    format_competitor_analysis,
+    gather_websearch_data,
+    identify_gaps,
+    is_own_site,
+)
 
 # ---------------------------------------------------------------------------
 # Factories
@@ -802,14 +808,14 @@ def test_find_matching_cluster_skips_non_dict_entries() -> None:
 
 async def test_gather_websearch_no_clients_returns_empty() -> None:
     """C1: No serper/firecrawl clients returns empty websearch data."""
-    svc = _make_service()
-    # Default: no serper or firecrawl clients
-    svc._serper = None
-    svc._firecrawl = None
-    # Mock _fetch_research to return None
-    svc._fetch_research = AsyncMock(return_value=None)  # type: ignore[method-assign]
-
-    result = await svc._gather_websearch_data("seo tips", None)
+    result = await gather_websearch_data(
+        "seo tips",
+        None,
+        serper=None,
+        firecrawl=None,
+        orchestrator=None,
+        redis=None,
+    )
 
     assert result["serper_data"] is None
     assert result["competitor_pages"] == []
@@ -820,18 +826,21 @@ async def test_gather_websearch_no_clients_returns_empty() -> None:
 
 async def test_gather_websearch_with_serper() -> None:
     """C1: Serper results are structured into websearch data."""
-    svc = _make_service()
     mock_serper = MagicMock()
     serper_result = MagicMock()
     serper_result.organic = [{"title": "SEO Guide", "link": "https://other.com/seo"}]
     serper_result.people_also_ask = [{"question": "What is SEO?"}]
     serper_result.related_searches = ["seo guide"]
     mock_serper.search = AsyncMock(return_value=serper_result)
-    svc._serper = mock_serper
-    svc._firecrawl = None
-    svc._fetch_research = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
-    result = await svc._gather_websearch_data("seo tips", None)
+    result = await gather_websearch_data(
+        "seo tips",
+        None,
+        serper=mock_serper,
+        firecrawl=None,
+        orchestrator=None,
+        redis=None,
+    )
 
     assert result["serper_data"] is not None
     assert result["serper_data"]["organic"] == serper_result.organic
@@ -840,27 +849,41 @@ async def test_gather_websearch_with_serper() -> None:
 
 async def test_gather_websearch_with_research_data() -> None:
     """C1: Research data from Perplexity is included in websearch results."""
-    svc = _make_service()
-    svc._serper = None
-    svc._firecrawl = None
+    mock_orchestrator = MagicMock()
     research = {"facts": [{"claim": "test", "source": "src", "year": "2026"}], "summary": "Test"}
-    svc._fetch_research = AsyncMock(return_value=research)  # type: ignore[method-assign]
+    mock_orchestrator.generate_without_rate_limit = AsyncMock(
+        return_value=MagicMock(content=research)
+    )
+    mock_redis = MagicMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.set = AsyncMock(return_value=True)
 
-    result = await svc._gather_websearch_data("seo tips", None, specialization="marketing")
+    result = await gather_websearch_data(
+        "seo tips",
+        None,
+        serper=None,
+        firecrawl=None,
+        orchestrator=mock_orchestrator,
+        redis=mock_redis,
+        specialization="marketing",
+    )
 
     assert result["research_data"] == research
 
 
 async def test_gather_websearch_serper_failure_graceful() -> None:
     """C1: Serper failure does not crash pipeline (graceful degradation)."""
-    svc = _make_service()
     mock_serper = MagicMock()
     mock_serper.search = AsyncMock(side_effect=RuntimeError("Serper API down"))
-    svc._serper = mock_serper
-    svc._firecrawl = None
-    svc._fetch_research = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
-    result = await svc._gather_websearch_data("seo tips", None)
+    result = await gather_websearch_data(
+        "seo tips",
+        None,
+        serper=mock_serper,
+        firecrawl=None,
+        orchestrator=None,
+        redis=None,
+    )
 
     assert result["serper_data"] is None
     assert result["competitor_pages"] == []
@@ -868,26 +891,40 @@ async def test_gather_websearch_serper_failure_graceful() -> None:
 
 async def test_fetch_research_cache_hit() -> None:
     """C1: Research cache hit returns cached data without API call."""
-    svc = _make_service()
     import json
 
     cached_data = {"facts": [], "trends": [], "statistics": [], "summary": "Cached"}
-    svc._redis.get = AsyncMock(return_value=json.dumps(cached_data))
+    mock_redis = MagicMock()
+    mock_redis.get = AsyncMock(return_value=json.dumps(cached_data))
+    mock_orchestrator = MagicMock()
 
-    result = await svc._fetch_research("seo tips", "marketing", "company")
+    result = await fetch_research(
+        mock_orchestrator,
+        mock_redis,
+        main_phrase="seo tips",
+        specialization="marketing",
+        company_name="company",
+    )
 
     assert result == cached_data
     # Should not call orchestrator since we got a cache hit
-    svc._ai_orchestrator.generate_without_rate_limit.assert_not_called()
+    mock_orchestrator.generate_without_rate_limit.assert_not_called()
 
 
 async def test_fetch_research_failure_returns_none() -> None:
     """C1/E53: Research failure returns None (graceful degradation)."""
-    svc = _make_service()
-    svc._redis.get = AsyncMock(return_value=None)
-    svc._ai_orchestrator.generate_without_rate_limit = AsyncMock(side_effect=RuntimeError("Sonar down"))
+    mock_redis = MagicMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.generate_without_rate_limit = AsyncMock(side_effect=RuntimeError("Sonar down"))
 
-    result = await svc._fetch_research("seo tips", "marketing", "company")
+    result = await fetch_research(
+        mock_orchestrator,
+        mock_redis,
+        main_phrase="seo tips",
+        specialization="marketing",
+        company_name="company",
+    )
 
     assert result is None
 
