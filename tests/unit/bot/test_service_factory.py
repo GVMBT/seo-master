@@ -26,7 +26,7 @@ class TestTokenServiceFactory:
 
     def test_factory_preserves_admin_ids(self) -> None:
         factory = TokenServiceFactory(admin_ids=[1, 2, 3])
-        assert factory._admin_ids == [1, 2, 3]  # noqa: SLF001
+        assert factory._admin_ids == [1, 2, 3]
 
 
 class TestConnectionServiceFactory:

@@ -285,7 +285,9 @@ class TestProcessRefund:
         await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="charge_abc")
         svc_with_mocks._payments.mark_refunded.assert_called_once_with(1)
 
-    async def test_process_refund_cas_failure_returns_already_refunded(self, svc_with_mocks: StarsPaymentService) -> None:
+    async def test_process_refund_cas_failure_returns_already_refunded(
+        self, svc_with_mocks: StarsPaymentService,
+    ) -> None:
         """CR-78b: if CAS fails (concurrent refund), return already_refunded."""
         svc_with_mocks._payments.mark_refunded = AsyncMock(return_value=False)
         result = await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="charge_race")
