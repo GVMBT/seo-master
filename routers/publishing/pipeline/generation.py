@@ -842,8 +842,15 @@ async def cancel_refund(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    image_storage: Any,
 ) -> None:
-    """Cancel pipeline and refund tokens (step 7 → clear)."""
+    """Cancel pipeline and refund tokens (step 7 → clear).
+
+    C14: cleanup Telegraph page + Storage images BEFORE refund to prevent
+    users from copying the preview URL, cancelling, and repeating for free content.
+    Cleanup errors must NOT block the refund — refund is more important.
+    """
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
         return
@@ -855,6 +862,35 @@ async def cancel_refund(
         previews_repo = PreviewsRepository(db)
         preview = await previews_repo.get_by_id(preview_id)
         if preview and preview.status == "draft" and preview.user_id == user.id:
+            # C14: cleanup Telegraph page before refund (best-effort)
+            if preview.telegraph_path:
+                try:
+                    telegraph = TelegraphClient(http_client)
+                    await telegraph.delete_page(preview.telegraph_path)
+                except Exception:
+                    log.warning(
+                        "pipeline.cancel_telegraph_cleanup_failed",
+                        preview_id=preview_id,
+                        telegraph_path=preview.telegraph_path,
+                    )
+
+            # C14: cleanup Storage images before refund (best-effort)
+            if preview.images:
+                try:
+                    paths = [
+                        img.get("storage_path")
+                        for img in preview.images
+                        if isinstance(img, dict) and img.get("storage_path")
+                    ]
+                    if paths:
+                        await image_storage.cleanup_by_paths(paths)
+                except Exception:
+                    log.warning(
+                        "pipeline.cancel_storage_cleanup_failed",
+                        preview_id=preview_id,
+                        images_count=len(preview.images),
+                    )
+
             # Mark as cancelled
             await previews_repo.update(preview_id, ArticlePreviewUpdate(status="cancelled"))
             # Refund tokens

@@ -215,5 +215,9 @@ class SchedulerService:
     @staticmethod
     def estimate_weekly_cost(days: int, posts_per_day: int, platform_type: str) -> int:
         """Estimate weekly token cost for a schedule."""
-        cost_per_post = estimate_article_cost() if platform_type == "wordpress" else estimate_social_post_cost()
+        # Social auto-publish does not generate images
+        if platform_type == "wordpress":
+            cost_per_post = estimate_article_cost()
+        else:
+            cost_per_post = estimate_social_post_cost(images_count=0)
         return days * posts_per_day * cost_per_post

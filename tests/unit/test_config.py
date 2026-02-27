@@ -1,9 +1,13 @@
 """Tests for bot/config.py — Settings and get_settings singleton."""
 
 import pytest
+from cryptography.fernet import Fernet
 from pydantic import SecretStr, ValidationError
 
 from bot.config import Settings, get_settings
+
+# Generate a valid Fernet key at runtime (not a real secret)
+_TEST_FERNET_KEY = Fernet.generate_key().decode()
 
 # All required env vars for a valid Settings
 REQUIRED_ENV = {
@@ -18,7 +22,7 @@ REQUIRED_ENV = {
     "QSTASH_NEXT_SIGNING_KEY": "test-sig-next",
     "OPENROUTER_API_KEY": "test-openrouter",
     "FIRECRAWL_API_KEY": "test-firecrawl",
-    "ENCRYPTION_KEY": "test-encryption-key",
+    "ENCRYPTION_KEY": _TEST_FERNET_KEY,
     "TELEGRAM_WEBHOOK_SECRET": "test-webhook-secret",
 }
 
@@ -108,6 +112,10 @@ class TestSettings:
     def test_admin_ids_empty_raises(self) -> None:
         with pytest.raises(ValidationError, match="at least one admin ID"):
             _make_settings(ADMIN_IDS="")
+
+    def test_encryption_key_must_be_valid_fernet(self) -> None:
+        with pytest.raises(ValidationError, match="not a valid Fernet key"):
+            _make_settings(ENCRYPTION_KEY="not-a-valid-key")
 
 
 @pytest.mark.usefixtures("_env")

@@ -100,11 +100,21 @@ class PublishService:
     async def execute(self, payload: PublishPayload) -> PublishOutcome:
         """Execute auto-publish pipeline.
 
-        Flow: load data -> check connection -> check keywords (E17) ->
-        rotate keyword (E22/E23) -> check balance (E01) -> charge ->
-        generate -> publish -> log -> return.
+        Flow: check schedule (H13) -> load data -> check connection ->
+        check keywords (E17) -> rotate keyword (E22/E23) ->
+        check balance (E01) -> charge -> generate -> publish -> log -> return.
         """
         user_id = payload.user_id
+
+        # 0. Check schedule enabled (H13: QStash cron may fire after user disabled schedule)
+        schedule = await self._schedules.get_by_id(payload.schedule_id)
+        if not schedule or not schedule.enabled:
+            log.warning(
+                "schedule_disabled_or_missing",
+                schedule_id=payload.schedule_id,
+                user_id=user_id,
+            )
+            return PublishOutcome(status="skipped", reason="schedule_disabled", user_id=user_id)
 
         # 1. Load user
         user = await self._users.get_by_id(user_id)
@@ -114,7 +124,12 @@ class PublishService:
         # 2. Load category
         category = await self._categories.get_by_id(payload.category_id)
         if not category:
-            return PublishOutcome(status="error", reason="category_not_found", user_id=user_id)
+            return PublishOutcome(
+                status="error",
+                reason="category_not_found",
+                user_id=user_id,
+                notify=user.notify_publications,
+            )
 
         # 3. Check keywords (E17: no keywords configured)
         if not category.keywords:
@@ -146,13 +161,21 @@ class PublishService:
         )
         if not keyword:
             log.warning("publish_no_available_keyword", category_id=payload.category_id)
-            return PublishOutcome(status="error", reason="no_available_keyword", user_id=user_id)
+            return PublishOutcome(
+                status="error",
+                reason="no_available_keyword",
+                user_id=user_id,
+                notify=user.notify_publications,
+            )
 
         if low_pool:
             log.warning("publish_low_keyword_pool", category_id=payload.category_id, keyword=keyword)
 
-        # 6. Estimate cost
-        estimated_cost = estimate_article_cost() if content_type == "article" else estimate_social_post_cost()
+        # 6. Estimate cost (social auto-publish does not generate images)
+        if content_type == "article":
+            estimated_cost = estimate_article_cost()
+        else:
+            estimated_cost = estimate_social_post_cost(images_count=0)
 
         # 7. Check balance (E01): pause schedule per EDGE_CASES.md
         if not await self._tokens.check_balance(user_id, estimated_cost):
@@ -170,10 +193,20 @@ class PublishService:
                 user_id, estimated_cost, f"auto_{content_type}", description=f"Auto-publish: {keyword}"
             )
         except InsufficientBalanceError:
-            return PublishOutcome(status="error", reason="insufficient_balance", user_id=user_id)
+            return PublishOutcome(
+                status="error",
+                reason="insufficient_balance",
+                user_id=user_id,
+                notify=user.notify_publications,
+            )
         except Exception:
             log.exception("publish_charge_failed", user_id=user_id)
-            return PublishOutcome(status="error", reason="charge_failed", user_id=user_id)
+            return PublishOutcome(
+                status="error",
+                reason="charge_failed",
+                user_id=user_id,
+                notify=user.notify_publications,
+            )
 
         # 9-10. Generate, publish, log, cross-post (with refund on error)
         return await self._publish_and_log(
@@ -303,7 +336,12 @@ class PublishService:
                 )
             )
 
-            return PublishOutcome(status="error", reason=str(exc), user_id=user_id)
+            return PublishOutcome(
+                status="error",
+                reason=str(exc),
+                user_id=user_id,
+                notify=user.notify_publications,
+            )
 
     async def _pause_schedule_insufficient_balance(
         self,
@@ -378,12 +416,14 @@ class PublishService:
         image_service = ImageService(self._ai_orchestrator)
         publisher = WordPressPublisher(self._http_client)
 
-        image_count = (category.image_settings or {}).get("count", 4)
+        image_settings = category.image_settings or {}
+        image_count = image_settings.get("count", 4)
         image_context: dict[str, Any] = {
             "keyword": keyword,
             "content_type": "article",
             "company_name": "",
             "specialization": "",
+            "image_settings": image_settings,
         }
         # Load project for company info
         project = await self._projects.get_by_id(project_id)

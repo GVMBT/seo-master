@@ -15,12 +15,13 @@ from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
-from db.models import PlatformConnectionCreate, User
+from db.models import PlatformConnectionCreate, User, UserUpdate
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.schedules import SchedulesRepository
+from db.repositories.users import UsersRepository
 from keyboards.inline import admin_panel_kb, cancel_kb, dashboard_kb, dashboard_resume_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
@@ -37,6 +38,16 @@ router = Router()
 
 # Average article cost for "~N articles" estimate (UX_PIPELINE.md section 2.5)
 _AVG_ARTICLE_COST = 320
+
+
+def _parse_referrer_id(arg: str) -> int | None:
+    """Extract numeric referrer_id from deep link arg like 'referrer_12345'."""
+    raw = arg.removeprefix("referrer_")
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        log.warning("referral_invalid_arg", arg=arg)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -294,16 +305,31 @@ async def cmd_start(
     # Parse deep link args
     args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
     if args.startswith("referrer_"):
-        log.info("deep_link_referral", referrer_arg=args)
-        # Referral tracking handled by AuthMiddleware on user creation
+        referrer_id = _parse_referrer_id(args)
+        if is_new_user and referrer_id and referrer_id != user.id:
+            # Link referrer to newly created user (C4: referral was dead before this fix)
+            users_repo = UsersRepository(db)
+            referrer = await users_repo.get_by_id(referrer_id)
+            if referrer:
+                await users_repo.update(user.id, UserUpdate(referrer_id=referrer_id))
+                log.info("referral_linked", user_id=user.id, referrer_id=referrer_id)
+                # Invalidate cached user so downstream sees referrer_id
+                await redis.delete(CacheKeys.user_cache(user.id))
+            else:
+                log.warning("referral_invalid_referrer", referrer_id=referrer_id)
+        elif referrer_id and referrer_id == user.id:
+            log.warning("referral_self_referral_blocked", user_id=user.id)
+        else:
+            log.info("deep_link_referral_ignored", referrer_arg=args, is_new_user=is_new_user)
     elif args.startswith("pinterest_auth_"):
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, user, db, redis, nonce)
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis)
     if is_new_user:
-        # First interaction: set persistent reply keyboard
+        # First interaction: set persistent reply keyboard + Dashboard inline buttons (C6)
         await message.answer(text, reply_markup=main_menu_kb(is_admin))
+        await message.answer("Выберите действие:", reply_markup=kb)
     else:
         await message.answer(text, reply_markup=kb)
 
@@ -475,17 +501,8 @@ async def _route_to_step(
 
 
 # ---------------------------------------------------------------------------
-# Pipeline stubs (remaining — article:start moved to pipeline/article.py)
+# Pipeline resume (article:start in pipeline/article.py, social:start in pipeline/social/social.py)
 # ---------------------------------------------------------------------------
-
-
-@router.callback_query(F.data == "pipeline:social:soon")
-async def social_pipeline_soon(callback: CallbackQuery) -> None:
-    """Social pipeline placeholder — not yet available for production."""
-    await callback.answer("Социальные посты — скоро!", show_alert=True)
-
-
-## pipeline:social:start is handled by routers/publishing/pipeline/social/social.py
 
 
 @router.callback_query(F.data == "pipeline:resume")
