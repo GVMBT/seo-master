@@ -153,13 +153,19 @@ class FirecrawlClient:
         operation: str,
     ) -> httpx.Response:
         """POST to a Firecrawl endpoint with retry on 429/5xx (C10)."""
-        return await retry_with_backoff(
-            lambda: self._http.post(
+
+        async def _do_post() -> httpx.Response:
+            resp = await self._http.post(
                 f"{self._base}/{endpoint}",
                 headers=self._headers(),
                 json=json_data,
                 timeout=timeout,
-            ),
+            )
+            resp.raise_for_status()
+            return resp
+
+        return await retry_with_backoff(
+            _do_post,
             max_retries=2,
             base_delay=1.0,
             operation=f"firecrawl_{operation}",

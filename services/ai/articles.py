@@ -872,9 +872,16 @@ class ArticleService:
             return scorer.score(content_html, main_phrase, phrases_list)
         except ImportError:
             log.warning("quality_scorer_not_available")
-            from services.ai.quality_scorer import QualityScore
+            from dataclasses import dataclass, field
 
-            return QualityScore(
+            @dataclass
+            class _FallbackScore:
+                total: int = 50
+                breakdown: dict[str, int] = field(default_factory=dict)
+                issues: list[str] = field(default_factory=list)
+                passed: bool = True
+
+            return _FallbackScore(
                 total=50,
                 breakdown={},
                 issues=["Quality scorer module not available, using default score"],

@@ -460,7 +460,10 @@ class AIOrchestrator:
                     model=chain[0] if chain else "deepseek/deepseek-v3.2",
                     messages=messages,  # type: ignore[arg-type]
                     max_tokens=rendered.meta.get("max_tokens", 4000),
-                    temperature=rendered.meta.get("temperature", 0.7),
+                    temperature=rendered.meta.get(
+                        "temperature",
+                        0.6 if rendered.meta.get("task") == "article" else 0.7,
+                    ),
                     extra_body=extra_body,
                     timeout=rendered.meta.get("timeout", 120),
                     **kwargs,
@@ -514,7 +517,7 @@ class AIOrchestrator:
                     retry_after_raw = exc.response.headers.get("Retry-After")
                     if retry_after_raw:
                         with contextlib.suppress(ValueError, TypeError):
-                            delay = float(retry_after_raw)
+                            delay = max(float(retry_after_raw), 0.0)
                 delay = min(delay, max_retry_after)
 
                 log.warning(

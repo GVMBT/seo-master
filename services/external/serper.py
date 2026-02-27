@@ -191,16 +191,19 @@ class SerperClient:
                     )
                     await asyncio.sleep(delay)
                     continue
-                # Retry on 5xx
+                # Retry on 5xx with backoff
                 if status in (500, 502, 503, 504) and attempt < attempts:
+                    backoff_delay = 1.0 * (2**attempt)
                     log.warning(
                         "http_retry",
                         operation="serper_search",
                         attempt=attempt,
                         max_retries=attempts - 1,
                         status=status,
+                        delay_s=round(backoff_delay, 2),
                         error=last_error[:200],
                     )
+                    await asyncio.sleep(backoff_delay)
                     continue
                 log.warning(
                     "serper.search_attempt_failed",
