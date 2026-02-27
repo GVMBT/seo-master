@@ -257,12 +257,27 @@ class TestFetchResearchNoRedis:
 
 
 class TestFetchResearchCacheKey:
-    async def test_same_keyword_and_spec_same_cache_key(
+    async def test_same_inputs_same_cache_key(
         self,
         preview_service: PreviewService,
         mock_redis: AsyncMock,
     ) -> None:
-        """Same main_phrase + specialization produces same cache key."""
+        """Same main_phrase + specialization + company_name produces same cache key."""
+        await preview_service._fetch_research("SEO", "marketing", "Co")
+        first_key = mock_redis.get.call_args[0][0]
+
+        mock_redis.reset_mock()
+        await preview_service._fetch_research("SEO", "marketing", "Co")
+        second_key = mock_redis.get.call_args[0][0]
+
+        assert first_key == second_key
+
+    async def test_different_company_different_cache_key(
+        self,
+        preview_service: PreviewService,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """Different company_name produces different cache key (CR-78c)."""
         await preview_service._fetch_research("SEO", "marketing", "Co")
         first_key = mock_redis.get.call_args[0][0]
 
@@ -270,7 +285,7 @@ class TestFetchResearchCacheKey:
         await preview_service._fetch_research("SEO", "marketing", "Different")
         second_key = mock_redis.get.call_args[0][0]
 
-        assert first_key == second_key  # same keyword+spec = same cache key
+        assert first_key != second_key
 
     async def test_different_keyword_different_cache_key(
         self,

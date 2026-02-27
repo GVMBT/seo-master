@@ -30,6 +30,9 @@ from services.tokens import TokenService
 log = structlog.get_logger()
 router = Router()
 
+# H17: maximum categories per project (anti-DoS)
+MAX_CATEGORIES_PER_PROJECT = 50
+
 
 # ---------------------------------------------------------------------------
 # FSM definition (FSM_SPEC.md section 1)
@@ -137,6 +140,16 @@ async def start_category_create(
 
     if not project or project.user_id != user.id:
         await callback.answer("Проект не найден.", show_alert=True)
+        return
+
+    # H17: enforce category limit per project
+    cats_repo = CategoriesRepository(db)
+    cat_count = await cats_repo.get_count_by_project(project_id)
+    if cat_count >= MAX_CATEGORIES_PER_PROJECT:
+        await callback.answer(
+            f"Достигнут лимит категорий ({MAX_CATEGORIES_PER_PROJECT}) в проекте.",
+            show_alert=True,
+        )
         return
 
     interrupted = await ensure_no_active_fsm(state)

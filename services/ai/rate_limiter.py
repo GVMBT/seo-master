@@ -18,6 +18,7 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     "keyword_generation": (5, 3600),  # 5/hour
     "token_purchase": (5, 600),  # 5/10min
     "platform_connection": (10, 3600),  # 10/hour
+    "pipeline_generation": (3, 600),  # 3/10min (H15: anti-abuse)
 }
 
 

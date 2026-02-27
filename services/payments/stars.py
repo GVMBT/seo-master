@@ -7,7 +7,9 @@ Zero dependencies on Telegram/Aiogram — returns data dicts for router to use.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -20,7 +22,15 @@ from services.payments.packages import (
     REFERRAL_BONUS_PERCENT,
 )
 
+if TYPE_CHECKING:
+    from cache.client import RedisClient
+
 log = structlog.get_logger()
+
+# H14: referral anti-fraud limits
+MAX_REFERRAL_DAILY = 10  # max bonuses credited per referrer per day
+MAX_REFERRAL_LIFETIME_TOKENS = 5000  # max total referral tokens per referrer
+_REFERRAL_DAILY_TTL = 86400  # 24 hours
 
 
 # ---------------------------------------------------------------------------
@@ -35,11 +45,17 @@ async def credit_referral_bonus(
     price_rub: int,
     payment_id: int,
     provider_label: str = "",
+    redis: RedisClient | None = None,
 ) -> None:
     """Credit referral bonus to referrer if exists (F19).
 
     Bonus = REFERRAL_BONUS_PERCENT% of price_rub.
     Credited on EVERY successful_payment (§31).
+
+    H14 anti-fraud limits (enforced when redis is provided):
+    - Daily cap: MAX_REFERRAL_DAILY bonuses per referrer per day
+    - Lifetime cap: MAX_REFERRAL_LIFETIME_TOKENS total referral tokens
+    Payment is NEVER blocked -- only the bonus is skipped.
     """
     user = await users.get_by_id(user_id)
     if not user or not user.referrer_id:
@@ -51,6 +67,46 @@ async def credit_referral_bonus(
 
     referrer = await users.get_by_id(user.referrer_id)
     if not referrer:
+        return
+
+    # H14: check daily cap via Redis
+    if redis is not None:
+        from cache.keys import CacheKeys
+
+        date_str = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+        daily_key = CacheKeys.referral_daily(user.referrer_id, date_str)
+        daily_count = await redis.incr(daily_key)
+        if daily_count == 1:
+            await redis.expire(daily_key, _REFERRAL_DAILY_TTL)
+
+        if daily_count > MAX_REFERRAL_DAILY:
+            await redis.decr(daily_key)
+            log.warning(
+                "referral_daily_limit_exceeded",
+                referrer_id=user.referrer_id,
+                buyer_id=user_id,
+                daily_count=daily_count,
+            )
+            return
+
+    # H14: check lifetime cap via DB
+    lifetime_total = await payments.sum_referral_bonuses(user.referrer_id)
+    if lifetime_total + bonus > MAX_REFERRAL_LIFETIME_TOKENS:
+        log.warning(
+            "referral_lifetime_limit_exceeded",
+            referrer_id=user.referrer_id,
+            buyer_id=user_id,
+            lifetime_total=lifetime_total,
+            bonus=bonus,
+            cap=MAX_REFERRAL_LIFETIME_TOKENS,
+        )
+        # Undo daily counter increment if we incremented it
+        if redis is not None:
+            from cache.keys import CacheKeys
+
+            date_str = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+            daily_key = CacheKeys.referral_daily(user.referrer_id, date_str)
+            await redis.decr(daily_key)
         return
 
     await users.credit_balance(user.referrer_id, bonus)
@@ -252,6 +308,8 @@ class StarsPaymentService:
 
         Per API_CONTRACTS.md §2.3: balance may go negative.
         Uses force_debit_balance to allow negative balance.
+        Atomic CAS (CR-78b): UPDATE ... WHERE status='completed' prevents
+        race conditions between concurrent refund attempts.
 
         Returns dict with: tokens_debited, new_balance, error (optional).
         """
@@ -265,13 +323,16 @@ class StarsPaymentService:
             log.warning("refund_already_processed", charge_id=telegram_payment_charge_id)
             return {"tokens_debited": 0, "already_refunded": True}
 
+        # Atomic CAS: only mark refunded if still 'completed' (CR-78b)
+        updated = await self._payments.mark_refunded(payment.id)
+        if not updated:
+            log.warning("refund_cas_failed", charge_id=telegram_payment_charge_id, payment_id=payment.id)
+            return {"tokens_debited": 0, "already_refunded": True}
+
         tokens_to_debit = payment.tokens_amount
 
         # Debit tokens (allows negative balance per API_CONTRACTS §2.3)
         new_balance = await self._users.force_debit_balance(user_id, tokens_to_debit)
-
-        # Update payment status to refunded
-        await self._payments.update(payment.id, PaymentUpdate(status="refunded"))
 
         # Record expense (negative = deduction)
         await self._payments.create_expense(

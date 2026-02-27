@@ -1,23 +1,30 @@
 """YooKassa webhook handler (aiohttp.web).
 
-Thin handler — all logic delegated to YooKassaPaymentService.
+Thin handler -- all logic delegated to YooKassaPaymentService.
 Source of truth:
 - docs/API_CONTRACTS.md §2.4 (webhook IP whitelist)
 - docs/API_CONTRACTS.md §2.5 (recurring payments)
+- EDGE_CASES.md E39 (idempotency by object.id)
 """
 
 import structlog
 from aiohttp import web
 
+from cache.client import RedisClient
+from cache.keys import CacheKeys
 from services.payments.yookassa import YooKassaPaymentService, verify_ip
 
 log = structlog.get_logger()
 
+# H16: idempotency lock TTL for YooKassa webhooks (24 hours)
+_YOOKASSA_IDEMPOTENCY_TTL = 86400
+
 
 async def yookassa_webhook(request: web.Request) -> web.Response:
-    """POST /api/yookassa/webhook — process YooKassa payment notifications.
+    """POST /api/yookassa/webhook -- process YooKassa payment notifications.
 
     IP whitelist verification (API_CONTRACTS.md §2.4), then delegate to service.
+    H16: Redis NX idempotency lock on payment_id (E39).
     Always returns 200 to prevent retries.
     """
     # 1. Verify IP
@@ -41,6 +48,16 @@ async def yookassa_webhook(request: web.Request) -> web.Response:
     if not event or not obj:
         log.warning("yookassa_webhook_missing_fields", body_keys=list(body.keys()))
         return web.Response(status=200, text="OK")
+
+    # H16: Redis NX idempotency lock on object.id (E39: prevent replay)
+    payment_id = obj.get("id", "")
+    if payment_id and event == "payment.succeeded":
+        redis: RedisClient = request.app["redis"]
+        lock_key = CacheKeys.yookassa_idempotency(payment_id)
+        acquired = await redis.set(lock_key, "1", ex=_YOOKASSA_IDEMPOTENCY_TTL, nx=True)
+        if not acquired:
+            log.warning("yookassa_webhook_duplicate", payment_id=payment_id, webhook_event=event)
+            return web.Response(status=200, text="OK")
 
     # 3. Delegate to service (reuse singleton from app, created in bot/main.py)
     service: YooKassaPaymentService = request.app["yookassa_service"]

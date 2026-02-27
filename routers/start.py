@@ -11,6 +11,7 @@ from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMark
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.texts.legal import LEGAL_NOTICE
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
@@ -322,6 +323,8 @@ async def cmd_start(
         # First interaction: set persistent reply keyboard + Dashboard inline buttons (C6)
         await message.answer(text, reply_markup=main_menu_kb(is_admin))
         await message.answer("Выберите действие:", reply_markup=kb)
+        # Legal notice (C7/H30): inform about privacy policy and terms
+        await message.answer(LEGAL_NOTICE)
     else:
         await message.answer(text, reply_markup=kb)
 

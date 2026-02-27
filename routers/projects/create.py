@@ -19,6 +19,9 @@ from keyboards.inline import cancel_kb, project_created_kb, project_edit_kb
 log = structlog.get_logger()
 router = Router()
 
+# H17: maximum projects per user (anti-DoS)
+MAX_PROJECTS_PER_USER = 20
+
 
 # ---------------------------------------------------------------------------
 # FSM definitions (FSM_SPEC.md section 1)
@@ -86,10 +89,22 @@ _FIELD_LIMITS: dict[str, tuple[int, int]] = {
 async def start_create(
     callback: CallbackQuery,
     state: FSMContext,
+    user: User,
+    db: SupabaseClient,
 ) -> None:
     """Start project creation flow."""
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         await callback.answer()
+        return
+
+    # H17: enforce project limit per user
+    repo = ProjectsRepository(db)
+    count = await repo.get_count_by_user(user.id)
+    if count >= MAX_PROJECTS_PER_USER:
+        await callback.answer(
+            f"Достигнут лимит проектов ({MAX_PROJECTS_PER_USER}).",
+            show_alert=True,
+        )
         return
 
     interrupted = await ensure_no_active_fsm(state)

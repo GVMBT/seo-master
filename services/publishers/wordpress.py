@@ -2,7 +2,8 @@
 
 Source of truth: docs/API_CONTRACTS.md section 3.3.
 Edge cases: E02 (WP unavailable).
-Retry: C10/C11 — retry on 429/5xx with backoff, no retry on 401/403.
+Write idempotency (CR-78a): no retry on POST/create operations
+(retry could duplicate posts/media). Only connection-level errors are retried.
 """
 
 from __future__ import annotations
@@ -11,15 +12,10 @@ import httpx
 import structlog
 
 from db.models import PlatformConnection
-from services.http_retry import retry_with_backoff
 
 from .base import BasePublisher, PublishRequest, PublishResult
 
 log = structlog.get_logger()
-
-# Retry settings for WP publish (C11)
-_PUBLISH_MAX_RETRIES = 2
-_PUBLISH_BASE_DELAY = 1.0
 
 
 class WordPressPublisher(BasePublisher):
@@ -59,17 +55,13 @@ class WordPressPublisher(BasePublisher):
             return False
 
     async def publish(self, request: PublishRequest) -> PublishResult:
+        """Publish to WordPress. No retry on write operations (CR-78a)."""
         creds = request.connection.credentials
         base = self._base_url(creds)
         auth = self._auth(creds)
 
         try:
-            result = await retry_with_backoff(
-                lambda: self._do_publish(request, base, auth),
-                max_retries=_PUBLISH_MAX_RETRIES,
-                base_delay=_PUBLISH_BASE_DELAY,
-                operation="wordpress_publish",
-            )
+            return await self._do_publish(request, base, auth)
         except httpx.HTTPStatusError as exc:
             log.error(
                 "wordpress_publish_failed",
@@ -80,8 +72,6 @@ class WordPressPublisher(BasePublisher):
         except httpx.HTTPError as exc:
             log.error("wordpress_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
-        else:
-            return result
 
     async def _do_publish(
         self,

@@ -24,6 +24,7 @@ from services.ai.articles import RESEARCH_SCHEMA
 from services.ai.orchestrator import AIOrchestrator, GenerationRequest
 from services.external.firecrawl import FirecrawlClient
 from services.external.serper import SerperClient
+from services.research_helpers import format_competitor_analysis, identify_gaps, is_own_site
 from services.storage import ImageStorage
 
 if TYPE_CHECKING:
@@ -35,9 +36,6 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
-# Truncation limits for competitor data passed to AI prompt
-_MAX_H2_PER_COMPETITOR = 12
-_MAX_SUMMARY_CHARS = 400
 _MAX_INTERNAL_LINKS = 20
 
 # Max competitor pages to scrape (cost: 1 Firecrawl credit each)
@@ -92,7 +90,7 @@ class PreviewService:
 
         Returns parsed research dict or None on failure (graceful degradation E53).
         """
-        cache_input = f"{main_phrase}:{specialization}".lower()
+        cache_input = f"{main_phrase}|{specialization}|{company_name}".lower()
         keyword_hash = hashlib.md5(cache_input.encode(), usedforsecurity=False).hexdigest()[:12]
         cache_key = CacheKeys.research(keyword_hash)
 
@@ -216,7 +214,7 @@ class PreviewService:
                 competitor_urls = [
                     r["link"]
                     for r in serper_result.organic
-                    if r.get("link") and not _is_own_site(r["link"], project_url)
+                    if r.get("link") and not is_own_site(r["link"], project_url)
                 ][:_MAX_COMPETITOR_SCRAPE]
                 if competitor_urls:
                     scrape_tasks = [self._firecrawl.scrape_content(url) for url in competitor_urls]
@@ -236,8 +234,8 @@ class PreviewService:
 
                     # Format competitor analysis for prompt
                     if pages:
-                        result["competitor_analysis"] = _format_competitor_analysis(pages)
-                        result["competitor_gaps"] = _identify_gaps(pages)
+                        result["competitor_analysis"] = format_competitor_analysis(pages)
+                        result["competitor_gaps"] = identify_gaps(pages)
         elif isinstance(serper_result, BaseException):
             log.warning("websearch_serper_failed", error=str(serper_result))
 
@@ -498,55 +496,3 @@ class PreviewService:
         )
 
 
-def _is_own_site(url: str, project_url: str | None) -> bool:
-    """Check if a URL belongs to the project's own site (skip in competitor scraping)."""
-    if not project_url:
-        return False
-    try:
-        from urllib.parse import urlparse
-
-        own_domain = urlparse(project_url).netloc.lower().replace("www.", "")
-        url_domain = urlparse(url).netloc.lower().replace("www.", "")
-        return own_domain == url_domain
-    except (ValueError, AttributeError):  # fmt: skip
-        return False
-
-
-def _format_competitor_analysis(pages: list[dict[str, Any]]) -> str:
-    """Format competitor scrape results into a text block for AI prompt."""
-    lines: list[str] = []
-    for i, page in enumerate(pages, 1):
-        h2_headings = [h["text"] for h in page.get("headings", []) if h.get("level") == 2]
-        lines.append(f"Конкурент {i} ({page.get('url', '')}):")
-        lines.append(f"  Объём: ~{page.get('word_count', 0)} слов")
-        if page.get("summary"):
-            lines.append(f"  Тема: {page['summary'][:_MAX_SUMMARY_CHARS]}")
-        if h2_headings:
-            lines.append(f"  H2: {', '.join(h2_headings[:_MAX_H2_PER_COMPETITOR])}")
-        lines.append("")
-    return "\n".join(lines)
-
-
-def _identify_gaps(pages: list[dict[str, Any]]) -> str:
-    """Summarize competitor structure for AI to identify gaps.
-
-    Instead of naive Counter-based comparison (which fails for semantically
-    different headings like blogs), we pass raw competitor headings to the AI
-    outline prompt and let it determine real content gaps.
-    """
-    if not pages:
-        return ""
-
-    lines: list[str] = []
-    for i, page in enumerate(pages, 1):
-        h2_list = [str(h.get("text", "")) for h in page.get("headings", []) if h.get("level") == 2]
-        if h2_list:
-            lines.append(f"Конкурент {i}: {', '.join(h2_list[:_MAX_H2_PER_COMPETITOR])}")
-
-    if not lines:
-        return ""
-
-    return (
-        "Структура H2 конкурентов (определи, какие темы НЕ раскрыты "
-        "ни одним конкурентом — это твоя уникальная ценность):\n" + "\n".join(lines)
-    )

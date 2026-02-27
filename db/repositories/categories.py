@@ -32,6 +32,16 @@ class CategoriesRepository(BaseRepository):
         resp = await self._table(_TABLE).select("*").eq("project_id", project_id).order("name").execute()
         return [Category(**row) for row in self._rows(resp)]
 
+    async def get_count_by_project(self, project_id: int) -> int:
+        """Count categories in a project."""
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .eq("project_id", project_id)
+            .execute()
+        )
+        return self._count(resp)
+
     async def create(self, data: CategoryCreate) -> Category:
         """Create a new category."""
         resp = await self._table(_TABLE).insert(data.model_dump()).execute()
