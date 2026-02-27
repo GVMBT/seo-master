@@ -100,7 +100,7 @@ async def show_connections(
     if not connections:
         text += "\n\nПодключений пока нет. Добавьте платформу для публикации."
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         text,
         reply_markup=connection_list_kb(connections, project_id),
     )
@@ -136,7 +136,7 @@ async def connections_list_back(
     if not connections:
         text += "\n\nПодключений пока нет. Добавьте платформу для публикации."
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         text,
         reply_markup=connection_list_kb(connections, project_id),
     )
@@ -177,7 +177,7 @@ async def manage_connection(
     status_text = "Активно" if conn.status == "active" else "Ошибка"
     safe_id = html.escape(conn.identifier)
     text = f"<b>{conn.platform_type.capitalize()}</b>\n\nИдентификатор: {safe_id}\nСтатус: {status_text}\n"
-    await callback.message.edit_text(
+    await msg.edit_text(
         text,
         reply_markup=connection_manage_kb(conn_id, conn.project_id),
     )
@@ -211,7 +211,7 @@ async def confirm_connection_delete(
         return
 
     safe_id = html.escape(conn.identifier)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Удалить подключение {conn.platform_type.capitalize()} ({safe_id})?\n\n"
         "Связанные расписания будут отменены.\n"
         "Это действие нельзя отменить.",
@@ -261,13 +261,13 @@ async def execute_connection_delete(
         # Reload connection list
         connections = await conn_svc.get_by_project(project_id)
         safe_name = html.escape(project.name)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Подключение {conn.platform_type.capitalize()} ({safe_id}) удалено.\n\n<b>{safe_name}</b> — Подключения",
             reply_markup=connection_list_kb(connections, project_id),
         )
         log.info("connection_deleted", conn_id=conn_id, user_id=user.id)
     else:
-        await callback.message.edit_text("Ошибка удаления подключения.")
+        await msg.edit_text("Ошибка удаления подключения.")
 
     await callback.answer()
 
@@ -310,12 +310,12 @@ async def start_wp_connect(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(ConnectWordPressFSM.url)
     await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
 
-    await callback.message.answer(
+    await msg.answer(
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n\n<i>Пример: example.com</i>",
         reply_markup=cancel_kb(f"conn:{project_id}:wp_cancel"),
     )
@@ -490,12 +490,12 @@ async def start_tg_connect(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(ConnectTelegramFSM.channel)
     await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
 
-    await callback.message.answer(
+    await msg.answer(
         "Подключение Telegram-канала\n\n"
         "Введите ссылку на канал.\n\n"
         "<i>Формат: @channel, t.me/channel или ID (-100...)</i>",
@@ -683,12 +683,12 @@ async def start_vk_connect(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(ConnectVKFSM.token)
     await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
 
-    await callback.message.answer(
+    await msg.answer(
         "Подключение VK\n\n"
         "Получите токен доступа:\n"
         "1. Откройте vkhost.github.io/vk-token\n"
@@ -797,7 +797,7 @@ async def vk_select_group(
     # Rule: 1 project = max 1 VK connection
     existing_vk = await conn_svc.get_by_project_and_platform(project_id, "vk")
     if existing_vk:
-        await callback.message.edit_text(
+        await msg.edit_text(
             "К проекту уже подключена VK-группа.\nДля другой группы создайте новый проект.",
         )
         await callback.answer()
@@ -819,7 +819,7 @@ async def vk_select_group(
     projects_repo = ProjectsRepository(db)
     project = await projects_repo.get_by_id(project_id)
     safe_name = html.escape(project.name) if project else ""
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"VK-группа «{html.escape(group_name)}» подключена!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
     )
@@ -865,7 +865,7 @@ async def start_pinterest_connect(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     # Generate nonce for OAuth
     nonce = secrets.token_urlsafe(16)
@@ -883,7 +883,7 @@ async def start_pinterest_connect(
         pinterest_nonce=nonce,
     )
 
-    await callback.message.answer(
+    await msg.answer(
         "Подключение Pinterest\n\n"
         "Нажмите кнопку ниже, чтобы авторизоваться в Pinterest.\n"
         "После авторизации вы будете перенаправлены обратно в бот.",
@@ -933,14 +933,14 @@ async def _cancel_connection_wizard(
             conn_svc = ConnectionService(db, http_client)
             connections = await conn_svc.get_by_project(project_id)
             safe_name = html.escape(project.name)
-            await callback.message.edit_text(
+            await msg.edit_text(
                 f"<b>{safe_name}</b> — Подключения",
                 reply_markup=connection_list_kb(connections, project_id),
             )
             await callback.answer()
             return
 
-    await callback.message.edit_text("Подключение отменено.")
+    await msg.edit_text("Подключение отменено.")
     await callback.answer()
 
 

@@ -70,13 +70,13 @@ async def show_category_list(
 
     if not categories:
         safe_name = html.escape(project.name)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"<b>{safe_name}</b> — Категории\n\nВ проекте пока нет категорий.",
             reply_markup=category_list_empty_kb(project_id),
         )
     else:
         safe_name = html.escape(project.name)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"<b>{safe_name}</b> — Категории ({len(categories)})",
             reply_markup=category_list_kb(categories, project_id),
         )
@@ -108,7 +108,7 @@ async def paginate_categories(
     categories = await cats_repo.get_by_project(project_id)
 
     safe_name = html.escape(project.name)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>{safe_name}</b> — Категории ({len(categories)})",
         reply_markup=category_list_kb(categories, project_id, page),
     )
@@ -151,12 +151,12 @@ async def start_category_create(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(CategoryCreateFSM.name)
     await state.update_data(last_update_time=time.time(), create_project_id=project_id)
 
-    await callback.message.answer(
+    await msg.answer(
         "Введите название категории.\n\n<i>Пример: Кухни на заказ</i>",
     )
     await callback.answer()
@@ -251,7 +251,7 @@ async def show_category_card(
     lines.append(f"Изображений: {img_count}/статью" if img_count is not None else "Изображения: по умолчанию")
 
     text = "\n".join(lines)
-    await callback.message.edit_text(text, reply_markup=category_card_kb(category_id, category.project_id))
+    await msg.edit_text(text, reply_markup=category_card_kb(category_id, category.project_id))
     await callback.answer()
 
 
@@ -289,7 +289,7 @@ async def confirm_category_delete(
         impact_lines.append(f"Будет отменено расписаний: {active_count}")
     impact_lines.append("Это действие нельзя отменить.")
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "\n".join(impact_lines),
         reply_markup=category_delete_confirm_kb(category_id, category.project_id),
     )
@@ -341,12 +341,12 @@ async def execute_category_delete(
         # Reload remaining categories to show correct keyboard
         remaining = await cats_repo.get_by_project(project_id)
         kb = category_list_kb(remaining, project_id) if remaining else category_list_empty_kb(project_id)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Категория «{safe_name}» удалена.",
             reply_markup=kb,
         )
         log.info("category_deleted", category_id=category_id, user_id=user.id)
     else:
-        await callback.message.edit_text("Ошибка удаления категории.")
+        await msg.edit_text("Ошибка удаления категории.")
 
     await callback.answer()

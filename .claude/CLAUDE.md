@@ -67,7 +67,7 @@ tests/          — зеркалит top-level: unit/bot/, unit/db/, unit/router
 uv run pytest tests/ -x -v                # тесты (один файл: -k "test_name")
 uv run ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF  # расширенный линтинг
 uv run ruff format .                       # форматирование
-uv run mypy bot/ services/ db/ api/ cache/ --check-untyped-defs  # проверка типов
+uv run mypy bot/ routers/ services/ db/ api/ cache/ --check-untyped-defs  # проверка типов (0 ошибок!)
 uv run bandit -r bot/ services/ db/ api/ cache/ platform_rules/ -ll  # безопасность (Medium+)
 uv run vulture bot/ services/ db/ api/ cache/ platform_rules/ --min-confidence 80  # мёртвый код
 ```
@@ -92,7 +92,7 @@ uv run vulture bot/ services/ db/ api/ cache/ platform_rules/ --min-confidence 8
 - Max line length: 120, cyclomatic complexity: 15
 - `db` параметр в хендлерах: `db: SupabaseClient` (НЕ `object`, НЕ `Any`)
 - `assert` запрещён в продакшен-коде — используй `if not x: raise AppError(...)`
-- `callback.message`: ВСЕГДА проверяй на None/InaccessibleMessage перед доступом
+- `callback.message`: ВСЕГДА используй `msg = safe_message(callback)`, затем `msg.*` (НИКОГДА `callback.message.*` после guard)
 - FSM-классы: суффикс `*FSM` (ProjectCreateFSM, CategoryCreateFSM, etc.)
 
 ## Известные расхождения в спеках (audit.md + февр. 2026)

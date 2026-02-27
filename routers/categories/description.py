@@ -121,7 +121,7 @@ async def show_description(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    await _show_description_screen(callback.message, category_id, db)
+    await _show_description_screen(msg, category_id, db)
     await callback.answer()
 
 
@@ -152,7 +152,7 @@ async def start_generate(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     settings = get_settings()
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
@@ -167,7 +167,7 @@ async def start_generate(
     )
 
     safe_name = html.escape(getattr(category, "name", ""))
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Сгенерировать описание для «{safe_name}»?\nСтоимость: {COST_DESCRIPTION} токенов. Баланс: {balance}.",
         reply_markup=description_confirm_kb(cat_id, balance),
     )
@@ -200,8 +200,8 @@ async def confirm_generate(
     has_balance = await token_service.check_balance(user.id, COST_DESCRIPTION)
     if not has_balance:
         balance = await token_service.get_balance(user.id)
-        msg = token_service.format_insufficient_msg(COST_DESCRIPTION, balance)
-        await callback.message.edit_text(msg)
+        insufficient_msg = token_service.format_insufficient_msg(COST_DESCRIPTION, balance)
+        await msg.edit_text(insufficient_msg)
         await state.clear()
         await callback.answer()
         return
@@ -219,7 +219,7 @@ async def confirm_generate(
     )
 
     # Show progress indicator before AI call
-    await callback.message.edit_text("Генерирую описание...")
+    await msg.edit_text("Генерирую описание...")
     await callback.answer()
 
     # Generate description via AI
@@ -240,7 +240,7 @@ async def confirm_generate(
             description=f"Возврат за описание (ошибка генерации, категория #{cat_id})",
         )
         await state.clear()
-        await callback.message.edit_text("Ошибка генерации описания. Токены возвращены.")
+        await msg.edit_text("Ошибка генерации описания. Токены возвращены.")
         return
 
     # Move to review state
@@ -252,7 +252,7 @@ async def confirm_generate(
 
     regen_count = int(data.get("regeneration_count", 0))
     safe_text = html.escape(generated_text)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Описание сгенерировано (списано {COST_DESCRIPTION} токенов):\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, regen_count),
     )
@@ -289,12 +289,12 @@ async def cancel_generate(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await callback.message.edit_text("Категория не найдена.")
+        await msg.edit_text("Категория не найдена.")
         await callback.answer()
         return
 
     safe_name = html.escape(category.name)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>{safe_name}</b>",
         reply_markup=category_card_kb(cat_id, category.project_id),
     )
@@ -328,7 +328,7 @@ async def review_save(
     await cats_repo.update(cat_id, CategoryUpdate(description=generated_text))
 
     log.info("description_saved", cat_id=cat_id, user_id=user.id)
-    await _show_description_screen(callback.message, cat_id, db)
+    await _show_description_screen(msg, cat_id, db)
     await callback.answer()
 
 
@@ -378,7 +378,7 @@ async def review_regenerate(
         )
 
     # Show progress indicator before AI call
-    await callback.message.edit_text("Генерирую описание...")
+    await msg.edit_text("Генерирую описание...")
     await callback.answer()
 
     # Regenerate via AI
@@ -411,7 +411,7 @@ async def review_regenerate(
 
     safe_text = html.escape(generated_text)
     cost_note = f" (списано {COST_DESCRIPTION} токенов)" if regen_count > 2 else ""
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Описание перегенерировано{cost_note}:\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, regen_count),
     )
@@ -449,12 +449,12 @@ async def review_cancel(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await callback.message.edit_text("Категория не найдена.")
+        await msg.edit_text("Категория не найдена.")
         await callback.answer()
         return
 
     safe_name = html.escape(category.name)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>{safe_name}</b>",
         reply_markup=category_card_kb(cat_id, category.project_id),
     )
@@ -488,12 +488,12 @@ async def start_manual(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(DescriptionGenerateFSM.manual_input)
     await state.update_data(last_update_time=time.time(), cat_id=cat_id)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Введите описание категории (10\u20132000 символов):",
         reply_markup=cancel_kb(f"desc:{cat_id}:cancel"),
     )
@@ -571,7 +571,7 @@ async def delete_description(
     await cats_repo.clear_description(cat_id)
 
     log.info("description_deleted", cat_id=cat_id, user_id=user.id)
-    await _show_description_screen(callback.message, cat_id, db)
+    await _show_description_screen(msg, cat_id, db)
     await callback.answer()
 
 
@@ -599,12 +599,12 @@ async def cancel_manual_inline(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if category:
         safe_name = html.escape(category.name)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await callback.message.edit_text("Ввод описания отменён.")
+    await msg.edit_text("Ввод описания отменён.")
     await callback.answer()

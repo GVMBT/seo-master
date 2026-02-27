@@ -65,7 +65,7 @@ async def admin_panel(callback: CallbackQuery, user: User, db: SupabaseClient, s
 
     text = f"<b>Админ-панель</b>\n\nПользователей: {total_users}\n"
 
-    await callback.message.edit_text(text, reply_markup=admin_panel_kb())
+    await msg.edit_text(text, reply_markup=admin_panel_kb())
     await callback.answer()
 
 
@@ -101,7 +101,7 @@ async def admin_monitoring(callback: CallbackQuery, user: User, db: SupabaseClie
             [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
         ]
     )
-    await callback.message.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 
@@ -133,7 +133,7 @@ async def admin_api_costs(callback: CallbackQuery, user: User, db: SupabaseClien
             [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
         ]
     )
-    await callback.message.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 
@@ -155,10 +155,10 @@ async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(BroadcastFSM.audience)
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Рассылка</b>\n\nВыберите аудиторию:",
         reply_markup=broadcast_audience_kb(),
     )
@@ -197,7 +197,7 @@ async def broadcast_audience(callback: CallbackQuery, user: User, db: SupabaseCl
     await state.update_data(broadcast_audience=audience_key, broadcast_count=count)
     await state.set_state(BroadcastFSM.text)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>Рассылка</b>\n\n"
         f"Аудитория: {_AUDIENCE_LABELS.get(audience_key, audience_key)}\n"
         f"Получателей: ~{count}\n\n"
@@ -249,7 +249,7 @@ async def broadcast_confirm(callback: CallbackQuery, user: User, db: SupabaseCli
     users_repo = UsersRepository(db)
     user_ids = await users_repo.get_ids_by_audience(audience_key)
 
-    await callback.message.edit_text(f"Рассылка запущена... (0/{len(user_ids)})")
+    await msg.edit_text(f"Рассылка запущена... (0/{len(user_ids)})")
 
     sent = 0
     failed = 0
@@ -270,7 +270,7 @@ async def broadcast_confirm(callback: CallbackQuery, user: User, db: SupabaseCli
             [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
         ]
     )
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>Рассылка завершена</b>\n\nОтправлено: {sent}\nОшибок: {failed}",
         reply_markup=kb,
     )

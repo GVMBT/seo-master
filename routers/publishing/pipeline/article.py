@@ -98,7 +98,7 @@ async def pipeline_article_start(
 
     if not projects:
         # No projects — offer inline create
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
             reply_markup=pipeline_no_projects_kb(),
         )
@@ -116,7 +116,7 @@ async def pipeline_article_start(
         return
 
     # Multiple projects — show list
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects),
     )
@@ -179,7 +179,7 @@ async def pipeline_projects_page(
     repo = ProjectsRepository(db)
     projects = await repo.get_by_user(user.id)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, page=page),
     )
@@ -208,7 +208,7 @@ async def pipeline_start_create_project(
 
     await state.set_state(ArticlePipelineFSM.create_project_name)
     await state.update_data(last_update_time=time.time())
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Статья (1/5) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
@@ -346,7 +346,8 @@ async def _show_wp_step(
 
     Rule: 1 project = max 1 WordPress connection. No multi-WP branch needed.
     """
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
         return
 
     conn_svc = ConnectionService(db, http_client)
@@ -360,7 +361,7 @@ async def _show_wp_step(
         return
 
     # No WP connections — offer connect or preview-only
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
         reply_markup=pipeline_no_wp_kb(),
     )
@@ -466,7 +467,7 @@ async def pipeline_start_connect_wp(
 
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await state.update_data(last_update_time=time.time())
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Статья (2/5) — Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
     )
     await callback.answer()
@@ -629,7 +630,7 @@ async def pipeline_cancel_wp_subflow(
     project_name = data.get("project_name", "")
 
     if project_id:
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
             reply_markup=pipeline_no_wp_kb(),
         )
@@ -644,7 +645,7 @@ async def pipeline_cancel_wp_subflow(
     else:
         await state.clear()
         await clear_checkpoint(redis, user.id)
-        await callback.message.edit_text("Pipeline отменён.")
+        await msg.edit_text("Pipeline отменён.")
 
     await callback.answer()
 
@@ -670,7 +671,8 @@ async def _show_category_step(
     - 1 category -> auto-select, skip to step 4
     - >1 categories -> show list with pagination
     """
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
         return
 
     repo = CategoriesRepository(db)
@@ -678,7 +680,7 @@ async def _show_category_step(
 
     if not categories:
         # No categories — prompt for inline creation
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
@@ -704,7 +706,7 @@ async def _show_category_step(
         return
 
     # Multiple categories — show list
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Статья (3/5) — Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id),
     )

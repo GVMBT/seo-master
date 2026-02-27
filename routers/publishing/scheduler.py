@@ -97,7 +97,7 @@ async def scheduler_entry(callback: CallbackQuery, user: User, db: SupabaseClien
         await callback.answer("Сначала создайте категорию", show_alert=True)
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
         reply_markup=scheduler_cat_list_kb(cats, project_id),
     )
@@ -124,7 +124,7 @@ async def scheduler_articles_entry(callback: CallbackQuery, user: User, db: Supa
         await callback.answer("Сначала создайте категорию", show_alert=True)
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
         reply_markup=scheduler_cat_list_kb(cats, project_id),
     )
@@ -158,7 +158,7 @@ async def scheduler_social_entry(callback: CallbackQuery, user: User, db: Supaba
         await callback.answer("Сначала создайте категорию", show_alert=True)
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Соцсети — Планировщик</b>\n\nВыберите категорию:",
         reply_markup=scheduler_social_cat_list_kb(cats, project_id),
     )
@@ -196,7 +196,7 @@ async def scheduler_category(callback: CallbackQuery, user: User, db: SupabaseCl
     schedules_list = await SchedulesRepository(db).get_by_category(cat_id)
     schedules_map = {s.connection_id: s for s in schedules_list}
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_conn_list_kb(connections, schedules_map, cat_id, project_id),
     )
@@ -232,7 +232,7 @@ async def scheduler_conn_list_back(callback: CallbackQuery, user: User, db: Supa
     schedules_list = await SchedulesRepository(db).get_by_category(cat_id)
     schedules_map = {s.connection_id: s for s in schedules_list}
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_conn_list_kb(connections, schedules_map, cat_id, project.id),
     )
@@ -276,7 +276,7 @@ async def scheduler_connection(callback: CallbackQuery, user: User, db: Supabase
         text += f"Текущее расписание:\nДни: {days_str}\nВремя: {times_str}\nПостов/день: {existing.posts_per_day}\n\n"
     text += "Выберите вариант:"
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         text,
         reply_markup=scheduler_config_kb(cat_id, conn_id, existing is not None and existing.enabled),
     )
@@ -350,7 +350,7 @@ async def scheduler_preset(
 
     weekly_cost = SchedulerService.estimate_weekly_cost(len(days), posts_per_day, conn.platform_type)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Расписание установлено!\n\n"
         f"Подключение: {conn.identifier}\n"
         f"Режим: {preset[0]}\n"
@@ -397,7 +397,7 @@ async def scheduler_disable(
         if s.connection_id == conn_id:
             await scheduler_service.delete_schedule(s.id)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Расписание отключено.",
         reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=False),
     )
@@ -433,7 +433,7 @@ async def scheduler_manual(callback: CallbackQuery, user: User, db: SupabaseClie
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     # Check if schedule already exists (to restore button state on cancel)
     schedules = await SchedulesRepository(db).get_by_category(cat_id)
@@ -448,7 +448,7 @@ async def scheduler_manual(callback: CallbackQuery, user: User, db: SupabaseClie
     )
     await state.set_state(ScheduleSetupFSM.select_days)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Настройка расписания</b>\n\nВыберите дни публикации:",
         reply_markup=schedule_days_kb(set()),
     )
@@ -481,7 +481,7 @@ async def schedule_day_toggle(callback: CallbackQuery, state: FSMContext) -> Non
         selected.add(day)
 
     await state.update_data(sched_days=sorted(selected))
-    await callback.message.edit_reply_markup(reply_markup=schedule_days_kb(selected))
+    await msg.edit_reply_markup(reply_markup=schedule_days_kb(selected))
     await callback.answer()
 
 
@@ -506,7 +506,7 @@ async def schedule_days_done(callback: CallbackQuery, state: FSMContext) -> None
         return
 
     await state.set_state(ScheduleSetupFSM.select_count)
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Настройка расписания</b>\n\nСколько постов в день?",
         reply_markup=schedule_count_kb(),
     )
@@ -530,7 +530,7 @@ async def schedule_count_select(callback: CallbackQuery, state: FSMContext) -> N
     await state.update_data(sched_count=count, sched_times=[])
     await state.set_state(ScheduleSetupFSM.select_times)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>Настройка расписания</b>\n\nВыберите {count} временных слотов:",
         reply_markup=schedule_times_kb(set(), count),
     )
@@ -567,7 +567,7 @@ async def schedule_time_toggle(callback: CallbackQuery, state: FSMContext) -> No
         return
 
     await state.update_data(sched_times=sorted(selected))
-    await callback.message.edit_reply_markup(reply_markup=schedule_times_kb(selected, required))
+    await msg.edit_reply_markup(reply_markup=schedule_times_kb(selected, required))
     await callback.answer()
 
 
@@ -651,7 +651,7 @@ async def schedule_times_done(
     days_str = ", ".join(_DAY_LABELS.get(d, d) for d in selected_days)
     times_str = ", ".join(selected_times)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Расписание установлено!\n\n"
         f"Дни: {days_str}\n"
         f"Время: {times_str}\n"
@@ -694,7 +694,7 @@ async def scheduler_social_category(callback: CallbackQuery, user: User, db: Sup
     schedules_list = await SchedulesRepository(db).get_by_category(cat_id)
     schedules_map = {s.connection_id: s for s in schedules_list}
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Соцсети — Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_social_conn_list_kb(social_conns, schedules_map, cat_id, project_id),
     )
@@ -726,7 +726,7 @@ async def scheduler_social_conn_list_back(callback: CallbackQuery, user: User, d
     schedules_list = await SchedulesRepository(db).get_by_category(cat_id)
     schedules_map = {s.connection_id: s for s in schedules_list}
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "<b>Соцсети — Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_social_conn_list_kb(social_conns, schedules_map, cat_id, project.id),
     )
@@ -778,7 +778,7 @@ async def scheduler_social_connection(callback: CallbackQuery, user: User, db: S
         text += "\n"
     text += "Выберите вариант:"
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         text,
         reply_markup=scheduler_social_config_kb(
             cat_id, conn_id, existing is not None and existing.enabled, has_other_social
@@ -836,7 +836,7 @@ async def scheduler_crosspost_config(callback: CallbackQuery, user: User, db: Su
         "Стоимость: ~10 ток/пост за кросс-пост."
     )
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         text,
         reply_markup=scheduler_crosspost_kb(cat_id, conn_id, social_conns, selected_ids),
     )
@@ -876,14 +876,14 @@ async def scheduler_crosspost_toggle(callback: CallbackQuery, user: User, db: Su
         return
 
     # P0-2: read current selection from keyboard markup, not DB (avoids losing intermediate toggles)
-    selected_ids: list[int] = _extract_selected_from_keyboard(callback.message.reply_markup)
+    selected_ids: list[int] = _extract_selected_from_keyboard(msg.reply_markup)
 
     if target_conn_id in selected_ids:
         selected_ids.remove(target_conn_id)
     else:
         selected_ids.append(target_conn_id)
 
-    await callback.message.edit_reply_markup(
+    await msg.edit_reply_markup(
         reply_markup=scheduler_crosspost_kb(cat_id, conn_id, social_conns, selected_ids),
     )
     await callback.answer()
@@ -910,7 +910,7 @@ async def scheduler_crosspost_save(callback: CallbackQuery, user: User, db: Supa
         await callback.answer("Проект не найден", show_alert=True)
         return
 
-    selected_ids = _extract_selected_from_keyboard(callback.message.reply_markup)
+    selected_ids = _extract_selected_from_keyboard(msg.reply_markup)
 
     # P0-3: verify all selected IDs belong to this project's social connections
     conn_repo = _make_conn_repo(db)
@@ -932,14 +932,14 @@ async def scheduler_crosspost_save(callback: CallbackQuery, user: User, db: Supa
     )
 
     count = len(selected_ids)
-    msg = f"Кросс-постинг сохранён: {count} платформ." if count else "Кросс-постинг отключён."
+    result_msg = f"Кросс-постинг сохранён: {count} платформ." if count else "Кросс-постинг отключён."
     conn_repo = _make_conn_repo(db)
     connections = await conn_repo.get_by_project(project.id)
     social_conns = _filter_social(connections)
     has_other_social = len(social_conns) > 1
 
-    await callback.message.edit_text(
-        msg,
+    await msg.edit_text(
+        result_msg,
         reply_markup=scheduler_social_config_kb(cat_id, conn_id, has_schedule=True, has_other_social=has_other_social),
     )
     await callback.answer()
@@ -967,10 +967,10 @@ async def schedule_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
 
     if cat_id and conn_id:
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Настройка расписания отменена.",
             reply_markup=scheduler_config_kb(int(cat_id), int(conn_id), has_schedule=bool(has_schedule)),
         )
     else:
-        await callback.message.edit_text("Настройка расписания отменена.")
+        await msg.edit_text("Настройка расписания отменена.")
     await callback.answer()

@@ -76,7 +76,9 @@ async def _show_connection_step(
     - 1 connection -> auto-select, skip to step 3
     - >1 connections -> show list
     """
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
         return
 
     from routers.publishing.pipeline.social.social import _show_category_step
@@ -85,7 +87,7 @@ async def _show_connection_step(
     social_conns = await conn_svc.get_social_connections(project_id)
 
     if len(social_conns) == 0:
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nПодключите соцсеть для публикации.",
             reply_markup=social_no_connections_kb(),
         )
@@ -114,7 +116,7 @@ async def _show_connection_step(
         )
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nКуда публикуем?",
         reply_markup=social_connections_kb(social_conns, project_id),
     )
@@ -298,7 +300,7 @@ async def pipeline_add_connection(
         await callback.answer("Все платформы уже подключены.", show_alert=True)
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nВыберите платформу:",
         reply_markup=social_no_connections_kb(exclude_types=already_connected),
     )
@@ -325,7 +327,7 @@ async def pipeline_start_connect_tg(
         return
 
     await state.set_state(SocialPipelineFSM.connect_tg_channel)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (2/{_TOTAL_STEPS}) — Подключение Телеграм\n\n"
         "Введите ID или ссылку на канал.\n"
         "<i>Примеры: @mychannel, t.me/mychannel, -1001234567890</i>",
@@ -462,7 +464,7 @@ async def pipeline_connect_tg_verify(
         try:
             admins = await temp_bot.get_chat_administrators(channel)
         except Exception:
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "Не удалось получить список админов канала.\nПроверьте, что бот добавлен в канал.",
                 reply_markup=_tg_verify_retry_kb(),
             )
@@ -472,7 +474,7 @@ async def pipeline_connect_tg_verify(
         is_admin = any(admin.user.id == bot_info.id and getattr(admin, "can_post_messages", False) for admin in admins)
 
         if not is_admin:
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "Бот не является администратором канала "
                 "или не имеет права «Публикация сообщений».\n"
                 "Добавьте бота и нажмите «Проверить снова».",
@@ -483,7 +485,7 @@ async def pipeline_connect_tg_verify(
 
     except Exception as exc:
         log.warning("pipeline.tg_bot_validation_failed", error=str(exc))
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Не удалось подключиться к боту. Проверьте токен.",
             reply_markup=_tg_verify_retry_kb(),
         )
@@ -513,7 +515,7 @@ async def pipeline_connect_tg_verify(
     )
 
     await state.update_data(connection_id=conn.id, platform_type="telegram")
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Телеграм-канал {html.escape(channel)} подключён!",
     )
 
@@ -521,7 +523,7 @@ async def pipeline_connect_tg_verify(
 
     # Use message context (we just edited, next screen sends new message)
     await _show_category_step_msg(
-        callback.message,
+        msg,
         state,
         user,
         db=db,
@@ -552,7 +554,7 @@ async def pipeline_start_connect_vk(
         return
 
     await state.set_state(SocialPipelineFSM.connect_vk_token)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
         "Введите токен доступа VK с правами управления группой.\n"
         "<i>Получите на vk.com/dev → Мои приложения → Управление.</i>",
@@ -717,12 +719,12 @@ async def pipeline_select_vk_group(
     )
 
     await state.update_data(connection_id=conn.id, platform_type="vk")
-    await callback.message.edit_text(f"ВКонтакте: {html.escape(group_name)} подключено!")
+    await msg.edit_text(f"ВКонтакте: {html.escape(group_name)} подключено!")
 
     from routers.publishing.pipeline.social.social import _show_category_step_msg
 
     await _show_category_step_msg(
-        callback.message,
+        msg,
         state,
         user,
         db=db,
@@ -790,7 +792,7 @@ async def pipeline_start_connect_pinterest(
     )
 
     await state.set_state(SocialPipelineFSM.connect_pinterest_oauth)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (2/{_TOTAL_STEPS}) — Подключение Pinterest\n\n"
         "Нажмите кнопку ниже для авторизации.\n"
         f"Ссылка действительна {PINTEREST_AUTH_TTL // 60} минут.",

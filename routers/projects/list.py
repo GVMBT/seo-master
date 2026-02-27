@@ -53,13 +53,13 @@ async def _show_list(
     projects = await repo.get_by_user(user.id)
 
     if not projects:
-        await callback.message.edit_text(
+        await msg.edit_text(
             "У вас пока нет проектов.\nСоздайте первый — это займёт 30 секунд.",
             reply_markup=project_list_empty_kb(),
         )
     else:
         kb = project_list_kb(projects, page)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Мои проекты ({len(projects)}):",
             reply_markup=kb,
         )
