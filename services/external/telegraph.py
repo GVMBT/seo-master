@@ -129,16 +129,33 @@ def html_to_telegraph_nodes(html: str) -> str:
 def _truncate_telegraph_content(content_json: str) -> str:
     """Truncate Telegraph node array to fit within API size limit.
 
-    Removes nodes from the end until the JSON fits in _MAX_CONTENT_BYTES,
-    then appends a continuation notice.
+    Only called when content exceeds _MAX_CONTENT_BYTES.
+    Uses pre-computed node sizes for O(n) performance.
     """
     nodes: list[Any] = json.loads(content_json)
     continuation = {"tag": "p", "children": ["[...продолжение в полной статье]"]}
+    continuation_json = json.dumps(continuation, ensure_ascii=False)
+    # Reserve: '[' + ']' + ', ' before continuation + continuation itself
+    reserved = len(continuation_json.encode()) + 4  # 2 brackets + ', '
+    budget = _MAX_CONTENT_BYTES - reserved
 
-    # Remove nodes from the end until we fit
-    while len(json.dumps(nodes + [continuation], ensure_ascii=False).encode()) > _MAX_CONTENT_BYTES and len(nodes) > 1:
-        nodes.pop()
+    # Pre-compute each node's serialized byte size (O(n) total)
+    node_sizes = [len(json.dumps(n, ensure_ascii=False).encode()) for n in nodes]
 
+    # Greedily include nodes from the start
+    # json.dumps uses ', ' (2 bytes) as separator between array elements
+    total = 0
+    cut = 0
+    for i, size in enumerate(node_sizes):
+        cost = size + (2 if i > 0 else 0)  # +2 for ', ' separator
+        if total + cost > budget:
+            break
+        total += cost
+        cut = i + 1
+
+    if cut < 1:
+        cut = 1
+    nodes = nodes[:cut]
     nodes.append(continuation)
     return json.dumps(nodes, ensure_ascii=False)
 

@@ -377,15 +377,11 @@ class TestDeletePage:
 
 
 class TestTruncateContent:
-    def test_small_content_not_truncated(self) -> None:
-        """Content under limit should not be modified."""
+    def test_small_content_under_limit(self) -> None:
+        """Small content should not exceed Telegraph limit (no truncation needed)."""
         small_html = "<p>Short content</p>"
         content_json = html_to_telegraph_nodes(small_html)
         assert len(content_json.encode()) < _MAX_CONTENT_BYTES
-        # Should not truncate — just verify it stays valid
-        result = _truncate_telegraph_content(content_json)
-        assert "продолжение" in result  # always adds continuation
-        assert len(result.encode()) <= _MAX_CONTENT_BYTES
 
     def test_large_content_truncated(self) -> None:
         """Content over limit should be truncated to fit."""

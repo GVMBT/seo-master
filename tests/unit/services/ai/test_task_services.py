@@ -1380,7 +1380,7 @@ class TestCalculateTargetLength:
             competitor_word_counts=[3000, 4000],
             text_settings={"words_max": 1200},
         )
-        assert result == (1500, 1200)
+        assert result == (1200, 1200)
 
     def test_user_min_only_overrides_competitors(self) -> None:
         """Only words_min set — should use user min and default max."""

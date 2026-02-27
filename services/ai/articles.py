@@ -338,6 +338,9 @@ def calculate_target_length(
     if user_min is not None or user_max is not None:
         effective_min = int(user_min) if user_min is not None else 1500
         effective_max = int(user_max) if user_max is not None else 5000
+        # Ensure min ≤ max (e.g. user sets only words_max=1200, default min=1500)
+        if effective_min > effective_max:
+            effective_min = effective_max
         return effective_min, effective_max
 
     # No user settings — fall back to competitor-based or defaults
