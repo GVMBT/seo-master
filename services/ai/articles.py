@@ -865,51 +865,29 @@ class ArticleService:
         - Other exceptions: logs and returns default score (50) with warning
         This ensures quality gates are never bypassed.
         """
+        from dataclasses import dataclass as _dataclass
+        from dataclasses import field as _field
+
+        @_dataclass
+        class _FallbackScore:
+            total: int = 50
+            breakdown: dict[str, int] = _field(default_factory=dict)
+            issues: list[str] = _field(default_factory=list)
+            passed: bool = True
+
         try:
-            from services.ai.quality_scorer import ContentQualityScorer, QualityScore
+            from services.ai.quality_scorer import ContentQualityScorer
 
             scorer = ContentQualityScorer()
             phrases_list = [p.strip().split(" (")[0] for p in secondary_phrases.split(",") if p.strip()]
             return scorer.score(content_html, main_phrase, phrases_list)
         except ImportError:
             log.warning("quality_scorer_not_available")
-            from dataclasses import dataclass, field
-
-            @dataclass
-            class _FallbackScore:
-                total: int = 50
-                breakdown: dict[str, int] = field(default_factory=dict)
-                issues: list[str] = field(default_factory=list)
-                passed: bool = True
-
             return _FallbackScore(
-                total=50,
-                breakdown={},
                 issues=["Quality scorer module not available, using default score"],
-                passed=True,
             )
         except Exception:
             log.exception("quality_scoring_failed")
-            try:
-                from services.ai.quality_scorer import QualityScore
-            except ImportError:
-                # Double-safety: if even QualityScore import fails, use a duck-type-compatible object
-                from dataclasses import dataclass, field
-
-                @dataclass
-                class _FallbackScore:
-                    total: int = 50
-                    breakdown: dict[str, int] = field(default_factory=dict)
-                    issues: list[str] = field(default_factory=list)
-                    passed: bool = True
-
-                return _FallbackScore(
-                    total=50,
-                    issues=["Quality scoring unavailable"],
-                )
-            return QualityScore(
-                total=50,
-                breakdown={},
+            return _FallbackScore(
                 issues=["Quality scoring failed, using default score"],
-                passed=True,
             )

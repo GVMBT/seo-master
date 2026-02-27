@@ -942,6 +942,7 @@ async def pipeline_article_cancel(
     """Cancel article pipeline, clear FSM and checkpoint."""
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    if safe_message(callback):
-        await callback.message.edit_text("Pipeline отменён.")
+    msg = safe_message(callback)
+    if msg:
+        await msg.edit_text("Pipeline отменён.")
     await callback.answer()

@@ -113,8 +113,9 @@ async def exit_confirm(
     """User confirmed exit — clear FSM, keep checkpoint for resume."""
     await state.clear()
     # Checkpoint survives in Redis — user can resume from Dashboard
-    if safe_message(callback):
-        await callback.message.edit_text("Pipeline приостановлен. Можете продолжить с Dashboard.")
+    msg = safe_message(callback)
+    if msg:
+        await msg.edit_text("Pipeline приостановлен. Можете продолжить с Dashboard.")
     await callback.answer()
     log.info("pipeline.exit_confirmed", user_id=user.id)
 
