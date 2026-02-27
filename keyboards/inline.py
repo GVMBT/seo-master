@@ -995,6 +995,10 @@ def profile_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Пополнить баланс", callback_data="nav:tokens", style=ButtonStyle.PRIMARY)],
         [InlineKeyboardButton(text="Уведомления", callback_data="profile:notifications")],
         [InlineKeyboardButton(text="Реферальная программа", callback_data="profile:referral")],
+        [
+            InlineKeyboardButton(text="Политика", callback_data="profile:privacy"),
+            InlineKeyboardButton(text="Оферта", callback_data="profile:terms"),
+        ],
         [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -1022,6 +1026,29 @@ def notifications_kb(
 
 def referral_kb() -> InlineKeyboardMarkup:
     """Referral program keyboard (link shown inline in message text)."""
+    rows = [
+        [InlineKeyboardButton(text="К профилю", callback_data="nav:profile")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def delete_account_confirm_kb() -> InlineKeyboardMarkup:
+    """Confirmation dialog for account deletion (152-FZ compliance)."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="Да, удалить аккаунт",
+                callback_data="account:delete:confirm",
+                style=ButtonStyle.DANGER,
+            ),
+        ],
+        [InlineKeyboardButton(text="Отмена", callback_data="account:delete:cancel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def delete_account_cancelled_kb() -> InlineKeyboardMarkup:
+    """Keyboard shown after account deletion is cancelled."""
     rows = [
         [InlineKeyboardButton(text="К профилю", callback_data="nav:profile")],
     ]

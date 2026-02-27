@@ -238,8 +238,18 @@ async def confirm_generate(
 
     await state.update_data(_last_estimated_cost=cost)
 
-    # E25: rate limit check BEFORE charge
+    # H15: per-user generation rate limit (3 per 10 min) BEFORE charge
     rate_limiter = RateLimiter(redis)
+    try:
+        await rate_limiter.check(user.id, "pipeline_generation")
+    except RateLimitError as exc:
+        await callback.answer(
+            f"Слишком частые генерации. Подождите {(exc.retry_after_seconds + 59) // 60} мин.",
+            show_alert=True,
+        )
+        return
+
+    # E25: rate limit check BEFORE charge
     try:
         await rate_limiter.check(user.id, "text_generation")
     except RateLimitError as exc:

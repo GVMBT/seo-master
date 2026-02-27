@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.models import PublishPayload
 from db.models import Category, PlatformConnection, PlatformSchedule, User
-from services.publish import PublishService, _format_competitor_analysis, _identify_gaps, _is_own_site
+from services.publish import PublishService
+from services.research_helpers import format_competitor_analysis, identify_gaps, is_own_site
 
 # ---------------------------------------------------------------------------
 # Factories
@@ -1017,22 +1018,22 @@ async def test_cluster_passed_to_generate_and_publish(
 
 
 def test_is_own_site_matches() -> None:
-    """_is_own_site returns True for same domain."""
-    assert _is_own_site("https://example.com/blog", "https://www.example.com") is True
+    """is_own_site returns True for same domain."""
+    assert is_own_site("https://example.com/blog", "https://www.example.com") is True
 
 
 def test_is_own_site_different_domain() -> None:
-    """_is_own_site returns False for different domain."""
-    assert _is_own_site("https://other.com/page", "https://example.com") is False
+    """is_own_site returns False for different domain."""
+    assert is_own_site("https://other.com/page", "https://example.com") is False
 
 
 def test_is_own_site_no_project_url() -> None:
-    """_is_own_site returns False when project_url is None."""
-    assert _is_own_site("https://example.com", None) is False
+    """is_own_site returns False when project_url is None."""
+    assert is_own_site("https://example.com", None) is False
 
 
 def test_format_competitor_analysis() -> None:
-    """_format_competitor_analysis formats competitor data for AI prompt."""
+    """format_competitor_analysis formats competitor data for AI prompt."""
     pages = [
         {
             "url": "https://example.com",
@@ -1041,22 +1042,22 @@ def test_format_competitor_analysis() -> None:
             "headings": [{"level": 2, "text": "What is SEO"}],
         }
     ]
-    result = _format_competitor_analysis(pages)
+    result = format_competitor_analysis(pages)
     assert "example.com" in result
     assert "2000" in result
     assert "What is SEO" in result
 
 
 def test_identify_gaps_empty_pages() -> None:
-    """_identify_gaps returns empty string for no pages."""
-    assert _identify_gaps([]) == ""
+    """identify_gaps returns empty string for no pages."""
+    assert identify_gaps([]) == ""
 
 
 def test_identify_gaps_with_pages() -> None:
-    """_identify_gaps includes competitor H2 structure."""
+    """identify_gaps includes competitor H2 structure."""
     pages = [
         {"headings": [{"level": 2, "text": "On-page SEO"}, {"level": 2, "text": "Technical SEO"}]},
     ]
-    result = _identify_gaps(pages)
+    result = identify_gaps(pages)
     assert "On-page SEO" in result
     assert "Technical SEO" in result

@@ -83,4 +83,12 @@ class CacheKeys:
     def active_generation(user_id: int) -> str:
         return f"generation:active:{user_id}"
 
+    @staticmethod
+    def referral_daily(user_id: int, date_str: str) -> str:
+        return f"referral_daily:{user_id}:{date_str}"
+
+    @staticmethod
+    def yookassa_idempotency(payment_id: str) -> str:
+        return f"yookassa_payment:{payment_id}"
+
     ACTIVE_GENERATION_PREFIX = "generation:active:"

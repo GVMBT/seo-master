@@ -186,6 +186,7 @@ class TestReferralBonus:
 
         payments.create_expense = AsyncMock()
         payments.update = AsyncMock()
+        payments.sum_referral_bonuses = AsyncMock(return_value=0)
 
         await credit_referral_bonus(users, payments, user_id=42, price_rub=1000, payment_id=1)
 
@@ -212,6 +213,7 @@ class TestReferralBonus:
         users.credit_balance = AsyncMock(return_value=5000)
         payments.create_expense = AsyncMock()
         payments.update = AsyncMock()
+        payments.sum_referral_bonuses = AsyncMock(return_value=0)
 
         await credit_referral_bonus(users, payments, user_id=42, price_rub=1000, payment_id=1, provider_label="ЮKassa")
         expense_call = payments.create_expense.call_args[0][0]
@@ -249,7 +251,7 @@ class TestFormatting:
 
 
 class TestProcessRefund:
-    """Tests for StarsPaymentService.process_refund (C15)."""
+    """Tests for StarsPaymentService.process_refund (C15, CR-78b)."""
 
     @pytest.fixture
     def svc_with_mocks(self, mock_db: MagicMock) -> StarsPaymentService:
@@ -265,7 +267,7 @@ class TestProcessRefund:
                 status="completed",
             )
         )
-        svc._payments.update = AsyncMock()
+        svc._payments.mark_refunded = AsyncMock(return_value=True)
         svc._payments.create_expense = AsyncMock()
         return svc
 
@@ -278,11 +280,18 @@ class TestProcessRefund:
         assert result["new_balance"] == 1000
         svc_with_mocks._users.force_debit_balance.assert_called_once_with(42, 500)
 
-    async def test_process_refund_updates_payment_status(self, svc_with_mocks: StarsPaymentService) -> None:
+    async def test_process_refund_uses_atomic_cas(self, svc_with_mocks: StarsPaymentService) -> None:
+        """CR-78b: refund uses mark_refunded (atomic CAS) instead of plain update."""
         await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="charge_abc")
-        svc_with_mocks._payments.update.assert_called_once()
-        update_arg = svc_with_mocks._payments.update.call_args[0][1]
-        assert update_arg.status == "refunded"
+        svc_with_mocks._payments.mark_refunded.assert_called_once_with(1)
+
+    async def test_process_refund_cas_failure_returns_already_refunded(self, svc_with_mocks: StarsPaymentService) -> None:
+        """CR-78b: if CAS fails (concurrent refund), return already_refunded."""
+        svc_with_mocks._payments.mark_refunded = AsyncMock(return_value=False)
+        result = await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="charge_race")
+        assert result.get("already_refunded") is True
+        assert result["tokens_debited"] == 0
+        svc_with_mocks._users.force_debit_balance.assert_not_called()
 
     async def test_process_refund_records_expense(self, svc_with_mocks: StarsPaymentService) -> None:
         await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="charge_abc")

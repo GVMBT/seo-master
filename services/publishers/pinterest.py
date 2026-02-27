@@ -2,7 +2,8 @@
 
 Source of truth: docs/API_CONTRACTS.md section 3.6.
 Credentials include refresh_token + expires_at (30-day token refresh).
-Retry: C10/C11 — retry on 429/5xx with backoff, no retry on 401/403.
+Write idempotency (CR-78a): no retry on POST/create operations
+(pin creation could create duplicate pins).
 """
 
 from __future__ import annotations
@@ -16,15 +17,10 @@ import httpx
 import structlog
 
 from db.models import PlatformConnection
-from services.http_retry import retry_with_backoff
 
 from .base import BasePublisher, PublishRequest, PublishResult
 
 log = structlog.get_logger()
-
-# Retry settings for Pinterest publish (C11)
-_PUBLISH_MAX_RETRIES = 2
-_PUBLISH_BASE_DELAY = 1.0
 
 _BASE_URL = "https://api.pinterest.com/v5"
 _TITLE_LIMIT = 100
@@ -132,6 +128,7 @@ class PinterestPublisher(BasePublisher):
             return False
 
     async def publish(self, request: PublishRequest) -> PublishResult:
+        """Publish to Pinterest. No retry on write operations (CR-78a)."""
         creds = request.connection.credentials
 
         try:
@@ -143,12 +140,7 @@ class PinterestPublisher(BasePublisher):
                     error="Pinterest requires at least one image",
                 )
 
-            result = await retry_with_backoff(
-                lambda: self._do_publish(request, token),
-                max_retries=_PUBLISH_MAX_RETRIES,
-                base_delay=_PUBLISH_BASE_DELAY,
-                operation="pinterest_publish",
-            )
+            return await self._do_publish(request, token)
         except httpx.HTTPStatusError as exc:
             log.error(
                 "pinterest_publish_failed",
@@ -159,8 +151,6 @@ class PinterestPublisher(BasePublisher):
         except httpx.HTTPError as exc:
             log.error("pinterest_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
-        else:
-            return result
 
     async def _do_publish(
         self,

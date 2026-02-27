@@ -238,6 +238,8 @@ class TestStoreTokens:
 class TestHandleCallback:
     async def test_full_flow(self) -> None:
         redis = AsyncMock()
+        # NX lock succeeds (returns "OK" meaning key was set)
+        redis.set.return_value = "OK"
 
         async def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
@@ -255,7 +257,8 @@ class TestHandleCallback:
 
         assert user_id == 12345
         assert nonce == "testnonce123"
-        redis.set.assert_awaited_once()
+        # 2 calls: 1 for single-use NX lock (H10), 1 for token storage
+        assert redis.set.await_count == 2
 
     async def test_invalid_state_raises(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -266,13 +269,30 @@ class TestHandleCallback:
             await service.handle_callback("code", "invalid_state")
 
     async def test_exchange_failure_propagates(self) -> None:
+        redis = AsyncMock()
+        redis.set.return_value = "OK"
+
         async def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(400, json={"error": "bad"})
 
-        service = _make_service(handler)
+        service = _make_service(handler, redis=redis)
         state = build_state(12345, "nonce", _ENCRYPTION_KEY)
         with pytest.raises(PinterestOAuthError):
             await service.handle_callback("bad_code", state)
+
+    async def test_replay_attack_rejected(self) -> None:
+        """H10: second use of same state token should be rejected."""
+        redis = AsyncMock()
+        # NX lock fails (returns None meaning key already exists)
+        redis.set.return_value = None
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"access_token": "at"})
+
+        service = _make_service(handler, redis=redis)
+        state = build_state(12345, "nonce_replay", _ENCRYPTION_KEY)
+        with pytest.raises(PinterestOAuthError, match="replay"):
+            await service.handle_callback("code", state)
 
 
 # ---------------------------------------------------------------------------

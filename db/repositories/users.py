@@ -271,6 +271,53 @@ class UsersRepository(BaseRepository):
         resp = await self._table(_TABLE).select("id").execute()
         return [int(row["id"]) for row in self._rows(resp)]
 
+    async def anonymize_financial_records(self, user_id: int) -> tuple[int, int]:
+        """Anonymize token_expenses and payments for GDPR/152-FZ compliance.
+
+        Sets username-like fields to anonymized values while preserving
+        financial records for bookkeeping. FK constraints use NO ACTION,
+        so we anonymize BEFORE deleting the user row.
+
+        Returns (expenses_count, payments_count) of anonymized records.
+        """
+        # Anonymize token_expenses: set description to generic value
+        exp_resp = (
+            await self._db.table("token_expenses")
+            .update({"description": "[deleted_account]"})
+            .eq("user_id", user_id)
+            .execute()
+        )
+        expenses_count = len(self._rows(exp_resp))
+
+        # Anonymize payments: clear identifiable fields
+        pay_resp = (
+            await self._db.table("payments")
+            .update({
+                "yookassa_payment_method_id": None,
+                "subscription_id": None,
+            })
+            .eq("user_id", user_id)
+            .execute()
+        )
+        payments_count = len(self._rows(pay_resp))
+
+        log.info(
+            "financial_records_anonymized",
+            user_id=user_id,
+            expenses=expenses_count,
+            payments=payments_count,
+        )
+        return expenses_count, payments_count
+
+    async def delete_user(self, user_id: int) -> bool:
+        """Delete user row. CASCADE removes projects, categories, connections, etc.
+
+        IMPORTANT: Caller MUST cancel QStash schedules (E11), refund previews (E42),
+        and anonymize financial records BEFORE calling this method.
+        """
+        resp = await self._table(_TABLE).delete().eq("id", user_id).execute()
+        return len(self._rows(resp)) > 0
+
     async def get_referral_count(self, user_id: int) -> int:
         """Count users who have this user as referrer."""
         resp = (

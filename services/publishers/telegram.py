@@ -2,7 +2,8 @@
 
 Source of truth: docs/API_CONTRACTS.md section 3.4.
 ZERO aiogram dependencies (services/ layer rule).
-Retry: C10/C11 — retry on 429/5xx with backoff, no retry on 401/403.
+Write idempotency (CR-78a): no retry on POST/create operations
+(sendMessage/sendPhoto could duplicate messages).
 """
 
 from __future__ import annotations
@@ -13,15 +14,10 @@ import httpx
 import structlog
 
 from db.models import PlatformConnection
-from services.http_retry import retry_with_backoff
 
 from .base import BasePublisher, PublishRequest, PublishResult
 
 log = structlog.get_logger()
-
-# Retry settings for TG publish (C11)
-_PUBLISH_MAX_RETRIES = 2
-_PUBLISH_BASE_DELAY = 1.0
 
 # Telegram limits
 _CAPTION_LIMIT = 1024
@@ -84,17 +80,13 @@ class TelegramPublisher(BasePublisher):
             return False
 
     async def publish(self, request: PublishRequest) -> PublishResult:
+        """Publish to Telegram. No retry on write operations (CR-78a)."""
         creds = request.connection.credentials
         token = creds["bot_token"]
         channel_id = creds["channel_id"]
 
         try:
-            data = await retry_with_backoff(
-                lambda: self._do_publish(request, token, channel_id),
-                max_retries=_PUBLISH_MAX_RETRIES,
-                base_delay=_PUBLISH_BASE_DELAY,
-                operation="telegram_publish",
-            )
+            data = await self._do_publish(request, token, channel_id)
             message_id = str(data["result"]["message_id"])
             return PublishResult(
                 success=True,

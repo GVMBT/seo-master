@@ -360,18 +360,20 @@
 - [x] H22: Auto-publish image_settings (30min) — full dict passthrough in publish.py
 - [x] H25: Social post cost fix (30min) — images_count=0 in scheduler.py
 
-### Sprint 2: Auto-Publish Quality + Resilience (2-3 days)
-- [ ] C1+C2: Add research + cluster to auto-publish (6h)
-- [ ] C10+C11: Retry + 429 handling for publishers (14h)
-- [ ] C12: Implement max_retries in orchestrator (4h)
-- [ ] C15: Stars refund handler (4h) — moved from Sprint 1
-- [ ] C17: Profile forecast fix (2h)
-- [ ] C25: Retry stale cost re-read (1h)
-- [ ] H18: Quality scorer None bypass (1h)
-- [ ] H20: Outline H1->title rename (1h)
-- [ ] CR-77a: cancel_refund race condition — Redis NX lock (CodeRabbit Critical)
-- [ ] CR-77b: Refactor referral to UsersService.link_referrer (CodeRabbit nitpick)
-- [ ] CR-77c: Pass schedule object through publish pipeline (avoid 3x DB load)
+### Sprint 2: Auto-Publish Quality + Resilience (2-3 days) — DONE (PR #78)
+- [x] C1+C2: Web research + cluster context in auto-publish
+- [x] C10+C11: Retry + 429 handling for all 16 integrations + 4 publishers
+- [x] C12: max_retries implemented in AIOrchestrator
+- [x] C15: Stars refund handler (debit tokens on refund)
+- [x] C17: Profile forecast by platform (WP=320, social=40)
+- [x] C25: Fresh image_count re-read on retry
+- [x] H18: Quality scorer never returns None
+- [x] H20: Outline schema h1 → title
+- [x] CR-77a: cancel_refund race — Redis NX lock
+- [x] CR-77b: Referral → UsersService.link_referrer
+- [x] CR-77c: Schedule loaded once, passed through pipeline
+- [x] CR-78 fixes: ImportError fallback, Firecrawl raise_for_status, Serper 5xx backoff, article temp 0.6
+- Deferred to Sprint 3: publisher write idempotency (CR-78), Stars refund race (CR-78), research cache key (CR-78)
 
 ### Sprint 3: Security & Compliance (3-4 days)
 - [ ] C7+C16: Privacy Policy + consent + cross-border disclosure (16h)
@@ -383,6 +385,10 @@
 - [ ] H16: YooKassa idempotency (2h)
 - [ ] H17: Project/category limits (2h)
 - [ ] H30: User agreement (оферта) (8h)
+- [ ] CR-78a: Publisher write idempotency — don't retry POSTs or add idempotency keys (4h)
+- [ ] CR-78b: Stars refund race — atomic CAS or Redis lock (1h)
+- [ ] CR-78c: Research cache key — include company_name/geo (30min)
+- [ ] CR-78d: DRY research helpers — extract shared module from publish.py+preview.py (2h)
 
 ### Sprint 4: Performance (2-3 days)
 - [ ] C19: Parallelize DataForSEO calls (2h)

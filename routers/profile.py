@@ -1,17 +1,30 @@
-"""Profile, notification toggles, referral program (UX_TOOLBOX section 14)."""
+"""Profile, notification toggles, referral program, legal docs, account deletion (UX_TOOLBOX section 14)."""
 
 import structlog
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, InaccessibleMessage
+from aiogram.filters import Command
+from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from bot.config import get_settings
+from bot.texts.legal import (
+    PRIVACY_POLICY_CHUNKS,
+    TERMS_OF_SERVICE_CHUNKS,
+)
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.models import User, UserUpdate
 from db.repositories.users import UsersRepository
-from keyboards.inline import notifications_kb, profile_kb, referral_kb
+from keyboards.inline import (
+    delete_account_cancelled_kb,
+    delete_account_confirm_kb,
+    notifications_kb,
+    profile_kb,
+    referral_kb,
+)
+from services.scheduler import SchedulerService
 from services.tokens import TokenService
+from services.users import UsersService
 
 log = structlog.get_logger()
 router = Router()
@@ -166,4 +179,134 @@ async def show_referral(
     )
 
     await callback.message.edit_text(text, reply_markup=referral_kb())
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Legal documents: /privacy, /terms
+# ---------------------------------------------------------------------------
+
+
+async def _send_legal_chunks(message: Message, chunks: list[str]) -> None:
+    """Send a multi-part legal document as sequential messages."""
+    for chunk in chunks:
+        await message.answer(chunk)
+
+
+@router.message(Command("privacy"))
+async def cmd_privacy(message: Message) -> None:
+    """Send privacy policy text (152-FZ compliant)."""
+    await _send_legal_chunks(message, PRIVACY_POLICY_CHUNKS)
+
+
+@router.message(Command("terms"))
+async def cmd_terms(message: Message) -> None:
+    """Send terms of service / public offer text."""
+    await _send_legal_chunks(message, TERMS_OF_SERVICE_CHUNKS)
+
+
+@router.callback_query(F.data == "profile:privacy")
+async def cb_privacy(callback: CallbackQuery) -> None:
+    """Privacy policy via inline button in profile."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+    # Send as new messages (legal text is too long for editMessageText)
+    await _send_legal_chunks(callback.message, PRIVACY_POLICY_CHUNKS)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "profile:terms")
+async def cb_terms(callback: CallbackQuery) -> None:
+    """Terms of service via inline button in profile."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+    await _send_legal_chunks(callback.message, TERMS_OF_SERVICE_CHUNKS)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Account deletion (152-FZ compliance)
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("delete_account"))
+async def cmd_delete_account(
+    message: Message,
+    user: User,
+) -> None:
+    """Show account deletion warning with confirmation buttons."""
+    text = (
+        "<b>Удаление аккаунта</b>\n\n"
+        "Будут безвозвратно удалены:\n"
+        "- Все проекты и категории\n"
+        "- Все подключения к платформам\n"
+        "- Все расписания автопубликации\n"
+        "- Активные превью статей\n\n"
+        "Токены и история платежей будут анонимизированы.\n\n"
+        "<b>Это действие необратимо.</b>"
+    )
+    await message.answer(text, reply_markup=delete_account_confirm_kb())
+
+
+@router.callback_query(F.data == "account:delete:confirm")
+async def confirm_delete_account(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    scheduler_service: SchedulerService,
+) -> None:
+    """Execute account deletion after user confirmation."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    settings = get_settings()
+    service = UsersService(db=db)
+
+    log.info("delete_account_initiated", user_id=user.id)
+
+    result = await service.delete_account(
+        user_id=user.id,
+        redis=redis,
+        scheduler_service=scheduler_service,
+        admin_ids=settings.admin_ids,
+    )
+
+    if result.success:
+        await callback.message.edit_text(
+            "Ваш аккаунт и все данные удалены.\n\n"
+            "Вы можете начать заново с /start"
+        )
+        log.info("delete_account_success", user_id=user.id)
+    else:
+        await callback.message.edit_text(
+            "Произошла ошибка при удалении аккаунта. "
+            "Обратитесь в поддержку.",
+            reply_markup=delete_account_cancelled_kb(),
+        )
+        log.error(
+            "delete_account_failed",
+            user_id=user.id,
+            errors=result.errors,
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "account:delete:cancel")
+async def cancel_delete_account(
+    callback: CallbackQuery,
+) -> None:
+    """Cancel account deletion."""
+    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
+    await callback.message.edit_text(
+        "Удаление аккаунта отменено.",
+        reply_markup=delete_account_cancelled_kb(),
+    )
     await callback.answer()

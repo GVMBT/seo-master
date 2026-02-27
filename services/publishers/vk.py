@@ -2,7 +2,8 @@
 
 Source of truth: docs/API_CONTRACTS.md section 3.5.
 Edge cases: E08 (VK token revoked).
-Retry: C10/C11 — retry on 429/5xx with backoff, no retry on 401/403.
+Write idempotency (CR-78a): no retry on POST/create operations
+(wall.post / photo upload could duplicate posts).
 """
 
 from __future__ import annotations
@@ -13,15 +14,10 @@ import httpx
 import structlog
 
 from db.models import PlatformConnection
-from services.http_retry import retry_with_backoff
 
 from .base import BasePublisher, PublishRequest, PublishResult
 
 log = structlog.get_logger()
-
-# Retry settings for VK publish (C11)
-_PUBLISH_MAX_RETRIES = 2
-_PUBLISH_BASE_DELAY = 1.0
 
 _VK_API = "https://api.vk.ru/method"
 _VK_VERSION = "5.199"
@@ -73,26 +69,20 @@ class VKPublisher(BasePublisher):
             return False
 
     async def publish(self, request: PublishRequest) -> PublishResult:
+        """Publish to VK. No retry on write operations (CR-78a)."""
         creds = request.connection.credentials
         token = creds["access_token"]
         group_id = creds["group_id"]
         owner_id = f"-{group_id}"
 
         try:
-            result = await retry_with_backoff(
-                lambda: self._do_publish(request, token, group_id, owner_id),
-                max_retries=_PUBLISH_MAX_RETRIES,
-                base_delay=_PUBLISH_BASE_DELAY,
-                operation="vk_publish",
-            )
+            return await self._do_publish(request, token, group_id, owner_id)
         except httpx.HTTPStatusError as exc:
             log.error("vk_publish_failed", error=str(exc))
             return PublishResult(success=False, error=str(exc))
         except httpx.HTTPError as exc:
             log.error("vk_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
-        else:
-            return result
 
     async def _do_publish(
         self,

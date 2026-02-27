@@ -303,8 +303,10 @@ def create_app() -> web.Application:
     dp.startup.register(_startup)
     dp.shutdown.register(_shutdown)
 
-    # Setup aiohttp webhook
-    app = web.Application()
+    # Setup aiohttp webhook with security headers (H11)
+    from api.middleware import security_headers_middleware
+
+    app = web.Application(middlewares=[security_headers_middleware])
     webhook_handler = SimpleRequestHandler(
         dispatcher=dp,
         bot=bot,

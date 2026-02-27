@@ -90,6 +90,21 @@ class PaymentsRepository(BaseRepository):
         row = self._single(resp)
         return Payment(**row) if row else None
 
+    async def mark_refunded(self, payment_id: int) -> bool:
+        """Atomic CAS: set status='refunded' only if currently 'completed' (CR-78b).
+
+        Returns True if the row was updated, False if already refunded or not found.
+        Prevents race conditions between concurrent refund attempts.
+        """
+        resp = (
+            await self._table(_PAYMENTS_TABLE)
+            .update({"status": "refunded"})
+            .eq("id", payment_id)
+            .eq("status", "completed")
+            .execute()
+        )
+        return len(self._rows(resp)) > 0
+
     async def sum_revenue(self, days: int = 30) -> int:
         """Sum revenue (amount_rub) for completed payments within N days."""
         from datetime import UTC, datetime, timedelta
@@ -137,6 +152,22 @@ class PaymentsRepository(BaseRepository):
             .execute()
         )
         return [TokenExpense(**row) for row in self._rows(resp)]
+
+    async def sum_referral_bonuses(self, user_id: int) -> int:
+        """Sum lifetime referral bonus tokens credited to a user.
+
+        Counts all positive referral expenses (operation_type='referral').
+        Used for H14 lifetime cap enforcement.
+        """
+        resp = (
+            await self._table(_EXPENSES_TABLE)
+            .select("amount")
+            .eq("user_id", user_id)
+            .eq("operation_type", "referral")
+            .gt("amount", 0)
+            .execute()
+        )
+        return sum(int(row.get("amount", 0)) for row in self._rows(resp))
 
     async def sum_api_costs(self, days: int) -> float:
         """Sum API costs (cost_usd) for last N days. Admin use."""

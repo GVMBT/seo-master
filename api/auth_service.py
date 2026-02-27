@@ -4,6 +4,8 @@ Source of truth:
 - docs/API_CONTRACTS.md section 3.6 (Pinterest API v5)
 - docs/FSM_SPEC.md section 1 (ConnectPinterestFSM)
 - docs/EDGE_CASES.md E20, E30
+
+H10: State token is HMAC-protected (E30) AND single-use via Redis NX lock.
 """
 
 import hashlib
@@ -20,6 +22,7 @@ log = structlog.get_logger()
 
 _PINTEREST_TOKEN_ENDPOINT = "https://api.pinterest.com/v5/oauth/token"  # noqa: S105
 PINTEREST_AUTH_TTL = 1800  # 30 min (E20)
+_OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
 
 
 class PinterestOAuthError(AppError):
@@ -108,10 +111,18 @@ class PinterestOAuthService:
         """Full OAuth callback flow. Returns (user_id, nonce).
 
         1. Validate HMAC state (E30)
-        2. Exchange code for tokens via Pinterest API
-        3. Store tokens in Redis with TTL (E20)
+        2. Ensure single-use via Redis NX lock (H10 replay protection)
+        3. Exchange code for tokens via Pinterest API
+        4. Store tokens in Redis with TTL (E20)
         """
         user_id, nonce = parse_and_verify_state(state, self._encryption_key)
+
+        # H10: prevent replay attacks — state can only be used once
+        lock_key = f"oauth_state_used:{nonce}"
+        already_used = not await self._redis.set(lock_key, "1", ex=_OAUTH_STATE_LOCK_TTL, nx=True)
+        if already_used:
+            log.warning("pinterest_oauth_state_replay", user_id=user_id, nonce=nonce)
+            raise PinterestOAuthError("OAuth state already used (replay)")
 
         tokens = await self._exchange_code(code)
 

@@ -32,6 +32,9 @@ def _make_request(
     mock_bot = MagicMock()
     mock_bot.send_message = AsyncMock()
 
+    mock_redis = MagicMock()
+    mock_redis.set = AsyncMock(return_value="OK")
+
     app = MagicMock()
     app.__getitem__ = MagicMock(
         side_effect=lambda key: {
@@ -39,6 +42,7 @@ def _make_request(
             "http_client": MagicMock(),
             "yookassa_service": mock_service,
             "bot": mock_bot,
+            "redis": mock_redis,
         }[key]
     )
 
