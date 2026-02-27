@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import httpx
 
-from services.external.telegraph import TelegraphClient, TelegraphPage
+from services.external.telegraph import (
+    TelegraphClient,
+    TelegraphPage,
+    _MAX_CONTENT_BYTES,
+    _truncate_telegraph_content,
+    html_to_telegraph_nodes,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -363,3 +369,39 @@ class TestDeletePage:
         client = _make_client(handler)
         result = await client.delete_page("some-path")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Content truncation
+# ---------------------------------------------------------------------------
+
+
+class TestTruncateContent:
+    def test_small_content_under_limit(self) -> None:
+        """Small content should not exceed Telegraph limit (no truncation needed)."""
+        small_html = "<p>Short content</p>"
+        content_json = html_to_telegraph_nodes(small_html)
+        assert len(content_json.encode()) < _MAX_CONTENT_BYTES
+
+    def test_large_content_truncated(self) -> None:
+        """Content over limit should be truncated to fit."""
+        # Generate HTML with many paragraphs to exceed 60KB
+        big_html = "".join(f"<p>Paragraph {i} with some text content. </p>" for i in range(2000))
+        content_json = html_to_telegraph_nodes(big_html)
+        assert len(content_json.encode()) > _MAX_CONTENT_BYTES
+
+        result = _truncate_telegraph_content(content_json)
+        assert len(result.encode()) <= _MAX_CONTENT_BYTES
+        assert "продолжение" in result
+
+    def test_truncated_content_is_valid_json(self) -> None:
+        """Truncated content should be valid JSON."""
+        import json
+
+        big_html = "".join(f"<p>Content block {i}. </p>" for i in range(2000))
+        content_json = html_to_telegraph_nodes(big_html)
+        result = _truncate_telegraph_content(content_json)
+
+        nodes = json.loads(result)
+        assert isinstance(nodes, list)
+        assert len(nodes) >= 2  # at least 1 content node + continuation

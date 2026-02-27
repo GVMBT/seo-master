@@ -18,6 +18,9 @@ log = structlog.get_logger()
 
 TELEGRAPH_API_BASE = "https://api.telegra.ph"
 
+# Telegraph API content field limit (~64KB). Use 60KB as safe threshold.
+_MAX_CONTENT_BYTES = 60_000
+
 # Tags that Telegraph API accepts (all others are stripped, children kept).
 _ALLOWED_TAGS = frozenset(
     {
@@ -123,6 +126,40 @@ def html_to_telegraph_nodes(html: str) -> str:
     return json.dumps(parser.get_nodes(), ensure_ascii=False)
 
 
+def _truncate_telegraph_content(content_json: str) -> str:
+    """Truncate Telegraph node array to fit within API size limit.
+
+    Only called when content exceeds _MAX_CONTENT_BYTES.
+    Uses pre-computed node sizes for O(n) performance.
+    """
+    nodes: list[Any] = json.loads(content_json)
+    continuation = {"tag": "p", "children": ["[...продолжение в полной статье]"]}
+    continuation_json = json.dumps(continuation, ensure_ascii=False)
+    # Reserve: '[' + ']' + ', ' before continuation + continuation itself
+    reserved = len(continuation_json.encode()) + 4  # 2 brackets + ', '
+    budget = _MAX_CONTENT_BYTES - reserved
+
+    # Pre-compute each node's serialized byte size (O(n) total)
+    node_sizes = [len(json.dumps(n, ensure_ascii=False).encode()) for n in nodes]
+
+    # Greedily include nodes from the start
+    # json.dumps uses ', ' (2 bytes) as separator between array elements
+    total = 0
+    cut = 0
+    for i, size in enumerate(node_sizes):
+        cost = size + (2 if i > 0 else 0)  # +2 for ', ' separator
+        if total + cost > budget:
+            break
+        total += cost
+        cut = i + 1
+
+    if cut < 1:
+        cut = 1
+    nodes = nodes[:cut]
+    nodes.append(continuation)
+    return json.dumps(nodes, ensure_ascii=False)
+
+
 @dataclass(frozen=True, slots=True)
 class TelegraphPage:
     """Result of a Telegraph page creation."""
@@ -190,6 +227,9 @@ class TelegraphClient:
 
         try:
             content_json = html_to_telegraph_nodes(html)
+            if len(content_json.encode()) > _MAX_CONTENT_BYTES:
+                log.warning("telegraph.content_truncated", original_bytes=len(content_json.encode()))
+                content_json = _truncate_telegraph_content(content_json)
             resp = await self._http.post(
                 f"{TELEGRAPH_API_BASE}/createPage",
                 data={
