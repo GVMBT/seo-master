@@ -19,6 +19,7 @@ from services.tokens import (
     COST_PER_IMAGE,
     COST_REVIEW_EACH,
     TokenService,
+    _avg_cost_by_platform,
     estimate_article_cost,
     estimate_keywords_cost,
     estimate_social_post_cost,
@@ -414,11 +415,82 @@ class TestGetReferralBonusTotal:
 # ---------------------------------------------------------------------------
 
 
+class TestAvgCostByPlatform:
+    """Tests for _avg_cost_by_platform helper (C17)."""
+
+    def test_wordpress_cost(self) -> None:
+        assert _avg_cost_by_platform("wordpress") == 320
+
+    def test_telegram_cost(self) -> None:
+        assert _avg_cost_by_platform("telegram") == 40
+
+    def test_vk_cost(self) -> None:
+        assert _avg_cost_by_platform("vk") == 40
+
+    def test_pinterest_cost(self) -> None:
+        assert _avg_cost_by_platform("pinterest") == 40
+
+    def test_unknown_platform_default(self) -> None:
+        assert _avg_cost_by_platform("some_future_platform") == 40
+
+
 class TestGetProfileStats:
-    async def test_with_schedules(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
+    async def test_wordpress_schedule_uses_320_cost(
+        self, service: TokenService, mock_users_repo: AsyncMock
+    ) -> None:
+        """C17: WP schedules must use ~320 tokens/post, not 40."""
         from db.models import Category, PlatformSchedule, Project, User
 
         user = User(**_make_user_row(balance=2000))
+
+        with (
+            patch("services.tokens.ProjectsRepository") as mock_proj_cls,
+            patch("services.tokens.SchedulesRepository") as mock_sched_cls,
+            patch("services.tokens.CategoriesRepository") as mock_cat_cls,
+        ):
+            proj_repo = AsyncMock()
+            proj_repo.get_by_user.return_value = [
+                Project(id=1, user_id=123, name="P1", company_name="C", specialization="S"),
+            ]
+            mock_proj_cls.return_value = proj_repo
+
+            cat_repo = AsyncMock()
+            cat_repo.get_by_project.return_value = [
+                Category(id=1, project_id=1, name="Cat1"),
+            ]
+            mock_cat_cls.return_value = cat_repo
+
+            sched_repo = AsyncMock()
+            sched_repo.get_by_project.return_value = [
+                PlatformSchedule(
+                    id=1,
+                    category_id=1,
+                    platform_type="wordpress",
+                    connection_id=1,
+                    enabled=True,
+                    schedule_days=["mon", "wed", "fri"],
+                    posts_per_day=1,
+                ),
+            ]
+            mock_sched_cls.return_value = sched_repo
+
+            mock_users_repo.get_referral_count.return_value = 0
+
+            stats = await service.get_profile_stats(user)
+
+        # 1 post/day * 3 days = 3 posts/week
+        assert stats["posts_per_week"] == 3
+        # WP cost: 3 * 320 = 960 (NOT 3 * 40 = 120)
+        assert stats["tokens_per_week"] == 3 * 320  # 960
+        assert stats["tokens_per_month"] == 3 * 320 * 4  # 3840
+
+    async def test_mixed_platforms_differentiated_cost(
+        self, service: TokenService, mock_users_repo: AsyncMock
+    ) -> None:
+        """C17: Mixed WP + social schedules use different costs."""
+        from db.models import Category, PlatformSchedule, Project, User
+
+        user = User(**_make_user_row(balance=5000))
 
         with (
             patch("services.tokens.ProjectsRepository") as mock_proj_cls,
@@ -443,7 +515,7 @@ class TestGetProfileStats:
                 PlatformSchedule(
                     id=1,
                     category_id=1,
-                    platform_type="wp",
+                    platform_type="wordpress",
                     connection_id=1,
                     enabled=True,
                     schedule_days=["mon", "wed", "fri"],
@@ -452,9 +524,11 @@ class TestGetProfileStats:
                 PlatformSchedule(
                     id=2,
                     category_id=1,
-                    platform_type="tg",
+                    platform_type="telegram",
                     connection_id=2,
-                    enabled=False,
+                    enabled=True,
+                    schedule_days=["mon", "tue", "wed", "thu", "fri"],
+                    posts_per_day=1,
                 ),
             ]
             mock_sched_cls.return_value = sched_repo
@@ -465,12 +539,64 @@ class TestGetProfileStats:
 
         assert stats["project_count"] == 1
         assert stats["category_count"] == 2
-        assert stats["schedule_count"] == 1  # only enabled
+        assert stats["schedule_count"] == 2
         assert stats["referral_count"] == 3
-        # posts_per_week = 2 posts/day * 3 days = 6
+        # WP: 2 posts/day * 3 days = 6 posts/week
+        # TG: 1 post/day * 5 days = 5 posts/week
+        assert stats["posts_per_week"] == 11
+        # WP: 6 * 320 = 1920
+        # TG: 5 * 40 = 200
+        # Total: 2120
+        assert stats["tokens_per_week"] == 2120
+        assert stats["tokens_per_month"] == 2120 * 4
+
+    async def test_social_only_schedule(
+        self, service: TokenService, mock_users_repo: AsyncMock
+    ) -> None:
+        """Social-only schedule uses 40 tokens/post."""
+        from db.models import Category, PlatformSchedule, Project, User
+
+        user = User(**_make_user_row(balance=2000))
+
+        with (
+            patch("services.tokens.ProjectsRepository") as mock_proj_cls,
+            patch("services.tokens.SchedulesRepository") as mock_sched_cls,
+            patch("services.tokens.CategoriesRepository") as mock_cat_cls,
+        ):
+            proj_repo = AsyncMock()
+            proj_repo.get_by_user.return_value = [
+                Project(id=1, user_id=123, name="P1", company_name="C", specialization="S"),
+            ]
+            mock_proj_cls.return_value = proj_repo
+
+            cat_repo = AsyncMock()
+            cat_repo.get_by_project.return_value = [
+                Category(id=1, project_id=1, name="Cat1"),
+            ]
+            mock_cat_cls.return_value = cat_repo
+
+            sched_repo = AsyncMock()
+            sched_repo.get_by_project.return_value = [
+                PlatformSchedule(
+                    id=1,
+                    category_id=1,
+                    platform_type="vk",
+                    connection_id=1,
+                    enabled=True,
+                    schedule_days=["mon", "wed", "fri"],
+                    posts_per_day=2,
+                ),
+            ]
+            mock_sched_cls.return_value = sched_repo
+
+            mock_users_repo.get_referral_count.return_value = 0
+
+            stats = await service.get_profile_stats(user)
+
+        # 2 posts/day * 3 days = 6 posts/week * 40 = 240
         assert stats["posts_per_week"] == 6
-        assert stats["tokens_per_week"] == 6 * 40  # 240
-        assert stats["tokens_per_month"] == 6 * 40 * 4  # 960
+        assert stats["tokens_per_week"] == 240
+        assert stats["tokens_per_month"] == 960
 
     async def test_no_projects(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         from db.models import User

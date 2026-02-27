@@ -7,6 +7,7 @@ Edge cases:
 
 Uses native httpx (not firecrawl-py SDK) for full async support.
 All public methods return None/empty on failure (graceful degradation).
+Retry: C10 — retry on 429/5xx with backoff.
 
 Endpoints used:
   POST /v2/scrape   — competitor content (markdown+summary), 1 credit
@@ -23,6 +24,8 @@ from typing import Any
 
 import httpx
 import structlog
+
+from services.http_retry import retry_with_backoff
 
 log = structlog.get_logger()
 
@@ -142,6 +145,32 @@ class FirecrawlClient:
             "Content-Type": "application/json",
         }
 
+    async def _post(
+        self,
+        endpoint: str,
+        json_data: dict[str, Any],
+        timeout: float,
+        operation: str,
+    ) -> httpx.Response:
+        """POST to a Firecrawl endpoint with retry on 429/5xx (C10)."""
+
+        async def _do_post() -> httpx.Response:
+            resp = await self._http.post(
+                f"{self._base}/{endpoint}",
+                headers=self._headers(),
+                json=json_data,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            return resp
+
+        return await retry_with_backoff(
+            _do_post,
+            max_retries=2,
+            base_delay=1.0,
+            operation=f"firecrawl_{operation}",
+        )
+
     # ------------------------------------------------------------------
     # /v2/scrape — competitor content (markdown + summary)
     # ------------------------------------------------------------------
@@ -154,15 +183,11 @@ class FirecrawlClient:
         Cost: 1 credit/page.
         """
         try:
-            resp = await self._http.post(
-                f"{self._base}/scrape",
-                headers=self._headers(),
-                json={
-                    "url": url,
-                    "formats": ["markdown", "summary"],
-                    "onlyMainContent": True,
-                },
+            resp = await self._post(
+                "scrape",
+                {"url": url, "formats": ["markdown", "summary"], "onlyMainContent": True},
                 timeout=_SCRAPE_TIMEOUT,
+                operation="scrape_content",
             )
             resp.raise_for_status()
             body = resp.json()
@@ -208,11 +233,11 @@ class FirecrawlClient:
         Cost: 1 credit per 5000 URLs.
         """
         try:
-            resp = await self._http.post(
-                f"{self._base}/map",
-                headers=self._headers(),
-                json={"url": url, "limit": limit},
+            resp = await self._post(
+                "map",
+                {"url": url, "limit": limit},
                 timeout=_MAP_TIMEOUT,
+                operation="map_site",
             )
             resp.raise_for_status()
             body = resp.json()
@@ -261,11 +286,11 @@ class FirecrawlClient:
             if schema:
                 payload["schema"] = schema
 
-            resp = await self._http.post(
-                f"{self._base}/extract",
-                headers=self._headers(),
-                json=payload,
+            resp = await self._post(
+                "extract",
+                payload,
                 timeout=_EXTRACT_TIMEOUT,
+                operation="extract",
             )
             resp.raise_for_status()
             body = resp.json()
@@ -360,10 +385,9 @@ class FirecrawlClient:
         Note: Does not provide People Also Ask (PAA) — Serper still needed for that.
         """
         try:
-            resp = await self._http.post(
-                f"{self._base}/search",
-                headers=self._headers(),
-                json={
+            resp = await self._post(
+                "search",
+                {
                     "query": query,
                     "limit": limit,
                     "scrapeOptions": {
@@ -372,6 +396,7 @@ class FirecrawlClient:
                     },
                 },
                 timeout=_SEARCH_TIMEOUT,
+                operation="search",
             )
             resp.raise_for_status()
             body = resp.json()

@@ -2,6 +2,7 @@
 
 Source of truth: docs/API_CONTRACTS.md section 3.4.
 ZERO aiogram dependencies (services/ layer rule).
+Retry: C10/C11 — retry on 429/5xx with backoff, no retry on 401/403.
 """
 
 from __future__ import annotations
@@ -12,10 +13,15 @@ import httpx
 import structlog
 
 from db.models import PlatformConnection
+from services.http_retry import retry_with_backoff
 
 from .base import BasePublisher, PublishRequest, PublishResult
 
 log = structlog.get_logger()
+
+# Retry settings for TG publish (C11)
+_PUBLISH_MAX_RETRIES = 2
+_PUBLISH_BASE_DELAY = 1.0
 
 # Telegram limits
 _CAPTION_LIMIT = 1024
@@ -83,39 +89,12 @@ class TelegramPublisher(BasePublisher):
         channel_id = creds["channel_id"]
 
         try:
-            if request.images:
-                text = request.content[:_TEXT_LIMIT]
-                if len(request.content) > _CAPTION_LIMIT:
-                    # Long post: photo without caption, then separate text message
-                    await self._send_photo(token, channel_id, request.images[0])
-                    data = await self._api_call(
-                        token,
-                        "sendMessage",
-                        {
-                            "chat_id": channel_id,
-                            "text": text,
-                            "parse_mode": "HTML",
-                        },
-                    )
-                else:
-                    # Short post: photo with caption
-                    data = await self._send_photo(
-                        token,
-                        channel_id,
-                        request.images[0],
-                        caption=request.content[:_CAPTION_LIMIT],
-                    )
-            else:
-                data = await self._api_call(
-                    token,
-                    "sendMessage",
-                    {
-                        "chat_id": channel_id,
-                        "text": request.content[:_TEXT_LIMIT],
-                        "parse_mode": "HTML",
-                    },
-                )
-
+            data = await retry_with_backoff(
+                lambda: self._do_publish(request, token, channel_id),
+                max_retries=_PUBLISH_MAX_RETRIES,
+                base_delay=_PUBLISH_BASE_DELAY,
+                operation="telegram_publish",
+            )
             message_id = str(data["result"]["message_id"])
             return PublishResult(
                 success=True,
@@ -128,6 +107,44 @@ class TelegramPublisher(BasePublisher):
                 error=str(exc),
             )
             return PublishResult(success=False, error=str(exc))
+
+    async def _do_publish(
+        self,
+        request: PublishRequest,
+        token: str,
+        channel_id: str,
+    ) -> dict[str, Any]:
+        """Execute the actual TG publish flow (called inside retry_with_backoff)."""
+        if request.images:
+            text = request.content[:_TEXT_LIMIT]
+            if len(request.content) > _CAPTION_LIMIT:
+                # Long post: photo without caption, then separate text message
+                await self._send_photo(token, channel_id, request.images[0])
+                return await self._api_call(
+                    token,
+                    "sendMessage",
+                    {
+                        "chat_id": channel_id,
+                        "text": text,
+                        "parse_mode": "HTML",
+                    },
+                )
+            # Short post: photo with caption
+            return await self._send_photo(
+                token,
+                channel_id,
+                request.images[0],
+                caption=request.content[:_CAPTION_LIMIT],
+            )
+        return await self._api_call(
+            token,
+            "sendMessage",
+            {
+                "chat_id": channel_id,
+                "text": request.content[:_TEXT_LIMIT],
+                "parse_mode": "HTML",
+            },
+        )
 
     async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         creds = connection.credentials

@@ -241,3 +241,75 @@ class TestFormatting:
         text = service.format_payment_link_text("pro")
         assert "3000" in text
         assert "Про" in text
+
+
+# ---------------------------------------------------------------------------
+# Refund processing (C15, API_CONTRACTS §2.3)
+# ---------------------------------------------------------------------------
+
+
+class TestProcessRefund:
+    """Tests for StarsPaymentService.process_refund (C15)."""
+
+    @pytest.fixture
+    def svc_with_mocks(self, mock_db: MagicMock) -> StarsPaymentService:
+        svc = StarsPaymentService(db=mock_db, admin_ids=[999])
+        svc._users = MagicMock()
+        svc._users.force_debit_balance = AsyncMock(return_value=1000)
+        svc._payments = MagicMock()
+        svc._payments.get_by_telegram_charge_id = AsyncMock(
+            return_value=MagicMock(
+                id=1,
+                tokens_amount=500,
+                package_name="start",
+                status="completed",
+            )
+        )
+        svc._payments.update = AsyncMock()
+        svc._payments.create_expense = AsyncMock()
+        return svc
+
+    async def test_process_refund_debits_tokens(self, svc_with_mocks: StarsPaymentService) -> None:
+        result = await svc_with_mocks.process_refund(
+            user_id=42,
+            telegram_payment_charge_id="charge_abc",
+        )
+        assert result["tokens_debited"] == 500
+        assert result["new_balance"] == 1000
+        svc_with_mocks._users.force_debit_balance.assert_called_once_with(42, 500)
+
+    async def test_process_refund_updates_payment_status(self, svc_with_mocks: StarsPaymentService) -> None:
+        await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="charge_abc")
+        svc_with_mocks._payments.update.assert_called_once()
+        update_arg = svc_with_mocks._payments.update.call_args[0][1]
+        assert update_arg.status == "refunded"
+
+    async def test_process_refund_records_expense(self, svc_with_mocks: StarsPaymentService) -> None:
+        await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="charge_abc")
+        svc_with_mocks._payments.create_expense.assert_called_once()
+        expense_arg = svc_with_mocks._payments.create_expense.call_args[0][0]
+        assert expense_arg.amount == -500
+        assert expense_arg.operation_type == "stars_refund"
+
+    async def test_payment_not_found_returns_error(self, svc_with_mocks: StarsPaymentService) -> None:
+        svc_with_mocks._payments.get_by_telegram_charge_id = AsyncMock(return_value=None)
+        result = await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="missing")
+        assert result["tokens_debited"] == 0
+        assert "error" in result
+        svc_with_mocks._users.force_debit_balance.assert_not_called()
+
+    async def test_already_refunded_returns_flag(self, svc_with_mocks: StarsPaymentService) -> None:
+        svc_with_mocks._payments.get_by_telegram_charge_id = AsyncMock(
+            return_value=MagicMock(id=1, tokens_amount=500, package_name="start", status="refunded")
+        )
+        result = await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="dup")
+        assert result.get("already_refunded") is True
+        assert result["tokens_debited"] == 0
+        svc_with_mocks._users.force_debit_balance.assert_not_called()
+
+    async def test_negative_balance_allowed(self, svc_with_mocks: StarsPaymentService) -> None:
+        """Per API_CONTRACTS §2.3: balance can go negative on refund."""
+        svc_with_mocks._users.force_debit_balance = AsyncMock(return_value=-300)
+        result = await svc_with_mocks.process_refund(user_id=42, telegram_payment_charge_id="charge_neg")
+        assert result["new_balance"] == -300
+        assert result["tokens_debited"] == 500

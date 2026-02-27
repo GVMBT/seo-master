@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.models import PublishPayload
 from db.models import Category, PlatformConnection, PlatformSchedule, User
-from services.publish import PublishService
+from services.publish import PublishService, _format_competitor_analysis, _identify_gaps, _is_own_site
 
 # ---------------------------------------------------------------------------
 # Factories
@@ -729,3 +729,334 @@ async def test_get_content_type_mapping() -> None:
     assert PublishService._get_content_type("vk") == "plain_text"
     assert PublishService._get_content_type("pinterest") == "pin_text"
     assert PublishService._get_content_type("unknown") == "plain_text"
+
+
+# ---------------------------------------------------------------------------
+# C2: Cluster matching tests
+# ---------------------------------------------------------------------------
+
+
+def test_find_matching_cluster_by_main_phrase() -> None:
+    """C2: Cluster found when keyword matches main_phrase."""
+    keywords = [
+        {"cluster_name": "SEO", "cluster_type": "article", "main_phrase": "seo tips", "phrases": []},
+        {"cluster_name": "PPC", "cluster_type": "article", "main_phrase": "ppc ads", "phrases": []},
+    ]
+    cluster = PublishService._find_matching_cluster("seo tips", keywords)
+    assert cluster is not None
+    assert cluster["cluster_name"] == "SEO"
+
+
+def test_find_matching_cluster_by_phrase_in_phrases() -> None:
+    """C2: Cluster found when keyword matches an entry in phrases array."""
+    keywords = [
+        {
+            "cluster_name": "SEO",
+            "cluster_type": "article",
+            "main_phrase": "seo optimization",
+            "phrases": [
+                {"phrase": "seo optimization", "volume": 1000},
+                {"phrase": "seo tips", "volume": 500},
+            ],
+        },
+    ]
+    cluster = PublishService._find_matching_cluster("seo tips", keywords)
+    assert cluster is not None
+    assert cluster["cluster_name"] == "SEO"
+
+
+def test_find_matching_cluster_case_insensitive() -> None:
+    """C2: Cluster matching is case-insensitive."""
+    keywords = [
+        {"cluster_name": "SEO", "cluster_type": "article", "main_phrase": "SEO Tips", "phrases": []},
+    ]
+    cluster = PublishService._find_matching_cluster("seo tips", keywords)
+    assert cluster is not None
+
+
+def test_find_matching_cluster_returns_none_when_no_match() -> None:
+    """C2: Returns None when keyword does not match any cluster."""
+    keywords = [
+        {"cluster_name": "SEO", "cluster_type": "article", "main_phrase": "seo optimization", "phrases": []},
+    ]
+    cluster = PublishService._find_matching_cluster("ppc marketing", keywords)
+    assert cluster is None
+
+
+def test_find_matching_cluster_skips_non_dict_entries() -> None:
+    """C2: Skips non-dict entries in keywords array (legacy format)."""
+    keywords: list[Any] = [
+        "plain string keyword",
+        {"cluster_name": "SEO", "cluster_type": "article", "main_phrase": "seo tips", "phrases": []},
+    ]
+    cluster = PublishService._find_matching_cluster("seo tips", keywords)
+    assert cluster is not None
+    assert cluster["cluster_name"] == "SEO"
+
+
+# ---------------------------------------------------------------------------
+# C1: Web research tests
+# ---------------------------------------------------------------------------
+
+
+async def test_gather_websearch_no_clients_returns_empty() -> None:
+    """C1: No serper/firecrawl clients returns empty websearch data."""
+    svc = _make_service()
+    # Default: no serper or firecrawl clients
+    svc._serper = None
+    svc._firecrawl = None
+    # Mock _fetch_research to return None
+    svc._fetch_research = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    result = await svc._gather_websearch_data("seo tips", None)
+
+    assert result["serper_data"] is None
+    assert result["competitor_pages"] == []
+    assert result["competitor_analysis"] == ""
+    assert result["competitor_gaps"] == ""
+    assert result["research_data"] is None
+
+
+async def test_gather_websearch_with_serper() -> None:
+    """C1: Serper results are structured into websearch data."""
+    svc = _make_service()
+    mock_serper = MagicMock()
+    serper_result = MagicMock()
+    serper_result.organic = [{"title": "SEO Guide", "link": "https://other.com/seo"}]
+    serper_result.people_also_ask = [{"question": "What is SEO?"}]
+    serper_result.related_searches = ["seo guide"]
+    mock_serper.search = AsyncMock(return_value=serper_result)
+    svc._serper = mock_serper
+    svc._firecrawl = None
+    svc._fetch_research = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    result = await svc._gather_websearch_data("seo tips", None)
+
+    assert result["serper_data"] is not None
+    assert result["serper_data"]["organic"] == serper_result.organic
+    assert result["serper_data"]["people_also_ask"] == serper_result.people_also_ask
+
+
+async def test_gather_websearch_with_research_data() -> None:
+    """C1: Research data from Perplexity is included in websearch results."""
+    svc = _make_service()
+    svc._serper = None
+    svc._firecrawl = None
+    research = {"facts": [{"claim": "test", "source": "src", "year": "2026"}], "summary": "Test"}
+    svc._fetch_research = AsyncMock(return_value=research)  # type: ignore[method-assign]
+
+    result = await svc._gather_websearch_data("seo tips", None, specialization="marketing")
+
+    assert result["research_data"] == research
+
+
+async def test_gather_websearch_serper_failure_graceful() -> None:
+    """C1: Serper failure does not crash pipeline (graceful degradation)."""
+    svc = _make_service()
+    mock_serper = MagicMock()
+    mock_serper.search = AsyncMock(side_effect=RuntimeError("Serper API down"))
+    svc._serper = mock_serper
+    svc._firecrawl = None
+    svc._fetch_research = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    result = await svc._gather_websearch_data("seo tips", None)
+
+    assert result["serper_data"] is None
+    assert result["competitor_pages"] == []
+
+
+async def test_fetch_research_cache_hit() -> None:
+    """C1: Research cache hit returns cached data without API call."""
+    svc = _make_service()
+    import json
+
+    cached_data = {"facts": [], "trends": [], "statistics": [], "summary": "Cached"}
+    svc._redis.get = AsyncMock(return_value=json.dumps(cached_data))
+
+    result = await svc._fetch_research("seo tips", "marketing", "company")
+
+    assert result == cached_data
+    # Should not call orchestrator since we got a cache hit
+    svc._ai_orchestrator.generate_without_rate_limit.assert_not_called()
+
+
+async def test_fetch_research_failure_returns_none() -> None:
+    """C1/E53: Research failure returns None (graceful degradation)."""
+    svc = _make_service()
+    svc._redis.get = AsyncMock(return_value=None)
+    svc._ai_orchestrator.generate_without_rate_limit = AsyncMock(side_effect=RuntimeError("Sonar down"))
+
+    result = await svc._fetch_research("seo tips", "marketing", "company")
+
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# CR-77c: Schedule loaded once (pass-through) tests
+# ---------------------------------------------------------------------------
+
+
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_schedule_loaded_once_cr77c(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """CR-77c: Schedule is loaded exactly once in execute(), not in sub-methods."""
+    svc = _make_service()
+    schedule = _make_schedule(cross_post_connection_ids=[])
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://test.com/seo"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(return_value=schedule)
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=680)
+    svc._generate_and_publish = AsyncMock(return_value=(_make_gen_result(), _make_pub_result(), 0))
+
+    mock_conn = MagicMock()
+    mock_conn.get_by_id = AsyncMock(return_value=_make_connection())
+    mock_conn_cls.return_value = mock_conn
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    await svc.execute(_make_payload())
+
+    # Schedule should be loaded exactly once (in execute() step 0)
+    svc._schedules.get_by_id.assert_awaited_once_with(1)
+
+
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_schedule_passed_to_pause_cr77c(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """CR-77c: _pause_schedule_insufficient_balance uses schedule.id, not schedule_id param."""
+    svc = _make_service()
+    schedule = _make_schedule(id=42, qstash_schedule_ids=["qs_42"])
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._tokens.check_balance = AsyncMock(return_value=False)
+    svc._schedules.get_by_id = AsyncMock(return_value=schedule)
+    svc._schedules.update = AsyncMock(return_value=None)
+
+    mock_conn = MagicMock()
+    mock_conn.get_by_id = AsyncMock(return_value=_make_connection())
+    mock_conn_cls.return_value = mock_conn
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    await svc.execute(_make_payload(schedule_id=42))
+
+    # Verify schedule was loaded once and update used schedule.id (42)
+    svc._schedules.get_by_id.assert_awaited_once_with(42)
+    svc._schedules.update.assert_awaited_once()
+    update_call_args = svc._schedules.update.call_args.args
+    assert update_call_args[0] == 42  # schedule.id used, not separate param
+    svc._scheduler_service.delete_qstash_schedules.assert_awaited_once_with(["qs_42"])
+
+
+# ---------------------------------------------------------------------------
+# C2: Cluster passed to generation tests
+# ---------------------------------------------------------------------------
+
+
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_cluster_passed_to_generate_and_publish(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """C2: Matching cluster is passed through execute -> _generate_and_publish."""
+    svc = _make_service()
+    category = _make_category(
+        keywords=[
+            {
+                "cluster_name": "SEO",
+                "cluster_type": "article",
+                "main_phrase": "seo tips",
+                "phrases": [{"phrase": "seo tips", "volume": 1000, "difficulty": 30}],
+                "total_volume": 5000,
+            }
+        ]
+    )
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=category)
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://test.com/seo"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[]))
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=680)
+    svc._generate_and_publish = AsyncMock(return_value=(_make_gen_result(), _make_pub_result(), 0))
+
+    mock_conn = MagicMock()
+    mock_conn.get_by_id = AsyncMock(return_value=_make_connection())
+    mock_conn_cls.return_value = mock_conn
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    await svc.execute(_make_payload())
+
+    # Verify _generate_and_publish was called with cluster kwarg
+    call_kwargs = svc._generate_and_publish.call_args.kwargs
+    assert "cluster" in call_kwargs
+    assert call_kwargs["cluster"]["cluster_name"] == "SEO"
+    assert call_kwargs["cluster"]["total_volume"] == 5000
+
+
+# ---------------------------------------------------------------------------
+# Module-level helper tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_own_site_matches() -> None:
+    """_is_own_site returns True for same domain."""
+    assert _is_own_site("https://example.com/blog", "https://www.example.com") is True
+
+
+def test_is_own_site_different_domain() -> None:
+    """_is_own_site returns False for different domain."""
+    assert _is_own_site("https://other.com/page", "https://example.com") is False
+
+
+def test_is_own_site_no_project_url() -> None:
+    """_is_own_site returns False when project_url is None."""
+    assert _is_own_site("https://example.com", None) is False
+
+
+def test_format_competitor_analysis() -> None:
+    """_format_competitor_analysis formats competitor data for AI prompt."""
+    pages = [
+        {
+            "url": "https://example.com",
+            "word_count": 2000,
+            "summary": "SEO guide",
+            "headings": [{"level": 2, "text": "What is SEO"}],
+        }
+    ]
+    result = _format_competitor_analysis(pages)
+    assert "example.com" in result
+    assert "2000" in result
+    assert "What is SEO" in result
+
+
+def test_identify_gaps_empty_pages() -> None:
+    """_identify_gaps returns empty string for no pages."""
+    assert _identify_gaps([]) == ""
+
+
+def test_identify_gaps_with_pages() -> None:
+    """_identify_gaps includes competitor H2 structure."""
+    pages = [
+        {"headings": [{"level": 2, "text": "On-page SEO"}, {"level": 2, "text": "Technical SEO"}]},
+    ]
+    result = _identify_gaps(pages)
+    assert "On-page SEO" in result
+    assert "Technical SEO" in result

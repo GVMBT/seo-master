@@ -207,8 +207,36 @@ async def confirm_generate(
         return
 
     settings = get_settings()
-    image_count = data.get("image_count", 4)
+
+    # C25: re-read image_count from category on retry (user may have changed settings
+    # between error and retry via another FSM or Toolbox)
+    fresh_image_count = await _fresh_image_count(db, category_id)
+    image_count = fresh_image_count if fresh_image_count is not None else data.get("image_count", 4)
+
+    old_cost = data.get("_last_estimated_cost")
     cost = estimate_article_cost(images_count=image_count)
+
+    # C25: update FSM data with fresh image_count if changed
+    if image_count != data.get("image_count"):
+        await state.update_data(image_count=image_count)
+        data["image_count"] = image_count
+        log.info(
+            "pipeline.retry_image_count_refreshed",
+            user_id=user.id,
+            old=data.get("image_count"),
+            new=image_count,
+        )
+
+    # C25: notify user if cost changed since last estimate
+    if old_cost is not None and cost != old_cost:
+        log.info(
+            "pipeline.retry_cost_changed",
+            user_id=user.id,
+            old_cost=old_cost,
+            new_cost=cost,
+        )
+
+    await state.update_data(_last_estimated_cost=cost)
 
     # E25: rate limit check BEFORE charge
     rate_limiter = RateLimiter(redis)
@@ -521,6 +549,25 @@ def _build_preview_text(
         snippet = html.escape(raw[:500])
         lines.append(f"\n<i>(Превью недоступно, фрагмент ниже)</i>\n{snippet}...")
     return "\n".join(lines)
+
+
+async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None:
+    """Re-read image_count from category settings (C25: stale cost prevention).
+
+    Returns None if category not found or no image settings.
+    """
+    cats_repo = CategoriesRepository(db)
+    category = await cats_repo.get_by_id(category_id)
+    if not category:
+        return None
+    image_settings = category.image_settings or {}
+    count = image_settings.get("count")
+    if count is not None:
+        try:
+            return int(count)
+        except (ValueError, TypeError):
+            return None
+    return None
 
 
 async def _select_keyword(db: SupabaseClient, category_id: int) -> str | None:
@@ -847,6 +894,7 @@ async def cancel_refund(
 ) -> None:
     """Cancel pipeline and refund tokens (step 7 → clear).
 
+    CR-77a: Redis NX lock prevents double-refund on rapid double-click.
     C14: cleanup Telegraph page + Storage images BEFORE refund to prevent
     users from copying the preview URL, cancelling, and repeating for free content.
     Cleanup errors must NOT block the refund — refund is more important.
@@ -859,48 +907,78 @@ async def cancel_refund(
     preview_id = data.get("preview_id")
 
     if preview_id:
-        previews_repo = PreviewsRepository(db)
-        preview = await previews_repo.get_by_id(preview_id)
-        if preview and preview.status == "draft" and preview.user_id == user.id:
-            # C14: cleanup Telegraph page before refund (best-effort)
-            if preview.telegraph_path:
-                try:
-                    telegraph = TelegraphClient(http_client)
-                    await telegraph.delete_page(preview.telegraph_path)
-                except Exception:
-                    log.warning(
-                        "pipeline.cancel_telegraph_cleanup_failed",
-                        preview_id=preview_id,
-                        telegraph_path=preview.telegraph_path,
-                    )
+        # CR-77a: Redis NX lock to prevent double-refund race condition
+        lock_key = f"cancel_refund:{preview_id}"
+        acquired = await redis.set(lock_key, "1", ex=60, nx=True)
+        if not acquired:
+            await callback.answer("Отмена уже выполняется...", show_alert=True)
+            return
 
-            # C14: cleanup Storage images before refund (best-effort)
-            if preview.images:
-                try:
-                    paths = [
-                        img.get("storage_path")
-                        for img in preview.images
-                        if isinstance(img, dict) and img.get("storage_path")
-                    ]
-                    if paths:
-                        await image_storage.cleanup_by_paths(paths)
-                except Exception:
-                    log.warning(
-                        "pipeline.cancel_storage_cleanup_failed",
-                        preview_id=preview_id,
-                        images_count=len(preview.images),
-                    )
-
-            # Mark as cancelled
-            await previews_repo.update(preview_id, ArticlePreviewUpdate(status="cancelled"))
-            # Refund tokens
-            if preview.tokens_charged and preview.tokens_charged > 0:
-                await _try_refund(db, user, preview.tokens_charged, "Отмена пользователем")
+        try:
+            await _do_cancel_refund(
+                callback, db, redis, http_client, image_storage, user, preview_id,
+            )
+        finally:
+            await redis.delete(lock_key)
+    else:
+        # No preview_id -- just clear state
+        pass
 
     await state.clear()
     await clear_checkpoint(redis, user.id)
     await callback.message.edit_text("Статья отменена. Токены возвращены.")
     await callback.answer()
+
+
+async def _do_cancel_refund(
+    callback: CallbackQuery,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    image_storage: Any,
+    user: User,
+    preview_id: int,
+) -> None:
+    """Execute the cancel+refund logic (extracted for CR-77a lock wrapper)."""
+    previews_repo = PreviewsRepository(db)
+    preview = await previews_repo.get_by_id(preview_id)
+    if not preview or preview.status != "draft" or preview.user_id != user.id:
+        return
+
+    # C14: cleanup Telegraph page before refund (best-effort)
+    if preview.telegraph_path:
+        try:
+            telegraph = TelegraphClient(http_client)
+            await telegraph.delete_page(preview.telegraph_path)
+        except Exception:
+            log.warning(
+                "pipeline.cancel_telegraph_cleanup_failed",
+                preview_id=preview_id,
+                telegraph_path=preview.telegraph_path,
+            )
+
+    # C14: cleanup Storage images before refund (best-effort)
+    if preview.images:
+        try:
+            paths = [
+                img.get("storage_path")
+                for img in preview.images
+                if isinstance(img, dict) and img.get("storage_path")
+            ]
+            if paths:
+                await image_storage.cleanup_by_paths(paths)
+        except Exception:
+            log.warning(
+                "pipeline.cancel_storage_cleanup_failed",
+                preview_id=preview_id,
+                images_count=len(preview.images),
+            )
+
+    # Mark as cancelled
+    await previews_repo.update(preview_id, ArticlePreviewUpdate(status="cancelled"))
+    # Refund tokens
+    if preview.tokens_charged and preview.tokens_charged > 0:
+        await _try_refund(db, user, preview.tokens_charged, "Отмена пользователем")
 
 
 @router.callback_query(

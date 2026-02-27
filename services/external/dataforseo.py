@@ -2,6 +2,7 @@
 
 Spec: docs/API_CONTRACTS.md section 8.2
 Edge case E03: DataForSEO unavailable -> fallback to AI-generated keywords.
+Retry: C10 — retry on 429/5xx with backoff, Retry-After support.
 
 API endpoints:
   - keyword_suggestions: POST /v3/dataforseo_labs/google/keyword_suggestions/live
@@ -14,6 +15,7 @@ API endpoints:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +35,9 @@ _DEFAULT_LOCATION = 2804
 # Max retries on transient errors
 _MAX_RETRIES = 2
 _RETRY_DELAYS = (0.5, 1.0, 2.0)  # seconds, exponential backoff
+
+# Maximum Retry-After wait (seconds)
+_MAX_RETRY_AFTER = 60.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +95,12 @@ class DataForSEOClient:
         endpoint: str,
         payload: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Send POST request to DataForSEO with Basic Auth and retry logic."""
+        """Send POST request to DataForSEO with Basic Auth and retry logic.
+
+        Retries on: timeout, connect error, 429, 5xx.
+        No retry on: 401/403 (auth), other 4xx (client error).
+        Respects Retry-After header for 429 (C10).
+        """
         url = f"{self._base}/{endpoint}"
 
         last_exc: Exception | None = None
@@ -116,9 +126,11 @@ class DataForSEOClient:
             except (httpx.TimeoutException, httpx.ConnectError) as exc:
                 last_exc = exc
                 log.warning(
-                    "dataforseo_retry",
-                    endpoint=endpoint,
+                    "http_retry",
+                    operation="dataforseo_request",
                     attempt=attempt + 1,
+                    max_retries=_MAX_RETRIES,
+                    status=None,
                     error=str(exc),
                 )
                 if attempt < _MAX_RETRIES:
@@ -127,10 +139,31 @@ class DataForSEOClient:
             except DataForSEOError:
                 raise
             except httpx.HTTPStatusError as exc:
-                raise DataForSEOError(
-                    exc.response.status_code,
-                    f"HTTP {exc.response.status_code}",
-                ) from exc
+                status = exc.response.status_code
+                # Auth errors — never retry
+                if status in (401, 403):
+                    raise DataForSEOError(status, f"HTTP {status}") from exc
+                # Retryable: 429, 5xx
+                if status in (429, 500, 502, 503, 504) and attempt < _MAX_RETRIES:
+                    delay = _RETRY_DELAYS[attempt]
+                    if status == 429:
+                        retry_after = exc.response.headers.get("Retry-After")
+                        if retry_after:
+                            with contextlib.suppress(ValueError, TypeError):
+                                delay = min(float(retry_after), _MAX_RETRY_AFTER)
+                    last_exc = exc
+                    log.warning(
+                        "http_retry",
+                        operation="dataforseo_request",
+                        attempt=attempt + 1,
+                        max_retries=_MAX_RETRIES,
+                        status=status,
+                        delay_s=round(delay, 2),
+                        error=str(exc)[:200],
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise DataForSEOError(status, f"HTTP {status}") from exc
 
         raise DataForSEOError(0, f"All {_MAX_RETRIES + 1} attempts failed: {last_exc}")
 

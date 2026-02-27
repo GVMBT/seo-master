@@ -105,7 +105,7 @@ def _make_v7_article_mocks(keyword: str = "test keyword") -> list[GenerationResu
         f"## Conclusion\n\nTestCo is your partner for {keyword}. {sentences}\n"
     )
     outline = {
-        "h1": f"Guide to {keyword}",
+        "title": f"Guide to {keyword}",
         "sections": [],
         "faq_questions": [],
         "target_word_count": 2000,
@@ -158,7 +158,7 @@ class TestArticleService:
         """Successful article generation returns GenerationResult with content dict."""
         # v7 pipeline: orchestrator.generate called twice (outline + article)
         outline_content = {
-            "h1": "SEO Guide for test keyword",
+            "title": "SEO Guide for test keyword",
             "sections": [
                 {"h2": "Section 1", "h3_list": [], "key_points": ["point"], "target_phrases": ["test"]},
             ],
@@ -301,7 +301,7 @@ class TestArticleService:
     ) -> None:
         """Invalid content (too short, no H1) should raise ContentValidationError (H10)."""
         outline_content = {
-            "h1": "Title",
+            "title": "Title",
             "sections": [],
             "faq_questions": [],
             "target_word_count": 2000,
@@ -428,6 +428,78 @@ class TestArticleService:
         request = article_call.args[0]
         assert request.context["main_volume"] == "100"
         assert request.context["main_difficulty"] == "30"
+
+
+# ---------------------------------------------------------------------------
+# H20: OUTLINE_SCHEMA uses "title" not "h1"
+# ---------------------------------------------------------------------------
+
+
+class TestOutlineSchemaH20:
+    """H20: Outline schema and _format_outline use 'title', not 'h1'.
+
+    The article spec says content_markdown starts with H2, NOT H1.
+    The outline schema must use 'title' field consistently.
+    """
+
+    def test_outline_schema_uses_title_not_h1(self) -> None:
+        """OUTLINE_SCHEMA must have 'title' in properties and required, not 'h1'."""
+        from services.ai.articles import OUTLINE_SCHEMA
+
+        properties = OUTLINE_SCHEMA["schema"]["properties"]
+        required = OUTLINE_SCHEMA["schema"]["required"]
+
+        assert "title" in properties, "OUTLINE_SCHEMA must have 'title' property"
+        assert "h1" not in properties, "OUTLINE_SCHEMA must NOT have 'h1' property"
+        assert "title" in required, "OUTLINE_SCHEMA must require 'title'"
+        assert "h1" not in required, "OUTLINE_SCHEMA must NOT require 'h1'"
+
+    def test_format_outline_reads_title(self) -> None:
+        """_format_outline must read 'title' key from outline dict."""
+        from services.ai.articles import _format_outline
+
+        outline = {
+            "title": "My Article Title",
+            "sections": [
+                {"h2": "Section One", "h3_list": ["Sub A"], "key_points": ["Point"], "target_phrases": ["kw"]},
+            ],
+            "faq_questions": ["What is this?"],
+            "target_word_count": 2000,
+            "suggested_images": [],
+        }
+        result = _format_outline(outline)
+        assert "Title: My Article Title" in result
+        assert "## Section One" in result
+        assert "### Sub A" in result
+        assert "- Point" in result
+        assert "What is this?" in result
+
+    def test_format_outline_h1_key_not_used(self) -> None:
+        """If outline has 'h1' instead of 'title', _format_outline shows empty title."""
+        from services.ai.articles import _format_outline
+
+        outline = {
+            "h1": "Wrong Key",
+            "sections": [],
+            "faq_questions": [],
+            "target_word_count": 2000,
+            "suggested_images": [],
+        }
+        result = _format_outline(outline)
+        # Should NOT find "Wrong Key" since we read 'title', not 'h1'
+        assert "Title: " in result
+        assert "Wrong Key" not in result
+
+    def test_article_schema_uses_title(self) -> None:
+        """ARTICLE_SCHEMA must have 'title' (not 'h1') for the article response."""
+        from services.ai.articles import ARTICLE_SCHEMA
+
+        properties = ARTICLE_SCHEMA["schema"]["properties"]
+        required = ARTICLE_SCHEMA["schema"]["required"]
+
+        assert "title" in properties
+        assert "h1" not in properties
+        assert "title" in required
 
 
 # ---------------------------------------------------------------------------

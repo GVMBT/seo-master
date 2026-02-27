@@ -7,6 +7,8 @@ E45 graceful degradation, threshold behavior.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from services.ai.quality_scorer import (
     SLOP_WORDS,
     ContentQualityScorer,
@@ -265,3 +267,97 @@ class TestGracefulDegradation:
         result = scorer.score("<div></div>", "test", ["a", "b"])
         assert isinstance(result.total, int)
         assert isinstance(result.passed, bool)
+
+
+# ---------------------------------------------------------------------------
+# H18: ArticleService._score_quality never returns None
+# ---------------------------------------------------------------------------
+
+
+class TestScoreQualityNeverNone:
+    """H18: _score_quality static method must always return a QualityScore, never None.
+
+    Tests target ArticleService._score_quality which wraps ContentQualityScorer.score().
+    On ImportError or other exceptions, it must return a QualityScore(total=50) fallback.
+    """
+
+    def test_normal_scoring_returns_quality_score(self) -> None:
+        """Normal path: returns a valid QualityScore from ContentQualityScorer."""
+        from services.ai.articles import ArticleService
+
+        result = ArticleService._score_quality(
+            "<h2>Test</h2><p>" + "content " * 200 + "</p>",
+            "test keyword",
+            "secondary one, secondary two",
+        )
+        assert result is not None
+        assert isinstance(result.total, int)
+        assert 0 <= result.total <= 100
+        assert isinstance(result.issues, list)
+        assert isinstance(result.passed, bool)
+
+    def test_exception_in_scorer_returns_fallback_score(self) -> None:
+        """H18: Any exception during scoring returns QualityScore(total=50)."""
+        from services.ai.articles import ArticleService
+
+        # Patch ContentQualityScorer.score to raise RuntimeError
+        with patch.object(
+            ContentQualityScorer,
+            "score",
+            side_effect=RuntimeError("Unexpected NLP crash"),
+        ):
+            result = ArticleService._score_quality("<p>test</p>", "key", "")
+
+        assert result is not None
+        assert result.total == 50
+        assert result.passed is True
+        assert any("failed" in i.lower() or "unavailable" in i.lower() for i in result.issues)
+
+    def test_value_error_in_scorer_returns_fallback(self) -> None:
+        """H18: ValueError in scorer still returns valid QualityScore."""
+        from services.ai.articles import ArticleService
+
+        with patch.object(
+            ContentQualityScorer,
+            "score",
+            side_effect=ValueError("bad input"),
+        ):
+            result = ArticleService._score_quality("<p>x</p>", "k", "a, b")
+
+        assert result is not None
+        assert result.total == 50
+        assert isinstance(result.issues, list)
+
+    def test_empty_secondary_phrases(self) -> None:
+        """Edge case: empty secondary_phrases string."""
+        from services.ai.articles import ArticleService
+
+        result = ArticleService._score_quality(
+            "<h2>Test</h2><p>" + "content " * 200 + "</p>",
+            "test keyword",
+            "",
+        )
+        assert result is not None
+        assert isinstance(result.total, int)
+
+    def test_result_has_required_attributes(self) -> None:
+        """H18: result always has total, breakdown, issues, passed attributes."""
+        from services.ai.articles import ArticleService
+
+        result = ArticleService._score_quality(
+            "<h2>Title</h2><p>" + "word " * 100 + "</p>",
+            "word",
+            "",
+        )
+        assert hasattr(result, "total")
+        assert hasattr(result, "breakdown")
+        assert hasattr(result, "issues")
+        assert hasattr(result, "passed")
+
+    def test_result_never_none_even_on_empty_html(self) -> None:
+        """H18: even with empty HTML, result is never None."""
+        from services.ai.articles import ArticleService
+
+        result = ArticleService._score_quality("", "kw", "")
+        assert result is not None
+        assert isinstance(result.total, int)

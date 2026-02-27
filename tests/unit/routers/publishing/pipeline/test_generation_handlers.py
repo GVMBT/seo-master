@@ -10,6 +10,7 @@ Covers steps 5-8 of the Article Pipeline:
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -209,6 +210,11 @@ class TestShowConfirmMsg:
 # ---------------------------------------------------------------------------
 
 
+def _patch_fresh_image_count(image_count: int | None = None):
+    """Patch _fresh_image_count to return a given value (C25 tests)."""
+    return patch(f"{_MODULE}._fresh_image_count", new_callable=AsyncMock, return_value=image_count)
+
+
 class TestConfirmGenerate:
     """confirm_generate charges and starts generation."""
 
@@ -222,7 +228,7 @@ class TestConfirmGenerate:
     ) -> None:
         mock_state.get_data = AsyncMock(return_value=_make_fsm_data())
         token_patch, _token_mock = _patch_token_svc(balance=100, has_balance=False)
-        with _patch_settings(), token_patch, patch(f"{_MODULE}.RateLimiter") as rate_cls:
+        with _patch_settings(), token_patch, patch(f"{_MODULE}.RateLimiter") as rate_cls, _patch_fresh_image_count():
             rate_cls.return_value.check = AsyncMock()
             await confirm_generate(
                 mock_callback,
@@ -248,7 +254,7 @@ class TestConfirmGenerate:
         from bot.exceptions import RateLimitError
 
         mock_state.get_data = AsyncMock(return_value=_make_fsm_data())
-        with _patch_settings(), patch(f"{_MODULE}.RateLimiter") as rate_cls:
+        with _patch_settings(), _patch_fresh_image_count(), patch(f"{_MODULE}.RateLimiter") as rate_cls:
             rate_cls.return_value.check = AsyncMock(
                 side_effect=RateLimitError(
                     message="Rate limit exceeded",
@@ -282,6 +288,7 @@ class TestConfirmGenerate:
         with (
             _patch_settings(admin_ids=[999]),
             token_patch,
+            _patch_fresh_image_count(),
             patch(f"{_MODULE}.RateLimiter") as rate_cls,
             patch(f"{_MODULE}._run_generation", new_callable=AsyncMock),
         ):
@@ -312,6 +319,7 @@ class TestConfirmGenerate:
         with (
             _patch_settings(),
             token_patch,
+            _patch_fresh_image_count(),
             patch(f"{_MODULE}.RateLimiter") as rate_cls,
             patch(f"{_MODULE}._run_generation", new_callable=AsyncMock),
         ):
@@ -349,6 +357,41 @@ class TestConfirmGenerate:
         )
         mock_callback.answer.assert_called_once()
         assert "устарели" in mock_callback.answer.call_args.args[0]
+
+    async def test_c25_fresh_image_count_used(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """C25: confirm_generate reads fresh image_count from DB on retry."""
+        mock_state.get_data = AsyncMock(return_value=_make_fsm_data(image_count=4))
+        token_patch, _ = _patch_token_svc()
+        with (
+            _patch_settings(),
+            token_patch,
+            _patch_fresh_image_count(image_count=2) as fresh_mock,
+            patch(f"{_MODULE}.RateLimiter") as rate_cls,
+            patch(f"{_MODULE}._run_generation", new_callable=AsyncMock),
+        ):
+            rate_cls.return_value.check = AsyncMock()
+            await confirm_generate(
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+            )
+        # _fresh_image_count was called with (db, category_id)
+        fresh_mock.assert_called_once()
+        # FSM state was updated with new image_count=2
+        update_calls = [c for c in mock_state.update_data.call_args_list if "image_count" in (c.kwargs or {})]
+        assert any(c.kwargs.get("image_count") == 2 for c in update_calls)
 
 
 # ---------------------------------------------------------------------------
@@ -812,6 +855,96 @@ class TestCancelRefund:
         mock_storage.cleanup_by_paths.assert_called_once_with(
             ["123/1/img_0.webp", "123/1/img_1.webp"],
         )
+
+    async def test_cr77a_double_click_prevented_by_nx_lock(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """CR-77a: second cancel_refund call returns early when NX lock held."""
+        mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
+        # NX lock already held by previous call
+        mock_redis.set = AsyncMock(return_value=None)
+        mock_http = MagicMock()
+        mock_storage = MagicMock()
+
+        await cancel_refund(
+            mock_callback, mock_state, user, mock_db, mock_redis,
+            mock_http, mock_storage,
+        )
+
+        mock_callback.answer.assert_called()
+        assert "уже выполняется" in mock_callback.answer.call_args.args[0]
+        # FSM should NOT be cleared (the first call handles that)
+        mock_state.clear.assert_not_called()
+
+    async def test_cr77a_lock_released_after_success(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """CR-77a: Redis lock is deleted after cancel_refund completes."""
+        preview = _make_preview(tokens_charged=320)
+        mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
+        mock_redis.set = AsyncMock(return_value="OK")
+        mock_http = MagicMock()
+        mock_storage = MagicMock()
+        mock_storage.cleanup_by_paths = AsyncMock()
+
+        with (
+            patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
+            _patch_settings(),
+            patch(f"{_MODULE}._try_refund", new_callable=AsyncMock),
+            patch(f"{_MODULE}.TelegraphClient") as telegraph_cls,
+        ):
+            telegraph_cls.return_value.delete_page = AsyncMock(return_value=True)
+            repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
+            repo_cls.return_value.update = AsyncMock()
+            await cancel_refund(
+                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_http, mock_storage,
+            )
+
+        # Lock should be deleted in finally block
+        delete_calls = [c for c in mock_redis.delete.call_args_list if "cancel_refund:100" in str(c)]
+        assert len(delete_calls) >= 1
+
+    async def test_cr77a_lock_released_on_error(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """CR-77a: Redis lock is released even when _do_cancel_refund raises."""
+        mock_state.get_data = AsyncMock(return_value={"preview_id": 100})
+        mock_redis.set = AsyncMock(return_value="OK")
+        mock_http = MagicMock()
+        mock_storage = MagicMock()
+
+        with (
+            patch(f"{_MODULE}.PreviewsRepository") as repo_cls,
+            _patch_settings(),
+        ):
+            repo_cls.return_value.get_by_id = AsyncMock(
+                side_effect=RuntimeError("DB error"),
+            )
+            with contextlib.suppress(RuntimeError):
+                await cancel_refund(
+                    mock_callback, mock_state, user, mock_db, mock_redis,
+                    mock_http, mock_storage,
+                )
+
+        # Lock should still be deleted despite error
+        delete_calls = [c for c in mock_redis.delete.call_args_list if "cancel_refund:100" in str(c)]
+        assert len(delete_calls) >= 1
 
 
 # ---------------------------------------------------------------------------
