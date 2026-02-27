@@ -9,12 +9,9 @@ H17: Project/category creation limits
 from __future__ import annotations
 
 import json
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from aiohttp import web
-from aiohttp.test_utils import make_mocked_request
 
 from api.yookassa import _YOOKASSA_IDEMPOTENCY_TTL, yookassa_webhook
 from cache.keys import CacheKeys
@@ -253,8 +250,13 @@ class TestPipelineGenerationRateLimit:
                 )
             )
 
-            with patch("routers.publishing.pipeline.generation._fresh_image_count", new_callable=AsyncMock, return_value=4):
-                with patch("routers.publishing.pipeline.generation.get_settings") as mock_settings:
+            with (
+                patch(
+                    "routers.publishing.pipeline.generation._fresh_image_count",
+                    new_callable=AsyncMock, return_value=4,
+                ),
+                patch("routers.publishing.pipeline.generation.get_settings") as mock_settings,
+            ):
                     mock_settings.return_value = MagicMock(admin_ids=[])
                     await confirm_generate(
                         callback=callback,

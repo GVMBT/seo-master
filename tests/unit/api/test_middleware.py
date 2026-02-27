@@ -6,7 +6,7 @@ Covers: all security headers are set on every response.
 from __future__ import annotations
 
 from aiohttp import web
-from aiohttp.test_utils import AioHTTPTestCase, TestClient, TestServer
+from aiohttp.test_utils import AioHTTPTestCase
 
 
 async def _dummy_handler(request: web.Request) -> web.Response:

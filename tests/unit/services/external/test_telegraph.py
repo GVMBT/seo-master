@@ -9,9 +9,9 @@ from __future__ import annotations
 import httpx
 
 from services.external.telegraph import (
+    _MAX_CONTENT_BYTES,
     TelegraphClient,
     TelegraphPage,
-    _MAX_CONTENT_BYTES,
     _truncate_telegraph_content,
     html_to_telegraph_nodes,
 )
