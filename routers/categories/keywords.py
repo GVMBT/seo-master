@@ -155,7 +155,7 @@ async def show_keywords(
     clusters: list[dict[str, Any]] = category.keywords or []
     kb = keywords_summary_kb(category_id) if clusters else keywords_empty_kb(category_id)
 
-    await callback.message.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 
@@ -186,7 +186,7 @@ async def start_generation(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     # Check for saved answers in state or category metadata
     saved_data = await state.get_data()
@@ -202,7 +202,7 @@ async def start_generation(
             kw_project_id=project_id,
         )
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Найдены сохранённые ответы:\n"
             f"Товары/услуги: <i>{html.escape(saved_products)}</i>\n"
             f"География: <i>{html.escape(saved_geography)}</i>\n\n"
@@ -218,7 +218,7 @@ async def start_generation(
             kw_project_id=project_id,
         )
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
             reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
         )
@@ -252,7 +252,7 @@ async def start_fresh_generation(
         kw_project_id=project_id,
     )
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
         reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
     )
@@ -284,7 +284,7 @@ async def use_saved_answers(
         last_update_time=time.time(),
     )
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Сколько ключевых фраз подобрать?",
         reply_markup=keywords_quantity_kb(cat_id),
     )
@@ -391,7 +391,7 @@ async def select_quantity(
     products = data.get("kw_products", "")
     geography = data.get("kw_geography", "")
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Подбор ключевых фраз:\n"
         f"Товары: <i>{html.escape(products)}</i>\n"
         f"География: <i>{html.escape(geography)}</i>\n"
@@ -437,8 +437,8 @@ async def confirm_generation(
     has_balance = await token_service.check_balance(user.id, cost)
     if not has_balance:
         balance = await token_service.get_balance(user.id)
-        msg = token_service.format_insufficient_msg(cost, balance)
-        await callback.message.edit_text(msg)
+        insufficient_msg = token_service.format_insufficient_msg(cost, balance)
+        await msg.edit_text(insufficient_msg)
         await state.clear()
         await callback.answer()
         return
@@ -457,7 +457,7 @@ async def confirm_generation(
 
     # Run pipeline with progress messages
     await _run_generation_pipeline(
-        callback.message,
+        msg,
         state,
         user,
         db,
@@ -501,12 +501,12 @@ async def cancel_generation(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await callback.message.edit_text("Категория не найдена.")
+        await msg.edit_text("Категория не найдена.")
         await callback.answer()
         return
 
     safe_name = html.escape(category.name)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>{safe_name}</b>",
         reply_markup=category_card_kb(cat_id, category.project_id),
     )
@@ -670,7 +670,7 @@ async def start_upload(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(KeywordUploadFSM.file_upload)
     await state.update_data(
@@ -679,7 +679,7 @@ async def start_upload(
         kw_project_id=project_id,
     )
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Загрузите текстовый файл (.txt) с ключевыми фразами.\n"
         "Каждая фраза на отдельной строке.\n\n"
         f"Максимум: {_MAX_PHRASES} фраз, {_MAX_FILE_SIZE // (1024 * 1024)} МБ.",
@@ -887,7 +887,7 @@ async def show_cluster_list(
         await callback.answer("Нет кластеров.", show_alert=True)
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Кластеры ({len(clusters)}):",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=1),
     )
@@ -916,7 +916,7 @@ async def paginate_clusters(
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Кластеры ({len(clusters)}):",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=page),
     )
@@ -988,7 +988,7 @@ async def show_cluster_detail(
     if len(text) > 4000:
         text = text[:4000] + "\n..."
 
-    await callback.message.edit_text(text, reply_markup=back_kb)
+    await msg.edit_text(text, reply_markup=back_kb)
     await callback.answer()
 
 
@@ -1045,7 +1045,7 @@ async def download_csv(
     csv_bytes = output.getvalue().encode("utf-8-sig")  # BOM for Excel compat
     doc = BufferedInputFile(csv_bytes, filename=f"keywords_cat_{cat_id}.csv")
 
-    bot: Bot | None = callback.message.bot
+    bot: Bot | None = msg.bot
     if bot:
         await bot.send_document(
             chat_id=callback.from_user.id,
@@ -1085,7 +1085,7 @@ async def show_delete_cluster_list(
         await callback.answer("Нет кластеров для удаления.", show_alert=True)
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Выберите кластер для удаления:",
         reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=1),
     )
@@ -1114,7 +1114,7 @@ async def paginate_delete_clusters(
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Выберите кластер для удаления:",
         reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=page),
     )
@@ -1154,12 +1154,12 @@ async def delete_single_cluster(
     log.info("cluster_deleted", cat_id=cat_id, cluster=removed_name, user_id=user.id)
 
     if clusters:
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Кластер «{html.escape(removed_name)}» удалён.\n\nВыберите кластер для удаления:",
             reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=1),
         )
     else:
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Кластер «{html.escape(removed_name)}» удалён. Фразы закончились.",
             reply_markup=keywords_empty_kb(cat_id),
         )
@@ -1194,7 +1194,7 @@ async def delete_all_ask(
     clusters: list[dict[str, Any]] = category.keywords or []
     total = sum(len(c.get("phrases", [])) for c in clusters)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Удалить все ключевые фразы ({total} фраз, {len(clusters)} кластеров)?\nЭто действие необратимо.",
         reply_markup=keywords_delete_all_confirm_kb(cat_id),
     )
@@ -1225,7 +1225,7 @@ async def delete_all_confirm(
     log.info("keywords_deleted_all", cat_id=cat_id, user_id=user.id)
 
     safe_name = html.escape(category.name)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>Ключевые фразы</b> — {safe_name}\n\nВсе фразы удалены.",
         reply_markup=keywords_empty_kb(cat_id),
     )
@@ -1256,14 +1256,14 @@ async def cancel_generation_inline(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if category:
         safe_name = html.escape(category.name)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await callback.message.edit_text("Подбор фраз отменён.")
+    await msg.edit_text("Подбор фраз отменён.")
     await callback.answer()
 
 
@@ -1286,12 +1286,12 @@ async def cancel_upload_inline(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if category:
         safe_name = html.escape(category.name)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await callback.message.edit_text("Загрузка отменена.")
+    await msg.edit_text("Загрузка отменена.")
     await callback.answer()

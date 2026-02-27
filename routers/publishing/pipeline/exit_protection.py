@@ -123,9 +123,10 @@ async def exit_confirm(
 @router.callback_query(F.data.in_({"pipeline:article:exit_cancel", "pipeline:social:exit_cancel"}))
 async def exit_cancel(callback: CallbackQuery) -> None:
     """User chose to continue — dismiss confirmation dialog."""
-    if safe_message(callback):
+    msg = safe_message(callback)
+    if msg:
         try:
-            await callback.message.delete()
+            await msg.delete()
         except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound):  # fmt: skip
             log.debug("exit_cancel.delete_failed")
     await callback.answer("Продолжаем!")

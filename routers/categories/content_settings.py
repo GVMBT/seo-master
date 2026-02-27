@@ -158,7 +158,7 @@ async def show_settings(
         lines.append("Стиль изображений: по умолчанию")
 
     settings_dict = {**ts, **img}
-    await callback.message.edit_text(
+    await msg.edit_text(
         "\n".join(lines),
         reply_markup=content_settings_kb(category_id, settings_dict),
     )
@@ -192,7 +192,7 @@ async def text_length(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     ts = _get_text_settings(category)
     current_min = ts.get("min_words", 1500)
@@ -204,7 +204,7 @@ async def text_length(
         settings_cat_id=cat_id,
     )
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Текущая длина: {current_min}–{current_max} слов.\n\n"
         "Введите <b>минимальную</b> длину статьи (500–10000 слов):",
         reply_markup=cancel_kb(f"cs:{cat_id}:cancel"),
@@ -321,7 +321,7 @@ async def text_style(
     ts = _get_text_settings(category)
     selected: list[str] = ts.get("styles", [])
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Выберите стили текста (можно несколько):",
         reply_markup=text_style_kb(cat_id, selected),
     )
@@ -368,7 +368,7 @@ async def toggle_style(
     cats_repo = CategoriesRepository(db)
     await cats_repo.update(cat_id, CategoryUpdate(text_settings=ts))
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Выберите стили текста (можно несколько):",
         reply_markup=text_style_kb(cat_id, selected),
     )
@@ -404,7 +404,7 @@ async def save_styles(
     lines = [f"<b>Настройки контента</b> — {safe_name}\n"]
     lines.append(f"Стиль текста: {', '.join(selected) if selected else 'не выбран'}")
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "\n".join(lines),
         reply_markup=content_settings_kb(cat_id, {**ts, **img}),
     )
@@ -438,7 +438,7 @@ async def img_count(
     img = _get_image_settings(category)
     current = img.get("count", 4)  # default 4
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Выберите количество изображений на статью:",
         reply_markup=image_count_kb(cat_id, current),
     )
@@ -479,7 +479,7 @@ async def select_img_count(
 
     ts = _get_text_settings(category)
     safe_name = html.escape(category.name)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>Настройки контента</b> — {safe_name}\n\nИзображений: {count}/статью",
         reply_markup=content_settings_kb(cat_id, {**ts, **img}),
     )
@@ -513,7 +513,7 @@ async def img_style(
     img = _get_image_settings(category)
     current = img.get("style")
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Выберите стиль изображений:",
         reply_markup=image_style_kb(cat_id, current),
     )
@@ -555,7 +555,7 @@ async def select_img_style(
 
     ts = _get_text_settings(category)
     safe_name = html.escape(category.name)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"<b>Настройки контента</b> — {safe_name}\n\nСтиль изображений: {style_name}",
         reply_markup=content_settings_kb(cat_id, {**ts, **img}),
     )
@@ -586,12 +586,12 @@ async def cancel_text_length_inline(
     _, category = await _check_category_ownership(cat_id, user, db)
     if category:
         safe_name = html.escape(category.name)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await callback.message.edit_text("Настройка длины отменена.")
+    await msg.edit_text("Настройка длины отменена.")
     await callback.answer()

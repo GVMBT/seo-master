@@ -111,12 +111,12 @@ async def start_create(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(ProjectCreateFSM.name)
     await state.update_data(last_update_time=time.time())
 
-    await callback.message.answer(
+    await msg.answer(
         "Как назовём проект?\nЭто внутреннее имя для вашего удобства.\n\n<i>Пример: Мебель Комфорт</i>",
         reply_markup=cancel_kb("project:create:cancel"),
     )
@@ -269,7 +269,7 @@ async def show_edit_screen(
         return
 
     text = _build_edit_text(project)
-    await callback.message.edit_text(text, reply_markup=project_edit_kb(project_id))
+    await msg.edit_text(text, reply_markup=project_edit_kb(project_id))
     await callback.answer()
 
 
@@ -326,7 +326,7 @@ async def start_field_edit(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(ProjectEditFSM.field_value)
     await state.update_data(
@@ -337,7 +337,7 @@ async def start_field_edit(
 
     label = _FIELD_LABELS[field]
     current = getattr(project, field, None) or "—"
-    await callback.message.answer(
+    await msg.answer(
         f"Введите новое значение для поля «{label}».\nТекущее: {html.escape(str(current))}",
         reply_markup=cancel_kb("project:edit:cancel"),
     )
@@ -432,7 +432,7 @@ async def cancel_create(
         return
 
     await state.clear()
-    await callback.message.edit_text("Создание проекта отменено.")
+    await msg.edit_text("Создание проекта отменено.")
     await callback.answer()
 
 
@@ -458,9 +458,9 @@ async def cancel_edit(
         project = await repo.get_by_id(int(project_id))
         if project and project.user_id == user.id:
             edit_text = _build_edit_text(project)
-            await callback.message.edit_text(edit_text, reply_markup=project_edit_kb(int(project_id)))
+            await msg.edit_text(edit_text, reply_markup=project_edit_kb(int(project_id)))
             await callback.answer()
             return
 
-    await callback.message.edit_text("Редактирование отменено.")
+    await msg.edit_text("Редактирование отменено.")
     await callback.answer()

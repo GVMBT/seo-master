@@ -158,7 +158,7 @@ async def run_keyword_generation(
     async def _safe_edit(text: str) -> None:
         """Edit message, silently ignoring Telegram errors (expired message, etc.)."""
         try:
-            await msg.edit_text(text)  # type: ignore[union-attr]
+            await msg.edit_text(text)
         except Exception:
             log.debug(f"{log_prefix}.edit_failed", text=text[:50])
 
@@ -331,7 +331,7 @@ async def generate_description_ai(
 
     # Answer callback immediately so the button stops "loading"
     await callback.answer()
-    await callback.message.edit_text("Генерирую описание...")  # type: ignore[union-attr]
+    await msg.edit_text("Генерирую описание...")
 
     # Debit-first: charge before generation, refund on failure
     try:
@@ -343,7 +343,7 @@ async def generate_description_ai(
         )
     except Exception:
         log.exception(f"{log_prefix}.description_charge_failed", user_id=user.id)
-        await callback.message.edit_text("Ошибка списания токенов.")  # type: ignore[union-attr]
+        await msg.edit_text("Ошибка списания токенов.")
         return
 
     # Generate + save; refund on any failure
@@ -373,7 +373,7 @@ async def generate_description_ai(
             user_id=user.id,
             category_id=category_id,
         )
-        await callback.message.edit_text("Ошибка генерации описания. Токены возвращены.")  # type: ignore[union-attr]
+        await msg.edit_text("Ошибка генерации описания. Токены возвращены.")
         return
 
     log.info(
@@ -423,7 +423,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Ключевые фразы\n\nВыберите способ добавления:",
             reply_markup=pipeline_keywords_options_kb(prefix=prefix),
         )
@@ -471,7 +471,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await state.set_state(fsm.readiness_keywords_geo)
             await state.update_data(kw_products=products, kw_mode="auto")
 
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "В каком городе ваш бизнес?\n<i>Для точных SEO-фраз</i>",
                 reply_markup=pipeline_keywords_city_kb(prefix=prefix),
             )
@@ -493,7 +493,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             kw_cost=cost,
         )
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Автоподбор ключевых фраз\n\n"
             f"Тема: {html.escape(products)}\n"
             f"География: {html.escape(geography)}\n"
@@ -522,7 +522,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         await state.set_state(fsm.readiness_keywords_products)
         await state.update_data(kw_mode="configure")
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Какие товары или услуги продвигаете?\n"
             "<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>\n\n"
             "От 3 до 1000 символов.",
@@ -546,7 +546,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Загрузите TXT-файл с ключевыми фразами.\n"
             "Одна фраза на строку, максимум 500 фраз, до 1 МБ.\n\n"
             "Или отправьте фразы текстом (каждая с новой строки).",
@@ -773,7 +773,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
                 kw_cost=cost,
             )
 
-            await callback.message.edit_text(
+            await msg.edit_text(
                 f"Автоподбор ключевых фраз\n\n"
                 f"Тема: {html.escape(products)}\n"
                 f"География: {html.escape(city)}\n"
@@ -786,7 +786,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await state.set_state(fsm.readiness_keywords_qty)
             await state.update_data(kw_geography=city)
 
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "Сколько ключевых фраз подобрать?",
                 reply_markup=pipeline_keywords_qty_kb(prefix=prefix),
             )
@@ -864,7 +864,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
 
         await state.update_data(kw_quantity=quantity, kw_cost=cost)
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Подбор ключевых фраз\n\n"
             f"Тема: {html.escape(products)}\n"
             f"География: {html.escape(geography)}\n"
@@ -938,7 +938,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             return
 
         await state.set_state(fsm.readiness_keywords_generating)
-        await callback.message.edit_text("Получаю реальные фразы из DataForSEO...")
+        await msg.edit_text("Получаю реальные фразы из DataForSEO...")
         await callback.answer()
 
         await run_keyword_generation(
@@ -999,7 +999,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Описание компании/категории\n\nAI напишет точнее с контекстом о вашей компании.",
             reply_markup=pipeline_description_options_kb(prefix=prefix),
         )
@@ -1047,7 +1047,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Введите описание компании/категории (10-2000 символов).\n\n"
             f"Чем подробнее -- тем точнее будут {cfg.description_hint}.",
             reply_markup=pipeline_back_to_checklist_kb(prefix=prefix),

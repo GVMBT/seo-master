@@ -78,7 +78,7 @@ async def show_project_card(
     lines.append(f"Публикаций: {pub_count}")
 
     text = "\n".join(lines)
-    await callback.message.edit_text(text, reply_markup=project_card_kb(project_id))
+    await msg.edit_text(text, reply_markup=project_card_kb(project_id))
     await callback.answer()
 
 
@@ -117,7 +117,7 @@ async def confirm_delete(
         return
 
     safe_name = html.escape(project.name)
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Удалить проект «{safe_name}»?\n\n"
         "Будут удалены все категории, подключения и расписания.\n"
         "Это действие нельзя отменить.",
@@ -166,13 +166,13 @@ async def execute_delete(
 
     if deleted:
         safe_name = html.escape(project.name)
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Проект «{safe_name}» удалён.",
             reply_markup=project_deleted_kb(),
         )
         log.info("project_deleted", project_id=project_id, user_id=user.id)
     else:
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Ошибка удаления проекта.",
             reply_markup=project_deleted_kb(),
         )

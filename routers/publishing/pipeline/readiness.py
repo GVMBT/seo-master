@@ -120,7 +120,8 @@ async def show_readiness_check(
     Called from article.py after category selection, and after each sub-flow completes.
     When force_show=True (e.g. "back to checklist" from confirm), always show checklist.
     """
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
         return
 
     data = await state.get_data()
@@ -128,7 +129,7 @@ async def show_readiness_check(
     project_id = data.get("project_id")
     project_name = data.get("project_name", "")
     if not category_id:
-        await callback.message.edit_text("Категория не выбрана. Начните заново.")
+        await msg.edit_text("Категория не выбрана. Начните заново.")
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -151,7 +152,7 @@ async def show_readiness_check(
 
     text = _build_checklist_text(report, data)
     kb = pipeline_readiness_kb(report)
-    await callback.message.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=kb)
     await state.set_state(ArticlePipelineFSM.readiness_check)
     await state.update_data(image_count=image_count)
     await save_checkpoint(
@@ -276,7 +277,7 @@ async def readiness_prices_menu(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Добавить прайс-лист?\n\nВ статье будут реальные цены ваших товаров.",
         reply_markup=pipeline_prices_options_kb(),
     )
@@ -297,7 +298,7 @@ async def readiness_prices_text_start(
         await callback.answer()
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Введите прайс-лист текстом.\n"
         "Формат: Товар — Цена (каждый с новой строки).\n\n"
         "<i>Пример:\nКухня Прага — от 120 000 руб.\nШкаф-купе — от 45 000 руб.</i>",
@@ -374,7 +375,7 @@ async def readiness_prices_excel_start(
         await callback.answer()
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Загрузите Excel-файл (.xlsx) с прайсом.\n"
         "Колонки: A — Название, B — Цена, C — Описание (опц.).\n"
         "Максимум 1000 строк, 5 МБ.",
@@ -483,7 +484,7 @@ async def readiness_images_menu(callback: CallbackQuery, state: FSMContext) -> N
     data = await state.get_data()
     current_count = data.get("image_count", 4)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Изображения — сейчас: {current_count} AI\n\nВыберите количество:",
         reply_markup=pipeline_images_options_kb(current_count),
     )

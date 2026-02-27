@@ -111,7 +111,8 @@ async def show_social_readiness_check(
     Called from social.py after category selection, and after each sub-flow completes.
     When force_show=True (e.g. "back to checklist" from confirm), always show checklist.
     """
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
         return
 
     data = await state.get_data()
@@ -120,7 +121,7 @@ async def show_social_readiness_check(
     project_name = data.get("project_name", "")
     connection_id = data.get("connection_id")
     if not category_id:
-        await callback.message.edit_text("Категория не выбрана. Начните заново.")
+        await msg.edit_text("Категория не выбрана. Начните заново.")
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -141,7 +142,7 @@ async def show_social_readiness_check(
 
     text = _build_social_checklist_text(report, data)
     kb = social_readiness_kb(report)
-    await callback.message.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=kb)
     await state.set_state(SocialPipelineFSM.readiness_check)
     await save_checkpoint(
         redis,

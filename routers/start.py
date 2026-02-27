@@ -400,7 +400,8 @@ async def _route_to_step(
     preview_id: int | None,
 ) -> None:
     """Route user to the correct pipeline screen based on checkpoint step."""
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
         return
 
     # Steps 1-3: re-run from selection screen
@@ -408,12 +409,12 @@ async def _route_to_step(
         projects_repo = ProjectsRepository(db)
         projects = await projects_repo.get_by_user(user.id)
         if not projects:
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
                 reply_markup=pipeline_no_projects_kb(),
             )
         else:
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "Статья (1/5) — Проект\n\nДля какого проекта?",
                 reply_markup=pipeline_projects_kb(projects),
             )
@@ -421,7 +422,7 @@ async def _route_to_step(
         return
 
     if step == "select_wp":
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
             reply_markup=pipeline_no_wp_kb(),
         )
@@ -430,14 +431,14 @@ async def _route_to_step(
 
     if step == "select_category":
         if not project_id:
-            await callback.message.edit_text("Данные сессии устарели. Начните заново.")
+            await msg.edit_text("Данные сессии устарели. Начните заново.")
             await redis.delete(CacheKeys.pipeline_state(user.id))
             await state.clear()
             return
         cats_repo = CategoriesRepository(db)
         categories = await cats_repo.get_by_project(project_id)
         if not categories:
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
                 reply_markup=cancel_kb("pipeline:article:cancel"),
             )
@@ -449,7 +450,7 @@ async def _route_to_step(
 
             await show_readiness_check(callback, state, user, db, redis)
         else:
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "Статья (3/5) — Тема\n\nКакая тема?",
                 reply_markup=pipeline_categories_kb(categories, project_id),
             )
@@ -482,19 +483,19 @@ async def _route_to_step(
                 f"Объём: ~{preview.word_count or 0} слов | Изображения: {preview.images_count or 0}",
                 f"Списано: {preview.tokens_charged or 0} ток.",
             ]
-            await callback.message.edit_text("\n".join(lines), reply_markup=kb)
+            await msg.edit_text("\n".join(lines), reply_markup=kb)
             await state.set_state(ArticlePipelineFSM.preview)
             return
 
         # Preview expired or already published
-        await callback.message.edit_text("Превью устарело. Начните заново.")
+        await msg.edit_text("Превью устарело. Начните заново.")
         await redis.delete(CacheKeys.pipeline_state(user.id))
         return
 
     # Fallback: show dashboard
     log.warning("pipeline.resume_unknown_step", step=step, user_id=user.id)
     text, kb = await _build_dashboard(user, False, db, redis)
-    await callback.message.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=kb)
 
 
 # ---------------------------------------------------------------------------
@@ -601,7 +602,8 @@ async def _route_social_to_step(
     connection_id: int | None,
 ) -> None:
     """Route user to the correct social pipeline screen based on checkpoint step."""
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
         return
 
     # Steps 1-3: re-run from selection screen
@@ -611,7 +613,7 @@ async def _route_social_to_step(
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await state.clear()
     text, kb = await _build_dashboard(user, is_new_user=False, db=db, redis=redis)
-    await callback.message.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "pipeline:restart")

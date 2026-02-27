@@ -66,7 +66,7 @@ async def nav_profile(
             f"Прогноз расхода:\n~{stats['tokens_per_week']} токенов/неделю\n~{stats['tokens_per_month']} токенов/месяц"
         )
 
-    await callback.message.edit_text(text, reply_markup=profile_kb())
+    await msg.edit_text(text, reply_markup=profile_kb())
     await callback.answer()
 
 
@@ -88,7 +88,7 @@ async def show_notifications(
 
     text = "<b>Уведомления</b>\n\nНажмите для переключения:"
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         text,
         reply_markup=notifications_kb(
             notify_publications=user.notify_publications,
@@ -139,7 +139,7 @@ async def toggle_notification(
 
     text = "<b>Уведомления</b>\n\nНажмите для переключения:"
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         text,
         reply_markup=notifications_kb(
             notify_publications=updated_user.notify_publications,
@@ -183,7 +183,7 @@ async def show_referral(
         f"Заработано: <b>{referral_earned}</b> токенов"
     )
 
-    await callback.message.edit_text(text, reply_markup=referral_kb())
+    await msg.edit_text(text, reply_markup=referral_kb())
     await callback.answer()
 
 
@@ -218,7 +218,7 @@ async def cb_privacy(callback: CallbackQuery) -> None:
         await callback.answer()
         return
     # Send as new messages (legal text is too long for editMessageText)
-    await _send_legal_chunks(callback.message, PRIVACY_POLICY_CHUNKS)
+    await _send_legal_chunks(msg, PRIVACY_POLICY_CHUNKS)
     await callback.answer()
 
 
@@ -229,7 +229,7 @@ async def cb_terms(callback: CallbackQuery) -> None:
     if not msg:
         await callback.answer()
         return
-    await _send_legal_chunks(callback.message, TERMS_OF_SERVICE_CHUNKS)
+    await _send_legal_chunks(msg, TERMS_OF_SERVICE_CHUNKS)
     await callback.answer()
 
 
@@ -284,13 +284,13 @@ async def confirm_delete_account(
     )
 
     if result.success:
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Ваш аккаунт и все данные удалены.\n\n"
             "Вы можете начать заново с /start"
         )
         log.info("delete_account_success", user_id=user.id)
     else:
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Произошла ошибка при удалении аккаунта. "
             "Обратитесь в поддержку.",
             reply_markup=delete_account_cancelled_kb(),
@@ -314,7 +314,7 @@ async def cancel_delete_account(
         await callback.answer()
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Удаление аккаунта отменено.",
         reply_markup=delete_account_cancelled_kb(),
     )

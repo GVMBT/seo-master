@@ -90,7 +90,7 @@ async def pipeline_social_start(
     projects = await repo.get_by_user(user.id)
 
     if not projects:
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля начала создадим проект — это 30 секунд.",
             reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
         )
@@ -115,7 +115,7 @@ async def pipeline_social_start(
         await callback.answer()
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
     )
@@ -187,7 +187,7 @@ async def pipeline_projects_page(
     repo = ProjectsRepository(db)
     projects = await repo.get_by_user(user.id)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, page=page, pipeline_type="social"),
     )
@@ -215,7 +215,7 @@ async def pipeline_start_create_project(
 
     await state.set_state(SocialPipelineFSM.create_project_name)
     await state.update_data(last_update_time=time.time())
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (1/{_TOTAL_STEPS}) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
@@ -368,14 +368,15 @@ async def _show_category_step(
     - 1 category -> auto-select, skip to step 4
     - >1 categories -> show list with pagination
     """
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
         return
 
     repo = CategoriesRepository(db)
     categories = await repo.get_by_project(project_id)
 
     if not categories:
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nО чём будет пост? Назовите тему.",
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
@@ -396,7 +397,7 @@ async def _show_category_step(
         await show_social_readiness_check(callback, state, user, db, redis)
         return
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
@@ -531,7 +532,7 @@ async def pipeline_categories_page(
     repo = CategoriesRepository(db)
     categories = await repo.get_by_project(project_id)
 
-    await callback.message.edit_text(
+    await msg.edit_text(
         f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, page=page, pipeline_type="social"),
     )

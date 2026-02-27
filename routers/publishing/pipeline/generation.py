@@ -97,12 +97,13 @@ async def show_confirm(
 
     Called from readiness.py when all required items are filled.
     """
-    if not safe_message(callback):
+    msg = safe_message(callback)
+    if not msg:
         return
 
     text = _build_confirm_text(fsm_data, report, user)
     kb = _get_confirm_kb(report, user)
-    await callback.message.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=kb)
     await state.set_state(ArticlePipelineFSM.confirm_cost)
     await save_checkpoint(
         redis,
@@ -290,7 +291,7 @@ async def confirm_generate(
 
     # Run generation as background process
     await _run_generation(
-        callback.message,
+        msg,
         state,
         user,
         db,
@@ -641,14 +642,14 @@ async def publish_article(
 
     await state.update_data(last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.publishing)
-    await callback.message.edit_text("Публикую на WordPress...")
+    await msg.edit_text("Публикую на WordPress...")
 
     try:
         # Load WP connection
         conn_svc = ConnectionService(db, http_client)
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "WordPress-подключение не найдено. Проверьте настройки.",
             )
             await callback.answer()
@@ -666,7 +667,7 @@ async def publish_article(
             log.exception("pipeline.publish_failed", preview_id=preview_id, error=str(exc))
             # Revert to draft on failure
             await previews_repo.update(preview_id, ArticlePreviewUpdate(status="draft"))
-            await callback.message.edit_text(
+            await msg.edit_text(
                 "Ошибка публикации на WordPress. Попробуйте снова.",
                 reply_markup=pipeline_preview_kb(
                     preview.telegraph_url,
@@ -706,7 +707,7 @@ async def publish_article(
             f"<b>{html.escape(preview.title or '')}</b>\n"
             f"Списано: {preview.tokens_charged or 0} ток. | Баланс: {balance} ток."
         )
-        await callback.message.edit_text(
+        await msg.edit_text(
             result_text,
             reply_markup=pipeline_result_kb(result.post_url),
         )
@@ -826,7 +827,7 @@ async def regenerate_article(
 
     # Run generation with same data
     await _run_generation(
-        callback.message,
+        msg,
         state,
         user,
         db,
@@ -888,7 +889,7 @@ async def cancel_refund(
 
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    await callback.message.edit_text("Статья отменена. Токены возвращены.")
+    await msg.edit_text("Статья отменена. Токены возвращены.")
     await callback.answer()
 
 
@@ -980,7 +981,7 @@ async def copy_html(
     safe_name = re.sub(r"[^\w\-]", "_", preview.keyword or "article")[:40].strip("_") or "article"
     filename = f"{safe_name}.html"
     doc = BufferedInputFile(html_bytes, filename=filename)
-    await callback.message.answer_document(doc, caption="HTML-код статьи")
+    await msg.answer_document(doc, caption="HTML-код статьи")
     await callback.answer()
 
 
@@ -1003,7 +1004,7 @@ async def connect_wp_publish(
 
     await state.update_data(from_preview=True)
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
-    await callback.message.edit_text(
+    await msg.edit_text(
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
     )
     await callback.answer()
@@ -1055,7 +1056,7 @@ async def _jump_to_category_selection(
     if not categories:
         from keyboards.inline import cancel_kb
 
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
@@ -1067,7 +1068,7 @@ async def _jump_to_category_selection(
 
         await show_readiness_check(callback, state, user, db, redis)
     else:
-        await callback.message.edit_text(
+        await msg.edit_text(
             "Статья (3/5) — Тема\n\nКакая тема?",
             reply_markup=pipeline_categories_kb(categories, project_id),
         )

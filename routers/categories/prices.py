@@ -118,7 +118,7 @@ async def show_prices(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    await _show_prices_screen(callback.message, category.id, category.name, category.prices)
+    await _show_prices_screen(msg, category.id, category.name, category.prices)
     await callback.answer()
 
 
@@ -148,12 +148,12 @@ async def start_text(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(PriceInputFSM.text_input)
     await state.update_data(last_update_time=time.time(), prices_cat_id=cat_id)
 
-    await callback.message.answer(
+    await msg.answer(
         "Введите прайс-лист. Формат: Название \u2014 Цена\n"
         "Каждый товар с новой строки.\n\n"
         "<i>Пример:\n"
@@ -251,12 +251,12 @@ async def start_excel(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await callback.message.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(PriceInputFSM.file_upload)
     await state.update_data(last_update_time=time.time(), prices_cat_id=cat_id)
 
-    await callback.message.answer(
+    await msg.answer(
         "Загрузите Excel-файл (.xlsx) с прайсом.\nФормат: колонка A = название, колонка B = цена.",
         reply_markup=cancel_kb(f"price:{cat_id}:cancel"),
     )
@@ -443,7 +443,7 @@ async def delete_prices(
 
     log.info("prices_deleted", category_id=cat_id, user_id=user.id)
 
-    await _show_prices_screen(callback.message, category.id, category.name, None)
+    await _show_prices_screen(msg, category.id, category.name, None)
     await callback.answer("Прайс удалён.")
 
 
@@ -470,12 +470,12 @@ async def cancel_prices_inline(
 
     _, category, project = await _verify_category_ownership(cat_id, user, db)
     if category and project:
-        await callback.message.edit_text(
+        await msg.edit_text(
             f"<b>{html.escape(category.name)}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await callback.message.edit_text("Ввод цен отменён.")
+    await msg.edit_text("Ввод цен отменён.")
     await callback.answer()
