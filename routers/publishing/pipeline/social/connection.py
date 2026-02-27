@@ -78,6 +78,7 @@ async def _show_connection_step(
     """
     msg = safe_message(callback)
     if not msg:
+        await callback.answer()
         return
 
     from routers.publishing.pipeline.social.social import _show_category_step

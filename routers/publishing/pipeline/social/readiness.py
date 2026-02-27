@@ -113,6 +113,7 @@ async def show_social_readiness_check(
     """
     msg = safe_message(callback)
     if not msg:
+        await callback.answer()
         return
 
     data = await state.get_data()
