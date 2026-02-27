@@ -11,10 +11,11 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from db.client import SupabaseClient
 from db.models import Category, CategoryUpdate, User
 from db.repositories.categories import CategoriesRepository
@@ -108,7 +109,8 @@ async def show_description(
     db: SupabaseClient,
 ) -> None:
     """Show category description (UX_TOOLBOX section 10 / 10.3)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -136,7 +138,8 @@ async def start_generate(
     db: SupabaseClient,
 ) -> None:
     """Start AI description generation — show cost confirmation."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -185,7 +188,8 @@ async def confirm_generate(
     ai_orchestrator: AIOrchestrator,
 ) -> None:
     """Confirm AI generation — E01 balance check, charge, generate."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -273,7 +277,8 @@ async def cancel_generate(
     db: SupabaseClient,
 ) -> None:
     """Cancel generation — return to category card."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -309,7 +314,8 @@ async def review_save(
     db: SupabaseClient,
 ) -> None:
     """Save generated description to category."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -340,7 +346,8 @@ async def review_regenerate(
     ai_orchestrator: AIOrchestrator,
 ) -> None:
     """Regenerate description. First 2 are free, then charge again (FSM_SPEC 2.2)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -430,7 +437,8 @@ async def review_cancel(
     db: SupabaseClient,
 ) -> None:
     """Cancel review — return to category card. Tokens already spent (not refunded)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -466,7 +474,8 @@ async def start_manual(
     db: SupabaseClient,
 ) -> None:
     """Start manual description input (UX_TOOLBOX section 10.2)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -545,7 +554,8 @@ async def delete_description(
     db: SupabaseClient,
 ) -> None:
     """Clear category description."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -578,7 +588,8 @@ async def cancel_manual_inline(
     db: SupabaseClient,
 ) -> None:
     """Cancel manual description input via inline button — return to category card."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

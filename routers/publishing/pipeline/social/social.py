@@ -18,9 +18,10 @@ import httpx
 import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from bot.validators import URL_RE
 from cache.client import RedisClient
 from db.client import SupabaseClient
@@ -75,7 +76,8 @@ async def pipeline_social_start(
     - 1 project -> auto-select, skip to step 2
     - >1 projects -> show list with pagination
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -135,7 +137,8 @@ async def pipeline_select_project(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Handle project selection from list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -175,7 +178,8 @@ async def pipeline_projects_page(
     db: SupabaseClient,
 ) -> None:
     """Handle project list pagination."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -204,7 +208,8 @@ async def pipeline_start_create_project(
     state: FSMContext,
 ) -> None:
     """Start inline project creation within social pipeline."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -363,7 +368,7 @@ async def _show_category_step(
     - 1 category -> auto-select, skip to step 4
     - >1 categories -> show list with pagination
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     repo = CategoriesRepository(db)
@@ -468,7 +473,8 @@ async def pipeline_select_category(
     redis: RedisClient,
 ) -> None:
     """Handle category selection from list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -510,7 +516,8 @@ async def pipeline_categories_page(
     db: SupabaseClient,
 ) -> None:
     """Handle category list pagination."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -586,6 +593,6 @@ async def pipeline_social_cancel(
     """Cancel social pipeline, clear FSM and checkpoint."""
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+    if safe_message(callback):
         await callback.message.edit_text("Pipeline отменён.")
     await callback.answer()

@@ -4,9 +4,11 @@ import html
 
 import structlog
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, InaccessibleMessage
+from aiogram.types import CallbackQuery
 
 from bot.config import get_settings
+from bot.helpers import get_owned_project, safe_message
+from bot.service_factory import TokenServiceFactory
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
 from db.models import User
@@ -17,7 +19,6 @@ from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from keyboards.inline import project_card_kb, project_delete_confirm_kb, project_deleted_kb
 from services.scheduler import SchedulerService
-from services.tokens import TokenService
 
 log = structlog.get_logger()
 router = Router()
@@ -35,15 +36,14 @@ async def show_project_card(
     db: SupabaseClient,
 ) -> None:
     """Show project card (UX_TOOLBOX.md section 3.1-3.2)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
-
-    if not project or project.user_id != user.id:
+    project = await get_owned_project(db, project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -105,15 +105,14 @@ async def confirm_delete(
     db: SupabaseClient,
 ) -> None:
     """Show delete confirmation dialog."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
-
-    if not project or project.user_id != user.id:
+    project = await get_owned_project(db, project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -133,21 +132,19 @@ async def execute_delete(
     user: User,
     db: SupabaseClient,
     scheduler_service: SchedulerService,
+    token_service_factory: TokenServiceFactory,
 ) -> None:
     """Delete project with E11 cleanup: QStash cancel, E42 preview refund."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
-
-    if not project or project.user_id != user.id:
+    project = await get_owned_project(db, project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
-
-    settings = get_settings()
 
     # E11: Cancel QStash schedules BEFORE CASCADE delete
     await scheduler_service.cancel_schedules_for_project(project_id)
@@ -156,7 +153,7 @@ async def execute_delete(
     previews_repo = PreviewsRepository(db)
     active_previews = await previews_repo.get_active_drafts_by_project(project_id)
     if active_previews:
-        token_service = TokenService(db=db, admin_ids=settings.admin_ids)
+        token_service = token_service_factory(db)
         await token_service.refund_active_previews(
             active_previews,
             user.id,
@@ -164,6 +161,7 @@ async def execute_delete(
         )
 
     # Delete project (CASCADE deletes categories, connections, schedules)
+    repo = ProjectsRepository(db)
     deleted = await repo.delete(project_id)
 
     if deleted:

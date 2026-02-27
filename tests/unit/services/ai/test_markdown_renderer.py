@@ -152,11 +152,40 @@ class TestRenderMarkdown:
         html = render_markdown(md, insert_toc=False)
         assert "toc" not in html
 
-    def test_render_with_branding_adds_style(self) -> None:
+    def test_render_with_branding_adds_inline_style(self) -> None:
+        """S5: Branding colors are applied via inline styles, not <style> block."""
         md = "# Hello\n\nText."
         html = render_markdown(md, branding={"accent": "#ff0000"}, insert_toc=False)
-        assert "<style>" in html
+        # S5: no <style> block (nh3 would strip it), instead inline styles
+        assert "<style>" not in html
         assert "#ff0000" in html
+        # Heading should have inline style with accent color
+        assert 'style="color: #ff0000"' in html
+
+    def test_render_with_branding_text_color_on_paragraph(self) -> None:
+        """S5: text color applied as inline style on paragraphs."""
+        md = "Some paragraph."
+        html = render_markdown(md, branding={"text": "#333333"}, insert_toc=False)
+        assert 'style="color: #333333"' in html
+        assert "<p" in html
+
+    def test_render_with_branding_survives_nh3(self) -> None:
+        """S5: Inline styles survive nh3 sanitization (end-to-end)."""
+        from services.ai.articles import sanitize_html
+
+        md = "# Heading\n\nParagraph with [link](https://example.com)."
+        html = render_markdown(md, branding={"accent": "#0066cc", "text": "#333"}, insert_toc=False)
+        sanitized = sanitize_html(html)
+        # Inline styles should survive nh3 sanitization
+        assert "#0066cc" in sanitized
+        assert "#333" in sanitized
+
+    def test_render_with_link_gets_accent_style(self) -> None:
+        """S5: Links get accent color via inline style."""
+        md = "Click [here](https://example.com)."
+        html = render_markdown(md, branding={"accent": "#0066cc"}, insert_toc=False)
+        assert 'style="color: #0066cc"' in html
+        assert "https://example.com" in html
 
     def test_render_markdown_e47_fallback(self) -> None:
         """E47: On parse error, fallback to <pre> block.

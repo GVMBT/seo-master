@@ -32,6 +32,23 @@ class CategoriesRepository(BaseRepository):
         resp = await self._table(_TABLE).select("*").eq("project_id", project_id).order("name").execute()
         return [Category(**row) for row in self._rows(resp)]
 
+    async def get_by_projects(self, project_ids: list[int]) -> list[Category]:
+        """Get all categories for multiple projects in a single query (C20: batch).
+
+        Returns categories ordered by project_id, then name.
+        """
+        if not project_ids:
+            return []
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .in_("project_id", project_ids)
+            .order("project_id")
+            .order("name")
+            .execute()
+        )
+        return [Category(**row) for row in self._rows(resp)]
+
     async def get_count_by_project(self, project_id: int) -> int:
         """Count categories in a project."""
         resp = (

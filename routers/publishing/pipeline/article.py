@@ -21,9 +21,10 @@ import structlog
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from bot.validators import URL_RE
 from cache.client import RedisClient
 from db.client import SupabaseClient
@@ -82,7 +83,8 @@ async def pipeline_article_start(
     - 1 project -> auto-select, skip to step 2
     - >1 projects -> show list with pagination
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -136,7 +138,8 @@ async def pipeline_select_project(
     redis: RedisClient,
 ) -> None:
     """Handle project selection from list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -167,7 +170,8 @@ async def pipeline_projects_page(
     db: SupabaseClient,
 ) -> None:
     """Handle project list pagination."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -197,7 +201,8 @@ async def pipeline_start_create_project(
     state: FSMContext,
 ) -> None:
     """Start inline project creation within pipeline."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -341,7 +346,7 @@ async def _show_wp_step(
 
     Rule: 1 project = max 1 WordPress connection. No multi-WP branch needed.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     conn_svc = ConnectionService(db, http_client)
@@ -382,7 +387,8 @@ async def pipeline_preview_only(
     redis: RedisClient,
 ) -> None:
     """User chose preview-only (no WP publication)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -453,7 +459,8 @@ async def pipeline_start_connect_wp(
     state: FSMContext,
 ) -> None:
     """Start inline WP connection within pipeline."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -612,7 +619,8 @@ async def pipeline_cancel_wp_subflow(
     redis: RedisClient,
 ) -> None:
     """Cancel WP connection sub-flow — return to step 2 screen."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -662,7 +670,7 @@ async def _show_category_step(
     - 1 category -> auto-select, skip to step 4
     - >1 categories -> show list with pagination
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     repo = CategoriesRepository(db)
@@ -778,7 +786,8 @@ async def pipeline_select_category(
     redis: RedisClient,
 ) -> None:
     """Handle category selection from list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -933,6 +942,6 @@ async def pipeline_article_cancel(
     """Cancel article pipeline, clear FSM and checkpoint."""
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+    if safe_message(callback):
         await callback.message.edit_text("Pipeline отменён.")
     await callback.answer()

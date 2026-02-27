@@ -12,9 +12,10 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from db.client import SupabaseClient
 from db.models import Category, CategoryUpdate, User
 from db.repositories.categories import CategoriesRepository
@@ -112,7 +113,8 @@ async def show_settings(
     db: SupabaseClient,
 ) -> None:
     """Main content settings screen (UX_TOOLBOX section 12)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -176,7 +178,8 @@ async def text_length(
     db: SupabaseClient,
 ) -> None:
     """Start text length input (UX_TOOLBOX section 12.1)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -303,7 +306,8 @@ async def text_style(
     db: SupabaseClient,
 ) -> None:
     """Show text style multi-select grid (UX_TOOLBOX section 12.2)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -331,7 +335,8 @@ async def toggle_style(
     db: SupabaseClient,
 ) -> None:
     """Toggle a text style on/off (index-based callback)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -377,7 +382,8 @@ async def save_styles(
     db: SupabaseClient,
 ) -> None:
     """Save styles and return to settings screen."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -417,7 +423,8 @@ async def img_count(
     db: SupabaseClient,
 ) -> None:
     """Show image count selection 0-10 (UX_TOOLBOX section 12.3)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -445,7 +452,8 @@ async def select_img_count(
     db: SupabaseClient,
 ) -> None:
     """Save selected image count and return to settings."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -490,7 +498,8 @@ async def img_style(
     db: SupabaseClient,
 ) -> None:
     """Show image style selection (UX_TOOLBOX section 12.4)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -518,7 +527,8 @@ async def select_img_style(
     db: SupabaseClient,
 ) -> None:
     """Save selected image style and return to settings (index-based callback)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -565,7 +575,8 @@ async def cancel_text_length_inline(
     db: SupabaseClient,
 ) -> None:
     """Cancel text length input via inline button — return to category card."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

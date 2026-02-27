@@ -68,7 +68,7 @@ async def test_low_balance_empty() -> None:
 
 @patch("services.notifications.PublicationsRepository")
 async def test_weekly_digest_builds(mock_pubs_cls: MagicMock) -> None:
-    """Active users with notify_news get digest."""
+    """Active users with notify_news get digest (H24: batch query)."""
     svc = _make_service()
     svc._users.get_active_users = AsyncMock(
         return_value=[
@@ -77,7 +77,8 @@ async def test_weekly_digest_builds(mock_pubs_cls: MagicMock) -> None:
     )
 
     mock_pubs = MagicMock()
-    mock_pubs.get_stats_by_user = AsyncMock(return_value={"total_publications": 42})
+    # H24: batch method returns {user_id: count}
+    mock_pubs.get_stats_by_users_batch = AsyncMock(return_value={1: 42})
     mock_pubs_cls.return_value = mock_pubs
 
     result = await svc.build_weekly_digest()

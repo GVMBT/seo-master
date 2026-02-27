@@ -3,9 +3,10 @@
 import structlog
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
+from bot.helpers import safe_message
 from bot.texts.legal import (
     PRIVACY_POLICY_CHUNKS,
     TERMS_OF_SERVICE_CHUNKS,
@@ -42,7 +43,8 @@ async def nav_profile(
     db: SupabaseClient,
 ) -> None:
     """Profile screen with balance and stats."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -79,7 +81,8 @@ async def show_notifications(
     user: User,
 ) -> None:
     """Show notification toggle screen."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -104,7 +107,8 @@ async def toggle_notification(
     redis: RedisClient,
 ) -> None:
     """Toggle a notification setting."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -158,7 +162,8 @@ async def show_referral(
     db: SupabaseClient,
 ) -> None:
     """Referral program info screen with inline referral link."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -208,7 +213,8 @@ async def cmd_terms(message: Message) -> None:
 @router.callback_query(F.data == "profile:privacy")
 async def cb_privacy(callback: CallbackQuery) -> None:
     """Privacy policy via inline button in profile."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
     # Send as new messages (legal text is too long for editMessageText)
@@ -219,7 +225,8 @@ async def cb_privacy(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "profile:terms")
 async def cb_terms(callback: CallbackQuery) -> None:
     """Terms of service via inline button in profile."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
     await _send_legal_chunks(callback.message, TERMS_OF_SERVICE_CHUNKS)
@@ -259,7 +266,8 @@ async def confirm_delete_account(
     scheduler_service: SchedulerService,
 ) -> None:
     """Execute account deletion after user confirmation."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -301,7 +309,8 @@ async def cancel_delete_account(
     callback: CallbackQuery,
 ) -> None:
     """Cancel account deletion."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

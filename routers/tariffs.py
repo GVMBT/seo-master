@@ -3,9 +3,10 @@
 import httpx
 import structlog
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, InaccessibleMessage
+from aiogram.types import CallbackQuery
 
 from bot.config import get_settings
+from bot.helpers import safe_message
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import payment_method_kb, tariffs_kb, yookassa_link_kb
@@ -28,7 +29,8 @@ async def nav_tokens(
     user: User,
 ) -> None:
     """Show tariffs screen with balance and package buttons."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -36,7 +38,7 @@ async def nav_tokens(
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
     text = stars_svc.format_tariffs_text(user.balance)
 
-    await callback.message.edit_text(text, reply_markup=tariffs_kb())
+    await msg.edit_text(text, reply_markup=tariffs_kb())
     await callback.answer()
 
 
@@ -50,7 +52,8 @@ async def select_package(
     callback: CallbackQuery,
 ) -> None:
     """Show package details with payment method choice."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -63,7 +66,7 @@ async def select_package(
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
     text = stars_svc.format_package_text(package_name)
 
-    await callback.message.edit_text(text, reply_markup=payment_method_kb(package_name))
+    await msg.edit_text(text, reply_markup=payment_method_kb(package_name))
     await callback.answer()
 
 
@@ -78,7 +81,8 @@ async def pay_with_stars(
     user: User,
 ) -> None:
     """Send Stars invoice via Telegram."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -91,7 +95,7 @@ async def pay_with_stars(
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
     params = stars_svc.build_invoice_params(user_id=user.id, package_name=package_name)
 
-    await callback.message.answer_invoice(**params)
+    await msg.answer_invoice(**params)
     await callback.answer()
 
 
@@ -108,7 +112,8 @@ async def pay_with_yookassa(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Create YooKassa payment and show link."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -144,5 +149,5 @@ async def pay_with_yookassa(
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
     text = stars_svc.format_payment_link_text(package_name)
 
-    await callback.message.edit_text(text, reply_markup=yookassa_link_kb(url, package_name))
+    await msg.edit_text(text, reply_markup=yookassa_link_kb(url, package_name))
     await callback.answer()

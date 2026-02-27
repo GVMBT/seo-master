@@ -7,6 +7,7 @@ Zero Telegram/Aiogram dependencies.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from typing import Any
@@ -19,6 +20,9 @@ from services.ai.orchestrator import AIOrchestrator, GenerationRequest
 from services.external.dataforseo import DataForSEOClient
 
 log = structlog.get_logger()
+
+# Concurrency limiter for DataForSEO API (avoid rate limiting / bans)
+_DATAFORSEO_SEMAPHORE = asyncio.Semaphore(5)
 
 # DataForSEO locations: Russia (2643) is BANNED.
 # Ukraine (2804) + language_code="ru" is primary, Kazakhstan (2398) is fallback.
@@ -171,18 +175,17 @@ class KeywordService:
         raw: list[dict[str, Any]] = []
         seen: set[str] = set()
 
-        # Single DataForSEO pass: try seeds with Ukraine, then Kazakhstan
+        # Parallel DataForSEO pass: try seeds with Ukraine, then Kazakhstan
+        # C19: parallelize N seed requests via asyncio.gather + semaphore(5)
         locations = [_DEFAULT_LOCATION, _FALLBACK_LOCATION]
         for location in locations:
-            for seed in seeds[:5]:  # max 5 seeds
-                suggestions = await self._dataforseo.keyword_suggestions(
-                    seed, location_code=location, limit=quantity,
-                )
-                related = await self._dataforseo.related_keywords(
-                    seed, location_code=location, limit=min(quantity, 100),
-                )
+            capped_seeds = seeds[:5]  # max 5 seeds
+            results = await self._fetch_seeds_parallel(
+                capped_seeds, location, quantity,
+            )
 
-                for kw in [*suggestions, *related]:
+            for kw_list in results:
+                for kw in kw_list:
                     phrase_lower = kw.phrase.lower()
                     if phrase_lower not in seen:
                         seen.add(phrase_lower)
@@ -198,13 +201,41 @@ class KeywordService:
             if raw:
                 log.info("dataforseo_found", count=len(raw), location=location)
                 break
-            log.info("dataforseo_empty_location", location=location, seeds=seeds[:5])
+            log.info("dataforseo_empty_location", location=location, seeds=capped_seeds)
 
         # E03 fallback: DataForSEO returned nothing even with AI-normalized seeds
         if not raw:
             log.info("dataforseo_empty_fallback_to_ai", seeds=seeds[:5])
 
         return raw[:quantity]
+
+    async def _fetch_seeds_parallel(
+        self,
+        seeds: list[str],
+        location: int,
+        quantity: int,
+    ) -> list[list[Any]]:
+        """Fetch suggestions + related for all seeds in parallel (C19).
+
+        Uses semaphore(5) to avoid rate-limiting.
+        Returns flat list of KeywordSuggestion lists (suggestions + related interleaved).
+        """
+        from services.external.dataforseo import KeywordSuggestion
+
+        async def _fetch_one_seed(seed: str) -> list[KeywordSuggestion]:
+            async with _DATAFORSEO_SEMAPHORE:
+                suggestions, related = await asyncio.gather(
+                    self._dataforseo.keyword_suggestions(
+                        seed, location_code=location, limit=quantity,
+                    ),
+                    self._dataforseo.related_keywords(
+                        seed, location_code=location, limit=min(quantity, 100),
+                    ),
+                )
+                return [*suggestions, *related]
+
+        tasks = [_fetch_one_seed(seed) for seed in seeds]
+        return list(await asyncio.gather(*tasks))
 
     async def cluster_phrases(
         self,

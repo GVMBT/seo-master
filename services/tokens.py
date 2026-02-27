@@ -238,6 +238,7 @@ class TokenService:
         Returns dict with keys: project_count, category_count, schedule_count,
         referral_count, posts_per_week, tokens_per_week, tokens_per_month.
 
+        C20: Uses batch queries instead of N+1 per-project loops.
         Cost forecast differentiates by platform_type:
         - wordpress: ~320 tokens (2000 words + 4 images)
         - telegram/vk/pinterest: ~40 tokens (social post)
@@ -248,29 +249,29 @@ class TokenService:
 
         projects = await projects_repo.get_by_user(user.id)
         project_count = len(projects)
+        project_ids = [p.id for p in projects]
 
-        # Count categories and enabled schedules across all user's projects
-        category_count = 0
+        # C20: batch — one query for all categories, one query for all schedules
+        all_cats = await categories_repo.get_by_projects(project_ids) if project_ids else []
+        category_count = len(all_cats)
+
+        all_cat_ids = [c.id for c in all_cats]
+        all_schedules = await schedules_repo.get_by_project(all_cat_ids) if all_cat_ids else []
+
         schedule_count = 0
         posts_per_week = 0
         tokens_per_week = 0
-        for project in projects:
-            cats = await categories_repo.get_by_project(project.id)
-            category_count += len(cats)
+        for s in all_schedules:
+            if s.enabled:
+                schedule_count += 1
+                # posts_per_day * days per week for this schedule
+                days_count = len(s.schedule_days) if s.schedule_days else 7
+                weekly_posts = s.posts_per_day * days_count
+                posts_per_week += weekly_posts
 
-            cat_ids = [c.id for c in cats]
-            schedules = await schedules_repo.get_by_project(cat_ids)
-            for s in schedules:
-                if s.enabled:
-                    schedule_count += 1
-                    # posts_per_day * days per week for this schedule
-                    days_count = len(s.schedule_days) if s.schedule_days else 7
-                    weekly_posts = s.posts_per_day * days_count
-                    posts_per_week += weekly_posts
-
-                    # Differentiate cost by platform_type (C17)
-                    avg_cost = _avg_cost_by_platform(s.platform_type)
-                    tokens_per_week += weekly_posts * avg_cost
+                # Differentiate cost by platform_type (C17)
+                avg_cost = _avg_cost_by_platform(s.platform_type)
+                tokens_per_week += weekly_posts * avg_cost
 
         referral_count = await self._users.get_referral_count(user.id)
 

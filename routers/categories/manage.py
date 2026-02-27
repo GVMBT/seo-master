@@ -7,15 +7,15 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
-from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import get_owned_category, get_owned_project, safe_message
+from bot.service_factory import TokenServiceFactory
 from db.client import SupabaseClient
 from db.models import CategoryCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.previews import PreviewsRepository
-from db.repositories.projects import ProjectsRepository
 from db.repositories.schedules import SchedulesRepository
 from keyboards.inline import (
     category_card_kb,
@@ -25,7 +25,6 @@ from keyboards.inline import (
     category_list_kb,
 )
 from services.scheduler import SchedulerService
-from services.tokens import TokenService
 
 log = structlog.get_logger()
 router = Router()
@@ -55,15 +54,14 @@ async def show_category_list(
     db: SupabaseClient,
 ) -> None:
     """Show category list for a project (UX_TOOLBOX.md section 7.1)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-
-    if not project or project.user_id != user.id:
+    project = await get_owned_project(db, project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -92,7 +90,8 @@ async def paginate_categories(
     db: SupabaseClient,
 ) -> None:
     """Handle category list pagination."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -100,9 +99,8 @@ async def paginate_categories(
     project_id = int(parts[2])
     page = int(parts[3])
 
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    project = await get_owned_project(db, project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -130,15 +128,14 @@ async def start_category_create(
     db: SupabaseClient,
 ) -> None:
     """Start category creation flow."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-
-    if not project or project.user_id != user.id:
+    project = await get_owned_project(db, project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -189,9 +186,8 @@ async def process_category_name(
     await state.clear()
 
     # Ownership check
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    project = await get_owned_project(db, project_id, user.id)
+    if not project:
         await message.answer("Проект не найден.")
         return
 
@@ -218,22 +214,14 @@ async def show_category_card(
     db: SupabaseClient,
 ) -> None:
     """Show category card (UX_TOOLBOX.md section 8)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-
+    category = await get_owned_category(db, category_id, user.id)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    # Ownership check: category → project → user
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
@@ -279,21 +267,14 @@ async def confirm_category_delete(
     db: SupabaseClient,
 ) -> None:
     """Show category delete confirmation."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-
+    category = await get_owned_category(db, category_id, user.id)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
@@ -321,28 +302,21 @@ async def execute_category_delete(
     user: User,
     db: SupabaseClient,
     scheduler_service: SchedulerService,
+    token_service_factory: TokenServiceFactory,
 ) -> None:
     """Delete category with E24 + E42 cleanup."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-
+    category = await get_owned_category(db, category_id, user.id)
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
     project_id = category.project_id
-    settings = get_settings()
 
     # E24: Cancel QStash schedules BEFORE CASCADE delete
     await scheduler_service.cancel_schedules_for_category(category_id)
@@ -351,7 +325,7 @@ async def execute_category_delete(
     previews_repo = PreviewsRepository(db)
     active_previews = await previews_repo.get_active_drafts_by_category(category_id)
     if active_previews:
-        token_service = TokenService(db=db, admin_ids=settings.admin_ids)
+        token_service = token_service_factory(db)
         await token_service.refund_active_previews(
             active_previews,
             user.id,
@@ -359,6 +333,7 @@ async def execute_category_delete(
         )
 
     # Delete category (CASCADE deletes schedules, overrides)
+    cats_repo = CategoriesRepository(db)
     deleted = await cats_repo.delete(category_id)
 
     if deleted:

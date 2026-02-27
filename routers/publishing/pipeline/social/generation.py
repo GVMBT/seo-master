@@ -21,10 +21,11 @@ import httpx
 import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
 from bot.exceptions import RateLimitError
+from bot.helpers import safe_message
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
@@ -76,7 +77,7 @@ async def show_social_confirm(
 
     Called from readiness.py when all required items are filled.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     text = _build_social_confirm_text(fsm_data, report, user)
@@ -184,7 +185,8 @@ async def confirm_social_generate(
     ai_orchestrator: AIOrchestrator,
 ) -> None:
     """User confirmed -- charge and start generation (step 5 -> step 6)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -462,7 +464,8 @@ async def publish_social_post(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Publish social post to platform (step 7 -> result)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -622,7 +625,8 @@ async def regenerate_social(
 
     Free for first MAX_REGENERATIONS_FREE (2), then charges tokens (E10).
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -709,7 +713,8 @@ async def cancel_refund_social(
     redis: RedisClient,
 ) -> None:
     """Cancel pipeline and refund tokens (step 7 -> clear)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -742,7 +747,8 @@ async def more_posts_social(
 
     Keeps project and connection, clears generation-specific data.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

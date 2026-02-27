@@ -375,20 +375,20 @@
 - [x] CR-78 fixes: ImportError fallback, Firecrawl raise_for_status, Serper 5xx backoff, article temp 0.6
 - Deferred to Sprint 3: publisher write idempotency (CR-78), Stars refund race (CR-78), research cache key (CR-78)
 
-### Sprint 3: Security & Compliance (3-4 days)
-- [ ] C7+C16: Privacy Policy + consent + cross-border disclosure (16h)
-- [ ] C8: Data deletion mechanism (8h)
-- [ ] H10: Pinterest OAuth CSRF protection (2h)
-- [ ] H11: Security headers middleware (1h)
-- [ ] H14: Referral limits + anti-fraud (4h)
-- [ ] H15: Generation rate limits (4h)
-- [ ] H16: YooKassa idempotency (2h)
-- [ ] H17: Project/category limits (2h)
-- [ ] H30: User agreement (оферта) (8h)
-- [ ] CR-78a: Publisher write idempotency — don't retry POSTs or add idempotency keys (4h)
-- [ ] CR-78b: Stars refund race — atomic CAS or Redis lock (1h)
-- [ ] CR-78c: Research cache key — include company_name/geo (30min)
-- [ ] CR-78d: DRY research helpers — extract shared module from publish.py+preview.py (2h)
+### Sprint 3: Security & Compliance (3-4 days) — DONE (PR #79)
+- [x] C7+C16: Privacy Policy + cross-border disclosure (8+ services)
+- [x] C8: /delete_account with 5-step CASCADE pipeline
+- [x] H10: Pinterest OAuth CSRF — Redis NX nonce
+- [x] H11: Security headers middleware
+- [x] H14: Referral caps (10/day, 5000 lifetime)
+- [x] H15: Generation rate limit (3/10min)
+- [x] H16: YooKassa idempotency (Redis NX)
+- [x] H17: Entity limits (20 projects, 50 categories)
+- [x] H30: Terms of Service (public offer)
+- [x] CR-78a: Publisher write idempotency — removed retry on POSTs
+- [x] CR-78b: Stars refund atomic CAS (mark_refunded WHERE status=completed)
+- [x] CR-78c: Research cache key includes company_name
+- [x] CR-78d: DRY research helpers in services/research_helpers.py
 
 ### Sprint 4: Performance (2-3 days)
 - [ ] C19: Parallelize DataForSEO calls (2h)

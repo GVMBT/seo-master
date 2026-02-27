@@ -41,17 +41,23 @@ class NotifyService:
     async def build_weekly_digest(self) -> list[tuple[int, str]]:
         """Active users (last 30 days) with notify_news=True.
 
+        H24: Uses batch query instead of N+1 per-user queries.
         Returns list of (user_id, message_text).
         """
         users = await self._users.get_active_users(days=30)
-        pubs = PublicationsRepository(self._db)
-        result: list[tuple[int, str]] = []
+        eligible = [u for u in users if u.notify_news]
+        if not eligible:
+            log.info("notify_weekly_digest_built", count=0)
+            return []
 
-        for u in users:
-            if not u.notify_news:
-                continue
-            stats = await pubs.get_stats_by_user(u.id)
-            total = stats.get("total_publications", 0)
+        # H24: single batch query for all publication counts
+        pubs = PublicationsRepository(self._db)
+        user_ids = [u.id for u in eligible]
+        pub_counts = await pubs.get_stats_by_users_batch(user_ids)
+
+        result: list[tuple[int, str]] = []
+        for u in eligible:
+            total = pub_counts.get(u.id, 0)
             text = (
                 "<b>Еженедельный дайджест</b>\n\n"
                 f"Публикаций за все время: {total}\n"

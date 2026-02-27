@@ -392,6 +392,12 @@ def create_app() -> web.Application:
     dp.workflow_data["pagespeed_client"] = pagespeed_client
     dp.workflow_data["dataforseo_client"] = dataforseo_client
 
+    # Service factories — per-request db, bound admin_ids (S6: DRY DI)
+    from bot.service_factory import create_connection_service_factory, create_token_service_factory
+
+    dp.workflow_data["token_service_factory"] = create_token_service_factory(settings.admin_ids)
+    dp.workflow_data["connection_service_factory"] = create_connection_service_factory()
+
     # Scheduler service (Phase 9)
     from services.scheduler import SchedulerService
 

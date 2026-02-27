@@ -1,8 +1,9 @@
 """Project list with pagination."""
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, InaccessibleMessage
+from aiogram.types import CallbackQuery
 
+from bot.helpers import safe_message
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.projects import ProjectsRepository
@@ -43,7 +44,8 @@ async def _show_list(
     page: int = 1,
 ) -> None:
     """Build and display project list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

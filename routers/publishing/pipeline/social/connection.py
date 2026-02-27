@@ -24,12 +24,12 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, Teleg
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
-    InaccessibleMessage,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
 )
 
+from bot.helpers import safe_message
 from bot.validators import TG_CHANNEL_RE
 from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
@@ -76,7 +76,7 @@ async def _show_connection_step(
     - 1 connection -> auto-select, skip to step 3
     - >1 connections -> show list
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    if not safe_message(callback):
         return
 
     from routers.publishing.pipeline.social.social import _show_category_step
@@ -209,7 +209,8 @@ async def pipeline_select_connection(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Handle connection selection from list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -277,7 +278,8 @@ async def pipeline_add_connection(
     http_client: httpx.AsyncClient,
 ) -> None:
     """Show platform picker, hiding already connected types (P1-3 fix)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -317,7 +319,8 @@ async def pipeline_start_connect_tg(
     state: FSMContext,
 ) -> None:
     """Start inline TG connection — ask for channel ID."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -435,7 +438,8 @@ async def pipeline_connect_tg_verify(
     http_client: httpx.AsyncClient,
 ) -> None:
     """TG inline step 3: verify bot is admin in channel, create connection."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -542,7 +546,8 @@ async def pipeline_start_connect_vk(
     state: FSMContext,
 ) -> None:
     """Start inline VK connection — ask for access token."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -666,7 +671,8 @@ async def pipeline_select_vk_group(
     http_client: httpx.AsyncClient,
 ) -> None:
     """VK inline step 2: select group from list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -743,7 +749,8 @@ async def pipeline_start_connect_pinterest(
     redis: RedisClient,
 ) -> None:
     """Start Pinterest OAuth — generate nonce, show URL button."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -809,7 +816,8 @@ async def pipeline_select_pinterest_board(
     Board selection will be implemented with full Pinterest publish (F6.3).
     For now, connection is created without board context.
     """
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 

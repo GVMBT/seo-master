@@ -17,12 +17,12 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
-    InaccessibleMessage,
     Message,
 )
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
+from bot.helpers import safe_message
 from db.client import SupabaseClient
 from db.models import Category, User
 from db.repositories.categories import CategoriesRepository
@@ -139,7 +139,8 @@ async def show_keywords(
     db: SupabaseClient,
 ) -> None:
     """Show keywords summary or empty screen (UX_TOOLBOX section 9)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -171,7 +172,8 @@ async def start_generation(
     db: SupabaseClient,
 ) -> None:
     """Start keyword generation — check for saved answers first."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -232,7 +234,8 @@ async def start_fresh_generation(
     db: SupabaseClient,
 ) -> None:
     """Start generation from scratch, ignoring saved answers."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -262,7 +265,8 @@ async def use_saved_answers(
     state: FSMContext,
 ) -> None:
     """Skip to quantity selection using saved answers."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -356,7 +360,8 @@ async def select_quantity(
     db: SupabaseClient,
 ) -> None:
     """Select keyword quantity and show cost confirmation."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -412,7 +417,8 @@ async def confirm_generation(
     dataforseo_client: Any,
 ) -> None:
     """Confirm: E01 balance check → charge → run pipeline."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -483,7 +489,8 @@ async def cancel_generation(
     db: SupabaseClient,
 ) -> None:
     """Cancel generation — return to category card."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -649,7 +656,8 @@ async def start_upload(
     db: SupabaseClient,
 ) -> None:
     """Start keyword file upload (UX_TOOLBOX section 9.6)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -862,7 +870,8 @@ async def show_cluster_list(
     db: SupabaseClient,
 ) -> None:
     """Show paginated cluster list (UX_TOOLBOX section 9.3)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -892,7 +901,8 @@ async def paginate_clusters(
     db: SupabaseClient,
 ) -> None:
     """Paginate cluster list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -925,7 +935,8 @@ async def show_cluster_detail(
     db: SupabaseClient,
 ) -> None:
     """Show phrases in a cluster as text (UX_TOOLBOX section 9.4)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -993,7 +1004,8 @@ async def download_csv(
     db: SupabaseClient,
 ) -> None:
     """Export all keywords as CSV file (UX_TOOLBOX section 9.2)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1056,7 +1068,8 @@ async def show_delete_cluster_list(
     db: SupabaseClient,
 ) -> None:
     """Show cluster list with [X] buttons for deletion (UX_TOOLBOX section 9.7)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1086,7 +1099,8 @@ async def paginate_delete_clusters(
     db: SupabaseClient,
 ) -> None:
     """Paginate delete cluster list."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1114,7 +1128,8 @@ async def delete_single_cluster(
     db: SupabaseClient,
 ) -> None:
     """Remove a single cluster by index."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1164,7 +1179,8 @@ async def delete_all_ask(
     db: SupabaseClient,
 ) -> None:
     """Show delete-all confirmation (UX_TOOLBOX section 9.7)."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1192,7 +1208,8 @@ async def delete_all_confirm(
     db: SupabaseClient,
 ) -> None:
     """Delete all keywords."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1228,7 +1245,8 @@ async def cancel_generation_inline(
     db: SupabaseClient,
 ) -> None:
     """Cancel keyword generation via inline button — return to category card."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
@@ -1257,7 +1275,8 @@ async def cancel_upload_inline(
     db: SupabaseClient,
 ) -> None:
     """Cancel keyword upload via inline button — return to category card."""
-    if not callback.message or isinstance(callback.message, InaccessibleMessage):
+    msg = safe_message(callback)
+    if not msg:
         await callback.answer()
         return
 
