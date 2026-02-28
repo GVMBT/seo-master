@@ -81,15 +81,15 @@ def _build_social_checklist_text(report: ReadinessReport, fsm_data: dict[str, An
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"Ключевые фразы -- {kw_info}")
+        lines.append(f"\u2705 Ключевые фразы \u2014 {kw_info}")
     else:
-        lines.append("Ключевые фразы -- не заполнены (обязательно)")
+        lines.append("\u274c Ключевые фразы (обязательно)")
 
     # Description status
     if report.has_description:
-        lines.append("Описание -- заполнено")
+        lines.append("\u2705 Описание")
     else:
-        lines.append("Описание -- не заполнено")
+        lines.append("\u274c Описание")
 
     # Cost estimate
     lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")

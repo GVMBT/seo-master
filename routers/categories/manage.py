@@ -71,7 +71,10 @@ async def show_category_list(
     if not categories:
         safe_name = html.escape(project.name)
         await msg.edit_text(
-            f"<b>{safe_name}</b> — Категории\n\nВ проекте пока нет категорий.",
+            f"<b>{safe_name}</b> \u2014 Категории\n\n"
+            "\U0001f4c2 Категорий пока нет.\n\n"
+            "Категория = тема контента "
+            "(например: \u00abSEO-оптимизация\u00bb или \u00abКулинарные рецепты\u00bb).",
             reply_markup=category_list_empty_kb(project_id),
         )
     else:
@@ -174,7 +177,7 @@ async def process_category_name(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание отменено.")
+        await message.answer("Создание категории отменено.")
         return
 
     if len(text) < 2 or len(text) > 100:
@@ -234,21 +237,30 @@ async def show_category_card(
     if keyword_count > 0:
         cluster_count = sum(1 for k in category.keywords if k.get("cluster_name"))
         if cluster_count > 0:
-            lines.append(f"Ключевые фразы: {cluster_count} кластеров")
+            lines.append(f"\U0001f511 Ключевые фразы: \u2705 {cluster_count} кластеров")
         else:
-            lines.append(f"Ключевые фразы: {keyword_count} фраз")
+            lines.append(f"\U0001f511 Ключевые фразы: \u2705 {keyword_count} фраз")
     else:
-        lines.append("Ключевые фразы: не заданы")
+        lines.append("\U0001f511 Ключевые фразы: \u274c не заданы")
 
     # Description
-    lines.append(f"Описание: {'есть' if category.description else 'не задано'}")
+    if category.description:
+        lines.append("\U0001f4dd Описание: \u2705 есть")
+    else:
+        lines.append("\U0001f4dd Описание: \u274c не задано")
 
     # Prices
-    lines.append(f"Цены: {'есть' if category.prices else 'не заданы'}")
+    if category.prices:
+        lines.append("\U0001f4b0 Цены: \u2705 есть")
+    else:
+        lines.append("\U0001f4b0 Цены: \u274c не заданы")
 
     # Image settings
     img_count = category.image_settings.get("count") if category.image_settings else None
-    lines.append(f"Изображений: {img_count}/статью" if img_count is not None else "Изображения: по умолчанию")
+    if img_count is not None:
+        lines.append(f"\U0001f5bc Медиа: \u2705 {img_count} файлов")
+    else:
+        lines.append("\U0001f5bc Медиа: \u274c нет файлов")
 
     text = "\n".join(lines)
     await msg.edit_text(text, reply_markup=category_card_kb(category_id, category.project_id))
@@ -347,6 +359,6 @@ async def execute_category_delete(
         )
         log.info("category_deleted", category_id=category_id, user_id=user.id)
     else:
-        await msg.edit_text("Ошибка удаления категории.")
+        await msg.edit_text("\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.")
 
     await callback.answer()

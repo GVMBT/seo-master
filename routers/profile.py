@@ -53,11 +53,11 @@ async def nav_profile(
     stats = await token_service.get_profile_stats(user)
 
     text = (
-        f"<b>Профиль</b>\n\n"
-        f"Баланс: <b>{user.balance}</b> токенов\n\n"
-        f"Проектов: {stats['project_count']}\n"
-        f"Категорий: {stats['category_count']}\n"
-        f"Расписаний: {stats['schedule_count']}\n"
+        f"<b>\U0001f464 Профиль</b>\n\n"
+        f"\U0001f4b0 Баланс: <b>{user.balance}</b> токенов\n\n"
+        f"\U0001f4c1 Проектов: {stats['project_count']}\n"
+        f"\U0001f4c2 Категорий: {stats['category_count']}\n"
+        f"\U0001f4c5 Расписаний: {stats['schedule_count']}\n"
         f"Рефералов: {stats['referral_count']}\n\n"
     )
 
@@ -86,7 +86,7 @@ async def show_notifications(
         await callback.answer()
         return
 
-    text = "<b>Уведомления</b>\n\nНажмите для переключения:"
+    text = "<b>\U0001f514 Уведомления</b>\n\nНажмите для переключения:"
 
     await msg.edit_text(
         text,
@@ -134,10 +134,10 @@ async def toggle_notification(
     # Refresh user object for keyboard
     updated_user = await repo.get_by_id(user.id)
     if updated_user is None:
-        await callback.answer("Ошибка обновления", show_alert=True)
+        await callback.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", show_alert=True)
         return
 
-    text = "<b>Уведомления</b>\n\nНажмите для переключения:"
+    text = "<b>\U0001f514 Уведомления</b>\n\nНажмите для переключения:"
 
     await msg.edit_text(
         text,
@@ -245,7 +245,7 @@ async def cmd_delete_account(
 ) -> None:
     """Show account deletion warning with confirmation buttons."""
     text = (
-        "<b>Удаление аккаунта</b>\n\n"
+        "<b>\u26a0\ufe0f Удаление аккаунта</b>\n\n"
         "Будут безвозвратно удалены:\n"
         "- Все проекты и категории\n"
         "- Все подключения к платформам\n"
@@ -315,7 +315,7 @@ async def cancel_delete_account(
         return
 
     await msg.edit_text(
-        "Удаление аккаунта отменено.",
+        "Удаление отменено.",
         reply_markup=delete_account_cancelled_kb(),
     )
     await callback.answer()

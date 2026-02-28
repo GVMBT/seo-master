@@ -364,7 +364,7 @@ async def process_excel(
 
     if result == "too_many_rows":
         await state.clear()
-        await message.answer(f"Превышен лимит: максимум {_MAX_ROWS} строк (E09).")
+        await message.answer(f"\u26a0\ufe0f Максимум {_MAX_ROWS} строк.")
         return
 
     lines = result

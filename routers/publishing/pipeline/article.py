@@ -662,7 +662,7 @@ async def pipeline_cancel_wp_subflow(
     else:
         await state.clear()
         await clear_checkpoint(redis, user.id)
-        await msg.edit_text("Pipeline отменён.")
+        await msg.edit_text("Публикация отменена.")
 
     await callback.answer()
 
@@ -963,5 +963,5 @@ async def pipeline_article_cancel(
     await clear_checkpoint(redis, user.id)
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text("Pipeline отменён.")
+        await msg.edit_text("Публикация отменена.")
     await callback.answer()

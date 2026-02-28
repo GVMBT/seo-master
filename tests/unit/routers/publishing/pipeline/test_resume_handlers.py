@@ -60,7 +60,7 @@ async def test_resume_no_checkpoint_shows_alert(
 
     await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis)
 
-    mock_callback.answer.assert_called_once_with("Нет активного pipeline.", show_alert=True)
+    mock_callback.answer.assert_called_once_with("Нет активного процесса.", show_alert=True)
 
 
 async def test_resume_invalid_json_shows_alert(
@@ -74,7 +74,7 @@ async def test_resume_invalid_json_shows_alert(
 
     await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis)
 
-    mock_callback.answer.assert_called_once_with("Нет активного pipeline.", show_alert=True)
+    mock_callback.answer.assert_called_once_with("Нет активного процесса.", show_alert=True)
 
 
 @patch(f"{_MODULE}.CategoriesRepository")

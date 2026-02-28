@@ -54,13 +54,13 @@ async def _show_list(
 
     if not projects:
         await msg.edit_text(
-            "У вас пока нет проектов.\nСоздайте первый — это займёт 30 секунд.",
+            "\U0001f4c1 У вас пока нет проектов.\n\nСоздайте первый — это займёт 30 секунд.",
             reply_markup=project_list_empty_kb(),
         )
     else:
         kb = project_list_kb(projects, page)
         await msg.edit_text(
-            f"Мои проекты ({len(projects)}):",
+            f"\U0001f4c1 Мои проекты ({len(projects)}):",
             reply_markup=kb,
         )
     await callback.answer()

@@ -309,7 +309,7 @@ class TestSchedulerEntry:
 
         await scheduler_entry(mock_callback, user, mock_db)
 
-        mock_callback.answer.assert_awaited_with("Сначала создайте категорию", show_alert=True)
+        mock_callback.answer.assert_awaited_with("Сначала создайте категорию в карточке проекта", show_alert=True)
 
     async def test_inaccessible_message(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
         from aiogram.types import InaccessibleMessage

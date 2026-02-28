@@ -19,14 +19,23 @@ log = structlog.get_logger()
 # Notification text templates per EDGE_CASES.md - missed auto-publish notifications
 _REASON_TEMPLATES: dict[str, str] = {
     "insufficient_balance": (
-        "Автопубликация пропущена: недостаточно токенов. Расписание приостановлено.\n[Пополнить баланс → /start]"
+        "\u26a0\ufe0f Автопубликация пропущена: недостаточно токенов. "
+        "Расписание приостановлено.\nПополните баланс через \U0001f4cb Меню."
     ),
-    "no_keywords": ("Автопубликация пропущена: нет ключевых фраз в категории.\n[Подобрать фразы → /start]"),
+    "no_keywords": (
+        "\u26a0\ufe0f Автопубликация пропущена: нет ключевых фраз в категории.\n"
+        "Добавьте фразы через карточку категории."
+    ),
     "connection_inactive": (
-        "Автопубликация не удалась: платформа не отвечает. Проверьте подключение.\n[Проверить → /start]"
+        "\u26a0\ufe0f Автопубликация не удалась: платформа не отвечает.\n"
+        "Проверьте подключение в настройках проекта."
     ),
-    "content_validation_failed": ("Автопубликация пропущена: контент не прошёл проверку качества. Токены возвращены."),
-    "ai_service_unavailable": ("Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."),
+    "content_validation_failed": (
+        "\u26a0\ufe0f Автопубликация пропущена: контент не прошёл проверку качества. Токены возвращены."
+    ),
+    "ai_service_unavailable": (
+        "\u26a0\ufe0f Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."
+    ),
 }
 
 
@@ -44,9 +53,9 @@ def _build_notification_text(result: PublishOutcome) -> str:
 
     if result.status == "ok":
         keyword_safe = html_mod.escape(result.keyword)
-        text = f"Автопубликация выполнена: <b>{keyword_safe}</b>"
+        text = f"\u2705 Автопубликация выполнена: <b>{keyword_safe}</b>"
         if result.post_url:
-            text += f"\n\u2713 {result.post_url}"
+            text += f"\n{result.post_url}"
         # Append cross-post results
         for xp in result.cross_post_results:
             label = html_mod.escape(_PLATFORM_LABELS.get(xp.platform, xp.platform))

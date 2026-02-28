@@ -59,7 +59,7 @@ async def select_package(
 
     package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
     if package_name not in PACKAGES:
-        await callback.answer("Пакет не найден", show_alert=True)
+        await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
 
     settings = get_settings()
@@ -88,7 +88,7 @@ async def pay_with_stars(
 
     package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
     if package_name not in PACKAGES:
-        await callback.answer("Пакет не найден", show_alert=True)
+        await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
 
     settings = get_settings()
@@ -119,7 +119,7 @@ async def pay_with_yookassa(
 
     package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
     if package_name not in PACKAGES:
-        await callback.answer("Пакет не найден", show_alert=True)
+        await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
 
     settings = get_settings()

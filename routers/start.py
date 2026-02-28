@@ -31,7 +31,7 @@ from keyboards.pipeline import (
     pipeline_preview_kb,
     pipeline_projects_kb,
 )
-from keyboards.reply import main_menu_kb
+from keyboards.reply import BTN_ADMIN, BTN_ARTICLE, BTN_MENU, BTN_POST, main_menu_kb
 from routers.publishing.pipeline._common import ArticlePipelineFSM
 from services.users import UsersService
 
@@ -205,12 +205,12 @@ def _build_dashboard_text(
     # Balance warning overrides (section 2.7)
     if balance < 0:
         return (
-            f"Баланс: {balance} токенов\n"
-            f"Долг {abs(balance)} токенов будет списан при следующей покупке.\n"
+            f"\u26a0\ufe0f Баланс: {balance} токенов\n"
+            f"\u26a0\ufe0f Долг {abs(balance)} токенов будет списан при следующей покупке.\n"
             "Для генерации контента пополните баланс."
         )
     if balance == 0:
-        return "Баланс: 0 токенов\nДля генерации контента нужно пополнить баланс."
+        return "\U0001f4b0 Баланс: 0 токенов\nДля генерации контента нужно пополнить баланс."
 
     if is_new_user and project_count == 0:
         return (
@@ -221,15 +221,15 @@ def _build_dashboard_text(
         )
     if project_count > 0:
         articles_estimate = balance // _AVG_ARTICLE_COST
-        lines = [f"Баланс: {balance:,} токенов".replace(",", " ")]
-        lines.append(f"Проектов: {project_count} | Активных расписаний: {schedule_count}")
-        lines.append(f"Хватит на: ~{articles_estimate} статей")
+        lines = [f"\U0001f4b0 Баланс: {balance:,} токенов".replace(",", " ")]
+        lines.append(f"\U0001f4c1 Проектов: {project_count} | \U0001f4c5 Расписаний: {schedule_count}")
+        lines.append(f"Хватит на ~{articles_estimate} статей")
         return "\n".join(lines)
 
     # Returning user, 0 projects
     return (
-        f"Баланс: {balance:,} токенов\n".replace(",", " ") + "У вас пока нет проектов.\n"
-        "Создайте первый — это займёт 30 секунд."
+        f"\U0001f4b0 Баланс: {balance:,} токенов\n".replace(",", " ") + "У вас пока нет проектов.\n"
+        "Создайте первый \u2014 это займёт 30 секунд."
     )
 
 
@@ -281,7 +281,11 @@ async def _get_checkpoint_text(redis: RedisClient, user_id: int) -> str:
         step = checkpoint.get("step_label", "подготовка")
         pipeline_type = checkpoint.get("pipeline_type", "article")
         label = "статья" if pipeline_type == "article" else "пост"
-        return f"\n\nУ вас есть незавершённый {label}:\nПроект: {project_name}\nОстановились на: {step}"
+        return (
+            f"\n\n\u23f3 У вас есть незавершённый {label}:\n"
+            f"\U0001f4c1 Проект: {project_name}\n"
+            f"Остановились на: {step}"
+        )
     except (json.JSONDecodeError, TypeError):  # fmt: skip
         return ""
 
@@ -348,7 +352,7 @@ async def cmd_cancel(
     """Handle /cancel — clear FSM + show Dashboard."""
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await message.answer(f"Процесс ({interrupted}) отменён.")
+        await message.answer(f"{interrupted} \u2014 отменено.")
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis)
     await message.answer(text, reply_markup=kb)
@@ -431,7 +435,7 @@ async def _route_to_step(
 
     if step == "select_category":
         if not project_id:
-            await msg.edit_text("Данные сессии устарели. Начните заново.")
+            await msg.edit_text("\u26a0\ufe0f Сессия устарела. Нажмите \U0001f4cb Меню чтобы начать заново.")
             await redis.delete(CacheKeys.pipeline_state(user.id))
             await state.clear()
             return
@@ -488,7 +492,7 @@ async def _route_to_step(
             return
 
         # Preview expired or already published
-        await msg.edit_text("Превью устарело. Начните заново.")
+        await msg.edit_text("\u26a0\ufe0f Превью устарело. Нажмите \U0001f4cb Меню чтобы начать заново.")
         await redis.delete(CacheKeys.pipeline_state(user.id))
         return
 
@@ -523,13 +527,13 @@ async def pipeline_resume(
 
     checkpoint_raw = await redis.get(CacheKeys.pipeline_state(user.id))
     if not checkpoint_raw:
-        await callback.answer("Нет активного pipeline.", show_alert=True)
+        await callback.answer("Нет активного процесса.", show_alert=True)
         return
 
     try:
         checkpoint = json.loads(checkpoint_raw)
     except (json.JSONDecodeError, TypeError):  # fmt: skip
-        await callback.answer("Нет активного pipeline.", show_alert=True)
+        await callback.answer("Нет активного процесса.", show_alert=True)
         return
 
     pipeline_type = checkpoint.get("pipeline_type", "article")
@@ -639,7 +643,7 @@ async def pipeline_restart(
 async def pipeline_cancel(callback: CallbackQuery, redis: RedisClient, user: User) -> None:
     """Cancel active pipeline checkpoint."""
     await redis.delete(CacheKeys.pipeline_state(user.id))
-    await callback.answer("Pipeline отменён.")
+    await callback.answer("Публикация отменена.")
     msg = safe_message(callback)
     if msg:
         await msg.delete()
@@ -652,7 +656,7 @@ async def pipeline_stale_catchall(callback: CallbackQuery) -> None:
     Without this, clicks on old pipeline keyboards silently drop
     (no handler matches without FSM state) → "spinning clock" forever.
     """
-    await callback.answer("Сессия завершена. Начните заново.", show_alert=True)
+    await callback.answer("Сессия завершена. Нажмите \U0001f4cb Меню для продолжения.", show_alert=True)
 
 
 @router.callback_query(F.data == "noop")
@@ -666,18 +670,18 @@ async def noop_handler(callback: CallbackQuery) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.message(F.text == "АДМИНКА")
+@router.message(F.text == BTN_ADMIN)
 async def admin_entry(message: Message, user: User) -> None:
     """Admin panel entry via reply keyboard."""
     if user.role != "admin":
         return  # Silently ignore for non-admins
     await message.answer(
-        "<b>Админ-панель</b>",
+        "<b>\U0001f6e1 Админ-панель</b>",
         reply_markup=admin_panel_kb(),
     )
 
 
-@router.message(F.text == "Меню")
+@router.message(F.text == BTN_MENU)
 async def reply_menu(
     message: Message,
     state: FSMContext,
@@ -693,7 +697,7 @@ async def reply_menu(
     await message.answer(text, reply_markup=kb)
 
 
-@router.message(F.text == "Написать статью")
+@router.message(F.text == BTN_ARTICLE)
 async def reply_article(
     message: Message,
     state: FSMContext,
@@ -710,7 +714,7 @@ async def reply_article(
     await message.answer(text, reply_markup=kb)
 
 
-@router.message(F.text == "Создать пост")
+@router.message(F.text == BTN_POST)
 async def reply_social(
     message: Message,
     state: FSMContext,
@@ -742,6 +746,6 @@ async def reply_cancel(
     # Clear pipeline checkpoint if it exists (BUG-4: reply cancel must clean up Redis)
     await redis.delete(CacheKeys.pipeline_state(user.id))
     if interrupted:
-        await message.answer(f"Процесс ({interrupted}) отменён.")
+        await message.answer(f"{interrupted} \u2014 отменено.")
     text, kb = await _build_dashboard(user, is_new_user, db, redis)
     await message.answer(text, reply_markup=kb)

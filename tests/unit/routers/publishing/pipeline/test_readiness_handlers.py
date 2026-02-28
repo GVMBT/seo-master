@@ -183,7 +183,7 @@ class TestBuildChecklistText:
         assert "Test Project" in text
         assert "Test Category" in text
         assert "5 кластеров (50 фраз)" in text
-        assert "заполнено" in text
+        assert "\u2705 Описание" in text
 
     async def test_keywords_missing(self) -> None:
         report = _make_report(
@@ -193,27 +193,28 @@ class TestBuildChecklistText:
             missing_items=["keywords"],
         )
         text = _build_checklist_text(report, _make_state_data())
-        assert "не заполнены (обязательно)" in text
+        assert "\u274c Ключевые фразы (обязательно)" in text
 
     async def test_description_missing(self) -> None:
         report = _make_report(has_description=False, missing_items=["description"])
         text = _build_checklist_text(report, _make_state_data())
-        assert "Описание — не заполнено" in text
+        assert "\u274c Описание" in text
 
     async def test_prices_missing_shown(self) -> None:
         report = _make_report(has_prices=False, missing_items=["prices"])
         text = _build_checklist_text(report, _make_state_data())
-        assert "Цены — не заполнены" in text
+        assert "\u274c Цены" in text
 
     async def test_image_count_in_text(self) -> None:
         report = _make_report(image_count=6)
         text = _build_checklist_text(report, _make_state_data())
-        assert "6 шт. в статье" in text
+        assert "\u2705 Медиа" in text
+        assert "6 шт." in text
 
     async def test_zero_images_in_text(self) -> None:
         report = _make_report(image_count=0)
         text = _build_checklist_text(report, _make_state_data())
-        assert "без изображений" in text
+        assert "\u274c Медиа" in text
 
     async def test_html_escaping(self) -> None:
         data = _make_state_data(project_name="<script>", category_name="&test")

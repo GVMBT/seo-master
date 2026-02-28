@@ -19,6 +19,7 @@ from typing import Any, Literal
 import httpx
 import structlog
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -58,6 +59,23 @@ MAX_REGENERATIONS_FREE = 2
 
 # Publish lock TTL (E07: double-click prevention)
 _PUBLISH_LOCK_TTL = 60
+
+# Progress steps for cumulative social loader
+_SOCIAL_STEPS = [
+    ("Подбор ключевых фраз", "Фразы подобраны"),
+    ("Генерация поста", "Пост сгенерирован"),
+]
+
+
+def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
+    """Build cumulative progress text for social post generation."""
+    lines = ["\U0001f4dd Генерация поста", ""]
+    for i, (active_label, done_label) in enumerate(steps):
+        if i < current:
+            lines.append(f"\u2705 {done_label}")
+        elif i == current:
+            lines.append(f"\u23f3 {active_label}...")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +253,7 @@ async def confirm_social_generate(
     await state.update_data(tokens_charged=cost, regen_count=0, last_update_time=time.time())
 
     await state.set_state(SocialPipelineFSM.generating)
-    await msg.edit_text("Пост -- Генерация...\n\nСоздаю пост...")
+    await msg.edit_text(_social_progress_text(_SOCIAL_STEPS, 0))
     await callback.answer()
 
     # Run generation
@@ -308,6 +326,12 @@ async def _run_social_generation(
         return
 
     try:
+        # Update progress: step 1 done, step 2 active
+        try:
+            await message.edit_text(_social_progress_text(_SOCIAL_STEPS, 1))
+        except (TelegramBadRequest, TelegramRetryAfter):  # fmt: skip
+            log.debug("social_progress_edit_failed")
+
         from services.ai.social_posts import SocialPostService
 
         social_service = SocialPostService(ai_orchestrator, db)
@@ -626,7 +650,7 @@ async def regenerate_social(
         last_update_time=time.time(),
     )
     await state.set_state(SocialPipelineFSM.regenerating)
-    await msg.edit_text("Пост -- Перегенерация...\n\nСоздаю новый пост...")
+    await msg.edit_text(_social_progress_text(_SOCIAL_STEPS, 0))
     await callback.answer()
 
     log.info(

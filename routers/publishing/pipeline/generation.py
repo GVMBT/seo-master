@@ -72,13 +72,28 @@ MAX_REGENERATIONS_FREE = 2
 # Publish lock TTL (E07: double-click prevention)
 _PUBLISH_LOCK_TTL = 60
 
-# Progress message texts (UX_PIPELINE.md §11.3)
-_PROGRESS_MESSAGES = [
-    ("Статья — Генерация...\n\nСобираю данные из Google...", 0),
-    ("Статья — Генерация...\n\nАнализирую конкурентов...", 5),
-    ("Статья — Генерация...\n\nГенерирую текст и изображения...", 15),
-    ("Статья — Генерация...\n\nГотовлю предпросмотр...", 50),
+# Progress steps for cumulative loader (UX_PIPELINE.md §11.3)
+_ARTICLE_STEPS = [
+    ("Сбор данных из Google", "Данные собраны"),
+    ("Анализ конкурентов", "Конкуренты проанализированы"),
+    ("Генерация текста и изображений", "Текст и изображения готовы"),
+    ("Подготовка предпросмотра", "Предпросмотр готов"),
 ]
+
+# Delays before each step's progress message appears (seconds)
+_ARTICLE_STEP_DELAYS = [0, 5, 15, 50]
+
+
+def _progress_text(title: str, steps: list[tuple[str, str]], current: int) -> str:
+    """Build cumulative progress text with checkmarks for completed steps."""
+    lines = [title, ""]
+    for i, (active_label, done_label) in enumerate(steps):
+        if i < current:
+            lines.append(f"\u2705 {done_label}")
+        elif i == current:
+            lines.append(f"\u23f3 {active_label}...")
+        # Future steps are not shown
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -333,8 +348,9 @@ async def _progress_task(
     message: Message,
     done_event: asyncio.Event,
 ) -> None:
-    """Send progress messages while generation runs (G7: cancel on fast gen)."""
-    for text, delay in _PROGRESS_MESSAGES:
+    """Send cumulative progress messages while generation runs (G7: cancel on fast gen)."""
+    title = "\U0001f4dd Генерация статьи"
+    for step_idx, delay in enumerate(_ARTICLE_STEP_DELAYS):
         if done_event.is_set():
             return
         if delay > 0:
@@ -346,7 +362,7 @@ async def _progress_task(
         if done_event.is_set():
             return
         try:
-            await message.edit_text(text)
+            await message.edit_text(_progress_text(title, _ARTICLE_STEPS, step_idx))
         except (TelegramBadRequest, TelegramRetryAfter):  # fmt: skip
             log.debug("progress_msg_edit_failed")
 
