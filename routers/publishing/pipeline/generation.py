@@ -36,6 +36,7 @@ from db.client import SupabaseClient
 from db.models import ArticlePreviewCreate, ArticlePreviewUpdate, PublicationLogCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.previews import PreviewsRepository
+from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from keyboards.pipeline import (
     pipeline_confirm_kb,
@@ -992,6 +993,7 @@ async def copy_html(
 async def connect_wp_publish(
     callback: CallbackQuery,
     state: FSMContext,
+    db: SupabaseClient,
 ) -> None:
     """Start WP connection sub-flow from preview (Variant B, G1).
 
@@ -1003,6 +1005,23 @@ async def connect_wp_publish(
         return
 
     await state.update_data(from_preview=True)
+
+    # If project already has website_url, skip URL step
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    if project_id:
+        project = await ProjectsRepository(db).get_by_id(project_id)
+        if project and project.website_url:
+            await state.update_data(wp_url=project.website_url)
+            await state.set_state(ArticlePipelineFSM.connect_wp_login)
+            await msg.edit_text(
+                f"Подключение WordPress\n\n"
+                f"Сайт: {html.escape(project.website_url)}\n\n"
+                f"Введите логин WordPress (имя пользователя).",
+            )
+            await callback.answer()
+            return
+
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await msg.edit_text(
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",

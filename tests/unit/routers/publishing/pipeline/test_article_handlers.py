@@ -753,7 +753,7 @@ class TestPipelineStartConnectWp:
         mock_state: MagicMock,
     ) -> None:
         mock_callback.data = "pipeline:article:connect_wp"
-        await pipeline_start_connect_wp(mock_callback, mock_state)
+        await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock())
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_url)
 
     async def test_edits_message_with_url_prompt(
@@ -762,9 +762,26 @@ class TestPipelineStartConnectWp:
         mock_state: MagicMock,
     ) -> None:
         mock_callback.data = "pipeline:article:connect_wp"
-        await pipeline_start_connect_wp(mock_callback, mock_state)
+        await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock())
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "адрес" in text.lower()
+
+    async def test_skips_url_when_project_has_website(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+    ) -> None:
+        """If project.website_url exists, skip URL step and go to login."""
+        mock_callback.data = "pipeline:article:connect_wp"
+        mock_state.get_data = AsyncMock(return_value={"project_id": 1})
+        project = make_project(website_url="https://example.com")
+        patches, _, _, _ = _patch_repos(project=project)
+        with patches["projects"]:
+            await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock())
+        mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_login)
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "example.com" in text
+        assert "логин" in text.lower()
 
     async def test_inaccessible_message_returns_early(
         self,
@@ -775,7 +792,7 @@ class TestPipelineStartConnectWp:
         callback = MagicMock()
         callback.message = MagicMock(spec=InaccessibleMessage)
         callback.answer = AsyncMock()
-        await pipeline_start_connect_wp(callback, mock_state)
+        await pipeline_start_connect_wp(callback, mock_state, MagicMock())
         callback.answer.assert_called_once()
         mock_state.set_state.assert_not_called()
 
