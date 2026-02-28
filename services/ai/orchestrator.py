@@ -80,7 +80,7 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "openai/gpt-5.2",
     ],
     "image": [
-        "google/gemini-3-pro-image-preview",
+        "google/gemini-3.1-flash-image-preview",
         "google/gemini-2.5-flash-image",
     ],
 }
