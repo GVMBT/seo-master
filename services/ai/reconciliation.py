@@ -1,6 +1,11 @@
-"""Image-text reconciliation for parallel pipeline.
+"""Image-text reconciliation and block-aware image placement.
 
-Source of truth: API_CONTRACTS.md section 5 (Stage 5 reconciliation).
+Source of truth: API_CONTRACTS.md §5 (reconciliation) and §7.4.1 (block-aware generation).
+
+Block-aware pipeline (§7.4.1):
+1. split_into_blocks(): parse Markdown into H2/H3 sections
+2. distribute_images(): select block indices for image placement
+3. Extract block_context (first 200 words) for each image prompt
 
 Reconciliation rules (E32-E35):
 - images == meta: 1:1 mapping by index
@@ -21,6 +26,110 @@ import structlog
 from services.ai.markdown_renderer import slugify
 
 log = structlog.get_logger()
+
+
+# ---------------------------------------------------------------------------
+# Block-aware image placement (§7.4.1)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ContentBlock:
+    """A logical block of article content (H2/H3 section)."""
+
+    heading: str
+    content: str
+    level: int
+
+
+def split_into_blocks(content_markdown: str) -> list[ContentBlock]:
+    """Parse Markdown into logical blocks by H2/H3 headings.
+
+    Each block contains the heading and all content until the next heading
+    of the same or higher level.
+    """
+    if not content_markdown.strip():
+        return []
+
+    lines = content_markdown.split("\n")
+    blocks: list[ContentBlock] = []
+    current_heading = ""
+    current_level = 0
+    current_lines: list[str] = []
+
+    for line in lines:
+        # Match ## or ### headings
+        match = re.match(r"^(#{2,3})\s+(.+)$", line)
+        if match:
+            # Save previous block (if any content)
+            if current_heading or current_lines:
+                blocks.append(ContentBlock(
+                    heading=current_heading,
+                    content="\n".join(current_lines).strip(),
+                    level=current_level,
+                ))
+            current_heading = match.group(2).strip()
+            current_level = len(match.group(1))
+            current_lines = []
+        else:
+            current_lines.append(line)
+
+    # Save last block
+    if current_heading or current_lines:
+        blocks.append(ContentBlock(
+            heading=current_heading,
+            content="\n".join(current_lines).strip(),
+            level=current_level,
+        ))
+
+    return blocks
+
+
+def distribute_images(blocks: list[ContentBlock], images_count: int) -> list[int]:
+    """Select block indices where images should be placed.
+
+    Strategy: evenly spaced across content blocks, skipping intro/conclusion
+    when possible (§7.4.1).
+
+    Returns sorted list of 0-based block indices.
+    """
+    if images_count == 0 or not blocks:
+        return []
+
+    candidate_blocks = list(range(len(blocks)))
+    # Skip intro (block 0) and conclusion (last block) when enough blocks
+    if len(candidate_blocks) > images_count + 1:
+        candidate_blocks = candidate_blocks[1:-1]
+
+    # Evenly spaced selection
+    n_candidates = len(candidate_blocks)
+    step = max(1.0, n_candidates / images_count)
+    indices: list[int] = []
+    for i in range(min(images_count, n_candidates)):
+        idx = candidate_blocks[int(i * step)]
+        indices.append(idx)
+    return sorted(indices)
+
+
+def extract_block_contexts(
+    blocks: list[ContentBlock],
+    block_indices: list[int],
+    max_words: int = 200,
+) -> list[str]:
+    """Extract text context from selected blocks for image prompts.
+
+    Each context includes the heading and first max_words words of content.
+    """
+    contexts: list[str] = []
+    for idx in block_indices:
+        if idx < 0 or idx >= len(blocks):
+            contexts.append("")
+            continue
+        block = blocks[idx]
+        words = block.content.split()[:max_words]
+        text = f"{block.heading}\n{' '.join(words)}" if block.heading else " ".join(words)
+        contexts.append(text.strip())
+    return contexts
 
 
 @dataclass

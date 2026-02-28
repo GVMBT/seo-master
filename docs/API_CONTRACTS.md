@@ -1839,19 +1839,22 @@ async def generate_article_pipeline(cluster, category, project, connections):
     # - Outline: format_research_for_prompt(data, "outline") — для планирования разделов
     # - Expand: format_research_for_prompt(data, "expand") — приоритизация при противоречиях
     # - Critique: format_research_for_prompt(data, "critique") — верификация фактов
-    text_task = asyncio.create_task(
-        article_service.generate(
-            ..., research_data=research_data,  # raw dict, formatted per-step internally
-        )
-    )
-    images_task = asyncio.create_task(
-        orchestrator.generate_images(cluster.main_phrase, category.image_settings)
-    )
-    text_result, images_result = await asyncio.gather(            # ~30-60с (параллельно)
-        text_task, images_task, return_exceptions=True,
+    # Stage 3: Text generation (multi-step: outline → expand → critique)
+    text_result = await article_service.generate(
+        ..., research_data=research_data,  # raw dict, formatted per-step internally
     )
 
-    # Stage 5: Пост-обработка (WebP, upload, Telegraph)
+    # Stage 4: Block-aware image generation (§7.4.1)
+    # Images AFTER text — each image gets block_context from H2-sections
+    content_markdown = text_result.content["content_markdown"]
+    blocks = split_into_blocks(content_markdown)       # parse H2/H3 sections
+    block_indices = distribute_images(blocks, image_count)  # evenly spaced
+    block_contexts = [blocks[i]["content"][:200] for i in block_indices]
+    images_result = await image_service.generate(
+        ..., block_contexts=block_contexts,  # per-image section context
+    )
+
+    # Stage 5: Reconciliation + WebP + upload + Telegraph
     # ...
 ```
 
@@ -1861,16 +1864,16 @@ async def generate_article_pipeline(cluster, category, project, connections):
 **Timeline:**
 
 ```text
-Sequential:  Serper(2с) → Research(10с) → Firecrawl(15с) → Analysis(1с) → Text(45с) → Images(30с) → Upload(3с) = 106с
-Parallel:    [Serper(2с) || Research(10с)] → Firecrawl(5с) → Analysis(1с) → [Text(45с) || Images(30с)] → Upload(3с) = 64с
-              ↑ параллельно ↑                                                ↑ параллельно ↑
+[Serper(2с) || Research(10с)] → Firecrawl(5с) → Analysis(1с) → Text(45с) → BlockSplit+Images(30с) → Upload(3с) = 94с
+ ↑ параллельно ↑
 ```
 
-С progress indicator (F34 streaming): пользователь видит "Анализирую конкурентов... Пишу статью... Генерирую изображения..." — нормальный UX.
+Изображения генерируются ПОСЛЕ текста (block-aware, §7.4.1), но все N запросов параллельны друг другу.
+С progress indicator: "Собираю данные... → Пишу статью... → Генерирую изображения... → Проверяю качество..."
 
 #### Image-text reconciliation (Stage 5)
 
-Текст и изображения генерируются параллельно. После завершения обоих — reconciliation:
+Текст генерируется сначала, затем изображения (block-aware). После этого выполняется reconciliation:
 
 ```python
 def reconcile_images(
