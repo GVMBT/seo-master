@@ -456,6 +456,9 @@ async def confirm_generation(
     saved_answers = {f"kw_products_{cat_id}": products, f"kw_geography_{cat_id}": geography}
     await state.update_data(saved_answers)
 
+    # Answer callback BEFORE the long-running pipeline (~60s) to avoid "query is too old"
+    await callback.answer()
+
     # Run pipeline with progress messages
     await _run_generation_pipeline(
         msg,
@@ -472,7 +475,6 @@ async def confirm_generation(
         ai_orchestrator=ai_orchestrator,
         dataforseo_client=dataforseo_client,
     )
-    await callback.answer()
     log.info(
         "keyword_generation_started",
         cat_id=cat_id,

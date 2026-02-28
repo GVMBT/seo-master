@@ -23,6 +23,7 @@ system: |
   <COMPANY_DATA>
   Компания: <<company_name>> (<<specialization>>).
   <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if category_description %>Направление/продукт: <<category_description>>. Статья ДОЛЖНА быть про этот конкретный продукт/направление, даже если ключевая фраза шире по тематике.<% endif %>
   <% if experience %>Опыт: <<experience>>.<% endif %>
   Город: <<city>>.
   <% if website_url %>Сайт: <<website_url>>.<% endif %>
@@ -177,6 +178,9 @@ variables:
     required: false
     default: ""
   - name: company_description
+    required: false
+    default: ""
+  - name: category_description
     required: false
     default: ""
   - name: experience

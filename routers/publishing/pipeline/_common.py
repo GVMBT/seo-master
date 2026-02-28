@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import random
-from typing import Literal
+from typing import Any, Literal
 
 import structlog
 from aiogram.fsm.state import State, StatesGroup
@@ -191,11 +191,16 @@ async def clear_checkpoint(redis: RedisClient, user_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def select_keyword(db: SupabaseClient, category_id: int) -> str | None:
+async def select_keyword(
+    db: SupabaseClient,
+    category_id: int,
+    content_type: str = "article",
+) -> str | None:
     """Select a keyword from category for generation.
 
     Supports both flat format [{phrase}] and cluster format [{main_phrase, phrases}].
-    Phase 10 will implement full cluster rotation (API_CONTRACTS S6).
+    For articles: prefers cluster_type="article", falls back to all clusters with warning.
+    Sorts by total_volume DESC (highest traffic first).
     """
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(category_id)
@@ -203,20 +208,41 @@ async def select_keyword(db: SupabaseClient, category_id: int) -> str | None:
         return None
 
     keywords = category.keywords
-    phrases: list[str] = []
-    for kw in keywords:
-        if isinstance(kw, dict):
-            if "main_phrase" in kw:
-                phrases.append(kw["main_phrase"])
-            elif "phrase" in kw:
-                phrases.append(kw["phrase"])
-        elif isinstance(kw, str):
-            phrases.append(kw)
 
-    if not phrases:
+    # Separate cluster-format and flat-format entries
+    clusters: list[dict[str, Any]] = []
+    flat_phrases: list[str] = []
+    for kw in keywords:
+        if isinstance(kw, dict) and "main_phrase" in kw:
+            clusters.append(kw)
+        elif isinstance(kw, dict) and "phrase" in kw:
+            flat_phrases.append(kw["phrase"])
+        elif isinstance(kw, str):
+            flat_phrases.append(kw)
+
+    # For cluster-format: filter by cluster_type matching content_type
+    if clusters:
+        matching = [c for c in clusters if c.get("cluster_type") == content_type]
+        if not matching:
+            log.warning(
+                "no_matching_cluster_type",
+                category_id=category_id,
+                content_type=content_type,
+                available_types=[c.get("cluster_type") for c in clusters],
+            )
+            # Fallback: use all clusters
+            matching = clusters
+
+        # Sort by total_volume DESC (highest traffic first)
+        matching.sort(key=lambda c: c.get("total_volume", 0), reverse=True)
+        result: str = matching[0]["main_phrase"]
+        return result
+
+    # Flat format fallback
+    if not flat_phrases:
         return None
 
-    return random.choice(phrases)  # noqa: S311
+    return random.choice(flat_phrases)  # noqa: S311
 
 
 async def try_refund(
