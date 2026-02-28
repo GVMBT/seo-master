@@ -160,7 +160,8 @@ class ProjectService:
         # E11: Cancel QStash schedules BEFORE CASCADE delete
         await scheduler_svc.cancel_schedules_for_project(project_id)
 
-        # E42: Refund active previews
+        # E42: Refund active previews BEFORE delete — CASCADE will remove preview rows,
+        # so we must read and refund them while they still exist in DB.
         previews_repo = PreviewsRepository(self._db)
         active_previews = await previews_repo.get_active_drafts_by_project(project_id)
         if active_previews:

@@ -161,7 +161,7 @@ class TestBuildCardData:
     @patch(f"{_SVC_MODULE}.CredentialManager")
     async def test_returns_card_data(
         self,
-        mock_cm_cls: MagicMock,
+        _mock_cm_cls: MagicMock,
         mock_conn_cls: MagicMock,
         mock_cats_cls: MagicMock,
         mock_pubs_cls: MagicMock,

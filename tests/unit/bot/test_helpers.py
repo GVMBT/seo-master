@@ -59,6 +59,7 @@ class TestGetOwnedProject:
 
             result = await get_owned_project(mock_db, 1, 42)
             assert result is None
+            MockSvc.return_value.get_owned_project.assert_awaited_once_with(1, 42)
 
 
 # ---------------------------------------------------------------------------
