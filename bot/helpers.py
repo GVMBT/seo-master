@@ -10,8 +10,8 @@ from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from db.client import SupabaseClient
 from db.models import Category, Project
-from db.repositories.projects import ProjectsRepository
 from services.categories import CategoryService
+from services.projects import ProjectService
 
 # ---------------------------------------------------------------------------
 # S1a: InaccessibleMessage guard helper
@@ -47,12 +47,12 @@ async def get_owned_project(
     project_id: int,
     user_id: int,
 ) -> Project | None:
-    """Load project and verify ownership. Returns None if not found or not owned."""
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
-    if not project or project.user_id != user_id:
-        return None
-    return project
+    """Load project and verify ownership. Returns None if not found or not owned.
+
+    Delegates to ProjectService.get_owned_project().
+    """
+    proj_svc = ProjectService(db=db)
+    return await proj_svc.get_owned_project(project_id, user_id)
 
 
 async def get_owned_category(

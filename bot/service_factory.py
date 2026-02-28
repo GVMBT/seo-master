@@ -8,6 +8,7 @@ Usage in handlers:
     token_service = token_service_factory(db)
     conn_service = connection_service_factory(db, http_client)
     cat_svc = category_service_factory(db)
+    proj_svc = project_service_factory(db)
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import httpx
 from db.client import SupabaseClient
 from services.categories import CategoryService
 from services.connections import ConnectionService
+from services.projects import ProjectService
 from services.tokens import TokenService
 
 
@@ -47,6 +49,15 @@ def create_category_service_factory() -> CategoryServiceFactory:
     return CategoryServiceFactory()
 
 
+def create_project_service_factory(encryption_key: str) -> ProjectServiceFactory:
+    """Create a factory that produces ProjectService instances with bound encryption_key.
+
+    Registered once in dp.workflow_data["project_service_factory"].
+    Called per-handler: `proj_svc = project_service_factory(db)`
+    """
+    return ProjectServiceFactory(encryption_key)
+
+
 class TokenServiceFactory:
     """Callable factory for TokenService — binds admin_ids at setup time."""
 
@@ -69,3 +80,13 @@ class CategoryServiceFactory:
 
     def __call__(self, db: SupabaseClient) -> CategoryService:
         return CategoryService(db=db)
+
+
+class ProjectServiceFactory:
+    """Callable factory for ProjectService — binds encryption_key at setup time."""
+
+    def __init__(self, encryption_key: str) -> None:
+        self._encryption_key = encryption_key
+
+    def __call__(self, db: SupabaseClient) -> ProjectService:
+        return ProjectService(db=db, encryption_key=self._encryption_key)
