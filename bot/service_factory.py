@@ -7,6 +7,7 @@ This eliminates repeated `TokenService(db=db, admin_ids=settings.admin_ids)` boi
 Usage in handlers:
     token_service = token_service_factory(db)
     conn_service = connection_service_factory(db, http_client)
+    cat_svc = category_service_factory(db)
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from __future__ import annotations
 import httpx
 
 from db.client import SupabaseClient
+from services.categories import CategoryService
 from services.connections import ConnectionService
 from services.tokens import TokenService
 
@@ -36,6 +38,15 @@ def create_connection_service_factory() -> ConnectionServiceFactory:
     return ConnectionServiceFactory()
 
 
+def create_category_service_factory() -> CategoryServiceFactory:
+    """Create a factory that produces CategoryService instances.
+
+    Registered once in dp.workflow_data["category_service_factory"].
+    Called per-handler: `cat_svc = category_service_factory(db)`
+    """
+    return CategoryServiceFactory()
+
+
 class TokenServiceFactory:
     """Callable factory for TokenService — binds admin_ids at setup time."""
 
@@ -51,3 +62,10 @@ class ConnectionServiceFactory:
 
     def __call__(self, db: SupabaseClient, http_client: httpx.AsyncClient) -> ConnectionService:
         return ConnectionService(db=db, http_client=http_client)
+
+
+class CategoryServiceFactory:
+    """Callable factory for CategoryService."""
+
+    def __call__(self, db: SupabaseClient) -> CategoryService:
+        return CategoryService(db=db)

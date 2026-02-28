@@ -10,13 +10,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import get_owned_category, get_owned_project, safe_message
-from bot.service_factory import TokenServiceFactory
+from bot.helpers import get_owned_project, safe_message
+from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
 from db.client import SupabaseClient
-from db.models import CategoryCreate, User
-from db.repositories.categories import CategoriesRepository
-from db.repositories.previews import PreviewsRepository
-from db.repositories.schedules import SchedulesRepository
+from db.models import User
 from keyboards.inline import (
     category_card_kb,
     category_created_kb,
@@ -29,9 +26,6 @@ from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
 router = Router()
-
-# H17: maximum categories per project (anti-DoS)
-MAX_CATEGORIES_PER_PROJECT = 50
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +47,7 @@ async def show_category_list(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Show category list for a project (UX_TOOLBOX.md section 7.1)."""
     msg = safe_message(callback)
@@ -66,8 +61,8 @@ async def show_category_list(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
-    cats_repo = CategoriesRepository(db)
-    categories = await cats_repo.get_by_project(project_id)
+    cat_svc = category_service_factory(db)
+    categories = await cat_svc.list_by_project(project_id, user.id)
 
     if not categories:
         safe_name = html.escape(project.name)
@@ -92,6 +87,7 @@ async def paginate_categories(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Handle category list pagination."""
     msg = safe_message(callback)
@@ -108,8 +104,11 @@ async def paginate_categories(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
-    cats_repo = CategoriesRepository(db)
-    categories = await cats_repo.get_by_project(project_id)
+    cat_svc = category_service_factory(db)
+    categories = await cat_svc.list_by_project(project_id, user.id)
+    if categories is None:
+        await callback.answer("Проект не найден.", show_alert=True)
+        return
 
     safe_name = html.escape(project.name)
     await msg.edit_text(
@@ -130,6 +129,7 @@ async def start_category_create(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Start category creation flow."""
     msg = safe_message(callback)
@@ -144,9 +144,11 @@ async def start_category_create(
         return
 
     # H17: enforce category limit per project
-    cats_repo = CategoriesRepository(db)
-    cat_count = await cats_repo.get_count_by_project(project_id)
-    if cat_count >= MAX_CATEGORIES_PER_PROJECT:
+    cat_svc = category_service_factory(db)
+    has_room = await cat_svc.check_category_limit(project_id, user.id)
+    if not has_room:
+        from services.categories import MAX_CATEGORIES_PER_PROJECT
+
         await callback.answer(
             f"Достигнут лимит категорий ({MAX_CATEGORIES_PER_PROJECT}) в проекте.",
             show_alert=True,
@@ -172,6 +174,7 @@ async def process_category_name(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Process category name (2-100 chars)."""
     text = (message.text or "").strip()
@@ -189,14 +192,12 @@ async def process_category_name(
     project_id = int(data["create_project_id"])
     await state.clear()
 
-    # Ownership check
-    project = await get_owned_project(db, project_id, user.id)
-    if not project:
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.create_category(project_id, user.id, text)
+
+    if not category:
         await message.answer("Проект не найден.", reply_markup=menu_kb())
         return
-
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.create(CategoryCreate(project_id=project_id, name=text))
 
     safe_name = html.escape(category.name)
     await message.answer(
@@ -216,6 +217,7 @@ async def show_category_card(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Show category card (UX_TOOLBOX.md section 8)."""
     msg = safe_message(callback)
@@ -224,7 +226,8 @@ async def show_category_card(
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    category = await get_owned_category(db, category_id, user.id)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(category_id, user.id)
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
@@ -278,6 +281,7 @@ async def confirm_category_delete(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Show category delete confirmation."""
     msg = safe_message(callback)
@@ -286,15 +290,13 @@ async def confirm_category_delete(
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    category = await get_owned_category(db, category_id, user.id)
-    if not category:
+    cat_svc = category_service_factory(db)
+    result = await cat_svc.get_delete_impact(category_id, user.id)
+    if not result:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    # Show impact details
-    sched_repo = SchedulesRepository(db)
-    schedules = await sched_repo.get_by_category(category_id)
-    active_count = sum(1 for s in schedules if s.enabled)
+    category, active_count = result
 
     safe_name = html.escape(category.name)
     impact_lines = [f"Удалить категорию «{safe_name}»?\n"]
@@ -314,6 +316,7 @@ async def execute_category_delete(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
     scheduler_service: SchedulerService,
     token_service_factory: TokenServiceFactory,
 ) -> None:
@@ -324,41 +327,20 @@ async def execute_category_delete(
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    category = await get_owned_category(db, category_id, user.id)
-    if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
+    cat_svc = category_service_factory(db)
+    token_svc = token_service_factory(db)
 
-    project_id = category.project_id
+    deleted, category, remaining = await cat_svc.delete_category(
+        category_id, user.id, scheduler_service, token_svc
+    )
 
-    # E24: Cancel QStash schedules BEFORE CASCADE delete
-    await scheduler_service.cancel_schedules_for_category(category_id)
-
-    # E42: Refund active previews
-    previews_repo = PreviewsRepository(db)
-    active_previews = await previews_repo.get_active_drafts_by_category(category_id)
-    if active_previews:
-        token_service = token_service_factory(db)
-        await token_service.refund_active_previews(
-            active_previews,
-            user.id,
-            f"удаление категории #{category_id}",
-        )
-
-    # Delete category (CASCADE deletes schedules, overrides)
-    cats_repo = CategoriesRepository(db)
-    deleted = await cats_repo.delete(category_id)
-
-    if deleted:
+    if deleted and category:
         safe_name = html.escape(category.name)
-        # Reload remaining categories to show correct keyboard
-        remaining = await cats_repo.get_by_project(project_id)
-        kb = category_list_kb(remaining, project_id) if remaining else category_list_empty_kb(project_id)
+        kb = category_list_kb(remaining, category.project_id) if remaining else category_list_empty_kb(category.project_id)
         await msg.edit_text(
             f"Категория «{safe_name}» удалена.",
             reply_markup=kb,
         )
-        log.info("category_deleted", category_id=category_id, user_id=user.id)
     else:
         await msg.edit_text("\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.", reply_markup=menu_kb())
 

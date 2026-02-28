@@ -17,7 +17,7 @@ from api.yookassa import _YOOKASSA_IDEMPOTENCY_TTL, yookassa_webhook
 from cache.keys import CacheKeys
 from db.repositories.categories import CategoriesRepository
 from db.repositories.payments import PaymentsRepository
-from routers.categories.manage import MAX_CATEGORIES_PER_PROJECT
+from services.categories import MAX_CATEGORIES_PER_PROJECT
 from routers.projects.create import MAX_PROJECTS_PER_USER
 from services.ai.rate_limiter import RATE_LIMITS
 from services.payments.stars import (
@@ -489,15 +489,15 @@ class TestCategoryLimit:
 
         project = MagicMock(id=1, user_id=42)
 
-        with (
-            patch("routers.categories.manage.get_owned_project", new_callable=AsyncMock, return_value=project),
-            patch("routers.categories.manage.CategoriesRepository") as mock_cat_cls,
-        ):
-            mock_cat = MagicMock()
-            mock_cat_cls.return_value = mock_cat
-            mock_cat.get_count_by_project = AsyncMock(return_value=MAX_CATEGORIES_PER_PROJECT)
+        mock_cat_svc = MagicMock()
+        mock_cat_svc.check_category_limit = AsyncMock(return_value=False)
+        category_service_factory = MagicMock(return_value=mock_cat_svc)
 
-            await start_category_create(callback=callback, state=state, user=user, db=db)
+        with patch("routers.categories.manage.get_owned_project", new_callable=AsyncMock, return_value=project):
+            await start_category_create(
+                callback=callback, state=state, user=user, db=db,
+                category_service_factory=category_service_factory,
+            )
 
         callback.answer.assert_called()
         call_args = callback.answer.call_args
@@ -525,16 +525,18 @@ class TestCategoryLimit:
 
         project = MagicMock(id=1, user_id=42)
 
+        mock_cat_svc = MagicMock()
+        mock_cat_svc.check_category_limit = AsyncMock(return_value=True)
+        category_service_factory = MagicMock(return_value=mock_cat_svc)
+
         with (
             patch("routers.categories.manage.get_owned_project", new_callable=AsyncMock, return_value=project),
-            patch("routers.categories.manage.CategoriesRepository") as mock_cat_cls,
             patch("routers.categories.manage.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None),
         ):
-            mock_cat = MagicMock()
-            mock_cat_cls.return_value = mock_cat
-            mock_cat.get_count_by_project = AsyncMock(return_value=10)
-
-            await start_category_create(callback=callback, state=state, user=user, db=db)
+            await start_category_create(
+                callback=callback, state=state, user=user, db=db,
+                category_service_factory=category_service_factory,
+            )
 
         state.set_state.assert_called_once()
 

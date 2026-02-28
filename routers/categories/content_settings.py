@@ -16,10 +16,9 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import CategoryServiceFactory
 from db.client import SupabaseClient
-from db.models import Category, CategoryUpdate, User
-from db.repositories.categories import CategoriesRepository
-from db.repositories.projects import ProjectsRepository
+from db.models import Category, User
 from keyboards.inline import (
     cancel_kb,
     category_card_kb,
@@ -73,25 +72,6 @@ class ContentSettingsFSM(StatesGroup):
 # ---------------------------------------------------------------------------
 
 
-async def _check_category_ownership(
-    category_id: int,
-    user: User,
-    db: SupabaseClient,
-) -> tuple[CategoriesRepository, Category | None]:
-    """Load category and verify ownership. Returns (repo, category) or (repo, None)."""
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-    if not category:
-        return cats_repo, None
-
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
-        return cats_repo, None
-
-    return cats_repo, category
-
-
 def _get_text_settings(category: Category) -> dict[str, Any]:
     """Get text_settings dict from category."""
     return category.text_settings if category.text_settings else {}
@@ -112,6 +92,7 @@ async def show_settings(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Main content settings screen (UX_TOOLBOX section 12)."""
     msg = safe_message(callback)
@@ -120,7 +101,8 @@ async def show_settings(
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category = await _check_category_ownership(category_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(category_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
@@ -177,6 +159,7 @@ async def text_length(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Start text length input (UX_TOOLBOX section 12.1)."""
     msg = safe_message(callback)
@@ -185,7 +168,8 @@ async def text_length(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
@@ -247,6 +231,7 @@ async def process_max_words(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Validate max word count (> min, ≤10000) and save."""
     text = (message.text or "").strip()
@@ -276,8 +261,9 @@ async def process_max_words(
     cat_id = int(cat_raw)
     await state.clear()
 
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
+    # Load current category to merge settings
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
         await message.answer("Категория не найдена.", reply_markup=menu_kb())
         return
@@ -286,7 +272,7 @@ async def process_max_words(
     ts = _get_text_settings(category)
     ts["min_words"] = min_val
     ts["max_words"] = max_val
-    await cats_repo.update(cat_id, CategoryUpdate(text_settings=ts))
+    await cat_svc.update_text_settings(cat_id, user.id, ts)
 
     log.info("text_length_updated", cat_id=cat_id, min=min_val, max=max_val, user_id=user.id)
     await message.answer(
@@ -305,6 +291,7 @@ async def text_style(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Show text style multi-select grid (UX_TOOLBOX section 12.2)."""
     msg = safe_message(callback)
@@ -313,7 +300,8 @@ async def text_style(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
@@ -334,6 +322,7 @@ async def toggle_style(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Toggle a text style on/off (index-based callback)."""
     msg = safe_message(callback)
@@ -350,7 +339,8 @@ async def toggle_style(
         return
     style_name = _TEXT_STYLES[style_idx]
 
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
@@ -366,8 +356,7 @@ async def toggle_style(
 
     # Save immediately (no separate "save" step for toggle)
     ts["styles"] = selected
-    cats_repo = CategoriesRepository(db)
-    await cats_repo.update(cat_id, CategoryUpdate(text_settings=ts))
+    await cat_svc.update_text_settings(cat_id, user.id, ts)
 
     await msg.edit_text(
         "\u270d\ufe0f Выберите стили текста (можно несколько):",
@@ -381,6 +370,7 @@ async def save_styles(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Save styles and return to settings screen."""
     msg = safe_message(callback)
@@ -389,7 +379,8 @@ async def save_styles(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
@@ -422,6 +413,7 @@ async def img_count(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Show image count selection 0-10 (UX_TOOLBOX section 12.3)."""
     msg = safe_message(callback)
@@ -430,7 +422,8 @@ async def img_count(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
@@ -451,6 +444,7 @@ async def select_img_count(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Save selected image count and return to settings."""
     msg = safe_message(callback)
@@ -466,15 +460,15 @@ async def select_img_count(
         await callback.answer("Допустимо: 0-10.", show_alert=True)
         return
 
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
     img = _get_image_settings(category)
     img["count"] = count
-    cats_repo = CategoriesRepository(db)
-    await cats_repo.update(cat_id, CategoryUpdate(image_settings=img))
+    await cat_svc.update_image_settings(cat_id, user.id, img)
 
     log.info("img_count_updated", cat_id=cat_id, count=count, user_id=user.id)
 
@@ -497,6 +491,7 @@ async def img_style(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Show image style selection (UX_TOOLBOX section 12.4)."""
     msg = safe_message(callback)
@@ -505,7 +500,8 @@ async def img_style(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
@@ -526,6 +522,7 @@ async def select_img_style(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Save selected image style and return to settings (index-based callback)."""
     msg = safe_message(callback)
@@ -542,15 +539,15 @@ async def select_img_style(
         return
     style_name = _IMAGE_STYLES[style_idx]
 
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
     img = _get_image_settings(category)
     img["style"] = style_name
-    cats_repo = CategoriesRepository(db)
-    await cats_repo.update(cat_id, CategoryUpdate(image_settings=img))
+    await cat_svc.update_image_settings(cat_id, user.id, img)
 
     log.info("img_style_updated", cat_id=cat_id, style=style_name, user_id=user.id)
 
@@ -574,6 +571,7 @@ async def cancel_text_length_inline(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Cancel text length input via inline button — return to category card."""
     msg = safe_message(callback)
@@ -584,7 +582,8 @@ async def cancel_text_length_inline(
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.clear()
 
-    _, category = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if category:
         safe_name = html.escape(category.name)
         await msg.edit_text(
