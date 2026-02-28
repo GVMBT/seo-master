@@ -18,6 +18,7 @@ import httpx
 from db.client import SupabaseClient
 from services.categories import CategoryService
 from services.connections import ConnectionService
+from services.dashboard import DashboardService
 from services.projects import ProjectService
 from services.tokens import TokenService
 
@@ -47,6 +48,15 @@ def create_category_service_factory() -> CategoryServiceFactory:
     Called per-handler: `cat_svc = category_service_factory(db)`
     """
     return CategoryServiceFactory()
+
+
+def create_dashboard_service_factory(encryption_key: str) -> DashboardServiceFactory:
+    """Create a factory that produces DashboardService instances with bound encryption_key.
+
+    Registered once in dp.workflow_data["dashboard_service_factory"].
+    Called per-handler: `dash_svc = dashboard_service_factory(db)`
+    """
+    return DashboardServiceFactory(encryption_key)
 
 
 def create_project_service_factory(encryption_key: str) -> ProjectServiceFactory:
@@ -80,6 +90,16 @@ class CategoryServiceFactory:
 
     def __call__(self, db: SupabaseClient) -> CategoryService:
         return CategoryService(db=db)
+
+
+class DashboardServiceFactory:
+    """Callable factory for DashboardService — binds encryption_key at setup time."""
+
+    def __init__(self, encryption_key: str) -> None:
+        self._encryption_key = encryption_key
+
+    def __call__(self, db: SupabaseClient) -> DashboardService:
+        return DashboardService(db=db, encryption_key=self._encryption_key)
 
 
 class ProjectServiceFactory:

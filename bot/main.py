@@ -396,6 +396,7 @@ def create_app() -> web.Application:
     from bot.service_factory import (
         create_category_service_factory,
         create_connection_service_factory,
+        create_dashboard_service_factory,
         create_project_service_factory,
         create_token_service_factory,
     )
@@ -403,6 +404,9 @@ def create_app() -> web.Application:
     dp.workflow_data["token_service_factory"] = create_token_service_factory(settings.admin_ids)
     dp.workflow_data["connection_service_factory"] = create_connection_service_factory()
     dp.workflow_data["category_service_factory"] = create_category_service_factory()
+    dp.workflow_data["dashboard_service_factory"] = create_dashboard_service_factory(
+        settings.encryption_key.get_secret_value()
+    )
     dp.workflow_data["project_service_factory"] = create_project_service_factory(
         settings.encryption_key.get_secret_value()
     )

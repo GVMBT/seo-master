@@ -108,6 +108,7 @@ class TestReferralLinking:
                 is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
+                dashboard_service_factory=MagicMock(),
             )
 
         mock_svc_cls.assert_called_once_with(mock_db)
@@ -139,6 +140,7 @@ class TestReferralLinking:
                 is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
+                dashboard_service_factory=MagicMock(),
             )
 
         mock_svc_cls.assert_not_called()
@@ -170,6 +172,7 @@ class TestReferralLinking:
                 is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
+                dashboard_service_factory=MagicMock(),
             )
 
         # _parse_referrer_id returns None for "abc", so UsersService is not called
@@ -202,6 +205,7 @@ class TestReferralLinking:
                 is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
+                dashboard_service_factory=MagicMock(),
             )
 
         mock_svc_cls.assert_not_called()

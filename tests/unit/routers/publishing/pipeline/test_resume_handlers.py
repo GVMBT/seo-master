@@ -58,7 +58,7 @@ async def test_resume_no_checkpoint_shows_alert(
     user = make_user()
     mock_redis.get = AsyncMock(return_value=None)
 
-    await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis)
+    await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
     mock_callback.answer.assert_called_once_with("Нет активного процесса.", show_alert=True)
 
@@ -72,7 +72,7 @@ async def test_resume_invalid_json_shows_alert(
     user = make_user()
     mock_redis.get = AsyncMock(return_value="not-json{{{")
 
-    await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis)
+    await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
     mock_callback.answer.assert_called_once_with("Нет активного процесса.", show_alert=True)
 
@@ -102,7 +102,7 @@ async def test_resume_valid_checkpoint(
         return_value=make_category(id=10, name="Test Cat"),
     )
 
-    await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis)
+    await pipeline_resume(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
     mock_state.update_data.assert_called_once_with(
         project_id=1,
@@ -130,7 +130,7 @@ async def test_resume_inaccessible_message(
     callback.message = MagicMock(spec=InaccessibleMessage)
     callback.answer = AsyncMock()
 
-    await pipeline_resume(callback, mock_state, user, MagicMock(), mock_redis)
+    await pipeline_resume(callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
     callback.answer.assert_called_once()
     mock_state.update_data.assert_not_called()
@@ -152,7 +152,7 @@ async def test_restart_clears_checkpoint_and_fsm(
     user = make_user()
     mock_dashboard.return_value = ("Dashboard", MagicMock())
 
-    await pipeline_restart(mock_callback, mock_state, user, False, MagicMock(), mock_redis)
+    await pipeline_restart(mock_callback, mock_state, user, False, MagicMock(), mock_redis, MagicMock())
 
     mock_redis.delete.assert_called_once()
     mock_state.clear.assert_called_once()
@@ -183,6 +183,7 @@ async def test_route_to_step_select_project(
         user,
         MagicMock(),
         mock_redis,
+        MagicMock(),
         step="select_project",
         project_id=None,
         project_name="",
@@ -215,6 +216,7 @@ async def test_route_to_step_select_category_multi(
         user,
         MagicMock(),
         mock_redis,
+        MagicMock(),
         step="select_category",
         project_id=1,
         project_name="Test",
@@ -243,6 +245,7 @@ async def test_route_to_step_select_wp(
         user,
         MagicMock(),
         mock_redis,
+        MagicMock(),
         step="select_wp",
         project_id=1,
         project_name="Test",
@@ -275,6 +278,7 @@ async def test_route_to_step_preview_with_connection(
         user,
         MagicMock(),
         mock_redis,
+        MagicMock(),
         step="preview",
         project_id=1,
         project_name="Test",
@@ -307,6 +311,7 @@ async def test_route_to_step_preview_expired(
         user,
         MagicMock(),
         mock_redis,
+        MagicMock(),
         step="preview",
         project_id=1,
         project_name="Test",
@@ -338,6 +343,7 @@ async def test_route_to_step_preview_no_connection(
         user,
         MagicMock(),
         mock_redis,
+        MagicMock(),
         step="preview",
         project_id=1,
         project_name="Test",
@@ -369,6 +375,7 @@ async def test_route_to_step_readiness(
         user,
         MagicMock(),
         mock_redis,
+        MagicMock(),
         step="readiness_check",
         project_id=1,
         project_name="Test",
@@ -396,6 +403,7 @@ async def test_route_to_step_confirm_cost_shows_readiness(
         user,
         MagicMock(),
         mock_redis,
+        MagicMock(),
         step="confirm_cost",
         project_id=1,
         project_name="Test",
