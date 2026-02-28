@@ -1,6 +1,7 @@
 """Tests for routers/publishing/scheduler.py — Scheduler router handlers.
 
 Coverage target: all handlers + FSM flow + validation + edge cases.
+Migrated for H23 Phase 4: mocks scheduler_service instead of repo patches.
 """
 
 from __future__ import annotations
@@ -9,12 +10,12 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiogram.types import Message
 
 from db.models import Category, PlatformConnection, PlatformSchedule, Project, User
 from routers.publishing.scheduler import (
     ScheduleSetupFSM,
     _extract_selected_from_keyboard,
-    _filter_social,
     schedule_cancel,
     schedule_count_select,
     schedule_day_toggle,
@@ -33,6 +34,13 @@ from routers.publishing.scheduler import (
     scheduler_preset,
     scheduler_social_connection,
     scheduler_social_entry,
+)
+from services.scheduler import (
+    ApplyScheduleResult,
+    CrosspostConfig,
+    SchedulerContext,
+    SchedulerService,
+    UpdateCrosspostResult,
 )
 
 # ---------------------------------------------------------------------------
@@ -125,13 +133,14 @@ def _make_social_conn(**overrides: Any) -> PlatformConnection:
 
 @pytest.fixture
 def mock_callback() -> MagicMock:
-    """Mock CallbackQuery with message and async methods."""
+    """Mock CallbackQuery with message (spec=Message) for safe_message compat."""
     cb = MagicMock()
-    cb.message = MagicMock()
-    cb.message.edit_text = AsyncMock()
-    cb.message.edit_reply_markup = AsyncMock()
-    cb.message.answer = AsyncMock()
-    cb.message.reply_markup = None
+    msg = MagicMock(spec=Message)
+    msg.edit_text = AsyncMock()
+    msg.edit_reply_markup = AsyncMock()
+    msg.answer = AsyncMock()
+    msg.reply_markup = None
+    cb.message = msg
     cb.answer = AsyncMock()
     cb.data = ""
     return cb
@@ -149,28 +158,33 @@ def mock_state() -> MagicMock:
 
 
 @pytest.fixture
-def mock_db() -> MagicMock:
-    return MagicMock()
-
-
-@pytest.fixture
 def user() -> User:
     return _make_user()
 
 
 @pytest.fixture
-def project() -> Project:
-    return _make_project()
-
-
-@pytest.fixture
-def category() -> Category:
-    return _make_category()
-
-
-@pytest.fixture
 def scheduler_service() -> AsyncMock:
-    svc = AsyncMock()
+    """Mock SchedulerService with default return values for all H23 methods."""
+    svc = AsyncMock(spec=SchedulerService)
+    # Data loading defaults
+    svc.get_user_projects = AsyncMock(return_value=[_make_project()])
+    svc.get_project_categories = AsyncMock(return_value=[_make_category()])
+    svc.get_project_connections = AsyncMock(return_value=[_make_connection()])
+    svc.get_social_connections = AsyncMock(return_value=[_make_social_conn()])
+    svc.get_social_connections_by_category = AsyncMock(return_value=[_make_social_conn()])
+    svc.get_category_schedules_map = AsyncMock(return_value={})
+    svc.verify_category_ownership = AsyncMock(
+        return_value=SchedulerContext(category=_make_category(), project=_make_project())
+    )
+    # Combined operations defaults
+    svc.apply_schedule = AsyncMock(
+        return_value=ApplyScheduleResult(connection=_make_connection(), weekly_cost=960)
+    )
+    svc.disable_connection_schedule = AsyncMock(return_value=True)
+    svc.has_active_schedule = AsyncMock(return_value=False)
+    svc.get_crosspost_config = AsyncMock(return_value=None)
+    svc.update_crosspost = AsyncMock(return_value=None)
+    # Legacy QStash methods
     svc.create_schedule = AsyncMock(return_value=_make_schedule())
     svc.delete_schedule = AsyncMock(return_value=True)
     svc.estimate_weekly_cost = MagicMock(return_value=960)
@@ -178,7 +192,7 @@ def scheduler_service() -> AsyncMock:
 
 
 # ---------------------------------------------------------------------------
-# Unit: _filter_social
+# Unit: SchedulerService._filter_social (moved from router to service in H23)
 # ---------------------------------------------------------------------------
 
 
@@ -191,16 +205,16 @@ class TestFilterSocial:
             _make_social_conn(id=4, platform_type="pinterest"),
             _make_social_conn(id=5, platform_type="telegram", status="error"),
         ]
-        result = _filter_social(conns)
+        result = SchedulerService._filter_social(conns)
         assert len(result) == 3
         assert all(c.status == "active" for c in result)
 
     def test_empty_list(self) -> None:
-        assert _filter_social([]) == []
+        assert SchedulerService._filter_social([]) == []
 
     def test_no_social(self) -> None:
         conns = [_make_connection(platform_type="wordpress")]
-        assert _filter_social(conns) == []
+        assert SchedulerService._filter_social(conns) == []
 
 
 # ---------------------------------------------------------------------------
@@ -243,81 +257,58 @@ class TestExtractSelectedFromKeyboard:
 
 class TestSchedulerEntry:
     @patch("routers.publishing.scheduler.scheduler_cat_list_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.CategoriesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
     async def test_happy_path(
         self,
-        mock_proj_cls: MagicMock,
-        mock_cat_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_cat_cls.return_value.get_by_project = AsyncMock(return_value=[_make_category()])
         mock_callback.data = "project:1:scheduler"
 
-        await scheduler_entry(mock_callback, user, mock_db)
+        await scheduler_entry(mock_callback, user, scheduler_service)
 
         mock_callback.message.edit_text.assert_awaited_once()
         mock_callback.answer.assert_awaited_once()
 
-    @patch("routers.publishing.scheduler.ProjectsRepository")
     async def test_project_not_found(
         self,
-        mock_proj_cls: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=None)
+        scheduler_service.get_project_categories.return_value = None
         mock_callback.data = "project:1:scheduler"
 
-        await scheduler_entry(mock_callback, user, mock_db)
+        await scheduler_entry(mock_callback, user, scheduler_service)
 
         mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)
 
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    async def test_wrong_owner(
-        self,
-        mock_proj_cls: MagicMock,
-        mock_callback: MagicMock,
-        user: User,
-        mock_db: MagicMock,
-    ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project(user_id=999))
-        mock_callback.data = "project:1:scheduler"
-
-        await scheduler_entry(mock_callback, user, mock_db)
-
-        mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)
-
-    @patch("routers.publishing.scheduler.CategoriesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
     async def test_no_categories(
         self,
-        mock_proj_cls: MagicMock,
-        mock_cat_cls: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_cat_cls.return_value.get_by_project = AsyncMock(return_value=[])
+        scheduler_service.get_project_categories.return_value = []
         mock_callback.data = "project:1:scheduler"
 
-        await scheduler_entry(mock_callback, user, mock_db)
+        await scheduler_entry(mock_callback, user, scheduler_service)
 
         mock_callback.answer.assert_awaited_with("Сначала создайте категорию в карточке проекта", show_alert=True)
 
-    async def test_inaccessible_message(self, mock_callback: MagicMock, user: User, mock_db: MagicMock) -> None:
+    async def test_inaccessible_message(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
         from aiogram.types import InaccessibleMessage
 
         mock_callback.message = MagicMock(spec=InaccessibleMessage)
         mock_callback.data = "project:1:scheduler"
 
-        await scheduler_entry(mock_callback, user, mock_db)
+        await scheduler_entry(mock_callback, user, scheduler_service)
 
         mock_callback.answer.assert_awaited_once()
 
@@ -329,53 +320,44 @@ class TestSchedulerEntry:
 
 class TestSchedulerSocialEntry:
     @patch("routers.publishing.scheduler.scheduler_social_cat_list_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.CategoriesRepository")
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
     async def test_happy_path(
         self,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
-        mock_cat_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_project = AsyncMock(
-            return_value=[_make_social_conn(id=20, platform_type="telegram")]
-        )
-        mock_conn_fn.return_value = mock_conn_repo
-        mock_cat_cls.return_value.get_by_project = AsyncMock(return_value=[_make_category()])
         mock_callback.data = "project:1:sched_social"
 
-        await scheduler_social_entry(mock_callback, user, mock_db)
+        await scheduler_social_entry(mock_callback, user, scheduler_service)
 
         mock_callback.message.edit_text.assert_awaited_once()
 
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
     async def test_no_social_connections(
         self,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_project = AsyncMock(
-            return_value=[_make_connection(platform_type="wordpress")]
-        )
-        mock_conn_fn.return_value = mock_conn_repo
+        scheduler_service.get_social_connections.return_value = []
         mock_callback.data = "project:1:sched_social"
 
-        await scheduler_social_entry(mock_callback, user, mock_db)
+        await scheduler_social_entry(mock_callback, user, scheduler_service)
 
         mock_callback.answer.assert_awaited_with("Нет подключённых соцсетей", show_alert=True)
+
+    async def test_project_not_found(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.get_social_connections.return_value = None
+        mock_callback.data = "project:1:sched_social"
+
+        await scheduler_social_entry(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -385,49 +367,44 @@ class TestSchedulerSocialEntry:
 
 class TestSchedulerCategory:
     @patch("routers.publishing.scheduler.scheduler_conn_list_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
     async def test_happy_path(
         self,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_project = AsyncMock(return_value=[_make_connection()])
-        mock_conn_fn.return_value = mock_conn_repo
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
         mock_callback.data = "scheduler:1:cat:10"
 
-        await scheduler_category(mock_callback, user, mock_db)
+        await scheduler_category(mock_callback, user, scheduler_service)
 
         mock_callback.message.edit_text.assert_awaited_once()
 
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
     async def test_no_connections(
         self,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_project = AsyncMock(return_value=[])
-        mock_conn_fn.return_value = mock_conn_repo
+        scheduler_service.get_project_connections.return_value = []
         mock_callback.data = "scheduler:1:cat:10"
 
-        await scheduler_category(mock_callback, user, mock_db)
+        await scheduler_category(mock_callback, user, scheduler_service)
 
         mock_callback.answer.assert_awaited_with("Нет подключений. Добавьте платформу.", show_alert=True)
+
+    async def test_project_not_found(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.get_project_connections.return_value = None
+        mock_callback.data = "scheduler:1:cat:10"
+
+        await scheduler_category(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -437,55 +414,51 @@ class TestSchedulerCategory:
 
 class TestSchedulerConnection:
     @patch("routers.publishing.scheduler.scheduler_config_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_shows_existing_schedule(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_sched_cls.return_value.get_by_category = AsyncMock(
-            return_value=[_make_schedule(connection_id=5, enabled=True)]
-        )
+        sched = _make_schedule(connection_id=5, enabled=True)
+        scheduler_service.get_category_schedules_map.return_value = {5: sched}
         mock_callback.data = "scheduler:10:conn:5"
 
-        await scheduler_connection(mock_callback, user, mock_db)
+        await scheduler_connection(mock_callback, user, scheduler_service)
 
         mock_callback.message.edit_text.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "Текущее расписание" in text
 
     @patch("routers.publishing.scheduler.scheduler_config_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_no_existing_schedule(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
+        scheduler_service.get_category_schedules_map.return_value = {}
         mock_callback.data = "scheduler:10:conn:5"
 
-        await scheduler_connection(mock_callback, user, mock_db)
+        await scheduler_connection(mock_callback, user, scheduler_service)
 
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "Текущее расписание" not in text
+
+    async def test_ownership_fail(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.verify_category_ownership.return_value = None
+        mock_callback.data = "scheduler:10:conn:5"
+
+        await scheduler_connection(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -495,93 +468,44 @@ class TestSchedulerConnection:
 
 class TestSchedulerPreset:
     @patch("routers.publishing.scheduler.scheduler_config_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
-    async def test_preset_1w_creates_schedule(
+    async def test_preset_applies_schedule(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
         scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        conn = _make_connection()
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_id = AsyncMock(return_value=conn)
-        mock_conn_fn.return_value = mock_conn_repo
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
         mock_callback.data = "sched:10:5:preset:1w"
 
-        await scheduler_preset(mock_callback, user, mock_db, scheduler_service)
+        await scheduler_preset(mock_callback, user, scheduler_service)
 
-        scheduler_service.create_schedule.assert_awaited_once()
-        call_kwargs = scheduler_service.create_schedule.call_args[1]
-        assert call_kwargs["days"] == ["wed"]
-        assert call_kwargs["times"] == ["10:00"]
-        assert call_kwargs["posts_per_day"] == 1
+        scheduler_service.apply_schedule.assert_awaited_once()
+        text = mock_callback.message.edit_text.call_args[0][0]
+        assert "Расписание установлено" in text
 
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
-    async def test_preset_deletes_existing(
+    async def test_preset_ownership_fail(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
         scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        conn = _make_connection()
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_id = AsyncMock(return_value=conn)
-        mock_conn_fn.return_value = mock_conn_repo
-        existing = _make_schedule(id=99, connection_id=5)
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[existing])
-        mock_callback.data = "sched:10:5:preset:daily"
+        scheduler_service.apply_schedule.return_value = None
+        mock_callback.data = "sched:10:5:preset:1w"
 
-        await scheduler_preset(mock_callback, user, mock_db, scheduler_service)
+        await scheduler_preset(mock_callback, user, scheduler_service)
 
-        scheduler_service.delete_schedule.assert_awaited_once_with(99)
+        mock_callback.answer.assert_awaited_with("Категория или подключение не найдены", show_alert=True)
 
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_preset_creation_failure(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
         scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_id = AsyncMock(return_value=_make_connection())
-        mock_conn_fn.return_value = mock_conn_repo
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
-        scheduler_service.create_schedule.side_effect = Exception("QStash boom")
+        scheduler_service.apply_schedule.side_effect = Exception("QStash boom")
         mock_callback.data = "sched:10:5:preset:1w"
 
-        await scheduler_preset(mock_callback, user, mock_db, scheduler_service)
+        await scheduler_preset(mock_callback, user, scheduler_service)
 
         mock_callback.answer.assert_awaited_with("Ошибка создания расписания", show_alert=True)
 
@@ -593,31 +517,33 @@ class TestSchedulerPreset:
 
 class TestSchedulerDisable:
     @patch("routers.publishing.scheduler.scheduler_config_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
-    async def test_disable_deletes_matching_schedule(
+    async def test_disable_happy_path(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
         scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        existing = _make_schedule(id=42, connection_id=5)
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[existing])
         mock_callback.data = "sched:10:5:disable"
 
-        await scheduler_disable(mock_callback, user, mock_db, scheduler_service)
+        await scheduler_disable(mock_callback, user, scheduler_service)
 
-        scheduler_service.delete_schedule.assert_awaited_once_with(42)
+        scheduler_service.disable_connection_schedule.assert_awaited_once_with(10, 5, user.id)
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "отключено" in text
+
+    async def test_disable_ownership_fail(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.disable_connection_schedule.return_value = False
+        mock_callback.data = "sched:10:5:disable"
+
+        await scheduler_disable(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -628,27 +554,18 @@ class TestSchedulerDisable:
 class TestSchedulerManualFSM:
     @patch("routers.publishing.scheduler.schedule_days_kb", return_value=MagicMock())
     @patch("routers.publishing.scheduler.ensure_no_active_fsm", return_value=None)
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_manual_entry_sets_fsm_state(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_ensure: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
         mock_state: MagicMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
         mock_callback.data = "sched:10:5:manual"
 
-        await scheduler_manual(mock_callback, user, mock_db, mock_state)
+        await scheduler_manual(mock_callback, user, scheduler_service, mock_state)
 
         mock_state.set_state.assert_awaited_with(ScheduleSetupFSM.select_days)
         mock_state.update_data.assert_awaited_once()
@@ -659,31 +576,36 @@ class TestSchedulerManualFSM:
 
     @patch("routers.publishing.scheduler.schedule_days_kb", return_value=MagicMock())
     @patch("routers.publishing.scheduler.ensure_no_active_fsm", return_value="создание проекта")
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_manual_entry_interrupts_existing_fsm(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_ensure: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
         mock_state: MagicMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
         mock_callback.data = "sched:10:5:manual"
 
-        await scheduler_manual(mock_callback, user, mock_db, mock_state)
+        await scheduler_manual(mock_callback, user, scheduler_service, mock_state)
 
         mock_callback.message.answer.assert_awaited_once()
         text = mock_callback.message.answer.call_args[0][0]
         assert "создание проекта" in text
+
+    async def test_manual_entry_ownership_fail(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+        mock_state: MagicMock,
+    ) -> None:
+        scheduler_service.verify_category_ownership.return_value = None
+        mock_callback.data = "sched:10:5:manual"
+
+        await scheduler_manual(mock_callback, user, scheduler_service, mock_state)
+
+        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
 
     @patch("routers.publishing.scheduler.schedule_days_kb", return_value=MagicMock())
     async def test_day_toggle_adds_day(
@@ -781,27 +703,22 @@ class TestSchedulerManualFSM:
 
 
 class TestScheduleTimesDone:
-    async def test_rejects_wrong_count(self, mock_callback: MagicMock, mock_state: MagicMock) -> None:
+    async def test_rejects_wrong_count(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        scheduler_service: AsyncMock,
+    ) -> None:
         mock_state.get_data.return_value = {"sched_times": ["10:00"], "sched_count": 2}
         mock_callback.data = "sched:times:done"
 
-        await schedule_times_done(
-            mock_callback, _make_user(), MagicMock(), mock_state, AsyncMock()
-        )
+        await schedule_times_done(mock_callback, _make_user(), mock_state, scheduler_service)
 
         mock_callback.answer.assert_awaited_with("Выберите ровно 2 слотов", show_alert=True)
 
     @patch("routers.publishing.scheduler.scheduler_config_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_creates_schedule_on_valid_input(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_sched_cls: MagicMock,
-        mock_conn_fn: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         mock_state: MagicMock,
@@ -814,22 +731,35 @@ class TestScheduleTimesDone:
             "sched_conn_id": 5,
             "sched_days": ["mon", "wed"],
         }
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_id = AsyncMock(return_value=_make_connection())
-        mock_conn_fn.return_value = mock_conn_repo
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
         mock_callback.data = "sched:times:done"
 
-        await schedule_times_done(
-            mock_callback, _make_user(), MagicMock(), mock_state, scheduler_service
-        )
+        await schedule_times_done(mock_callback, _make_user(), mock_state, scheduler_service)
 
-        scheduler_service.create_schedule.assert_awaited_once()
+        scheduler_service.apply_schedule.assert_awaited_once()
         mock_state.clear.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "Расписание установлено" in text
+
+    async def test_apply_failure_clears_state(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        mock_state.get_data.return_value = {
+            "sched_times": ["10:00"],
+            "sched_count": 1,
+            "sched_cat_id": 10,
+            "sched_conn_id": 5,
+            "sched_days": ["mon"],
+        }
+        scheduler_service.apply_schedule.side_effect = Exception("QStash error")
+        mock_callback.data = "sched:times:done"
+
+        await schedule_times_done(mock_callback, _make_user(), mock_state, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Ошибка создания расписания", show_alert=True)
+        mock_state.clear.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -870,32 +800,31 @@ class TestScheduleCancel:
 
 class TestSchedulerConnListBack:
     @patch("routers.publishing.scheduler.scheduler_conn_list_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_back_navigates(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_project = AsyncMock(return_value=[_make_connection()])
-        mock_conn_fn.return_value = mock_conn_repo
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
         mock_callback.data = "scheduler:10:conn_list"
 
-        await scheduler_conn_list_back(mock_callback, user, mock_db)
+        await scheduler_conn_list_back(mock_callback, user, scheduler_service)
 
         mock_callback.message.edit_text.assert_awaited_once()
+
+    async def test_back_ownership_fail(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.verify_category_ownership.return_value = None
+        mock_callback.data = "scheduler:10:conn_list"
+
+        await scheduler_conn_list_back(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -905,36 +834,34 @@ class TestSchedulerConnListBack:
 
 class TestSchedulerSocialConnection:
     @patch("routers.publishing.scheduler.scheduler_social_config_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_shows_crosspost_info(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_sched_cls: MagicMock,
-        mock_conn_fn: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
         sched = _make_schedule(connection_id=20, cross_post_connection_ids=[30])
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[sched])
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_project = AsyncMock(
-            return_value=[_make_social_conn(id=20), _make_social_conn(id=30, platform_type="vk")]
-        )
-        mock_conn_fn.return_value = mock_conn_repo
+        scheduler_service.get_category_schedules_map.return_value = {20: sched}
         mock_callback.data = "sched_social:10:conn:20"
 
-        await scheduler_social_connection(mock_callback, user, mock_db)
+        await scheduler_social_connection(mock_callback, user, scheduler_service)
 
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "\u041a\u0440\u043e\u0441\u0441-\u043f\u043e\u0441\u0442\u0438\u043d\u0433" in text
+
+    async def test_ownership_fail(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.verify_category_ownership.return_value = None
+        mock_callback.data = "sched_social:10:conn:20"
+
+        await scheduler_social_connection(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -944,72 +871,93 @@ class TestSchedulerSocialConnection:
 
 class TestSchedulerCrosspost:
     @patch("routers.publishing.scheduler.scheduler_crosspost_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_crosspost_config_shows_screen(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_id = AsyncMock(return_value=_make_social_conn())
-        mock_conn_repo.get_by_project = AsyncMock(return_value=[_make_social_conn()])
-        mock_conn_fn.return_value = mock_conn_repo
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[])
+        scheduler_service.get_crosspost_config.return_value = CrosspostConfig(
+            lead_connection=_make_social_conn(),
+            social_connections=[_make_social_conn()],
+            selected_ids=[],
+        )
         mock_callback.data = "sched_xp:10:20:config"
 
-        await scheduler_crosspost_config(mock_callback, user, mock_db)
+        await scheduler_crosspost_config(mock_callback, user, scheduler_service)
 
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "\u041a\u0440\u043e\u0441\u0441-\u043f\u043e\u0441\u0442\u0438\u043d\u0433" in text
 
+    async def test_crosspost_config_not_found(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.get_crosspost_config.return_value = None
+        mock_callback.data = "sched_xp:10:20:config"
+
+        await scheduler_crosspost_config(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Категория или подключение не найдены", show_alert=True)
+
     @patch("routers.publishing.scheduler.scheduler_social_config_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.SchedulesRepository")
-    @patch("routers.publishing.scheduler._make_conn_repo")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
-    @patch("routers.publishing.scheduler.CategoriesRepository")
     async def test_crosspost_save_updates_schedule(
         self,
-        mock_cat_cls: MagicMock,
-        mock_proj_cls: MagicMock,
-        mock_conn_fn: MagicMock,
-        mock_sched_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=_make_category())
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_conn_repo = MagicMock()
-        mock_conn_repo.get_by_project = AsyncMock(
-            return_value=[
-                _make_social_conn(id=20, platform_type="telegram"),
-                _make_social_conn(id=30, platform_type="vk"),
-            ]
+        scheduler_service.update_crosspost.return_value = UpdateCrosspostResult(
+            count=0,
+            schedule=_make_schedule(connection_id=20),
+            has_other_social=True,
         )
-        mock_conn_fn.return_value = mock_conn_repo
-        existing = _make_schedule(connection_id=20)
-        mock_sched_cls.return_value.get_by_category = AsyncMock(return_value=[existing])
-        mock_sched_cls.return_value.update = AsyncMock()
         mock_callback.data = "sched_xp:10:20:save"
-        # Simulate checked keyboard
         mock_callback.message.reply_markup = None  # no selections
 
-        await scheduler_crosspost_save(mock_callback, user, mock_db)
+        await scheduler_crosspost_save(mock_callback, user, scheduler_service)
 
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "отключён" in text
+
+    @patch("routers.publishing.scheduler.scheduler_social_config_kb", return_value=MagicMock())
+    async def test_crosspost_save_with_selections(
+        self,
+        mock_kb: MagicMock,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.update_crosspost.return_value = UpdateCrosspostResult(
+            count=2,
+            schedule=_make_schedule(connection_id=20),
+            has_other_social=True,
+        )
+        mock_callback.data = "sched_xp:10:20:save"
+        mock_callback.message.reply_markup = None
+
+        await scheduler_crosspost_save(mock_callback, user, scheduler_service)
+
+        text = mock_callback.message.edit_text.call_args[0][0]
+        assert "2 платформ" in text
+
+    async def test_crosspost_save_not_found(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.update_crosspost.return_value = None
+        mock_callback.data = "sched_xp:10:20:save"
+        mock_callback.message.reply_markup = None
+
+        await scheduler_crosspost_save(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Расписание не найдено", show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1019,23 +967,30 @@ class TestSchedulerCrosspost:
 
 class TestSchedulerArticlesEntry:
     @patch("routers.publishing.scheduler.scheduler_cat_list_kb", return_value=MagicMock())
-    @patch("routers.publishing.scheduler.CategoriesRepository")
-    @patch("routers.publishing.scheduler.ProjectsRepository")
     async def test_happy_path(
         self,
-        mock_proj_cls: MagicMock,
-        mock_cat_cls: MagicMock,
         mock_kb: MagicMock,
         mock_callback: MagicMock,
         user: User,
-        mock_db: MagicMock,
+        scheduler_service: AsyncMock,
     ) -> None:
-        mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=_make_project())
-        mock_cat_cls.return_value.get_by_project = AsyncMock(return_value=[_make_category()])
         mock_callback.data = "project:1:sched_articles"
 
-        await scheduler_articles_entry(mock_callback, user, mock_db)
+        await scheduler_articles_entry(mock_callback, user, scheduler_service)
 
         mock_callback.message.edit_text.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "Статьи" in text
+
+    async def test_project_not_found(
+        self,
+        mock_callback: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        scheduler_service.get_project_categories.return_value = None
+        mock_callback.data = "project:1:sched_articles"
+
+        await scheduler_articles_entry(mock_callback, user, scheduler_service)
+
+        mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)

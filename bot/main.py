@@ -418,6 +418,7 @@ def create_app() -> web.Application:
         db=db,
         qstash_token=settings.qstash_token.get_secret_value(),
         base_url=settings.railway_public_url or "https://seo-master-bot.up.railway.app",
+        encryption_key=settings.encryption_key.get_secret_value(),
     )
     dp.workflow_data["scheduler_service"] = scheduler_service
 

@@ -331,3 +331,236 @@ async def test_cancel_for_connection_empty() -> None:
     await svc.cancel_schedules_for_connection(999)
 
     mock_q.schedule.delete.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# H23 Phase 4: verify_category_ownership
+# ---------------------------------------------------------------------------
+
+
+@patch("services.scheduler.ProjectsRepository")
+@patch("services.scheduler.CategoriesRepository")
+async def test_verify_ownership_happy(mock_cat_cls: MagicMock, mock_proj_cls: MagicMock) -> None:
+    """Returns SchedulerContext when category owned by user."""
+    from db.models import Category, Project
+    from services.scheduler import SchedulerContext
+
+    cat = Category(id=10, project_id=1, name="C")
+    proj = Project(id=1, user_id=42, name="P", company_name="X", specialization="SEO")
+    mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=cat)
+    mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=proj)
+
+    svc, _ = _make_service()
+    ctx = await svc.verify_category_ownership(10, 42)
+
+    assert ctx is not None
+    assert isinstance(ctx, SchedulerContext)
+    assert ctx.category.id == 10
+    assert ctx.project.id == 1
+
+
+@patch("services.scheduler.ProjectsRepository")
+@patch("services.scheduler.CategoriesRepository")
+async def test_verify_ownership_wrong_user(mock_cat_cls: MagicMock, mock_proj_cls: MagicMock) -> None:
+    """Returns None when project belongs to another user."""
+    from db.models import Category, Project
+
+    cat = Category(id=10, project_id=1, name="C")
+    proj = Project(id=1, user_id=999, name="P", company_name="X", specialization="SEO")
+    mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=cat)
+    mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=proj)
+
+    svc, _ = _make_service()
+    ctx = await svc.verify_category_ownership(10, 42)
+    assert ctx is None
+
+
+@patch("services.scheduler.CategoriesRepository")
+async def test_verify_ownership_no_category(mock_cat_cls: MagicMock) -> None:
+    """Returns None when category does not exist."""
+    mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=None)
+
+    svc, _ = _make_service()
+    ctx = await svc.verify_category_ownership(999, 42)
+    assert ctx is None
+
+
+# ---------------------------------------------------------------------------
+# H23 Phase 4: _filter_social
+# ---------------------------------------------------------------------------
+
+
+def test_filter_social_static() -> None:
+    """_filter_social filters active social connections."""
+    from db.models import PlatformConnection
+
+    conns = [
+        PlatformConnection(
+            id=1, project_id=1, platform_type="wordpress",
+            identifier="wp", credentials={}, status="active",
+        ),
+        PlatformConnection(
+            id=2, project_id=1, platform_type="telegram",
+            identifier="tg", credentials={}, status="active",
+        ),
+        PlatformConnection(
+            id=3, project_id=1, platform_type="vk",
+            identifier="vk", credentials={}, status="error",
+        ),
+    ]
+    result = SchedulerService._filter_social(conns)
+    assert len(result) == 1
+    assert result[0].platform_type == "telegram"
+
+
+# ---------------------------------------------------------------------------
+# H23 Phase 4: get_category_schedules_map
+# ---------------------------------------------------------------------------
+
+
+async def test_get_category_schedules_map() -> None:
+    """Returns dict keyed by connection_id."""
+    svc, _ = _make_service()
+    s1 = _make_schedule(id=1, connection_id=5)
+    s2 = _make_schedule(id=2, connection_id=20)
+    mock_repo = MagicMock()
+    mock_repo.get_by_category = AsyncMock(return_value=[s1, s2])
+    svc._schedules = mock_repo
+
+    result = await svc.get_category_schedules_map(10)
+    assert result == {5: s1, 20: s2}
+
+
+async def test_get_category_schedules_map_empty() -> None:
+    """Empty list returns empty dict."""
+    svc, _ = _make_service()
+    mock_repo = MagicMock()
+    mock_repo.get_by_category = AsyncMock(return_value=[])
+    svc._schedules = mock_repo
+
+    result = await svc.get_category_schedules_map(10)
+    assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# H23 Phase 4: apply_schedule
+# ---------------------------------------------------------------------------
+
+
+@patch("services.scheduler.ConnectionsRepository")
+@patch("services.scheduler.CredentialManager")
+@patch("services.scheduler.ProjectsRepository")
+@patch("services.scheduler.CategoriesRepository")
+async def test_apply_schedule_happy(
+    mock_cat_cls: MagicMock,
+    mock_proj_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_conn_cls: MagicMock,
+) -> None:
+    """apply_schedule verifies ownership, deletes existing, creates new."""
+    from db.models import Category, PlatformConnection, Project
+    from services.scheduler import ApplyScheduleResult
+
+    cat = Category(id=10, project_id=1, name="C")
+    proj = Project(id=1, user_id=42, name="P", company_name="X", specialization="SEO", timezone="UTC")
+    conn = PlatformConnection(
+        id=5, project_id=1, platform_type="wordpress",
+        identifier="wp", credentials={}, status="active",
+    )
+
+    mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=cat)
+    mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=proj)
+    mock_conn_cls.return_value.get_by_id = AsyncMock(return_value=conn)
+
+    svc, mock_q = _make_service()
+    mock_q.schedule.create.return_value = MagicMock(schedule_id="qs_1")
+
+    mock_repo = MagicMock()
+    mock_repo.get_by_category = AsyncMock(return_value=[])
+    mock_repo.create = AsyncMock(return_value=_make_schedule(id=99, schedule_times=["10:00"]))
+    mock_repo.update = AsyncMock(return_value=_make_schedule(id=99, enabled=True))
+    svc._schedules = mock_repo
+
+    result = await svc.apply_schedule(10, 5, 42, ["mon"], ["10:00"], 1)
+
+    assert result is not None
+    assert isinstance(result, ApplyScheduleResult)
+    assert result.connection.id == 5
+    assert result.weekly_cost > 0
+
+
+@patch("services.scheduler.ProjectsRepository")
+@patch("services.scheduler.CategoriesRepository")
+async def test_apply_schedule_ownership_fail(mock_cat_cls: MagicMock, mock_proj_cls: MagicMock) -> None:
+    """apply_schedule returns None when ownership check fails."""
+    from db.models import Category, Project
+
+    cat = Category(id=10, project_id=1, name="C")
+    proj = Project(id=1, user_id=999, name="P", company_name="X", specialization="SEO")
+    mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=cat)
+    mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=proj)
+
+    svc, _ = _make_service()
+    result = await svc.apply_schedule(10, 5, 42, ["mon"], ["10:00"], 1)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# H23 Phase 4: disable_connection_schedule
+# ---------------------------------------------------------------------------
+
+
+@patch("services.scheduler.ProjectsRepository")
+@patch("services.scheduler.CategoriesRepository")
+async def test_disable_connection_schedule_happy(mock_cat_cls: MagicMock, mock_proj_cls: MagicMock) -> None:
+    """Disables schedule for owned category + connection."""
+    from db.models import Category, Project
+
+    cat = Category(id=10, project_id=1, name="C")
+    proj = Project(id=1, user_id=42, name="P", company_name="X", specialization="SEO")
+    mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=cat)
+    mock_proj_cls.return_value.get_by_id = AsyncMock(return_value=proj)
+
+    svc, mock_q = _make_service()
+    existing = _make_schedule(id=7, connection_id=5, qstash_schedule_ids=["qs_1"])
+    mock_repo = MagicMock()
+    mock_repo.get_by_category = AsyncMock(return_value=[existing])
+    mock_repo.get_by_id = AsyncMock(return_value=existing)
+    mock_repo.delete = AsyncMock(return_value=True)
+    svc._schedules = mock_repo
+
+    result = await svc.disable_connection_schedule(10, 5, 42)
+    assert result is True
+    mock_q.schedule.delete.assert_called_once_with("qs_1")
+
+
+# ---------------------------------------------------------------------------
+# H23 Phase 4: has_active_schedule
+# ---------------------------------------------------------------------------
+
+
+async def test_has_active_schedule_true() -> None:
+    svc, _ = _make_service()
+    mock_repo = MagicMock()
+    mock_repo.get_by_category = AsyncMock(return_value=[_make_schedule(connection_id=5, enabled=True)])
+    svc._schedules = mock_repo
+
+    assert await svc.has_active_schedule(10, 5) is True
+
+
+async def test_has_active_schedule_false() -> None:
+    svc, _ = _make_service()
+    mock_repo = MagicMock()
+    mock_repo.get_by_category = AsyncMock(return_value=[_make_schedule(connection_id=5, enabled=False)])
+    svc._schedules = mock_repo
+
+    assert await svc.has_active_schedule(10, 5) is False
+
+
+async def test_has_active_schedule_different_connection() -> None:
+    svc, _ = _make_service()
+    mock_repo = MagicMock()
+    mock_repo.get_by_category = AsyncMock(return_value=[_make_schedule(connection_id=99, enabled=True)])
+    svc._schedules = mock_repo
+
+    assert await svc.has_active_schedule(10, 5) is False
