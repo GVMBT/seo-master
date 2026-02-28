@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bot.exceptions import AIGenerationError
 from services.ai.orchestrator import GenerationResult
 from services.preview import ArticleContent, PreviewService
 from services.research_helpers import gather_websearch_data
@@ -510,7 +511,7 @@ class TestGenerateArticleContent:
             return_value=_gen_result(_ARTICLE_CONTENT)
         )
         mock_image_svc.return_value.generate = AsyncMock(
-            side_effect=ValueError("Image gen failed")
+            side_effect=AIGenerationError(message="Image gen failed")
         )
 
         result = await preview_service.generate_article_content(

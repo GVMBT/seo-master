@@ -245,37 +245,37 @@ _MULTI_SECTION_MD = (
 
 
 class TestSplitIntoBlocks:
-    def test_basic_h2_split(self) -> None:
+    async def test_basic_h2_split(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         assert len(blocks) == 5
         assert blocks[0].heading == "Введение"
         assert blocks[0].level == 2
         assert blocks[4].heading == "Заключение"
 
-    def test_block_content_stripped(self) -> None:
+    async def test_block_content_stripped(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         assert "Текст введения" in blocks[0].content
         # Content shouldn't include the heading itself
         assert "## Введение" not in blocks[0].content
 
-    def test_h3_headings_parsed(self) -> None:
+    async def test_h3_headings_parsed(self) -> None:
         md = "## Section A\n\nText A.\n\n### Sub A1\n\nSub text.\n\n## Section B\n\nText B.\n"
         blocks = split_into_blocks(md)
         assert len(blocks) == 3
         assert blocks[1].heading == "Sub A1"
         assert blocks[1].level == 3
 
-    def test_empty_content(self) -> None:
+    async def test_empty_content(self) -> None:
         blocks = split_into_blocks("")
         assert len(blocks) == 0
 
-    def test_no_headings(self) -> None:
+    async def test_no_headings(self) -> None:
         blocks = split_into_blocks("Just some text without headings.")
         assert len(blocks) == 1
         assert blocks[0].heading == ""
         assert "Just some text" in blocks[0].content
 
-    def test_heading_only(self) -> None:
+    async def test_heading_only(self) -> None:
         blocks = split_into_blocks("## Only Heading")
         assert len(blocks) == 1
         assert blocks[0].heading == "Only Heading"
@@ -283,14 +283,14 @@ class TestSplitIntoBlocks:
 
 
 class TestDistributeImages:
-    def test_zero_images(self) -> None:
+    async def test_zero_images(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         assert distribute_images(blocks, 0) == []
 
-    def test_empty_blocks(self) -> None:
+    async def test_empty_blocks(self) -> None:
         assert distribute_images([], 3) == []
 
-    def test_one_image_skips_intro_conclusion(self) -> None:
+    async def test_one_image_skips_intro_conclusion(self) -> None:
         """1 image should go into a middle block, not intro/conclusion."""
         blocks = split_into_blocks(_MULTI_SECTION_MD)  # 5 blocks
         indices = distribute_images(blocks, 1)
@@ -298,33 +298,33 @@ class TestDistributeImages:
         # Should NOT be block 0 (intro) or block 4 (conclusion)
         assert indices[0] not in (0, 4)
 
-    def test_two_images_evenly_spaced(self) -> None:
+    async def test_two_images_evenly_spaced(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)  # 5 blocks
         indices = distribute_images(blocks, 2)
         assert len(indices) == 2
         assert indices == sorted(indices)
         assert indices[0] != indices[1]
 
-    def test_images_equal_blocks(self) -> None:
+    async def test_images_equal_blocks(self) -> None:
         """When images == blocks, all blocks get an image."""
         blocks = [ContentBlock(heading=f"H{i}", content="text", level=2) for i in range(3)]
         indices = distribute_images(blocks, 3)
         assert len(indices) == 3
 
-    def test_more_images_than_blocks(self) -> None:
+    async def test_more_images_than_blocks(self) -> None:
         """If more images than blocks, cap at block count."""
         blocks = [ContentBlock(heading="H1", content="text", level=2)]
         indices = distribute_images(blocks, 5)
         assert len(indices) == 1
 
-    def test_indices_sorted(self) -> None:
+    async def test_indices_sorted(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         indices = distribute_images(blocks, 3)
         assert indices == sorted(indices)
 
 
 class TestExtractBlockContexts:
-    def test_basic_extraction(self) -> None:
+    async def test_basic_extraction(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         indices = distribute_images(blocks, 2)
         contexts = extract_block_contexts(blocks, indices)
@@ -332,12 +332,12 @@ class TestExtractBlockContexts:
         for ctx in contexts:
             assert len(ctx) > 0
 
-    def test_includes_heading(self) -> None:
+    async def test_includes_heading(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         contexts = extract_block_contexts(blocks, [0])
         assert "Введение" in contexts[0]
 
-    def test_max_words_limit(self) -> None:
+    async def test_max_words_limit(self) -> None:
         long_content = "## Long Section\n\n" + " ".join(["word"] * 500)
         blocks = split_into_blocks(long_content)
         contexts = extract_block_contexts(blocks, [0], max_words=50)
@@ -345,12 +345,12 @@ class TestExtractBlockContexts:
         # heading + max_words content
         assert word_count <= 55  # some slack for heading words
 
-    def test_out_of_range_index(self) -> None:
+    async def test_out_of_range_index(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         contexts = extract_block_contexts(blocks, [99])
         assert contexts == [""]
 
-    def test_empty_indices(self) -> None:
+    async def test_empty_indices(self) -> None:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         contexts = extract_block_contexts(blocks, [])
         assert contexts == []

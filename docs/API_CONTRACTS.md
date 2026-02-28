@@ -1873,7 +1873,7 @@ async def generate_article_pipeline(cluster, category, project, connections):
 
 #### Image-text reconciliation (Stage 5)
 
-Текст и изображения генерируются параллельно. После завершения обоих — reconciliation:
+Текст генерируется сначала, затем изображения (block-aware). После этого выполняется reconciliation:
 
 ```python
 def reconcile_images(

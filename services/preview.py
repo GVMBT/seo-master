@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from bot.exceptions import AIGenerationError
 from db.client import SupabaseClient
 from db.repositories.audits import AuditsRepository
 from db.repositories.categories import CategoriesRepository
@@ -186,7 +187,7 @@ class PreviewService:
                     block_contexts=block_contexts,
                 )
                 raw_images = [img.data for img in image_result]
-            except Exception:
+            except AIGenerationError:
                 log.warning("image_gen_failed", exc_info=True)
 
         # Reconcile images with text (E32-E35)

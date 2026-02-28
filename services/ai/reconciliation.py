@@ -122,7 +122,7 @@ def extract_block_contexts(
     """
     contexts: list[str] = []
     for idx in block_indices:
-        if idx >= len(blocks):
+        if idx < 0 or idx >= len(blocks):
             contexts.append("")
             continue
         block = blocks[idx]
