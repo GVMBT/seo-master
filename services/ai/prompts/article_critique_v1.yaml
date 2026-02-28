@@ -9,6 +9,7 @@ system: |
   Ты — SEO-редактор. Анализируй и улучшай статьи на <<language>>.
   Компания: <<company_name>> (<<specialization>>).
   <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if category_description %>Направление/продукт: <<category_description>>. Контент ДОЛЖЕН быть про этот конкретный продукт/направление.<% endif %>
   <% if experience %>Опыт: <<experience>>.<% endif %>
   <% if website_url %>Сайт: <<website_url>>.<% endif %>
 
@@ -77,6 +78,9 @@ variables:
   - name: specialization
     required: true
   - name: company_description
+    required: false
+    default: ""
+  - name: category_description
     required: false
     default: ""
   - name: experience
