@@ -32,7 +32,7 @@ from db.models import CategoryCreate, PlatformConnectionCreate, ProjectCreate, U
 from db.repositories.categories import CategoriesRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import cancel_kb
+from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -569,7 +569,7 @@ async def pipeline_connect_wp_password(
     if not (wp_url and wp_login and project_id):
         await state.clear()
         await clear_checkpoint(redis, user.id)
-        await message.answer("Сессия устарела. Начните подключение заново.")
+        await message.answer("Сессия устарела. Начните подключение заново.", reply_markup=menu_kb())
         return
     project_name: str = data.get("project_name", "")
 
@@ -589,7 +589,7 @@ async def pipeline_connect_wp_password(
     if not project or project.user_id != user.id:
         await state.clear()
         await clear_checkpoint(redis, user.id)
-        await message.answer("Проект не найден.")
+        await message.answer("Проект не найден.", reply_markup=menu_kb())
         return
 
     # Check max 1 WP per project
@@ -662,7 +662,7 @@ async def pipeline_cancel_wp_subflow(
     else:
         await state.clear()
         await clear_checkpoint(redis, user.id)
-        await msg.edit_text("Публикация отменена.")
+        await msg.edit_text("Публикация отменена.", reply_markup=menu_kb())
 
     await callback.answer()
 
@@ -863,7 +863,7 @@ async def pipeline_create_category_name(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await message.answer("Проект не выбран. Начните создание статьи заново.")
+        await message.answer("Проект не выбран. Начните создание статьи заново.", reply_markup=menu_kb())
         return
 
     repo = CategoriesRepository(db)
@@ -874,7 +874,7 @@ async def pipeline_create_category_name(
         )
     )
     if category is None:
-        await message.answer("Не удалось создать категорию. Попробуйте снова.")
+        await message.answer("Не удалось создать категорию. Попробуйте снова.", reply_markup=menu_kb())
         return
 
     await state.update_data(
@@ -911,7 +911,7 @@ async def _return_to_preview(
     previews_repo = PreviewsRepository(db)
     preview = await previews_repo.get_by_id(preview_id)
     if not preview or preview.user_id != user.id or preview.status != "draft":
-        await message.answer("Превью устарело. Начните заново.")
+        await message.answer("Превью устарело. Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -963,5 +963,5 @@ async def pipeline_article_cancel(
     await clear_checkpoint(redis, user.id)
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text("Публикация отменена.")
+        await msg.edit_text("Публикация отменена.", reply_markup=menu_kb())
     await callback.answer()

@@ -31,6 +31,7 @@ from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.publications import PublicationsRepository
+from keyboards.inline import menu_kb
 from keyboards.pipeline import (
     social_confirm_kb,
     social_insufficient_balance_kb,
@@ -310,7 +311,7 @@ async def _run_social_generation(
     platform_type = fsm_data.get("platform_type", "")
 
     if not category_id or not project_id or not connection_id:
-        await message.edit_text("Данные сессии устарели. Начните заново.")
+        await message.edit_text("Данные сессии устарели. Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -321,6 +322,7 @@ async def _run_social_generation(
         await try_refund(db, user, cost, "Нет ключевых фраз")
         await message.edit_text(
             "Нет доступных ключевых фраз. Добавьте их в категорию.",
+            reply_markup=menu_kb(),
         )
         await state.set_state(SocialPipelineFSM.confirm_cost)
         return
@@ -396,6 +398,7 @@ async def _run_social_generation(
         await try_refund(db, user, cost, "Ошибка генерации поста")
         await message.edit_text(
             "Ошибка генерации поста. Токены возвращены.\n\nПопробуйте ещё раз.",
+            reply_markup=menu_kb(),
         )
         await state.set_state(SocialPipelineFSM.confirm_cost)
 
@@ -473,6 +476,7 @@ async def publish_social_post(
         if not connection:
             await msg.edit_text(
                 "Подключение не найдено. Проверьте настройки.",
+                reply_markup=menu_kb(),
             )
             await callback.answer()
             return
@@ -485,7 +489,7 @@ async def publish_social_post(
                 connection_project_id=connection.project_id,
                 expected_project_id=project_id,
             )
-            await msg.edit_text("Доступ запрещён.")
+            await msg.edit_text("Доступ запрещён.", reply_markup=menu_kb())
             await callback.answer()
             return
 
@@ -700,7 +704,7 @@ async def cancel_refund_social(
 
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    await msg.edit_text("Пост отменён. Токены возвращены.")
+    await msg.edit_text("Пост отменён. Токены возвращены.", reply_markup=menu_kb())
     await callback.answer()
 
 

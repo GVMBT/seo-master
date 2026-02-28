@@ -25,7 +25,7 @@ from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import CategoryUpdate, User
 from db.repositories.categories import CategoriesRepository
-from keyboards.inline import cancel_kb
+from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_images_options_kb,
     pipeline_prices_options_kb,
@@ -129,7 +129,7 @@ async def show_readiness_check(
     project_id = data.get("project_id")
     project_name = data.get("project_name", "")
     if not category_id:
-        await msg.edit_text("Категория не выбрана. Начните заново.")
+        await msg.edit_text("Категория не выбрана. Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -178,7 +178,7 @@ async def show_readiness_check_msg(
     project_id = data.get("project_id")
     project_name = data.get("project_name", "")
     if not category_id:
-        await message.answer("Категория не выбрана. Начните заново.")
+        await message.answer("Категория не выбрана. Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -343,7 +343,7 @@ async def readiness_prices_text_input(
     data = await state.get_data()
     category_id = data.get("category_id")
     if not category_id:
-        await message.answer("Категория не найдена. Начните заново.")
+        await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
         return
 
     prices_text = "\n".join(lines)
@@ -447,7 +447,7 @@ async def readiness_prices_excel_file(
     data = await state.get_data()
     category_id = data.get("category_id")
     if not category_id:
-        await message.answer("Категория не найдена. Начните заново.")
+        await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
         return
 
     prices_text = "\n".join(result)

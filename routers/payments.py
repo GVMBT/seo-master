@@ -7,6 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, P
 from bot.config import get_settings
 from db.client import SupabaseClient
 from db.models import User
+from keyboards.inline import menu_kb
 from services.payments.stars import StarsPaymentService
 
 log = structlog.get_logger()
@@ -122,7 +123,7 @@ async def successful_payment_handler(
 
     if result.get("error"):
         log.error("payment_processing_error", error=result["error"])
-        await message.answer("\u26a0\ufe0f Ошибка обработки платежа. Попробуйте позже.")
+        await message.answer("\u26a0\ufe0f Ошибка обработки платежа. Попробуйте позже.", reply_markup=menu_kb())
         return
 
     tokens = result["tokens_credited"]

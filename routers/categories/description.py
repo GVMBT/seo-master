@@ -26,6 +26,7 @@ from keyboards.inline import (
     description_confirm_kb,
     description_kb,
     description_review_kb,
+    menu_kb,
 )
 from services.ai.description import DescriptionService
 from services.ai.orchestrator import AIOrchestrator
@@ -79,7 +80,7 @@ async def _show_description_screen(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(category_id)
     if not category:
-        await msg.edit_text("Категория не найдена.")
+        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
         return
 
     safe_name = html.escape(category.name)
@@ -201,7 +202,7 @@ async def confirm_generate(
     if not has_balance:
         balance = await token_service.get_balance(user.id)
         insufficient_msg = token_service.format_insufficient_msg(COST_DESCRIPTION, balance)
-        await msg.edit_text(insufficient_msg)
+        await msg.edit_text(insufficient_msg, reply_markup=menu_kb())
         await state.clear()
         await callback.answer()
         return
@@ -240,7 +241,7 @@ async def confirm_generate(
             description=f"Возврат за описание (ошибка генерации, категория #{cat_id})",
         )
         await state.clear()
-        await msg.edit_text("\u26a0\ufe0f Ошибка генерации. Токены возвращены на баланс.")
+        await msg.edit_text("\u26a0\ufe0f Ошибка генерации. Токены возвращены на баланс.", reply_markup=menu_kb())
         return
 
     # Move to review state
@@ -289,7 +290,7 @@ async def cancel_generate(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await msg.edit_text("Категория не найдена.")
+        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
         return
 
@@ -449,7 +450,7 @@ async def review_cancel(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await msg.edit_text("Категория не найдена.")
+        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
         return
 
@@ -531,7 +532,7 @@ async def process_manual(
     # Show updated description screen (as new message since user sent text)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await message.answer("Категория не найдена.")
+        await message.answer("Категория не найдена.", reply_markup=menu_kb())
         return
 
     safe_name = html.escape(category.name)
@@ -606,5 +607,5 @@ async def cancel_manual_inline(
         await callback.answer()
         return
 
-    await msg.edit_text("Ввод описания отменён.")
+    await msg.edit_text("Ввод описания отменён.", reply_markup=menu_kb())
     await callback.answer()

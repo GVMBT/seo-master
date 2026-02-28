@@ -28,7 +28,7 @@ from db.client import SupabaseClient
 from db.models import CategoryCreate, ProjectCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import cancel_kb
+from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -559,7 +559,7 @@ async def pipeline_create_category_name(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await message.answer("Проект не выбран. Начните создание поста заново.")
+        await message.answer("Проект не выбран. Начните создание поста заново.", reply_markup=menu_kb())
         return
 
     repo = CategoriesRepository(db)
@@ -570,7 +570,7 @@ async def pipeline_create_category_name(
         )
     )
     if category is None:
-        await message.answer("Не удалось создать категорию. Попробуйте снова.")
+        await message.answer("Не удалось создать категорию. Попробуйте снова.", reply_markup=menu_kb())
         return
 
     await state.update_data(category_id=category.id, category_name=category.name)
@@ -596,5 +596,5 @@ async def pipeline_social_cancel(
     await clear_checkpoint(redis, user.id)
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text("Публикация отменена.")
+        await msg.edit_text("Публикация отменена.", reply_markup=menu_kb())
     await callback.answer()

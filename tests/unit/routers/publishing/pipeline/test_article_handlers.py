@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from keyboards.inline import menu_kb
 from routers.publishing.pipeline._common import (
     ArticlePipelineFSM,
     clear_checkpoint,
@@ -1513,7 +1514,9 @@ class TestPipelineArticleCancel:
     ) -> None:
         """Cancel -> message edited to 'Публикация отменена.'."""
         await pipeline_article_cancel(mock_callback, mock_state, user, mock_redis)
-        mock_callback.message.edit_text.assert_called_with("Публикация отменена.")
+        mock_callback.message.edit_text.assert_called_with(
+            "Публикация отменена.", reply_markup=menu_kb()
+        )
 
     async def test_answers_callback(
         self,

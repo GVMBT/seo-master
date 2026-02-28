@@ -23,7 +23,7 @@ from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.schedules import SchedulesRepository
-from keyboards.inline import admin_panel_kb, cancel_kb, dashboard_kb, dashboard_resume_kb
+from keyboards.inline import admin_panel_kb, cancel_kb, dashboard_kb, dashboard_resume_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -74,13 +74,15 @@ async def _handle_pinterest_deep_link(
     tokens_raw = await redis.get(CacheKeys.pinterest_auth(nonce))
     if not tokens_raw:
         log.warning("pinterest_deep_link_no_tokens", nonce=nonce, user_id=user.id)
-        await message.answer("Авторизация Pinterest не найдена или истекла. Попробуйте ещё раз.")
+        await message.answer(
+            "Авторизация Pinterest не найдена или истекла. Попробуйте ещё раз.", reply_markup=menu_kb()
+        )
         return
 
     meta_raw = await redis.get(CacheKeys.pinterest_oauth(nonce))
     if not meta_raw:
         log.warning("pinterest_deep_link_no_meta", nonce=nonce, user_id=user.id)
-        await message.answer("Данные сессии Pinterest не найдены. Попробуйте ещё раз.")
+        await message.answer("Данные сессии Pinterest не найдены. Попробуйте ещё раз.", reply_markup=menu_kb())
         return
 
     try:
@@ -99,7 +101,7 @@ async def _handle_pinterest_deep_link(
             project_id = int(meta_raw)
         except (ValueError, TypeError):  # fmt: skip
             log.warning("pinterest_deep_link_invalid_meta", nonce=nonce)
-            await message.answer("Ошибка данных Pinterest. Попробуйте ещё раз.")
+            await message.answer("Ошибка данных Pinterest. Попробуйте ещё раз.", reply_markup=menu_kb())
             return
 
     if not project_id:
@@ -109,7 +111,7 @@ async def _handle_pinterest_deep_link(
     project = await projects_repo.get_by_id(project_id)
     if not project or project.user_id != user.id:
         log.warning("pinterest_deep_link_wrong_owner", project_id=project_id, user_id=user.id)
-        await message.answer("Проект не найден.")
+        await message.answer("Проект не найден.", reply_markup=menu_kb())
         return
 
     settings = get_settings()
@@ -132,7 +134,9 @@ async def _handle_pinterest_deep_link(
         )
     except Exception:
         log.exception("pinterest_create_connection_failed", project_id=project_id, user_id=user.id)
-        await message.answer("Не удалось создать подключение Pinterest. Возможно, оно уже существует.")
+        await message.answer(
+            "Не удалось создать подключение Pinterest. Возможно, оно уже существует.", reply_markup=menu_kb()
+        )
         return
 
     # Cleanup Redis keys
@@ -140,7 +144,7 @@ async def _handle_pinterest_deep_link(
     await redis.delete(CacheKeys.pinterest_oauth(nonce))
 
     safe_name = html.escape(project.name)
-    await message.answer(f"Pinterest подключён к проекту «{safe_name}»!")
+    await message.answer(f"Pinterest подключён к проекту «{safe_name}»!", reply_markup=menu_kb())
     log.info(
         "pinterest_connected_via_deeplink",
         connection_id=conn.id,
@@ -435,7 +439,9 @@ async def _route_to_step(
 
     if step == "select_category":
         if not project_id:
-            await msg.edit_text("\u26a0\ufe0f Сессия устарела. Нажмите \U0001f4cb Меню чтобы начать заново.")
+            await msg.edit_text(
+                "\u26a0\ufe0f Сессия устарела. Нажмите \U0001f4cb Меню чтобы начать заново.", reply_markup=menu_kb()
+            )
             await redis.delete(CacheKeys.pipeline_state(user.id))
             await state.clear()
             return
@@ -492,7 +498,9 @@ async def _route_to_step(
             return
 
         # Preview expired or already published
-        await msg.edit_text("\u26a0\ufe0f Превью устарело. Нажмите \U0001f4cb Меню чтобы начать заново.")
+        await msg.edit_text(
+            "\u26a0\ufe0f Превью устарело. Нажмите \U0001f4cb Меню чтобы начать заново.", reply_markup=menu_kb()
+        )
         await redis.delete(CacheKeys.pipeline_state(user.id))
         return
 

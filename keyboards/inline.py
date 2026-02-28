@@ -15,6 +15,15 @@ from services.tokens import COST_DESCRIPTION
 # ---------------------------------------------------------------------------
 
 
+def menu_kb() -> InlineKeyboardMarkup:
+    """Single-button keyboard to return to dashboard. Use for dead-end messages."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="\U0001f4cb \u041c\u0435\u043d\u044e", callback_data="nav:dashboard")],
+        ]
+    )
+
+
 def cancel_kb(callback_data: str = "fsm:cancel") -> InlineKeyboardMarkup:
     """Inline cancel button for text input FSM states.
 
