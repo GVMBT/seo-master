@@ -6,7 +6,6 @@ Zero Telegram/Aiogram dependencies.
 
 from __future__ import annotations
 
-import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -89,7 +88,12 @@ class PreviewService:
         from services.ai.articles import ArticleService, sanitize_html
         from services.ai.images import ImageService
         from services.ai.markdown_renderer import render_markdown
-        from services.ai.reconciliation import reconcile_images
+        from services.ai.reconciliation import (
+            distribute_images,
+            extract_block_contexts,
+            reconcile_images,
+            split_into_blocks,
+        )
 
         article_service = ArticleService(self._orchestrator, self._db)
         image_service = ImageService(self._orchestrator)
@@ -139,8 +143,8 @@ class PreviewService:
                 if colors.get("background"):
                     image_context["background_color"] = colors["background"]
 
-        # Phase 2: Parallel text + images (API_CONTRACTS.md parallel pipeline)
-        text_task = article_service.generate(
+        # Phase 2: Text generation (outline → expand → quality → critique)
+        text_result = await article_service.generate(
             user_id=user_id,
             project_id=project_id,
             category_id=category_id,
@@ -153,19 +157,6 @@ class PreviewService:
             internal_links=websearch.get("internal_links", ""),
             research_data=websearch.get("research_data"),
         )
-        image_task = image_service.generate(
-            user_id=user_id,
-            context=image_context,
-            count=image_count,
-        )
-        text_result, image_result = await asyncio.gather(
-            text_task,
-            image_task,
-            return_exceptions=True,
-        )
-
-        if isinstance(text_result, BaseException):
-            raise text_result
 
         content = text_result.content if isinstance(text_result.content, dict) else {}
         title = content.get("title", keyword)
@@ -173,12 +164,30 @@ class PreviewService:
         meta_description: str = content.get("meta_description", "")
         images_meta: list[dict[str, str]] = content.get("images_meta", [])
 
-        # Process images
+        # Phase 3: Block-aware image generation (§7.4.1)
+        # Images AFTER text — each prompt gets H2-section context
         raw_images: list[bytes] = []
-        if isinstance(image_result, BaseException):
-            log.warning("image_gen_failed", error=str(image_result))
-        elif image_result:
-            raw_images = [img.data for img in image_result]
+        if image_count > 0:
+            blocks = split_into_blocks(content_markdown)
+            block_indices = distribute_images(blocks, image_count)
+            block_contexts = extract_block_contexts(blocks, block_indices)
+            log.info(
+                "block_aware_images",
+                blocks=len(blocks),
+                indices=block_indices,
+                image_count=image_count,
+            )
+
+            try:
+                image_result = await image_service.generate(
+                    user_id=user_id,
+                    context=image_context,
+                    count=image_count,
+                    block_contexts=block_contexts,
+                )
+                raw_images = [img.data for img in image_result]
+            except Exception:
+                log.warning("image_gen_failed", exc_info=True)
 
         # Reconcile images with text (E32-E35)
         images_for_reconcile: list[bytes | BaseException] = list(raw_images)

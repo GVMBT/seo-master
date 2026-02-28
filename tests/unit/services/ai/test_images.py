@@ -1,8 +1,13 @@
-"""Tests for services.ai.images — _flatten_image_settings."""
+"""Tests for services.ai.images — _flatten_image_settings + ImageService."""
 
 from __future__ import annotations
 
-from services.ai.images import _flatten_image_settings
+from unittest.mock import AsyncMock
+
+import pytest
+
+from services.ai.images import ImageService, _flatten_image_settings
+from services.ai.orchestrator import GenerationResult
 
 
 class TestFlattenImageSettings:
@@ -112,3 +117,86 @@ class TestFlattenImageSettings:
         ctx = {"image_settings": {"tones": "Холодный"}}
         result = _flatten_image_settings(ctx)
         assert result["tone"] == "Холодный"
+
+
+# ---------------------------------------------------------------------------
+# ImageService.generate() — block_contexts parameter
+# ---------------------------------------------------------------------------
+
+
+def _fake_image_result() -> GenerationResult:
+    """Return a GenerationResult with a minimal base64 PNG data URI."""
+    # 1x1 red pixel PNG as base64 data URI
+    return GenerationResult(
+        content="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+        model_used="google/gemini-3-pro-image-preview",
+        prompt_version="v1",
+        fallback_used=False,
+        input_tokens=100,
+        output_tokens=200,
+        cost_usd=0.02,
+        generation_time_ms=3000,
+    )
+
+
+class TestImageServiceBlockContexts:
+    """Verify block_contexts flow into per-image context."""
+
+    @pytest.fixture
+    def orchestrator(self) -> AsyncMock:
+        orch = AsyncMock()
+        orch.generate_without_rate_limit = AsyncMock(return_value=_fake_image_result())
+        return orch
+
+    async def test_block_contexts_passed_to_generate(self, orchestrator: AsyncMock) -> None:
+        svc = ImageService(orchestrator)
+        contexts = ["Введение. Текст про SEO.", "Материалы и обзоры."]
+        await svc.generate(
+            user_id=1,
+            context={"keyword": "seo", "content_type": "article",
+                     "company_name": "Co", "specialization": "SEO",
+                     "image_settings": {}},
+            count=2,
+            block_contexts=contexts,
+        )
+
+        # Each call should have block_context in the context dict
+        calls = orchestrator.generate_without_rate_limit.call_args_list
+        assert len(calls) == 2
+        req0 = calls[0].args[0]
+        req1 = calls[1].args[0]
+        assert req0.context["block_context"] == "Введение. Текст про SEO."
+        assert req1.context["block_context"] == "Материалы и обзоры."
+
+    async def test_no_block_contexts_no_key(self, orchestrator: AsyncMock) -> None:
+        svc = ImageService(orchestrator)
+        await svc.generate(
+            user_id=1,
+            context={"keyword": "seo", "content_type": "article",
+                     "company_name": "Co", "specialization": "SEO",
+                     "image_settings": {}},
+            count=1,
+            block_contexts=None,
+        )
+
+        calls = orchestrator.generate_without_rate_limit.call_args_list
+        req0 = calls[0].args[0]
+        assert "block_context" not in req0.context
+
+    async def test_fewer_contexts_than_images(self, orchestrator: AsyncMock) -> None:
+        """If block_contexts shorter than count, extra images get no context."""
+        svc = ImageService(orchestrator)
+        await svc.generate(
+            user_id=1,
+            context={"keyword": "seo", "content_type": "article",
+                     "company_name": "Co", "specialization": "SEO",
+                     "image_settings": {}},
+            count=3,
+            block_contexts=["Context for first only"],
+        )
+
+        calls = orchestrator.generate_without_rate_limit.call_args_list
+        assert len(calls) == 3
+        assert calls[0].args[0].context["block_context"] == "Context for first only"
+        assert "block_context" not in calls[1].args[0].context
+        assert "block_context" not in calls[2].args[0].context

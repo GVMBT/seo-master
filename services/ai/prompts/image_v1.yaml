@@ -7,6 +7,11 @@ meta:
 user: |
   Сгенерируй изображение для <<content_type>> на тему "<<keyword>>".
 
+  <% if block_context %>
+  Контекст раздела статьи, к которому привязано изображение:
+  <<block_context>>
+  <% endif %>
+
   Компания: <<company_name>> (<<specialization>>).
   Стиль: <<style>>. Тональность: <<tone>>.
   <<camera_instruction>>
@@ -71,6 +76,10 @@ variables:
     source: site_brandings.colors.background
     required: false
     default: "#ffffff"
+  - name: block_context
+    source: first 200 words of H2-section from distribute_images() (§7.4.1)
+    required: false
+    default: ""
   - name: image_number
     source: index (1-based) when count > 1
     required: false

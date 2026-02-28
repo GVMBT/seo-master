@@ -375,6 +375,9 @@ class TestGenerateArticleContent:
     @patch("services.ai.articles.sanitize_html", side_effect=lambda x: x)
     @patch("services.ai.markdown_renderer.render_markdown", return_value="<h2>Intro</h2><p>Text</p>")
     @patch("services.ai.reconciliation.reconcile_images")
+    @patch("services.ai.reconciliation.extract_block_contexts", return_value=["Intro context", "Body context"])
+    @patch("services.ai.reconciliation.distribute_images", return_value=[0, 1])
+    @patch("services.ai.reconciliation.split_into_blocks", return_value=[MagicMock(), MagicMock()])
     @patch("services.ai.images.ImageService")
     @patch("services.ai.articles.ArticleService")
     @patch("services.preview.AuditsRepository")
@@ -387,6 +390,9 @@ class TestGenerateArticleContent:
         mock_audit_cls: MagicMock,
         mock_article_svc: MagicMock,
         mock_image_svc: MagicMock,
+        mock_split: MagicMock,
+        mock_distribute: MagicMock,
+        mock_extract_ctx: MagicMock,
         mock_reconcile: MagicMock,
         mock_render: MagicMock,
         mock_sanitize: MagicMock,
@@ -408,10 +414,11 @@ class TestGenerateArticleContent:
         )
         mock_audit_cls.return_value.get_branding_by_project = AsyncMock(return_value=None)
 
-        # Article service returns via asyncio.gather
+        # Article service returns text first (sequential, not parallel)
         mock_article_svc.return_value.generate = AsyncMock(
             return_value=_gen_result(_ARTICLE_CONTENT)
         )
+        # Image service generates AFTER text with block_contexts
         mock_image_svc.return_value.generate = AsyncMock(
             return_value=[_MockImageResult(data=b"fake_img")]
         )
@@ -428,6 +435,13 @@ class TestGenerateArticleContent:
         assert isinstance(result, ArticleContent)
         assert result.title == "SEO Guide 2026"
         assert result.images_count >= 0
+        # Verify block-aware pipeline was called
+        mock_split.assert_called_once()
+        mock_distribute.assert_called_once()
+        mock_extract_ctx.assert_called_once()
+        # Verify images were generated with block_contexts
+        img_call = mock_image_svc.return_value.generate.call_args
+        assert img_call.kwargs.get("block_contexts") == ["Intro context", "Body context"]
 
     @patch("services.ai.articles.ArticleService")
     @patch("services.ai.images.ImageService")

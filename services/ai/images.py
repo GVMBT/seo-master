@@ -100,8 +100,14 @@ class ImageService:
         user_id: int,
         context: dict[str, Any],
         count: int = 1,
+        block_contexts: list[str] | None = None,
     ) -> list[GeneratedImage]:
-        """Generate N images with variation.
+        """Generate N images with variation and optional block context.
+
+        Args:
+            block_contexts: Per-image section context from distribute_images() (§7.4.1).
+                If provided, each image prompt includes the H2-section text.
+                Length should match count (or be shorter — missing entries get "").
 
         Returns list of GeneratedImage (raw bytes). K >= 1 of N must succeed.
         Raises AIGenerationError if ALL fail.
@@ -129,6 +135,10 @@ class ImageService:
 
             # Round-robin aspect ratio
             img_context["image_settings"]["formats"] = [formats[i % len(formats)]]
+
+            # Block-aware context (§7.4.1): section text for targeted image generation
+            if block_contexts and i < len(block_contexts):
+                img_context["block_context"] = block_contexts[i]
 
             if count > 1:
                 img_context["image_number"] = str(i + 1)
