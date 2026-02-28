@@ -10,8 +10,8 @@ from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from db.client import SupabaseClient
 from db.models import Category, Project
-from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
+from services.categories import CategoryService
 
 # ---------------------------------------------------------------------------
 # S1a: InaccessibleMessage guard helper
@@ -62,14 +62,7 @@ async def get_owned_category(
 ) -> Category | None:
     """Load category and verify it belongs to a project owned by user.
 
-    Returns None if category not found, project not found, or not owned.
+    Delegates to CategoryService.get_owned_category().
     """
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-    if not category:
-        return None
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user_id:
-        return None
-    return category
+    cat_svc = CategoryService(db=db)
+    return await cat_svc.get_owned_category(category_id, user_id)

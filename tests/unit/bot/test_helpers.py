@@ -86,53 +86,24 @@ class TestGetOwnedCategory:
 
     async def test_returns_category_when_owned(self, mock_db: MagicMock) -> None:
         category = MagicMock()
-        category.project_id = 10
-        project = MagicMock()
-        project.user_id = 42
 
-        with (
-            patch("bot.helpers.CategoriesRepository") as MockCatsRepo,
-            patch("bot.helpers.ProjectsRepository") as MockProjRepo,
-        ):
-            MockCatsRepo.return_value.get_by_id = AsyncMock(return_value=category)
-            MockProjRepo.return_value.get_by_id = AsyncMock(return_value=project)
+        with patch("bot.helpers.CategoryService") as MockSvc:
+            MockSvc.return_value.get_owned_category = AsyncMock(return_value=category)
 
             result = await get_owned_category(mock_db, 5, 42)
             assert result is category
+            MockSvc.return_value.get_owned_category.assert_awaited_once_with(5, 42)
 
     async def test_returns_none_when_category_not_found(self, mock_db: MagicMock) -> None:
-        with patch("bot.helpers.CategoriesRepository") as MockCatsRepo:
-            MockCatsRepo.return_value.get_by_id = AsyncMock(return_value=None)
-
-            result = await get_owned_category(mock_db, 5, 42)
-            assert result is None
-
-    async def test_returns_none_when_project_not_found(self, mock_db: MagicMock) -> None:
-        category = MagicMock()
-        category.project_id = 10
-
-        with (
-            patch("bot.helpers.CategoriesRepository") as MockCatsRepo,
-            patch("bot.helpers.ProjectsRepository") as MockProjRepo,
-        ):
-            MockCatsRepo.return_value.get_by_id = AsyncMock(return_value=category)
-            MockProjRepo.return_value.get_by_id = AsyncMock(return_value=None)
+        with patch("bot.helpers.CategoryService") as MockSvc:
+            MockSvc.return_value.get_owned_category = AsyncMock(return_value=None)
 
             result = await get_owned_category(mock_db, 5, 42)
             assert result is None
 
     async def test_returns_none_when_not_owned(self, mock_db: MagicMock) -> None:
-        category = MagicMock()
-        category.project_id = 10
-        project = MagicMock()
-        project.user_id = 99  # different user
-
-        with (
-            patch("bot.helpers.CategoriesRepository") as MockCatsRepo,
-            patch("bot.helpers.ProjectsRepository") as MockProjRepo,
-        ):
-            MockCatsRepo.return_value.get_by_id = AsyncMock(return_value=category)
-            MockProjRepo.return_value.get_by_id = AsyncMock(return_value=project)
+        with patch("bot.helpers.CategoryService") as MockSvc:
+            MockSvc.return_value.get_owned_category = AsyncMock(return_value=None)
 
             result = await get_owned_category(mock_db, 5, 42)
             assert result is None

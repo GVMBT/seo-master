@@ -16,10 +16,9 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import CategoryServiceFactory
 from db.client import SupabaseClient
-from db.models import Category, CategoryUpdate, User
-from db.repositories.categories import CategoriesRepository
-from db.repositories.projects import ProjectsRepository
+from db.models import User
 from keyboards.inline import (
     cancel_kb,
     category_card_kb,
@@ -52,33 +51,16 @@ class DescriptionGenerateFSM(StatesGroup):
 # ---------------------------------------------------------------------------
 
 
-async def _check_category_ownership(
-    category_id: int,
-    user: User,
-    db: SupabaseClient,
-) -> tuple[CategoriesRepository, Category | None, int | None]:
-    """Load category and verify ownership. Returns (repo, category, project_id)."""
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-    if not category:
-        return cats_repo, None, None
-
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
-        return cats_repo, None, None
-
-    return cats_repo, category, category.project_id
-
-
 async def _show_description_screen(
     msg: Message,
     category_id: int,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
+    user_id: int,
 ) -> None:
     """Edit message with description screen (UX_TOOLBOX section 10 / 10.3)."""
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(category_id, user_id)
     if not category:
         await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
         return
@@ -108,6 +90,7 @@ async def show_description(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Show category description (UX_TOOLBOX section 10 / 10.3)."""
     msg = safe_message(callback)
@@ -116,13 +99,14 @@ async def show_description(
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category, _ = await _check_category_ownership(category_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(category_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    await _show_description_screen(msg, category_id, db)
+    await _show_description_screen(msg, category_id, db, category_service_factory, user.id)
     await callback.answer()
 
 
@@ -137,6 +121,7 @@ async def start_generate(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Start AI description generation — show cost confirmation."""
     msg = safe_message(callback)
@@ -145,7 +130,8 @@ async def start_generate(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category, project_id = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
@@ -163,7 +149,7 @@ async def start_generate(
     await state.update_data(
         last_update_time=time.time(),
         cat_id=cat_id,
-        project_id=project_id,
+        project_id=category.project_id,
         regeneration_count=0,
     )
 
@@ -276,6 +262,7 @@ async def cancel_generate(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Cancel generation — return to category card."""
     msg = safe_message(callback)
@@ -287,8 +274,8 @@ async def cancel_generate(
     cat_id = int(data["cat_id"])
     await state.clear()
 
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
         await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
@@ -313,6 +300,7 @@ async def review_save(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Save generated description to category."""
     msg = safe_message(callback)
@@ -325,11 +313,11 @@ async def review_save(
     generated_text = str(data.get("generated_text", ""))
     await state.clear()
 
-    cats_repo = CategoriesRepository(db)
-    await cats_repo.update(cat_id, CategoryUpdate(description=generated_text))
+    cat_svc = category_service_factory(db)
+    await cat_svc.update_description(cat_id, user.id, generated_text)
 
     log.info("description_saved", cat_id=cat_id, user_id=user.id)
-    await _show_description_screen(msg, cat_id, db)
+    await _show_description_screen(msg, cat_id, db, category_service_factory, user.id)
     await callback.answer()
 
 
@@ -436,6 +424,7 @@ async def review_cancel(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Cancel review — return to category card. Tokens already spent (not refunded)."""
     msg = safe_message(callback)
@@ -447,8 +436,8 @@ async def review_cancel(
     cat_id = int(data["cat_id"])
     await state.clear()
 
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
         await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
@@ -473,6 +462,7 @@ async def start_manual(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Start manual description input (UX_TOOLBOX section 10.2)."""
     msg = safe_message(callback)
@@ -481,7 +471,8 @@ async def start_manual(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category, _ = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
@@ -512,6 +503,7 @@ async def process_manual(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Save manually entered description (10-2000 chars)."""
     text = (message.text or "").strip()
@@ -524,18 +516,16 @@ async def process_manual(
     cat_id = int(data["cat_id"])
     await state.clear()
 
-    cats_repo = CategoriesRepository(db)
-    await cats_repo.update(cat_id, CategoryUpdate(description=text))
+    cat_svc = category_service_factory(db)
+    result = await cat_svc.update_description(cat_id, user.id, text)
 
-    log.info("description_manual_saved", cat_id=cat_id, user_id=user.id)
-
-    # Show updated description screen (as new message since user sent text)
-    category = await cats_repo.get_by_id(cat_id)
-    if not category:
+    if not result:
         await message.answer("Категория не найдена.", reply_markup=menu_kb())
         return
 
-    safe_name = html.escape(category.name)
+    log.info("description_manual_saved", cat_id=cat_id, user_id=user.id)
+
+    safe_name = html.escape(result.name)
     safe_desc = html.escape(text)
     await message.answer(
         f"<b>Описание</b> — {safe_name}\n\nТекущее описание:\n<i>{safe_desc}</i>",
@@ -553,6 +543,7 @@ async def delete_description(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Clear category description."""
     msg = safe_message(callback)
@@ -561,18 +552,15 @@ async def delete_description(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category, _ = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    cleared = await cat_svc.clear_description(cat_id, user.id)
 
-    if not category:
+    if not cleared:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    # Clear description via repository
-    cats_repo = CategoriesRepository(db)
-    await cats_repo.clear_description(cat_id)
-
     log.info("description_deleted", cat_id=cat_id, user_id=user.id)
-    await _show_description_screen(msg, cat_id, db)
+    await _show_description_screen(msg, cat_id, db, category_service_factory, user.id)
     await callback.answer()
 
 
@@ -587,6 +575,7 @@ async def cancel_manual_inline(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Cancel manual description input via inline button — return to category card."""
     msg = safe_message(callback)
@@ -597,7 +586,8 @@ async def cancel_manual_inline(
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.clear()
 
-    _, category, _ = await _check_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if category:
         safe_name = html.escape(category.name)
         await msg.edit_text(

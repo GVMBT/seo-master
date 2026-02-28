@@ -12,10 +12,9 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import CategoryServiceFactory
 from db.client import SupabaseClient
-from db.models import Category, CategoryUpdate, Project, User
-from db.repositories.categories import CategoriesRepository
-from db.repositories.projects import ProjectsRepository
+from db.models import User
 from keyboards.inline import cancel_kb, category_card_kb, menu_kb, prices_kb
 
 log = structlog.get_logger()
@@ -68,25 +67,6 @@ async def _show_prices_screen(
     await message.edit_text(text, reply_markup=prices_kb(category_id, has_prices=bool(prices)))
 
 
-async def _verify_category_ownership(
-    category_id: int,
-    user: User,
-    db: SupabaseClient,
-) -> tuple[CategoriesRepository, Category | None, Project | None]:
-    """Load category and verify ownership. Returns (repo, category, project) or (repo, None, None)."""
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
-    if not category:
-        return cats_repo, None, None
-
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
-        return cats_repo, None, None
-
-    return cats_repo, category, project
-
-
 # ---------------------------------------------------------------------------
 # Show prices screen
 # ---------------------------------------------------------------------------
@@ -97,6 +77,7 @@ async def show_prices(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Show prices screen (UX_TOOLBOX.md section 11)."""
     msg = safe_message(callback)
@@ -105,16 +86,10 @@ async def show_prices(
         return
 
     category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(category_id, user.id)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
@@ -133,6 +108,7 @@ async def start_text(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Start text-based price input (section 11.1)."""
     msg = safe_message(callback)
@@ -141,7 +117,8 @@ async def start_text(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category, _ = await _verify_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
@@ -170,6 +147,7 @@ async def process_text(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Process text price input. Store as-is (plain text)."""
     text = (message.text or "").strip()
@@ -195,26 +173,16 @@ async def process_text(
     cat_id = int(data["prices_cat_id"])
     await state.clear()
 
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
-    if not category:
-        await message.answer("Категория не найдена.", reply_markup=menu_kb())
-        return
-
-    # Ownership re-check
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
-        await message.answer("Категория не найдена.", reply_markup=menu_kb())
-        return
-
-    # Save as plain text
+    cat_svc = category_service_factory(db)
     prices_text = "\n".join(lines)
-    await cats_repo.update(cat_id, CategoryUpdate(prices=prices_text))
+    result = await cat_svc.update_prices(cat_id, user.id, prices_text)
+    if not result:
+        await message.answer("Категория не найдена.", reply_markup=menu_kb())
+        return
 
     log.info("prices_updated_text", category_id=cat_id, lines=len(lines), user_id=user.id)
 
-    safe_name = html.escape(category.name)
+    safe_name = html.escape(result.name)
     count = len(lines)
     preview_lines = lines[:10]
     preview = "\n".join(f"  \u2022 {html.escape(ln)}" for ln in preview_lines)
@@ -236,6 +204,7 @@ async def start_excel(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Start Excel-based price upload (section 11.2)."""
     msg = safe_message(callback)
@@ -244,7 +213,8 @@ async def start_excel(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category, _ = await _verify_category_ownership(cat_id, user, db)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
@@ -322,6 +292,7 @@ async def process_excel(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Process uploaded Excel file (E09: max 1000 rows, 5 MB)."""
     doc = message.document
@@ -381,26 +352,16 @@ async def process_excel(
     cat_id = int(data["prices_cat_id"])
     await state.clear()
 
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
-    if not category:
-        await message.answer("Категория не найдена.", reply_markup=menu_kb())
-        return
-
-    # Ownership re-check
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
-        await message.answer("Категория не найдена.", reply_markup=menu_kb())
-        return
-
-    # Save as plain text
+    cat_svc = category_service_factory(db)
     prices_text = "\n".join(lines)
-    await cats_repo.update(cat_id, CategoryUpdate(prices=prices_text))
+    updated = await cat_svc.update_prices(cat_id, user.id, prices_text)
+    if not updated:
+        await message.answer("Категория не найдена.", reply_markup=menu_kb())
+        return
 
     log.info("prices_updated_excel", category_id=cat_id, lines=len(lines), user_id=user.id)
 
-    safe_name = html.escape(category.name)
+    safe_name = html.escape(updated.name)
     count = len(lines)
     preview_lines = lines[:10]
     preview = "\n".join(f"  \u2022 {html.escape(ln)}" for ln in preview_lines)
@@ -421,6 +382,7 @@ async def delete_prices(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Delete prices (set to NULL)."""
     msg = safe_message(callback)
@@ -429,21 +391,14 @@ async def delete_prices(
         return
 
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    if not project or project.user_id != user.id:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    # Use clear_prices to bypass exclude_none in update()
-    await cats_repo.clear_prices(cat_id)
+    await cat_svc.clear_prices(cat_id, user.id)
 
     log.info("prices_deleted", category_id=cat_id, user_id=user.id)
 
@@ -462,6 +417,7 @@ async def cancel_prices_inline(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Cancel price input via inline button — return to category card."""
     msg = safe_message(callback)
@@ -472,8 +428,9 @@ async def cancel_prices_inline(
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await state.clear()
 
-    _, category, project = await _verify_category_ownership(cat_id, user, db)
-    if category and project:
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
+    if category:
         await msg.edit_text(
             f"<b>{html.escape(category.name)}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
