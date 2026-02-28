@@ -1131,8 +1131,11 @@ def detect_active_preset(schedule_days: list[str], posts_per_day: int) -> str | 
     """Match current schedule parameters to a preset key.
 
     Returns preset key ("1w", "3w", "daily") or "manual" if no preset matches.
-    Returns None if no schedule exists.
+    Returns None if schedule_days is empty or posts_per_day <= 0 (no schedule).
     """
+    if not schedule_days or posts_per_day <= 0:
+        return None
+
     day_set = set(schedule_days)
     for key, (_label, days, _times, ppd) in _PRESETS.items():
         if day_set == set(days) and posts_per_day == ppd:
@@ -1221,14 +1224,15 @@ def scheduler_config_kb(
     cat_id: int,
     conn_id: int,
     has_schedule: bool,
-    active_preset: str | None = None,
+    schedule_days: list[str] | None = None,
+    posts_per_day: int = 0,
 ) -> InlineKeyboardMarkup:
     """Schedule config: presets + manual + disable.
 
-    Args:
-        active_preset: currently active preset key ("1w", "3w", "daily", "manual")
-            to highlight with SUCCESS style. If None, "3w" gets PRIMARY as recommendation.
+    Active preset is auto-detected from schedule_days/posts_per_day.
+    If no schedule, "3w" gets PRIMARY as recommendation.
     """
+    active_preset = detect_active_preset(schedule_days or [], posts_per_day)
     presets = [("3 раза/неделю", "3w"), ("1 раз/неделю", "1w"), ("Каждый день", "daily")]
     rows: list[list[InlineKeyboardButton]] = []
     for label, key in presets:
@@ -1386,14 +1390,15 @@ def scheduler_social_config_kb(
     conn_id: int,
     has_schedule: bool,
     has_other_social: bool = False,
-    active_preset: str | None = None,
+    schedule_days: list[str] | None = None,
+    posts_per_day: int = 0,
 ) -> InlineKeyboardMarkup:
     """Schedule config for social connections: presets + manual + cross-post + disable.
 
-    Args:
-        active_preset: currently active preset key ("1w", "3w", "daily", "manual")
-            to highlight with SUCCESS style. If None, "3w" gets PRIMARY as recommendation.
+    Active preset is auto-detected from schedule_days/posts_per_day.
+    If no schedule, "3w" gets PRIMARY as recommendation.
     """
+    active_preset = detect_active_preset(schedule_days or [], posts_per_day)
     presets = [("3 раза/неделю", "3w"), ("1 раз/неделю", "1w"), ("Каждый день", "daily")]
     rows: list[list[InlineKeyboardButton]] = []
     for label, key in presets:
