@@ -12,6 +12,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import DashboardServiceFactory
 from bot.texts.legal import LEGAL_NOTICE
 from cache.client import RedisClient
 from cache.keys import CacheKeys
@@ -22,7 +23,6 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from db.repositories.schedules import SchedulesRepository
 from keyboards.inline import admin_panel_kb, cancel_kb, dashboard_kb, dashboard_resume_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
@@ -47,7 +47,7 @@ def _parse_referrer_id(arg: str) -> int | None:
     raw = arg.removeprefix("referrer_")
     try:
         return int(raw)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         log.warning("referral_invalid_arg", arg=arg)
         return None
 
@@ -158,44 +158,6 @@ async def _handle_pinterest_deep_link(
 # ---------------------------------------------------------------------------
 
 
-async def _get_platform_flags(
-    db: SupabaseClient,
-    project_ids: list[int],
-) -> tuple[bool, bool]:
-    """Return (has_wp, has_social) across given projects."""
-    has_wp = False
-    has_social = False
-    settings = get_settings()
-    cm = CredentialManager(settings.encryption_key.get_secret_value())
-    conn_repo = ConnectionsRepository(db, cm)
-    for pid in project_ids:
-        ptypes = await conn_repo.get_platform_types_by_project(pid)
-        if "wordpress" in ptypes:
-            has_wp = True
-        if any(p in ptypes for p in ("telegram", "vk", "pinterest")):
-            has_social = True
-        if has_wp and has_social:
-            break
-    return has_wp, has_social
-
-
-async def _count_active_schedules(
-    db: SupabaseClient,
-    project_ids: list[int],
-) -> int:
-    """Count enabled schedules across given projects."""
-    cats_repo = CategoriesRepository(db)
-    sched_repo = SchedulesRepository(db)
-    schedule_count = 0
-    for pid in project_ids:
-        cats = await cats_repo.get_by_project(pid)
-        cat_ids = [c.id for c in cats]
-        if cat_ids:
-            schedules = await sched_repo.get_by_project(cat_ids)
-            schedule_count += sum(1 for s in schedules if s.enabled)
-    return schedule_count
-
-
 def _build_dashboard_text(
     user: User,
     is_new_user: bool,
@@ -242,28 +204,20 @@ async def _build_dashboard(
     is_new_user: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> tuple[str, InlineKeyboardMarkup]:
     """Build Dashboard text + keyboard based on user state."""
-    projects_repo = ProjectsRepository(db)
-    projects = await projects_repo.get_by_user(user.id)
-    project_count = len(projects)
-    project_ids = [p.id for p in projects]
+    dash_svc = dashboard_service_factory(db)
+    data = await dash_svc.get_dashboard_data(user.id)
 
-    has_wp = False
-    has_social = False
-    schedule_count = 0
-    if project_count > 0:
-        has_wp, has_social = await _get_platform_flags(db, project_ids)
-        schedule_count = await _count_active_schedules(db, project_ids)
-
-    text = _build_dashboard_text(user, is_new_user, project_count, schedule_count)
+    text = _build_dashboard_text(user, is_new_user, data.project_count, data.schedule_count)
 
     # Check pipeline checkpoint (section 2.6)
     checkpoint_text = await _get_checkpoint_text(redis, user.id)
 
     kb = dashboard_kb(
-        has_wp=has_wp,
-        has_social=has_social,
+        has_wp=data.has_wp,
+        has_social=data.has_social,
         balance=user.balance,
     )
 
@@ -286,9 +240,7 @@ async def _get_checkpoint_text(redis: RedisClient, user_id: int) -> str:
         pipeline_type = checkpoint.get("pipeline_type", "article")
         label = "статья" if pipeline_type == "article" else "пост"
         return (
-            f"\n\n\u23f3 У вас есть незавершённый {label}:\n"
-            f"\U0001f4c1 Проект: {project_name}\n"
-            f"Остановились на: {step}"
+            f"\n\n\u23f3 У вас есть незавершённый {label}:\n\U0001f4c1 Проект: {project_name}\nОстановились на: {step}"
         )
     except (json.JSONDecodeError, TypeError):  # fmt: skip
         return ""
@@ -308,6 +260,7 @@ async def cmd_start(
     is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Handle /start command — show Dashboard."""
     await ensure_no_active_fsm(state)
@@ -327,7 +280,7 @@ async def cmd_start(
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, user, db, redis, nonce)
 
-    text, kb = await _build_dashboard(user, is_new_user, db, redis)
+    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     if is_new_user:
         # First interaction: set persistent reply keyboard + Dashboard inline buttons (C6)
         await message.answer(text, reply_markup=main_menu_kb(is_admin))
@@ -354,13 +307,14 @@ async def cmd_cancel(
     is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Handle /cancel — clear FSM + show Dashboard."""
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
         await message.answer(f"{interrupted} \u2014 отменено.")
 
-    text, kb = await _build_dashboard(user, is_new_user, db, redis)
+    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     await message.answer(text, reply_markup=kb)
 
 
@@ -376,9 +330,10 @@ async def nav_dashboard(
     is_new_user: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Navigate to Dashboard via editMessageText."""
-    text, kb = await _build_dashboard(user, is_new_user, db, redis)
+    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     msg = safe_message(callback)
     if msg:
         await msg.edit_text(text, reply_markup=kb)
@@ -401,6 +356,7 @@ async def _route_to_step(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
     *,
     step: str,
     project_id: int | None,
@@ -508,7 +464,7 @@ async def _route_to_step(
 
     # Fallback: show dashboard
     log.warning("pipeline.resume_unknown_step", step=step, user_id=user.id)
-    text, kb = await _build_dashboard(user, False, db, redis)
+    text, kb = await _build_dashboard(user, False, db, redis, dashboard_service_factory)
     await msg.edit_text(text, reply_markup=kb)
 
 
@@ -524,6 +480,7 @@ async def pipeline_resume(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Resume pipeline from checkpoint (E49, UX_PIPELINE §2.6).
 
@@ -579,6 +536,7 @@ async def pipeline_resume(
             user,
             db,
             redis,
+            dashboard_service_factory,
             step=step,
             project_id=project_id,
             project_name=project_name,
@@ -593,6 +551,7 @@ async def pipeline_resume(
             user,
             db,
             redis,
+            dashboard_service_factory,
             step=step,
             project_id=project_id,
             project_name=project_name,
@@ -608,6 +567,7 @@ async def _route_social_to_step(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
     *,
     step: str,
     project_id: int | None,
@@ -626,7 +586,9 @@ async def _route_social_to_step(
     log.info("pipeline.social.resume_not_ready", step=step, user_id=user.id)
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await state.clear()
-    text, kb = await _build_dashboard(user, is_new_user=False, db=db, redis=redis)
+    text, kb = await _build_dashboard(
+        user, is_new_user=False, db=db, redis=redis, dashboard_service_factory=dashboard_service_factory
+    )
     await msg.edit_text(text, reply_markup=kb)
 
 
@@ -638,13 +600,14 @@ async def pipeline_restart(
     is_new_user: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Restart pipeline — clear checkpoint and start fresh (E49)."""
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await state.clear()
     msg = safe_message(callback)
     if msg:
-        text, kb = await _build_dashboard(user, is_new_user, db, redis)
+        text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
         await msg.edit_text(text, reply_markup=kb)
     await callback.answer()
 
@@ -700,10 +663,11 @@ async def reply_menu(
     is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Reply keyboard: Menu button → Dashboard."""
     await ensure_no_active_fsm(state)
-    text, kb = await _build_dashboard(user, is_new_user, db, redis)
+    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     await message.answer(text, reply_markup=kb)
 
 
@@ -716,11 +680,14 @@ async def reply_article(
     is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Reply keyboard: Write Article → show Dashboard with pipeline CTA."""
     await ensure_no_active_fsm(state)
     await redis.delete(CacheKeys.pipeline_state(user.id))
-    text, kb = await _build_dashboard(user, is_new_user=is_new_user, db=db, redis=redis)
+    text, kb = await _build_dashboard(
+        user, is_new_user=is_new_user, db=db, redis=redis, dashboard_service_factory=dashboard_service_factory
+    )
     await message.answer(text, reply_markup=kb)
 
 
@@ -733,11 +700,14 @@ async def reply_social(
     is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Reply keyboard: Create Post → show Dashboard with social pipeline CTA."""
     await ensure_no_active_fsm(state)
     await redis.delete(CacheKeys.pipeline_state(user.id))
-    text, kb = await _build_dashboard(user, is_new_user=is_new_user, db=db, redis=redis)
+    text, kb = await _build_dashboard(
+        user, is_new_user=is_new_user, db=db, redis=redis, dashboard_service_factory=dashboard_service_factory
+    )
     await message.answer(text, reply_markup=kb)
 
 
@@ -750,6 +720,7 @@ async def reply_cancel(
     is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Reply keyboard: Cancel → clear FSM + pipeline checkpoint, show Dashboard."""
     interrupted = await ensure_no_active_fsm(state)
@@ -757,5 +728,5 @@ async def reply_cancel(
     await redis.delete(CacheKeys.pipeline_state(user.id))
     if interrupted:
         await message.answer(f"{interrupted} \u2014 отменено.")
-    text, kb = await _build_dashboard(user, is_new_user, db, redis)
+    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     await message.answer(text, reply_markup=kb)

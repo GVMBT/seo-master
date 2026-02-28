@@ -12,7 +12,7 @@ import structlog
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
-from db.models import UserUpdate
+from db.models import User, UserUpdate
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.users import UsersRepository
@@ -77,6 +77,45 @@ class UsersService:
 
         log.info("referral_linked", user_id=user_id, referrer_id=referrer_id)
         return True
+
+    async def toggle_notification(
+        self,
+        user_id: int,
+        field: str,
+        current_value: bool,
+        redis: RedisClient,
+    ) -> User | None:
+        """Toggle a notification setting, invalidate cache, return refreshed user.
+
+        Args:
+            user_id: Telegram user ID.
+            field: One of "publications", "balance", "news".
+            current_value: Current boolean value of the field (will be negated).
+            redis: Redis client for cache invalidation.
+
+        Returns:
+            Updated User or None if user disappeared.
+        """
+        if field == "publications":
+            update = UserUpdate(notify_publications=not current_value)
+        elif field == "balance":
+            update = UserUpdate(notify_balance=not current_value)
+        else:  # "news"
+            update = UserUpdate(notify_news=not current_value)
+
+        await self._users.update(user_id, update)
+
+        # Invalidate user cache so next navigation shows fresh data (best-effort)
+        try:
+            await redis.delete(CacheKeys.user_cache(user_id))
+        except Exception:
+            log.warning("user_cache_invalidate_failed", user_id=user_id)
+
+        return await self._users.get_by_id(user_id)
+
+    async def get_referral_count(self, user_id: int) -> int:
+        """Count users who have this user as referrer."""
+        return await self._users.get_referral_count(user_id)
 
     async def delete_account(
         self,

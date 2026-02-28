@@ -12,10 +12,8 @@ from bot.texts.legal import (
     TERMS_OF_SERVICE_CHUNKS,
 )
 from cache.client import RedisClient
-from cache.keys import CacheKeys
 from db.client import SupabaseClient
-from db.models import User, UserUpdate
-from db.repositories.users import UsersRepository
+from db.models import User
 from keyboards.inline import (
     delete_account_cancelled_kb,
     delete_account_confirm_kb,
@@ -114,25 +112,14 @@ async def toggle_notification(
 
     field = callback.data.split(":")[-1]  # type: ignore[union-attr]
 
-    # Build update with toggled value for the specific notification field
-    if field == "publications":
-        update = UserUpdate(notify_publications=not user.notify_publications)
-    elif field == "balance":
-        update = UserUpdate(notify_balance=not user.notify_balance)
-    else:  # "news"
-        update = UserUpdate(notify_news=not user.notify_news)
+    # Determine current value for the field being toggled
+    current_value = {"publications": user.notify_publications, "balance": user.notify_balance}.get(
+        field, user.notify_news
+    )
 
-    repo = UsersRepository(db)
-    await repo.update(user.id, update)
+    users_svc = UsersService(db=db)
+    updated_user = await users_svc.toggle_notification(user.id, field, current_value, redis)
 
-    # Invalidate user cache so next navigation shows fresh data (best-effort)
-    try:
-        await redis.delete(CacheKeys.user_cache(user.id))
-    except Exception:
-        log.warning("user_cache_invalidate_failed", user_id=user.id)
-
-    # Refresh user object for keyboard
-    updated_user = await repo.get_by_id(user.id)
     if updated_user is None:
         await callback.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", show_alert=True)
         return
@@ -169,7 +156,8 @@ async def show_referral(
 
     settings = get_settings()
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-    referral_count = await UsersRepository(db).get_referral_count(user.id)
+    users_svc = UsersService(db=db)
+    referral_count = await users_svc.get_referral_count(user.id)
     referral_earned = await token_service.get_referral_bonus_total(user.id)
 
     bot_info = await callback.bot.me()  # type: ignore[union-attr]
@@ -284,15 +272,11 @@ async def confirm_delete_account(
     )
 
     if result.success:
-        await msg.edit_text(
-            "Ваш аккаунт и все данные удалены.\n\n"
-            "Вы можете начать заново с /start"
-        )
+        await msg.edit_text("Ваш аккаунт и все данные удалены.\n\nВы можете начать заново с /start")
         log.info("delete_account_success", user_id=user.id)
     else:
         await msg.edit_text(
-            "Произошла ошибка при удалении аккаунта. "
-            "Обратитесь в поддержку.",
+            "Произошла ошибка при удалении аккаунта. Обратитесь в поддержку.",
             reply_markup=delete_account_cancelled_kb(),
         )
         log.error(
