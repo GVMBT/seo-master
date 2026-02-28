@@ -77,28 +77,28 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"Ключевые фразы — {kw_info}")
+        lines.append(f"\u2705 Ключевые фразы \u2014 {kw_info}")
     else:
-        lines.append("Ключевые фразы — не заполнены (обязательно)")
+        lines.append("\u274c Ключевые фразы (обязательно)")
 
     # Description status
     if report.has_description:
-        lines.append("Описание — заполнено")
+        lines.append("\u2705 Описание")
     elif "description" in report.missing_items:
-        lines.append("Описание — не заполнено")
+        lines.append("\u274c Описание")
 
     # Prices status (progressive: shown for 2+ pubs)
     if "prices" in report.missing_items:
-        lines.append("Цены — не заполнены")
+        lines.append("\u274c Цены")
     elif report.has_prices:
-        lines.append("Цены — заполнены")
+        lines.append("\u2705 Цены")
 
     # Images (generated WITH the article, not separately)
     if report.image_count > 0:
         img_cost = report.image_count * COST_PER_IMAGE
-        lines.append(f"Изображения — {report.image_count} шт. в статье ({img_cost} ток.)")
+        lines.append(f"\u2705 Медиа \u2014 {report.image_count} шт. ({img_cost} ток.)")
     else:
-        lines.append("Изображения — без изображений")
+        lines.append("\u274c Медиа")
 
     # Cost estimate
     lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")

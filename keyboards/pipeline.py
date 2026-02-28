@@ -189,7 +189,7 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="Всё ОК — генерировать",
+                text="\u2705 Всё готово \u2014 генерировать",
                 callback_data="pipeline:readiness:done",
                 style=ButtonStyle.SUCCESS,
             ),
@@ -200,7 +200,7 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="Отменить",
+                text="Отмена",
                 callback_data="pipeline:article:cancel",
             ),
         ]
@@ -434,7 +434,7 @@ def pipeline_result_kb(post_url: str | None = None) -> InlineKeyboardMarkup:
                 callback_data="nav:scheduler",
             ),
             InlineKeyboardButton(
-                text="Главное меню",
+                text="\U0001f4cb Главное меню",
                 callback_data="nav:dashboard",
             ),
         ]
@@ -470,7 +470,7 @@ def pipeline_generation_error_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Главное меню",
+                    text="\U0001f4cb Главное меню",
                     callback_data="nav:dashboard",
                 ),
             ],
@@ -531,7 +531,7 @@ def pipeline_keywords_options_kb(prefix: str = "pipeline:readiness") -> InlineKe
             ],
             [
                 InlineKeyboardButton(
-                    text="Назад к чеклисту",
+                    text="\u2b05\ufe0f Назад к чеклисту",
                     callback_data=f"{prefix}:back",
                 ),
             ],
@@ -564,7 +564,7 @@ def pipeline_keywords_city_kb(prefix: str = "pipeline:readiness") -> InlineKeybo
             ],
             [
                 InlineKeyboardButton(
-                    text="Назад к чеклисту",
+                    text="\u2b05\ufe0f Назад к чеклисту",
                     callback_data=f"{prefix}:keywords:cancel",
                 ),
             ],
@@ -598,7 +598,7 @@ def pipeline_keywords_qty_kb(prefix: str = "pipeline:readiness") -> InlineKeyboa
             ],
             [
                 InlineKeyboardButton(
-                    text="Назад к чеклисту",
+                    text="\u2b05\ufe0f Назад к чеклисту",
                     callback_data=f"{prefix}:back",
                 ),
             ],
@@ -636,7 +636,7 @@ def pipeline_keywords_confirm_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="Назад к чеклисту",
+                text="\u2b05\ufe0f Назад к чеклисту",
                 callback_data=f"{prefix}:keywords:cancel",
             ),
         ]
@@ -667,7 +667,7 @@ def pipeline_description_options_kb(prefix: str = "pipeline:readiness") -> Inlin
             ],
             [
                 InlineKeyboardButton(
-                    text="Назад к чеклисту",
+                    text="\u2b05\ufe0f Назад к чеклисту",
                     callback_data=f"{prefix}:back",
                 ),
             ],
@@ -698,7 +698,7 @@ def pipeline_prices_options_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Назад к чеклисту",
+                    text="\u2b05\ufe0f Назад к чеклисту",
                     callback_data="pipeline:readiness:back",
                 ),
             ],
@@ -734,7 +734,7 @@ def pipeline_images_options_kb(current_count: int = 4) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="Назад к чеклисту",
+                text="\u2b05\ufe0f Назад к чеклисту",
                 callback_data="pipeline:readiness:back",
             ),
         ]
@@ -749,7 +749,7 @@ def pipeline_back_to_checklist_kb(prefix: str = "pipeline:readiness") -> InlineK
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Назад к чеклисту",
+                    text="\u2b05\ufe0f Назад к чеклисту",
                     callback_data=f"{prefix}:back",
                 ),
             ],
@@ -905,7 +905,7 @@ def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="Всё ОК — генерировать",
+                text="\u2705 Всё готово \u2014 генерировать",
                 callback_data="pipeline:social:readiness:done",
                 style=ButtonStyle.SUCCESS,
             ),
@@ -915,7 +915,7 @@ def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="Отменить",
+                text="Отмена",
                 callback_data="pipeline:social:cancel",
             ),
         ]
@@ -1101,7 +1101,7 @@ def social_result_kb(
                 callback_data="nav:scheduler",
             ),
             InlineKeyboardButton(
-                text="Главное меню",
+                text="\U0001f4cb Главное меню",
                 callback_data="nav:dashboard",
             ),
         ]

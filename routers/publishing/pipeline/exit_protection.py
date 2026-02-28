@@ -21,6 +21,7 @@ from bot.helpers import safe_message
 from cache.client import RedisClient
 from db.models import User
 from keyboards.pipeline import pipeline_exit_confirm_kb, social_exit_confirm_kb
+from keyboards.reply import BTN_MENU
 from routers.publishing.pipeline._common import ArticlePipelineFSM, SocialPipelineFSM
 
 log = structlog.get_logger()
@@ -57,24 +58,24 @@ _SOCIAL_PROTECTED = StateFilter(
 
 @router.message(
     _ARTICLE_PROTECTED,
-    F.text.in_({"Меню", "Отмена"}),
+    F.text.in_({BTN_MENU, "Отмена"}),
 )
 async def exit_protection_reply_article(message: Message) -> None:
     """Intercept reply keyboard 'Меню'/'Отмена' on protected article steps."""
     await message.answer(
-        "Прервать публикацию?\nПрогресс сохранится на 24 часа.",
+        "\u26a0\ufe0f Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
 
 @router.message(
     _SOCIAL_PROTECTED,
-    F.text.in_({"Меню", "Отмена"}),
+    F.text.in_({BTN_MENU, "Отмена"}),
 )
 async def exit_protection_reply_social(message: Message) -> None:
     """Intercept reply keyboard 'Меню'/'Отмена' on protected social steps."""
     await message.answer(
-        "Прервать публикацию?\nПрогресс сохранится на 24 часа.",
+        "\u26a0\ufe0f Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=social_exit_confirm_kb(),
     )
 
@@ -86,7 +87,7 @@ async def exit_protection_reply_social(message: Message) -> None:
 async def exit_protection_cancel_cmd_article(message: Message) -> None:
     """Intercept /cancel command on protected article steps."""
     await message.answer(
-        "Прервать публикацию?\nПрогресс сохранится на 24 часа.",
+        "\u26a0\ufe0f Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
@@ -98,7 +99,7 @@ async def exit_protection_cancel_cmd_article(message: Message) -> None:
 async def exit_protection_cancel_cmd_social(message: Message) -> None:
     """Intercept /cancel command on protected social steps."""
     await message.answer(
-        "Прервать публикацию?\nПрогресс сохранится на 24 часа.",
+        "\u26a0\ufe0f Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=social_exit_confirm_kb(),
     )
 
@@ -115,7 +116,7 @@ async def exit_confirm(
     # Checkpoint survives in Redis — user can resume from Dashboard
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text("Pipeline приостановлен. Можете продолжить с Dashboard.")
+        await msg.edit_text("Публикация приостановлена. Продолжить можно из \U0001f4cb Меню.")
     await callback.answer()
     log.info("pipeline.exit_confirmed", user_id=user.id)
 

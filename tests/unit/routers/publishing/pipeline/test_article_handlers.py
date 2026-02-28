@@ -1213,7 +1213,7 @@ class TestPipelineCancelWpSubflow:
 
         mock_state.clear.assert_called_once()
         text = mock_callback.message.edit_text.call_args.args[0]
-        assert "отменён" in text.lower()
+        assert "отменен" in text.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -1511,9 +1511,9 @@ class TestPipelineArticleCancel:
         mock_redis: MagicMock,
         user: Any,
     ) -> None:
-        """Cancel -> message edited to 'Pipeline отменён.'."""
+        """Cancel -> message edited to 'Публикация отменена.'."""
         await pipeline_article_cancel(mock_callback, mock_state, user, mock_redis)
-        mock_callback.message.edit_text.assert_called_with("Pipeline отменён.")
+        mock_callback.message.edit_text.assert_called_with("Публикация отменена.")
 
     async def test_answers_callback(
         self,

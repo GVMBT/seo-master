@@ -86,8 +86,8 @@ async def refunded_payment_handler(
             ]
         )
         await message.answer(
-            f"Возврат Stars обработан.\n\n"
-            f"Списано: <b>{tokens_debited}</b> токенов\n"
+            f"\u26a0\ufe0f Возврат Stars обработан.\n\n"
+            f"\U0001f4b0 Списано: <b>{tokens_debited}</b> токенов\n"
             f"Ваш баланс отрицателен ({new_balance} токенов) из-за возврата средств.\n"
             f"Пополните баланс для продолжения работы.",
             reply_markup=kb,
@@ -121,7 +121,8 @@ async def successful_payment_handler(
         return
 
     if result.get("error"):
-        await message.answer(f"Ошибка обработки платежа: {result['error']}")
+        log.error("payment_processing_error", error=result["error"])
+        await message.answer("\u26a0\ufe0f Ошибка обработки платежа. Попробуйте позже.")
         return
 
     tokens = result["tokens_credited"]
@@ -131,12 +132,14 @@ async def successful_payment_handler(
         inline_keyboard=[
             [InlineKeyboardButton(text="Написать статью", callback_data="pipeline:article:start")],
             [
-                InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard"),
+                InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard"),
                 InlineKeyboardButton(text="Пополнить ещё", callback_data="nav:tokens"),
             ],
         ]
     )
     await message.answer(
-        f"Оплата прошла успешно!\n\nНачислено: <b>{tokens}</b> токенов\nБаланс: <b>{new_balance}</b> токенов",
+        f"\U0001f389 Оплата прошла успешно!\n\n"
+        f"\U0001f4b0 Начислено: <b>{tokens}</b> токенов\n"
+        f"\U0001f4b0 Баланс: <b>{new_balance}</b> токенов",
         reply_markup=kb,
     )

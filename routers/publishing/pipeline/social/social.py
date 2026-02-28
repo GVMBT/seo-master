@@ -596,5 +596,5 @@ async def pipeline_social_cancel(
     await clear_checkpoint(redis, user.id)
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text("Pipeline отменён.")
+        await msg.edit_text("Публикация отменена.")
     await callback.answer()

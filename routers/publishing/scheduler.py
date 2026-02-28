@@ -92,14 +92,17 @@ async def nav_scheduler(callback: CallbackQuery, user: User, db: SupabaseClient)
     repo = ProjectsRepository(db)
     projects = await repo.get_by_user(user.id)
     if not projects:
-        await callback.answer("Сначала создайте проект", show_alert=True)
+        await callback.answer(
+            "Сначала создайте проект в \U0001f4cb Меню \u2192 \U0001f4c1 Мои проекты",
+            show_alert=True,
+        )
         return
 
     if len(projects) == 1:
         project = projects[0]
         cats = await CategoriesRepository(db).get_by_project(project.id)
         if not cats:
-            await callback.answer("Сначала создайте категорию", show_alert=True)
+            await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
             return
         await msg.edit_text(
             "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
@@ -120,7 +123,7 @@ async def nav_scheduler(callback: CallbackQuery, user: User, db: SupabaseClient)
             ]
         )
     rows.append(
-        [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")]
+        [InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")]
     )
     await msg.edit_text(
         "<b>Планировщик</b>\n\nВыберите проект:",
@@ -151,7 +154,7 @@ async def scheduler_entry(callback: CallbackQuery, user: User, db: SupabaseClien
 
     cats = await CategoriesRepository(db).get_by_project(project_id)
     if not cats:
-        await callback.answer("Сначала создайте категорию", show_alert=True)
+        await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
         return
 
     await msg.edit_text(
@@ -178,7 +181,7 @@ async def scheduler_articles_entry(callback: CallbackQuery, user: User, db: Supa
 
     cats = await CategoriesRepository(db).get_by_project(project_id)
     if not cats:
-        await callback.answer("Сначала создайте категорию", show_alert=True)
+        await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
         return
 
     await msg.edit_text(
@@ -212,7 +215,7 @@ async def scheduler_social_entry(callback: CallbackQuery, user: User, db: Supaba
 
     cats = await CategoriesRepository(db).get_by_project(project_id)
     if not cats:
-        await callback.answer("Сначала создайте категорию", show_alert=True)
+        await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
         return
 
     await msg.edit_text(

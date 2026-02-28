@@ -322,7 +322,7 @@ async def text_style(
     selected: list[str] = ts.get("styles", [])
 
     await msg.edit_text(
-        "Выберите стили текста (можно несколько):",
+        "\u270d\ufe0f Выберите стили текста (можно несколько):",
         reply_markup=text_style_kb(cat_id, selected),
     )
     await callback.answer()
@@ -369,7 +369,7 @@ async def toggle_style(
     await cats_repo.update(cat_id, CategoryUpdate(text_settings=ts))
 
     await msg.edit_text(
-        "Выберите стили текста (можно несколько):",
+        "\u270d\ufe0f Выберите стили текста (можно несколько):",
         reply_markup=text_style_kb(cat_id, selected),
     )
     await callback.answer()
@@ -593,5 +593,5 @@ async def cancel_text_length_inline(
         await callback.answer()
         return
 
-    await msg.edit_text("Настройка длины отменена.")
+    await msg.edit_text("Настройка отменена.")
     await callback.answer()

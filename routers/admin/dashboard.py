@@ -63,7 +63,7 @@ async def admin_panel(callback: CallbackQuery, user: User, db: SupabaseClient, s
     users_repo = UsersRepository(db)
     total_users = await users_repo.count_all()
 
-    text = f"<b>Админ-панель</b>\n\nПользователей: {total_users}\n"
+    text = f"<b>\U0001f6e1 Админ-панель</b>\n\nПользователей: {total_users}\n"
 
     await msg.edit_text(text, reply_markup=admin_panel_kb())
     await callback.answer()
@@ -89,16 +89,16 @@ async def admin_monitoring(callback: CallbackQuery, user: User, db: SupabaseClie
     try:
         users_repo = UsersRepository(db)
         await users_repo.count_all()
-        db_status = "OK"
+        db_status = "\u2705"
     except Exception:
         log.exception("admin_monitoring_db_check_failed")
-        db_status = "ERROR"
+        db_status = "\u274c"
 
-    text = f"<b>Мониторинг</b>\n\nDatabase: {db_status}\n"
+    text = f"<b>Мониторинг</b>\n\nБаза данных: {db_status}\n"
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+            [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
         ]
     )
     await msg.edit_text(text, reply_markup=kb)
@@ -130,7 +130,7 @@ async def admin_api_costs(callback: CallbackQuery, user: User, db: SupabaseClien
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+            [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
         ]
     )
     await msg.edit_text(text, reply_markup=kb)
@@ -223,7 +223,7 @@ async def broadcast_text(message: Message, user: User, state: FSMContext) -> Non
     await message.answer(
         f"<b>Предпросмотр рассылки</b>\n\n"
         f"Получателей: ~{data['broadcast_count']}\n\n"
-        f"--- Текст ---\n{message.text}\n--- Конец ---\n\n"
+        f"<b>Текст рассылки:</b>\n{message.text}\n\n"
         f"Отправить?",
         reply_markup=broadcast_confirm_kb(),
     )
@@ -267,7 +267,7 @@ async def broadcast_confirm(callback: CallbackQuery, user: User, db: SupabaseCli
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+            [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
         ]
     )
     await msg.edit_text(

@@ -79,7 +79,11 @@ class TestAuthMiddleware:
             id=update.get("id", user.id),
             balance=update.get("balance", user.balance),
             role=update.get("role", user.role),
-            model_dump=MagicMock(return_value={"id": update.get("id", user.id), "role": update.get("role", user.role), "balance": user.balance}),
+            model_dump=MagicMock(return_value={
+                "id": update.get("id", user.id),
+                "role": update.get("role", user.role),
+                "balance": user.balance,
+            }),
         )
         return user
 

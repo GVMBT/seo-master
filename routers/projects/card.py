@@ -63,19 +63,19 @@ async def show_project_card(
     lines = [f"<b>{safe_name}</b>\n"]
 
     if project.website_url:
-        lines.append(f"Сайт: {html.escape(project.website_url)}")
+        lines.append(f"\U0001f517 Сайт: {html.escape(project.website_url)}")
     if project.advantages:
         short = project.advantages[:80] + "…" if len(project.advantages) > 80 else project.advantages
         lines.append(f"Преимущества: {html.escape(short)}")
 
     if platform_types:
         platforms_str = ", ".join(p.capitalize() for p in platform_types)
-        lines.append(f"Платформы: {platforms_str}")
+        lines.append(f"\U0001f517 Платформы: {platforms_str}")
     else:
-        lines.append("Платформы: не подключены")
+        lines.append("\U0001f517 Платформы: не подключены \u2014 подключите в настройках")
 
-    lines.append(f"Категорий: {len(categories)}")
-    lines.append(f"Публикаций: {pub_count}")
+    lines.append(f"\U0001f4c2 Категорий: {len(categories)}")
+    lines.append(f"\U0001f4ca Публикаций: {pub_count}")
 
     text = "\n".join(lines)
     await msg.edit_text(text, reply_markup=project_card_kb(project_id))
@@ -173,7 +173,7 @@ async def execute_delete(
         log.info("project_deleted", project_id=project_id, user_id=user.id)
     else:
         await msg.edit_text(
-            "Ошибка удаления проекта.",
+            "\u26a0\ufe0f Не удалось удалить проект. Попробуйте позже.",
             reply_markup=project_deleted_kb(),
         )
 

@@ -569,7 +569,7 @@ async def _run_generation_pipeline(
                 user_id=user.id,
             )
         else:
-            await msg.edit_text("DataForSEO без данных. Генерирую фразы через AI...")
+            await msg.edit_text("\u23f3 DataForSEO без данных. Генерирую фразы через AI...")
             clusters = await kw_service.generate_clusters_direct(
                 products=products,
                 geography=geography,

@@ -13,6 +13,9 @@ from db.repositories.users import UsersRepository
 
 log = structlog.get_logger()
 
+# Inactivity threshold for reactivation (days)
+_REACTIVATION_DAYS = 14
+
 
 class NotifyService:
     """Build notification batches for different trigger types."""
@@ -30,9 +33,9 @@ class NotifyService:
         result: list[tuple[int, str]] = []
         for u in users:
             text = (
-                f"<b>Баланс: {u.balance} токенов</b>\n\n"
-                "Этого может не хватить для автопубликации.\n"
-                "Пополните баланс, чтобы не пропустить запланированные посты."
+                "\u26a0\ufe0f <b>Низкий баланс</b>\n\n"
+                f"\U0001f4b0 Баланс: {u.balance} токенов\n\n"
+                "Этого может не хватить для автопубликации. Пополните баланс."
             )
             result.append((u.id, text))
         log.info("notify_low_balance_built", count=len(result), threshold=threshold)
@@ -59,10 +62,10 @@ class NotifyService:
         for u in eligible:
             total = pub_counts.get(u.id, 0)
             text = (
-                "<b>Еженедельный дайджест</b>\n\n"
-                f"Публикаций за все время: {total}\n"
-                f"Баланс: {u.balance} токенов\n\n"
-                "Продолжайте публиковать контент для роста SEO-позиций!"
+                "\U0001f4ca <b>Еженедельный дайджест</b>\n\n"
+                f"\U0001f4dd Публикаций за все время: {total}\n"
+                f"\U0001f4b0 Баланс: {u.balance} токенов\n\n"
+                "Продолжайте публиковать контент!"
             )
             result.append((u.id, text))
         log.info("notify_weekly_digest_built", count=len(result))
@@ -73,14 +76,14 @@ class NotifyService:
 
         Returns list of (user_id, message_text).
         """
-        users = await self._users.get_inactive_users(days=14)
+        users = await self._users.get_inactive_users(days=_REACTIVATION_DAYS)
         result: list[tuple[int, str]] = []
         for u in users:
             text = (
-                "<b>Мы скучаем!</b>\n\n"
-                f"Вы не заходили {14}+ дней.\n"
-                f"У вас на балансе: {u.balance} токенов.\n\n"
-                "Вернитесь и продолжите публиковать SEO-контент!"
+                "\U0001f44b <b>Мы скучаем!</b>\n\n"
+                f"Вы не заходили более {_REACTIVATION_DAYS} дней.\n"
+                f"\U0001f4b0 На балансе: {u.balance} токенов.\n\n"
+                "Вернитесь и продолжите публикации!"
             )
             result.append((u.id, text))
         log.info("notify_reactivation_built", count=len(result))

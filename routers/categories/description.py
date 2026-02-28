@@ -219,7 +219,7 @@ async def confirm_generate(
     )
 
     # Show progress indicator before AI call
-    await msg.edit_text("Генерирую описание...")
+    await msg.edit_text("\u23f3 Генерирую описание...")
     await callback.answer()
 
     # Generate description via AI
@@ -240,7 +240,7 @@ async def confirm_generate(
             description=f"Возврат за описание (ошибка генерации, категория #{cat_id})",
         )
         await state.clear()
-        await msg.edit_text("Ошибка генерации описания. Токены возвращены.")
+        await msg.edit_text("\u26a0\ufe0f Ошибка генерации. Токены возвращены на баланс.")
         return
 
     # Move to review state
@@ -378,7 +378,7 @@ async def review_regenerate(
         )
 
     # Show progress indicator before AI call
-    await msg.edit_text("Генерирую описание...")
+    await msg.edit_text("\u23f3 Генерирую описание...")
     await callback.answer()
 
     # Regenerate via AI

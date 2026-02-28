@@ -133,7 +133,7 @@ async def process_name(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание отменено.")
+        await message.answer("Создание проекта отменено.")
         return
 
     if len(text) < 2 or len(text) > 100:
@@ -158,7 +158,7 @@ async def process_company_name(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание отменено.")
+        await message.answer("Создание проекта отменено.")
         return
 
     if len(text) < 2 or len(text) > 255:
@@ -183,7 +183,7 @@ async def process_specialization(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание отменено.")
+        await message.answer("Создание проекта отменено.")
         return
 
     if len(text) < 2 or len(text) > 500:
@@ -210,7 +210,7 @@ async def process_website_url(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание отменено.")
+        await message.answer("Создание проекта отменено.")
         return
 
     website_url: str | None = None
@@ -410,7 +410,7 @@ async def process_field_value(
         edit_text = f"Поле «{label}» обновлено.\n\n" + _build_edit_text(project)
         await message.answer(edit_text, reply_markup=project_edit_kb(project_id))
     else:
-        await message.answer("Ошибка обновления.")
+        await message.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.")
 
     log.info("project_field_updated", project_id=project_id, field=field, user_id=user.id)
 

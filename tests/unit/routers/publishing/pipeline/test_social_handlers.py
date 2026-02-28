@@ -368,7 +368,7 @@ class TestPipelineSocialCancel:
         mock_state.clear.assert_awaited_once()
         mock_redis.delete.assert_awaited_once()
         mock_callback.message.edit_text.assert_awaited_once()
-        assert "отменён" in mock_callback.message.edit_text.call_args[0][0]
+        assert "отменен" in mock_callback.message.edit_text.call_args[0][0].lower()
 
 
 # ---------------------------------------------------------------------------
