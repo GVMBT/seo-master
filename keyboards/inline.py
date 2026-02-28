@@ -1126,6 +1126,20 @@ _PRESETS: dict[str, tuple[str, list[str], list[str], int]] = {
     "daily": ("Каждый день", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], ["10:00"], 1),
 }
 
+
+def detect_active_preset(schedule_days: list[str], posts_per_day: int) -> str | None:
+    """Match current schedule parameters to a preset key.
+
+    Returns preset key ("1w", "3w", "daily") or "manual" if no preset matches.
+    Returns None if no schedule exists.
+    """
+    day_set = set(schedule_days)
+    for key, (_label, days, _times, ppd) in _PRESETS.items():
+        if day_set == set(days) and posts_per_day == ppd:
+            return key
+    return "manual"
+
+
 _DAY_LABELS: dict[str, str] = {
     "mon": "Пн",
     "tue": "Вт",
@@ -1203,35 +1217,50 @@ def scheduler_conn_list_kb(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def scheduler_config_kb(cat_id: int, conn_id: int, has_schedule: bool) -> InlineKeyboardMarkup:
-    """Schedule config: presets + manual + disable."""
-    rows: list[list[InlineKeyboardButton]] = [
+def scheduler_config_kb(
+    cat_id: int,
+    conn_id: int,
+    has_schedule: bool,
+    active_preset: str | None = None,
+) -> InlineKeyboardMarkup:
+    """Schedule config: presets + manual + disable.
+
+    Args:
+        active_preset: currently active preset key ("1w", "3w", "daily", "manual")
+            to highlight with SUCCESS style. If None, "3w" gets PRIMARY as recommendation.
+    """
+    presets = [("3 раза/неделю", "3w"), ("1 раз/неделю", "1w"), ("Каждый день", "daily")]
+    rows: list[list[InlineKeyboardButton]] = []
+    for label, key in presets:
+        if active_preset and active_preset == key:
+            style = ButtonStyle.SUCCESS
+            text = f"\u2705 {label}"
+        elif not active_preset and key == "3w":
+            style = ButtonStyle.PRIMARY
+            text = label
+        else:
+            style = None
+            text = label
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=text,
+                    callback_data=f"sched:{cat_id}:{conn_id}:preset:{key}",
+                    style=style,
+                )
+            ]
+        )
+    manual_text = "\u2705 Настроить вручную" if active_preset == "manual" else "Настроить вручную"
+    manual_style = ButtonStyle.SUCCESS if active_preset == "manual" else None
+    rows.append(
         [
             InlineKeyboardButton(
-                text="3 раза/неделю",
-                callback_data=f"sched:{cat_id}:{conn_id}:preset:3w",
-                style=ButtonStyle.PRIMARY,
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="1 раз/неделю",
-                callback_data=f"sched:{cat_id}:{conn_id}:preset:1w",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="Каждый день",
-                callback_data=f"sched:{cat_id}:{conn_id}:preset:daily",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="Настроить вручную",
+                text=manual_text,
                 callback_data=f"sched:{cat_id}:{conn_id}:manual",
+                style=manual_style,
             )
-        ],
-    ]
+        ]
+    )
     if has_schedule:
         rows.append(
             [
@@ -1357,35 +1386,46 @@ def scheduler_social_config_kb(
     conn_id: int,
     has_schedule: bool,
     has_other_social: bool = False,
+    active_preset: str | None = None,
 ) -> InlineKeyboardMarkup:
-    """Schedule config for social connections: presets + manual + cross-post + disable."""
-    rows: list[list[InlineKeyboardButton]] = [
+    """Schedule config for social connections: presets + manual + cross-post + disable.
+
+    Args:
+        active_preset: currently active preset key ("1w", "3w", "daily", "manual")
+            to highlight with SUCCESS style. If None, "3w" gets PRIMARY as recommendation.
+    """
+    presets = [("3 раза/неделю", "3w"), ("1 раз/неделю", "1w"), ("Каждый день", "daily")]
+    rows: list[list[InlineKeyboardButton]] = []
+    for label, key in presets:
+        if active_preset and active_preset == key:
+            style = ButtonStyle.SUCCESS
+            text = f"\u2705 {label}"
+        elif not active_preset and key == "3w":
+            style = ButtonStyle.PRIMARY
+            text = label
+        else:
+            style = None
+            text = label
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=text,
+                    callback_data=f"sched:{cat_id}:{conn_id}:preset:{key}",
+                    style=style,
+                )
+            ]
+        )
+    manual_text = "\u2705 Настроить вручную" if active_preset == "manual" else "Настроить вручную"
+    manual_style = ButtonStyle.SUCCESS if active_preset == "manual" else None
+    rows.append(
         [
             InlineKeyboardButton(
-                text="3 раза/неделю",
-                callback_data=f"sched:{cat_id}:{conn_id}:preset:3w",
-                style=ButtonStyle.PRIMARY,
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="1 раз/неделю",
-                callback_data=f"sched:{cat_id}:{conn_id}:preset:1w",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="Каждый день",
-                callback_data=f"sched:{cat_id}:{conn_id}:preset:daily",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="Настроить вручную",
+                text=manual_text,
                 callback_data=f"sched:{cat_id}:{conn_id}:manual",
+                style=manual_style,
             )
-        ],
-    ]
+        ]
+    )
     if has_schedule and has_other_social:
         rows.append(
             [

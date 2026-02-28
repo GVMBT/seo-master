@@ -19,6 +19,7 @@ from db.repositories.schedules import SchedulesRepository
 from keyboards.inline import (
     _DAY_LABELS,
     _PRESETS,
+    detect_active_preset,
     schedule_count_kb,
     schedule_days_kb,
     schedule_times_kb,
@@ -338,7 +339,14 @@ async def scheduler_connection(callback: CallbackQuery, user: User, db: Supabase
 
     await msg.edit_text(
         text,
-        reply_markup=scheduler_config_kb(cat_id, conn_id, existing is not None and existing.enabled),
+        reply_markup=scheduler_config_kb(
+            cat_id,
+            conn_id,
+            existing is not None and existing.enabled,
+            active_preset=detect_active_preset(existing.schedule_days, existing.posts_per_day)
+            if existing and existing.enabled
+            else None,
+        ),
     )
     await callback.answer()
 
@@ -415,7 +423,7 @@ async def scheduler_preset(
         f"Подключение: {conn.identifier}\n"
         f"Режим: {preset[0]}\n"
         f"Ориент. расход: ~{weekly_cost} токенов/нед",
-        reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=True),
+        reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=True, active_preset=preset_key),
     )
     await callback.answer()
 
@@ -717,7 +725,10 @@ async def schedule_times_done(
         f"Время: {times_str}\n"
         f"Постов/день: {required}\n"
         f"Ориент. расход: ~{weekly_cost} токенов/нед",
-        reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=True),
+        reply_markup=scheduler_config_kb(
+            cat_id, conn_id, has_schedule=True,
+            active_preset=detect_active_preset(list(selected_days), required),
+        ),
     )
     await callback.answer()
 
@@ -841,7 +852,10 @@ async def scheduler_social_connection(callback: CallbackQuery, user: User, db: S
     await msg.edit_text(
         text,
         reply_markup=scheduler_social_config_kb(
-            cat_id, conn_id, existing is not None and existing.enabled, has_other_social
+            cat_id, conn_id, existing is not None and existing.enabled, has_other_social,
+            active_preset=detect_active_preset(existing.schedule_days, existing.posts_per_day)
+            if existing and existing.enabled
+            else None,
         ),
     )
     await callback.answer()
@@ -1000,7 +1014,10 @@ async def scheduler_crosspost_save(callback: CallbackQuery, user: User, db: Supa
 
     await msg.edit_text(
         result_msg,
-        reply_markup=scheduler_social_config_kb(cat_id, conn_id, has_schedule=True, has_other_social=has_other_social),
+        reply_markup=scheduler_social_config_kb(
+            cat_id, conn_id, has_schedule=True, has_other_social=has_other_social,
+            active_preset=detect_active_preset(existing.schedule_days, existing.posts_per_day),
+        ),
     )
     await callback.answer()
 
