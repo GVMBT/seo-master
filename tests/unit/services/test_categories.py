@@ -217,7 +217,7 @@ class TestDeleteCategory:
         with patch(f"{_SVC_MODULE}.PreviewsRepository") as MockPreviews:
             MockPreviews.return_value.get_active_drafts_by_category = AsyncMock(return_value=[])
 
-            deleted, cat, remaining = await cat_svc.delete_category(
+            deleted, _cat, _remaining = await cat_svc.delete_category(
                 category_id=5, user_id=42,
                 scheduler_svc=scheduler_svc, token_svc=token_svc,
             )

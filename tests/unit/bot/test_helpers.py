@@ -94,14 +94,8 @@ class TestGetOwnedCategory:
             assert result is category
             MockSvc.return_value.get_owned_category.assert_awaited_once_with(5, 42)
 
-    async def test_returns_none_when_category_not_found(self, mock_db: MagicMock) -> None:
-        with patch("bot.helpers.CategoryService") as MockSvc:
-            MockSvc.return_value.get_owned_category = AsyncMock(return_value=None)
-
-            result = await get_owned_category(mock_db, 5, 42)
-            assert result is None
-
-    async def test_returns_none_when_not_owned(self, mock_db: MagicMock) -> None:
+    async def test_returns_none_when_not_found_or_not_owned(self, mock_db: MagicMock) -> None:
+        """CategoryService returns None for missing or not-owned categories."""
         with patch("bot.helpers.CategoryService") as MockSvc:
             MockSvc.return_value.get_owned_category = AsyncMock(return_value=None)
 

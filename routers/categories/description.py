@@ -314,7 +314,11 @@ async def review_save(
     await state.clear()
 
     cat_svc = category_service_factory(db)
-    await cat_svc.update_description(cat_id, user.id, generated_text)
+    result = await cat_svc.update_description(cat_id, user.id, generated_text)
+    if not result:
+        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
+        await callback.answer()
+        return
 
     log.info("description_saved", cat_id=cat_id, user_id=user.id)
     await _show_description_screen(msg, cat_id, db, category_service_factory, user.id)

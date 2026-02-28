@@ -103,7 +103,7 @@ class CategoryService:
         user_id: int,
         name: str,
     ) -> Category | None:
-        """Create category with H17 limit check. Returns None if project not owned."""
+        """Create category for an owned project. Returns None if project not owned."""
         project = await self._projects_repo.get_by_id(project_id)
         if not project or project.user_id != user_id:
             return None
