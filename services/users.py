@@ -100,8 +100,10 @@ class UsersService:
             update = UserUpdate(notify_publications=not current_value)
         elif field == "balance":
             update = UserUpdate(notify_balance=not current_value)
-        else:  # "news"
+        elif field == "news":
             update = UserUpdate(notify_news=not current_value)
+        else:
+            raise ValueError(f"Unknown notification field: {field}")
 
         await self._users.update(user_id, update)
 

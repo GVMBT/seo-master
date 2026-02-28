@@ -167,6 +167,13 @@ class TestToggleNotification:
 
         assert result is not None
 
+    async def test_invalid_field_raises_value_error(
+        self, service: UsersService, mock_redis: MagicMock
+    ) -> None:
+        """Unknown field raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown notification field"):
+            await service.toggle_notification(42, "invalid_field", True, mock_redis)
+
     async def test_returns_none_when_user_disappears(
         self, service: UsersService, mock_users_repo: AsyncMock, mock_redis: MagicMock
     ) -> None:
