@@ -458,12 +458,29 @@ async def _show_wp_step_msg(
 async def pipeline_start_connect_wp(
     callback: CallbackQuery,
     state: FSMContext,
+    db: SupabaseClient,
 ) -> None:
     """Start inline WP connection within pipeline."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
         return
+
+    # If project already has website_url, skip URL step and go to login
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    if project_id:
+        project = await ProjectsRepository(db).get_by_id(project_id)
+        if project and project.website_url:
+            await state.update_data(wp_url=project.website_url, last_update_time=time.time())
+            await state.set_state(ArticlePipelineFSM.connect_wp_login)
+            await msg.edit_text(
+                f"Статья (2/5) — Подключение WordPress\n\n"
+                f"Сайт: {html.escape(project.website_url)}\n\n"
+                f"Введите логин WordPress (имя пользователя).",
+            )
+            await callback.answer()
+            return
 
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await state.update_data(last_update_time=time.time())

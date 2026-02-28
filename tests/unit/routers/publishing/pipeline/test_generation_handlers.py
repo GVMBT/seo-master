@@ -32,7 +32,7 @@ from routers.publishing.pipeline.generation import (
 )
 from services.preview import ArticleContent
 from services.readiness import ReadinessReport
-from tests.unit.routers.conftest import make_category, make_connection, make_user
+from tests.unit.routers.conftest import make_category, make_connection, make_project, make_user
 
 _MODULE = "routers.publishing.pipeline.generation"
 _COMMON_MODULE = "routers.publishing.pipeline._common"
@@ -1021,8 +1021,24 @@ class TestConnectWpPublish:
         mock_callback: MagicMock,
         mock_state: MagicMock,
     ) -> None:
-        await connect_wp_publish(mock_callback, mock_state)
+        await connect_wp_publish(mock_callback, mock_state, MagicMock())
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_url)
+
+    async def test_skips_url_when_project_has_website(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_db: MagicMock,
+    ) -> None:
+        """If project.website_url exists, skip URL step and go to login."""
+        mock_state.get_data = AsyncMock(return_value={"project_id": 1})
+        project = make_project(website_url="https://mysite.com")
+        with patch(f"{_MODULE}.ProjectsRepository") as repo_cls:
+            repo_cls.return_value.get_by_id = AsyncMock(return_value=project)
+            await connect_wp_publish(mock_callback, mock_state, mock_db)
+        mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_login)
+        text = mock_callback.message.edit_text.call_args.args[0]
+        assert "mysite.com" in text
 
 
 # ---------------------------------------------------------------------------
@@ -1232,8 +1248,8 @@ async def test_connect_wp_publish_sets_from_preview(
     mock_state: MagicMock,
 ) -> None:
     """connect_wp_publish sets from_preview=True in state data."""
-    await connect_wp_publish(mock_callback, mock_state)
+    await connect_wp_publish(mock_callback, mock_state, MagicMock())
 
-    # Check that from_preview was set
-    mock_state.update_data.assert_called_with(from_preview=True)
+    # Check that from_preview was set (first call before get_data)
+    mock_state.update_data.assert_any_call(from_preview=True)
     mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_url)
