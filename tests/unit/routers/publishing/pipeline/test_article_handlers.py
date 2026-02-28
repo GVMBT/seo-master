@@ -153,7 +153,9 @@ class TestPipelineArticleStart:
             )
 
         # Should save project data to state
-        mock_state.update_data.assert_called_once_with(project_id=5, project_name="Solo Project")
+        mock_state.update_data.assert_called_once_with(
+            project_id=5, project_name="Solo Project", company_name="TestCo",
+        )
 
     async def test_multiple_projects_shows_list(
         self,
@@ -263,7 +265,9 @@ class TestPipelineSelectProject:
                 mock_redis,
             )
 
-        mock_state.update_data.assert_called_with(project_id=5, project_name="My Site")
+        mock_state.update_data.assert_called_with(
+            project_id=5, project_name="My Site", company_name="TestCo",
+        )
 
     async def test_ownership_check_fails(
         self,
