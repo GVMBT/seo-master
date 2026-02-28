@@ -23,6 +23,7 @@ from keyboards.inline import (
     category_delete_confirm_kb,
     category_list_empty_kb,
     category_list_kb,
+    menu_kb,
 )
 from services.scheduler import SchedulerService
 
@@ -177,7 +178,7 @@ async def process_category_name(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание категории отменено.")
+        await message.answer("Создание категории отменено.", reply_markup=menu_kb())
         return
 
     if len(text) < 2 or len(text) > 100:
@@ -191,7 +192,7 @@ async def process_category_name(
     # Ownership check
     project = await get_owned_project(db, project_id, user.id)
     if not project:
-        await message.answer("Проект не найден.")
+        await message.answer("Проект не найден.", reply_markup=menu_kb())
         return
 
     cats_repo = CategoriesRepository(db)
@@ -359,6 +360,6 @@ async def execute_category_delete(
         )
         log.info("category_deleted", category_id=category_id, user_id=user.id)
     else:
-        await msg.edit_text("\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.")
+        await msg.edit_text("\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.", reply_markup=menu_kb())
 
     await callback.answer()

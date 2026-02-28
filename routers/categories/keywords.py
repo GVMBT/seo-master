@@ -39,6 +39,7 @@ from keyboards.inline import (
     keywords_results_kb,
     keywords_saved_answers_kb,
     keywords_summary_kb,
+    menu_kb,
 )
 from services.tokens import TokenService, estimate_keywords_cost
 
@@ -501,7 +502,7 @@ async def cancel_generation(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await msg.edit_text("Категория не найдена.")
+        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
         return
 
@@ -697,7 +698,7 @@ async def handle_text_in_upload(
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Загрузка отменена.")
+        await message.answer("Загрузка отменена.", reply_markup=menu_kb())
         return
 
     await message.answer("Ожидается файл .txt. Для отмены напишите «Отмена».")
@@ -1263,7 +1264,7 @@ async def cancel_generation_inline(
         await callback.answer()
         return
 
-    await msg.edit_text("Подбор фраз отменён.")
+    await msg.edit_text("Подбор фраз отменён.", reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -1293,5 +1294,5 @@ async def cancel_upload_inline(
         await callback.answer()
         return
 
-    await msg.edit_text("Загрузка отменена.")
+    await msg.edit_text("Загрузка отменена.", reply_markup=menu_kb())
     await callback.answer()

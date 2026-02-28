@@ -16,7 +16,7 @@ from db.client import SupabaseClient
 from db.models import Category, CategoryUpdate, Project, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import cancel_kb, category_card_kb, prices_kb
+from keyboards.inline import cancel_kb, category_card_kb, menu_kb, prices_kb
 
 log = structlog.get_logger()
 router = Router()
@@ -176,7 +176,7 @@ async def process_text(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Ввод цен отменён.")
+        await message.answer("Ввод цен отменён.", reply_markup=menu_kb())
         return
 
     # Validate: at least 1 non-empty line
@@ -198,14 +198,14 @@ async def process_text(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await message.answer("Категория не найдена.")
+        await message.answer("Категория не найдена.", reply_markup=menu_kb())
         return
 
     # Ownership re-check
     projects_repo = ProjectsRepository(db)
     project = await projects_repo.get_by_id(category.project_id)
     if not project or project.user_id != user.id:
-        await message.answer("Категория не найдена.")
+        await message.answer("Категория не найдена.", reply_markup=menu_kb())
         return
 
     # Save as plain text
@@ -272,7 +272,7 @@ async def handle_text_in_excel_state(
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Загрузка отменена.")
+        await message.answer("Загрузка отменена.", reply_markup=menu_kb())
         return
 
     await message.answer("Ожидается файл Excel (.xlsx). Для отмены напишите \u00abОтмена\u00bb.")
@@ -354,23 +354,27 @@ async def process_excel(
     except Exception:
         log.exception("excel_parse_error")
         await state.clear()
-        await message.answer("Не удалось прочитать файл. Убедитесь, что это корректный .xlsx.")
+        await message.answer(
+            "Не удалось прочитать файл. Убедитесь, что это корректный .xlsx.", reply_markup=menu_kb()
+        )
         return
 
     if result == "empty":
         await state.clear()
-        await message.answer("Файл пуст. Загрузите файл с данными.")
+        await message.answer("Файл пуст. Загрузите файл с данными.", reply_markup=menu_kb())
         return
 
     if result == "too_many_rows":
         await state.clear()
-        await message.answer(f"\u26a0\ufe0f Максимум {_MAX_ROWS} строк.")
+        await message.answer(f"\u26a0\ufe0f Максимум {_MAX_ROWS} строк.", reply_markup=menu_kb())
         return
 
     lines = result
     if not lines:
         await state.clear()
-        await message.answer("В файле не найдено данных. Колонка A = название, колонка B = цена.")
+        await message.answer(
+            "В файле не найдено данных. Колонка A = название, колонка B = цена.", reply_markup=menu_kb()
+        )
         return
 
     data = await state.get_data()
@@ -380,14 +384,14 @@ async def process_excel(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await message.answer("Категория не найдена.")
+        await message.answer("Категория не найдена.", reply_markup=menu_kb())
         return
 
     # Ownership re-check
     projects_repo = ProjectsRepository(db)
     project = await projects_repo.get_by_id(category.project_id)
     if not project or project.user_id != user.id:
-        await message.answer("Категория не найдена.")
+        await message.answer("Категория не найдена.", reply_markup=menu_kb())
         return
 
     # Save as plain text
@@ -477,5 +481,5 @@ async def cancel_prices_inline(
         await callback.answer()
         return
 
-    await msg.edit_text("Ввод цен отменён.")
+    await msg.edit_text("Ввод цен отменён.", reply_markup=menu_kb())
     await callback.answer()

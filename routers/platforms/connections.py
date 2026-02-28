@@ -31,6 +31,7 @@ from keyboards.inline import (
     connection_delete_confirm_kb,
     connection_list_kb,
     connection_manage_kb,
+    menu_kb,
     vk_group_select_kb,
 )
 from services.connections import ConnectionService
@@ -267,7 +268,7 @@ async def execute_connection_delete(
         )
         log.info("connection_deleted", conn_id=conn_id, user_id=user.id)
     else:
-        await msg.edit_text("Ошибка удаления подключения.")
+        await msg.edit_text("Ошибка удаления подключения.", reply_markup=menu_kb())
 
     await callback.answer()
 
@@ -328,7 +329,7 @@ async def wp_process_url(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.")
+        await message.answer("Подключение отменено.", reply_markup=menu_kb())
         return
 
     if not URL_RE.match(text):
@@ -351,7 +352,7 @@ async def wp_process_login(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.")
+        await message.answer("Подключение отменено.", reply_markup=menu_kb())
         return
 
     if len(text) < 1 or len(text) > 100:
@@ -382,7 +383,7 @@ async def wp_process_password(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.")
+        await message.answer("Подключение отменено.", reply_markup=menu_kb())
         return
 
     # Delete message with password for security (after cancel check)
@@ -424,7 +425,7 @@ async def wp_process_password(
     project = await projects_repo.get_by_id(project_id)
     if not project or project.user_id != user.id:
         await state.clear()
-        await message.answer("Проект не найден.")
+        await message.answer("Проект не найден.", reply_markup=menu_kb())
         return
 
     await state.clear()
@@ -510,7 +511,7 @@ async def tg_process_channel(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.")
+        await message.answer("Подключение отменено.", reply_markup=menu_kb())
         return
 
     if not TG_CHANNEL_RE.match(text):
@@ -545,7 +546,7 @@ async def tg_process_token(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.")
+        await message.answer("Подключение отменено.", reply_markup=menu_kb())
         return
 
     # Delete message with token for security (after cancel check)
@@ -712,7 +713,7 @@ async def vk_process_token(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.")
+        await message.answer("Подключение отменено.", reply_markup=menu_kb())
         return
 
     # Delete message with token for security (after cancel check)
@@ -940,7 +941,7 @@ async def _cancel_connection_wizard(
             await callback.answer()
             return
 
-    await msg.edit_text("Подключение отменено.")
+    await msg.edit_text("Подключение отменено.", reply_markup=menu_kb())
     await callback.answer()
 
 

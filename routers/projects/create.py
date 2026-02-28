@@ -15,7 +15,7 @@ from bot.validators import URL_RE
 from db.client import SupabaseClient
 from db.models import Project, ProjectCreate, ProjectUpdate, User
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import cancel_kb, project_created_kb, project_edit_kb
+from keyboards.inline import cancel_kb, menu_kb, project_created_kb, project_edit_kb
 
 log = structlog.get_logger()
 router = Router()
@@ -133,7 +133,7 @@ async def process_name(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание проекта отменено.")
+        await message.answer("Создание проекта отменено.", reply_markup=menu_kb())
         return
 
     if len(text) < 2 or len(text) > 100:
@@ -158,7 +158,7 @@ async def process_company_name(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание проекта отменено.")
+        await message.answer("Создание проекта отменено.", reply_markup=menu_kb())
         return
 
     if len(text) < 2 or len(text) > 255:
@@ -183,7 +183,7 @@ async def process_specialization(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание проекта отменено.")
+        await message.answer("Создание проекта отменено.", reply_markup=menu_kb())
         return
 
     if len(text) < 2 or len(text) > 500:
@@ -210,7 +210,7 @@ async def process_website_url(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание проекта отменено.")
+        await message.answer("Создание проекта отменено.", reply_markup=menu_kb())
         return
 
     website_url: str | None = None
@@ -365,7 +365,7 @@ async def process_field_value(
                 edit_text = _build_edit_text(project)
                 await message.answer(edit_text, reply_markup=project_edit_kb(int(project_id)))
                 return
-        await message.answer("Редактирование отменено.")
+        await message.answer("Редактирование отменено.", reply_markup=menu_kb())
         return
 
     data = await state.get_data()
@@ -398,7 +398,7 @@ async def process_field_value(
     repo = ProjectsRepository(db)
     project = await repo.get_by_id(project_id)
     if not project or project.user_id != user.id:
-        await message.answer("Проект не найден.")
+        await message.answer("Проект не найден.", reply_markup=menu_kb())
         return
 
     # Build update
@@ -410,7 +410,7 @@ async def process_field_value(
         edit_text = f"Поле «{label}» обновлено.\n\n" + _build_edit_text(project)
         await message.answer(edit_text, reply_markup=project_edit_kb(project_id))
     else:
-        await message.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.")
+        await message.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", reply_markup=menu_kb())
 
     log.info("project_field_updated", project_id=project_id, field=field, user_id=user.id)
 
@@ -432,7 +432,7 @@ async def cancel_create(
         return
 
     await state.clear()
-    await msg.edit_text("Создание проекта отменено.")
+    await msg.edit_text("Создание проекта отменено.", reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -462,5 +462,5 @@ async def cancel_edit(
             await callback.answer()
             return
 
-    await msg.edit_text("Редактирование отменено.")
+    await msg.edit_text("Редактирование отменено.", reply_markup=menu_kb())
     await callback.answer()

@@ -27,7 +27,7 @@ from bot.helpers import safe_message
 from db.models import CategoryUpdate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import cancel_kb
+from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_back_to_checklist_kb,
     pipeline_description_options_kb,
@@ -343,7 +343,7 @@ async def generate_description_ai(
         )
     except Exception:
         log.exception(f"{log_prefix}.description_charge_failed", user_id=user.id)
-        await msg.edit_text("Ошибка списания токенов.")
+        await msg.edit_text("Ошибка списания токенов.", reply_markup=menu_kb())
         return
 
     # Generate + save; refund on any failure
@@ -373,7 +373,7 @@ async def generate_description_ai(
             user_id=user.id,
             category_id=category_id,
         )
-        await msg.edit_text("Ошибка генерации описания. Токены возвращены.")
+        await msg.edit_text("Ошибка генерации описания. Токены возвращены.", reply_markup=menu_kb())
         return
 
     log.info(
@@ -616,7 +616,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         data = await state.get_data()
         category_id = data.get("category_id")
         if not category_id:
-            await message.answer("Категория не найдена. Начните заново.")
+            await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
             return
 
         keywords = [{"phrase": p, "volume": 0, "cpc": 0.0} for p in phrases]
@@ -698,7 +698,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
 
         category_id = data.get("category_id")
         if not category_id:
-            await message.answer("Категория не найдена. Начните заново.")
+            await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
             return
 
         keywords = [{"phrase": p, "volume": 0, "cpc": 0.0} for p in phrases]
@@ -1080,7 +1080,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         data = await state.get_data()
         category_id = data.get("category_id")
         if not category_id:
-            await message.answer("Категория не найдена. Начните заново.")
+            await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
             return
 
         cats_repo = CategoriesRepository(db)

@@ -38,6 +38,7 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
+from keyboards.inline import menu_kb
 from keyboards.pipeline import (
     pipeline_confirm_kb,
     pipeline_generation_error_kb,
@@ -390,7 +391,7 @@ async def _run_generation(
     preview_only = fsm_data.get("preview_only", False)
 
     if not category_id or not project_id:
-        await message.edit_text("Данные сессии устарели. Начните заново.")
+        await message.edit_text("Данные сессии устарели. Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -668,6 +669,7 @@ async def publish_article(
         if not connection:
             await msg.edit_text(
                 "WordPress-подключение не найдено. Проверьте настройки.",
+                reply_markup=menu_kb(),
             )
             await callback.answer()
             return
@@ -906,7 +908,7 @@ async def cancel_refund(
 
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    await msg.edit_text("Статья отменена. Токены возвращены.")
+    await msg.edit_text("Статья отменена. Токены возвращены.", reply_markup=menu_kb())
     await callback.answer()
 
 

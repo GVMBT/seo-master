@@ -26,6 +26,7 @@ from keyboards.inline import (
     content_settings_kb,
     image_count_kb,
     image_style_kb,
+    menu_kb,
     text_style_kb,
 )
 
@@ -254,7 +255,7 @@ async def process_max_words(
     cat_raw = data.get("settings_cat_id")
     if min_raw is None or cat_raw is None:
         await state.clear()
-        await message.answer("Сессия устарела. Начните настройку заново.")
+        await message.answer("Сессия устарела. Начните настройку заново.", reply_markup=menu_kb())
         return
     min_val = int(min_raw)
 
@@ -278,7 +279,7 @@ async def process_max_words(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await message.answer("Категория не найдена.")
+        await message.answer("Категория не найдена.", reply_markup=menu_kb())
         return
 
     # Update text_settings
@@ -593,5 +594,5 @@ async def cancel_text_length_inline(
         await callback.answer()
         return
 
-    await msg.edit_text("Настройка отменена.")
+    await msg.edit_text("Настройка отменена.", reply_markup=menu_kb())
     await callback.answer()

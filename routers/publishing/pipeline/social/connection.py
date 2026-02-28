@@ -35,7 +35,7 @@ from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.models import PlatformConnectionCreate, User
-from keyboards.inline import cancel_kb
+from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     social_connections_kb,
     social_no_connections_kb,
@@ -360,7 +360,7 @@ async def pipeline_connect_tg_channel(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await message.answer("Проект не выбран. Начните заново.")
+        await message.answer("Проект не выбран. Начните заново.", reply_markup=menu_kb())
         return
 
     conn_svc = ConnectionService(db, http_client)
@@ -592,7 +592,7 @@ async def pipeline_connect_vk_token(
     project_id = data.get("project_id")
     project_name = data.get("project_name", "")
     if not project_id:
-        await message.answer("Проект не выбран. Начните заново.")
+        await message.answer("Проект не выбран. Начните заново.", reply_markup=menu_kb())
         return
 
     # Check 1 VK per project limit
