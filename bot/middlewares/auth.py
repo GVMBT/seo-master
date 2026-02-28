@@ -8,7 +8,14 @@ from typing import Any
 import structlog
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message, TelegramObject
+from aiogram.types import (
+    CallbackQuery,
+    InaccessibleMessage,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    TelegramObject,
+)
 
 from cache.client import RedisClient
 from cache.keys import USER_CACHE_TTL, CacheKeys
@@ -134,12 +141,14 @@ class FSMInactivityMiddleware(BaseMiddleware):
 
     @staticmethod
     async def _send_expired_message(event: TelegramObject, data: dict[str, Any]) -> None:
-        """Send session expired notification."""
-        text = "Сессия истекла. Начните заново."
-        # TODO: restore main_menu keyboard after frontend rewrite
+        """Send session expired notification with a button to return to dashboard."""
+        text = "⏳ Сессия истекла."
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Меню", callback_data="nav:dashboard")],
+        ])
         if isinstance(event, Message):
-            await event.answer(text)
+            await event.answer(text, reply_markup=kb)
         elif isinstance(event, CallbackQuery):
             if event.message and not isinstance(event.message, InaccessibleMessage):
-                await event.message.answer(text)
+                await event.message.answer(text, reply_markup=kb)
             await event.answer()
