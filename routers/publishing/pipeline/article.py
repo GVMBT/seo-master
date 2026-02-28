@@ -110,7 +110,9 @@ async def pipeline_article_start(
     if len(projects) == 1:
         # Auto-select the only project
         project = projects[0]
-        await state.update_data(project_id=project.id, project_name=project.name)
+        await state.update_data(
+            project_id=project.id, project_name=project.name, company_name=project.company_name,
+        )
         await _show_wp_step(callback, state, user, db, http_client, redis, project.id, project.name)
         await callback.answer()
         return
@@ -155,7 +157,9 @@ async def pipeline_select_project(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
-    await state.update_data(project_id=project.id, project_name=project.name)
+    await state.update_data(
+        project_id=project.id, project_name=project.name, company_name=project.company_name,
+    )
     await _show_wp_step(callback, state, user, db, http_client, redis, project.id, project.name)
     await callback.answer()
 
@@ -316,7 +320,9 @@ async def pipeline_create_project_url(
 
     log.info("pipeline.project_created", project_id=project.id, user_id=user.id)
 
-    await state.update_data(project_id=project.id, project_name=project.name)
+    await state.update_data(
+        project_id=project.id, project_name=project.name, company_name=project.company_name,
+    )
     await message.answer(f"Проект «{html.escape(project.name)}» создан!")
 
     # Proceed to step 2 (WP check) — message context, can't edit

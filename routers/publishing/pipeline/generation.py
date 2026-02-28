@@ -476,9 +476,11 @@ async def _run_generation(
 
     # Create Telegraph page (E05: graceful degradation)
     telegraph = TelegraphClient(http_client)
+    telegraph_author = str(fsm_data.get("company_name") or fsm_data.get("project_name") or "")
     telegraph_page = await telegraph.create_page(
         title=content.title,
         html=content.content_html,
+        author=telegraph_author or "SEO Master Bot",
     )
     telegraph_url = telegraph_page.url if telegraph_page else None
     telegraph_path = telegraph_page.path if telegraph_page else None
