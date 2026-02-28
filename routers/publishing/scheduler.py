@@ -338,7 +338,13 @@ async def scheduler_connection(callback: CallbackQuery, user: User, db: Supabase
 
     await msg.edit_text(
         text,
-        reply_markup=scheduler_config_kb(cat_id, conn_id, existing is not None and existing.enabled),
+        reply_markup=scheduler_config_kb(
+            cat_id,
+            conn_id,
+            existing is not None and existing.enabled,
+            schedule_days=existing.schedule_days if existing and existing.enabled else None,
+            posts_per_day=existing.posts_per_day if existing and existing.enabled else 0,
+        ),
     )
     await callback.answer()
 
@@ -415,7 +421,9 @@ async def scheduler_preset(
         f"Подключение: {conn.identifier}\n"
         f"Режим: {preset[0]}\n"
         f"Ориент. расход: ~{weekly_cost} токенов/нед",
-        reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=True),
+        reply_markup=scheduler_config_kb(
+            cat_id, conn_id, has_schedule=True, schedule_days=days, posts_per_day=posts_per_day,
+        ),
     )
     await callback.answer()
 
@@ -717,7 +725,10 @@ async def schedule_times_done(
         f"Время: {times_str}\n"
         f"Постов/день: {required}\n"
         f"Ориент. расход: ~{weekly_cost} токенов/нед",
-        reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=True),
+        reply_markup=scheduler_config_kb(
+            cat_id, conn_id, has_schedule=True,
+            schedule_days=list(selected_days), posts_per_day=required,
+        ),
     )
     await callback.answer()
 
@@ -841,7 +852,9 @@ async def scheduler_social_connection(callback: CallbackQuery, user: User, db: S
     await msg.edit_text(
         text,
         reply_markup=scheduler_social_config_kb(
-            cat_id, conn_id, existing is not None and existing.enabled, has_other_social
+            cat_id, conn_id, existing is not None and existing.enabled, has_other_social,
+            schedule_days=existing.schedule_days if existing and existing.enabled else None,
+            posts_per_day=existing.posts_per_day if existing and existing.enabled else 0,
         ),
     )
     await callback.answer()
@@ -1000,7 +1013,10 @@ async def scheduler_crosspost_save(callback: CallbackQuery, user: User, db: Supa
 
     await msg.edit_text(
         result_msg,
-        reply_markup=scheduler_social_config_kb(cat_id, conn_id, has_schedule=True, has_other_social=has_other_social),
+        reply_markup=scheduler_social_config_kb(
+            cat_id, conn_id, has_schedule=True, has_other_social=has_other_social,
+            schedule_days=existing.schedule_days, posts_per_day=existing.posts_per_day,
+        ),
     )
     await callback.answer()
 
