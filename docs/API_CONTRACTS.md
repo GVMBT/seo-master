@@ -532,7 +532,7 @@ MODEL_CHAINS = {
     "review":               ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "description":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "cross_post":           ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],           # Text adaptation between platforms (budget)
-    "image":                ["google/gemini-3-pro-image-preview", "google/gemini-2.5-flash-image"],
+    "image":                ["google/gemini-3-pro-image-preview", "google/gemini-3.1-flash-image-preview"],
 }
 
 # Использование — один запрос, OpenRouter сам делает fallback
@@ -2313,10 +2313,10 @@ variables:
 
 | Модель | Model ID | Назначение | Цена (input/output) |
 |--------|----------|-----------|---------------------|
-| Nano Banana (Gemini 2.5 Flash Image) | `google/gemini-2.5-flash-image` | Стандартная генерация (соцсети, бюджет) | $0.30/$2.50 per M tokens, $30/M image output |
+| Nano Banana 2 (Gemini 3.1 Flash Image) | `google/gemini-3.1-flash-image-preview` | Pro-качество на Flash-скорости (fallback) | $0.25/$1.50 per M tokens, $60/M image output |
 | Nano Banana Pro (Gemini 3 Pro Image) | `google/gemini-3-pro-image-preview` | Премиум генерация (статьи, высокое качество) | $2/$12 per M tokens, $120/M image output |
 
-**Fallback цепочка:** определяется через `MODEL_CHAINS["image"]` (§3.1): Nano Banana Pro → Nano Banana → ошибка + возврат токенов.
+**Fallback цепочка:** определяется через `MODEL_CHAINS["image"]` (§3.1): Nano Banana Pro → Nano Banana 2 → ошибка + возврат токенов.
 
 ### 7.2 API-запрос
 

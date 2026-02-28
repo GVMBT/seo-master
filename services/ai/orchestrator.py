@@ -81,7 +81,7 @@ MODEL_CHAINS: dict[str, list[str]] = {
     ],
     "image": [
         "google/gemini-3-pro-image-preview",
-        "google/gemini-2.5-flash-image",
+        "google/gemini-3.1-flash-image-preview",
     ],
 }
 

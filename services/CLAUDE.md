@@ -27,7 +27,7 @@ class ArticleService:
   seed_normalize: deepseek-v3.2 → gpt-5.2
   review: deepseek-v3.2 → claude-sonnet-4.5
   description: deepseek-v3.2 → claude-sonnet-4.5
-  image: gemini-3-pro-image → gemini-2.5-flash-image
+  image: gemini-3-pro-image → gemini-3.1-flash-image-preview (Nano Banana 2)
 - OpenAI SDK с base_url="https://openrouter.ai/api/v1"
 - extra_body.models для нативных fallbacks
 - response_format: json_schema + strict: true для structured outputs
