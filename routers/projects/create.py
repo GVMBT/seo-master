@@ -11,17 +11,15 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import ProjectServiceFactory
 from bot.validators import URL_RE
 from db.client import SupabaseClient
 from db.models import Project, ProjectCreate, ProjectUpdate, User
-from db.repositories.projects import ProjectsRepository
 from keyboards.inline import cancel_kb, menu_kb, project_created_kb, project_edit_kb
+from services.projects import MAX_PROJECTS_PER_USER
 
 log = structlog.get_logger()
 router = Router()
-
-# H17: maximum projects per user (anti-DoS)
-MAX_PROJECTS_PER_USER = 20
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +90,7 @@ async def start_create(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Start project creation flow."""
     msg = safe_message(callback)
@@ -100,9 +99,9 @@ async def start_create(
         return
 
     # H17: enforce project limit per user
-    repo = ProjectsRepository(db)
-    count = await repo.get_count_by_user(user.id)
-    if count >= MAX_PROJECTS_PER_USER:
+    proj_svc = project_service_factory(db)
+    under_limit = await proj_svc.check_project_limit(user.id)
+    if not under_limit:
         await callback.answer(
             f"Достигнут лимит проектов ({MAX_PROJECTS_PER_USER}).",
             show_alert=True,
@@ -204,6 +203,7 @@ async def process_website_url(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Step 4: website URL (optional, skippable)."""
     text = (message.text or "").strip()
@@ -223,8 +223,8 @@ async def process_website_url(
     data = await state.get_data()
     await state.clear()
 
-    repo = ProjectsRepository(db)
-    project = await repo.create(
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.create_project(
         ProjectCreate(
             user_id=user.id,
             name=data["name"],
@@ -253,6 +253,7 @@ async def show_edit_screen(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Show project edit screen with field buttons."""
     msg = safe_message(callback)
@@ -261,10 +262,10 @@ async def show_edit_screen(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
 
-    if not project or project.user_id != user.id:
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -303,6 +304,7 @@ async def start_field_edit(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Start editing a specific field — enter ProjectEditFSM."""
     msg = safe_message(callback)
@@ -318,9 +320,9 @@ async def start_field_edit(
         await callback.answer("Неизвестное поле.", show_alert=True)
         return
 
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -350,18 +352,20 @@ async def process_field_value(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Process new field value and save."""
     text = (message.text or "").strip()
+
+    proj_svc = project_service_factory(db)
 
     if text == "Отмена":
         data = await state.get_data()
         project_id = data.get("edit_project_id")
         await state.clear()
         if project_id:
-            repo = ProjectsRepository(db)
-            project = await repo.get_by_id(int(project_id))
-            if project and project.user_id == user.id:
+            project = await proj_svc.get_owned_project(int(project_id), user.id)
+            if project:
                 edit_text = _build_edit_text(project)
                 await message.answer(edit_text, reply_markup=project_edit_kb(int(project_id)))
                 return
@@ -394,16 +398,9 @@ async def process_field_value(
 
     await state.clear()
 
-    # Ownership check
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
-        await message.answer("Проект не найден.", reply_markup=menu_kb())
-        return
-
-    # Build update
+    # Ownership-verified update
     update_data = ProjectUpdate(**{field: text or None})
-    project = await repo.update(project_id, update_data)
+    project = await proj_svc.update_project(project_id, user.id, update_data)
 
     if project:
         label = _FIELD_LABELS.get(field, field)
@@ -442,6 +439,7 @@ async def cancel_edit(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Cancel project field edit via inline button — return to edit screen."""
     msg = safe_message(callback)
@@ -454,9 +452,9 @@ async def cancel_edit(
     await state.clear()
 
     if project_id:
-        repo = ProjectsRepository(db)
-        project = await repo.get_by_id(int(project_id))
-        if project and project.user_id == user.id:
+        proj_svc = project_service_factory(db)
+        project = await proj_svc.get_owned_project(int(project_id), user.id)
+        if project:
             edit_text = _build_edit_text(project)
             await msg.edit_text(edit_text, reply_markup=project_edit_kb(int(project_id)))
             await callback.answer()

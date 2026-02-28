@@ -44,34 +44,22 @@ class TestGetOwnedProject:
 
     async def test_returns_project_when_owned(self, mock_db: MagicMock) -> None:
         project = MagicMock()
-        project.user_id = 42
 
-        with patch("bot.helpers.ProjectsRepository") as MockRepo:
-            repo_instance = MockRepo.return_value
-            repo_instance.get_by_id = AsyncMock(return_value=project)
+        with patch("bot.helpers.ProjectService") as MockSvc:
+            MockSvc.return_value.get_owned_project = AsyncMock(return_value=project)
 
             result = await get_owned_project(mock_db, 1, 42)
             assert result is project
-            repo_instance.get_by_id.assert_awaited_once_with(1)
+            MockSvc.return_value.get_owned_project.assert_awaited_once_with(1, 42)
 
-    async def test_returns_none_when_not_found(self, mock_db: MagicMock) -> None:
-        with patch("bot.helpers.ProjectsRepository") as MockRepo:
-            repo_instance = MockRepo.return_value
-            repo_instance.get_by_id = AsyncMock(return_value=None)
-
-            result = await get_owned_project(mock_db, 1, 42)
-            assert result is None
-
-    async def test_returns_none_when_not_owned(self, mock_db: MagicMock) -> None:
-        project = MagicMock()
-        project.user_id = 99  # different user
-
-        with patch("bot.helpers.ProjectsRepository") as MockRepo:
-            repo_instance = MockRepo.return_value
-            repo_instance.get_by_id = AsyncMock(return_value=project)
+    async def test_returns_none_when_not_found_or_not_owned(self, mock_db: MagicMock) -> None:
+        """ProjectService returns None for missing or not-owned projects."""
+        with patch("bot.helpers.ProjectService") as MockSvc:
+            MockSvc.return_value.get_owned_project = AsyncMock(return_value=None)
 
             result = await get_owned_project(mock_db, 1, 42)
             assert result is None
+            MockSvc.return_value.get_owned_project.assert_awaited_once_with(1, 42)
 
 
 # ---------------------------------------------------------------------------

@@ -6,17 +6,10 @@ import structlog
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
-from bot.config import get_settings
-from bot.helpers import get_owned_project, safe_message
-from bot.service_factory import TokenServiceFactory
+from bot.helpers import safe_message
+from bot.service_factory import ProjectServiceFactory, TokenServiceFactory
 from db.client import SupabaseClient
-from db.credential_manager import CredentialManager
 from db.models import User
-from db.repositories.categories import CategoriesRepository
-from db.repositories.connections import ConnectionsRepository
-from db.repositories.previews import PreviewsRepository
-from db.repositories.projects import ProjectsRepository
-from db.repositories.publications import PublicationsRepository
 from keyboards.inline import project_card_kb, project_delete_confirm_kb, project_deleted_kb
 from services.scheduler import SchedulerService
 
@@ -34,6 +27,7 @@ async def show_project_card(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Show project card (UX_TOOLBOX.md section 3.1-3.2)."""
     msg = safe_message(callback)
@@ -42,21 +36,14 @@ async def show_project_card(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    project = await get_owned_project(db, project_id, user.id)
-    if not project:
+
+    proj_svc = project_service_factory(db)
+    card_data = await proj_svc.build_card_data(project_id, user.id)
+    if not card_data:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
-    # Gather card data
-    settings = get_settings()
-    cm = CredentialManager(settings.encryption_key.get_secret_value())
-    conn_repo = ConnectionsRepository(db, cm)
-    cats_repo = CategoriesRepository(db)
-    pubs_repo = PublicationsRepository(db)
-
-    platform_types = await conn_repo.get_platform_types_by_project(project_id)
-    categories = await cats_repo.get_by_project(project_id)
-    pub_count = await pubs_repo.get_count_by_project(project_id)
+    project = card_data.project
 
     # Build card text
     safe_name = html.escape(project.name)
@@ -68,14 +55,14 @@ async def show_project_card(
         short = project.advantages[:80] + "…" if len(project.advantages) > 80 else project.advantages
         lines.append(f"Преимущества: {html.escape(short)}")
 
-    if platform_types:
-        platforms_str = ", ".join(p.capitalize() for p in platform_types)
+    if card_data.platform_types:
+        platforms_str = ", ".join(p.capitalize() for p in card_data.platform_types)
         lines.append(f"\U0001f517 Платформы: {platforms_str}")
     else:
         lines.append("\U0001f517 Платформы: не подключены \u2014 подключите в настройках")
 
-    lines.append(f"\U0001f4c2 Категорий: {len(categories)}")
-    lines.append(f"\U0001f4ca Публикаций: {pub_count}")
+    lines.append(f"\U0001f4c2 Категорий: {len(card_data.categories)}")
+    lines.append(f"\U0001f4ca Публикаций: {card_data.pub_count}")
 
     text = "\n".join(lines)
     await msg.edit_text(text, reply_markup=project_card_kb(project_id))
@@ -103,6 +90,7 @@ async def confirm_delete(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Show delete confirmation dialog."""
     msg = safe_message(callback)
@@ -111,7 +99,9 @@ async def confirm_delete(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    project = await get_owned_project(db, project_id, user.id)
+
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
     if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
@@ -131,6 +121,7 @@ async def execute_delete(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
     scheduler_service: SchedulerService,
     token_service_factory: TokenServiceFactory,
 ) -> None:
@@ -141,36 +132,20 @@ async def execute_delete(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    project = await get_owned_project(db, project_id, user.id)
-    if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
-        return
 
-    # E11: Cancel QStash schedules BEFORE CASCADE delete
-    await scheduler_service.cancel_schedules_for_project(project_id)
+    proj_svc = project_service_factory(db)
+    token_service = token_service_factory(db)
 
-    # E42: Refund active previews
-    previews_repo = PreviewsRepository(db)
-    active_previews = await previews_repo.get_active_drafts_by_project(project_id)
-    if active_previews:
-        token_service = token_service_factory(db)
-        await token_service.refund_active_previews(
-            active_previews,
-            user.id,
-            f"удаление проекта #{project_id}",
-        )
+    deleted, project = await proj_svc.delete_project(
+        project_id, user.id, scheduler_service, token_service
+    )
 
-    # Delete project (CASCADE deletes categories, connections, schedules)
-    repo = ProjectsRepository(db)
-    deleted = await repo.delete(project_id)
-
-    if deleted:
+    if deleted and project:
         safe_name = html.escape(project.name)
         await msg.edit_text(
             f"Проект «{safe_name}» удалён.",
             reply_markup=project_deleted_kb(),
         )
-        log.info("project_deleted", project_id=project_id, user_id=user.id)
     else:
         await msg.edit_text(
             "\u26a0\ufe0f Не удалось удалить проект. Попробуйте позже.",

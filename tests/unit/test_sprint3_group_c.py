@@ -17,9 +17,9 @@ from api.yookassa import _YOOKASSA_IDEMPOTENCY_TTL, yookassa_webhook
 from cache.keys import CacheKeys
 from db.repositories.categories import CategoriesRepository
 from db.repositories.payments import PaymentsRepository
-from services.categories import MAX_CATEGORIES_PER_PROJECT
-from routers.projects.create import MAX_PROJECTS_PER_USER
+from services.projects import MAX_PROJECTS_PER_USER
 from services.ai.rate_limiter import RATE_LIMITS
+from services.categories import MAX_CATEGORIES_PER_PROJECT
 from services.payments.stars import (
     MAX_REFERRAL_DAILY,
     MAX_REFERRAL_LIFETIME_TOKENS,
@@ -222,11 +222,13 @@ class TestPipelineGenerationRateLimit:
         callback.data = "pipeline:article:confirm"
 
         state = MagicMock()
-        state.get_data = AsyncMock(return_value={
-            "category_id": 10,
-            "project_id": 1,
-            "image_count": 4,
-        })
+        state.get_data = AsyncMock(
+            return_value={
+                "category_id": 10,
+                "project_id": 1,
+                "image_count": 4,
+            }
+        )
         state.update_data = AsyncMock()
         state.set_state = AsyncMock()
 
@@ -253,21 +255,22 @@ class TestPipelineGenerationRateLimit:
             with (
                 patch(
                     "routers.publishing.pipeline.generation._fresh_image_count",
-                    new_callable=AsyncMock, return_value=4,
+                    new_callable=AsyncMock,
+                    return_value=4,
                 ),
                 patch("routers.publishing.pipeline.generation.get_settings") as mock_settings,
             ):
-                    mock_settings.return_value = MagicMock(admin_ids=[])
-                    await confirm_generate(
-                        callback=callback,
-                        state=state,
-                        user=user,
-                        db=db,
-                        redis=redis,
-                        http_client=MagicMock(),
-                        ai_orchestrator=MagicMock(),
-                        image_storage=MagicMock(),
-                    )
+                mock_settings.return_value = MagicMock(admin_ids=[])
+                await confirm_generate(
+                    callback=callback,
+                    state=state,
+                    user=user,
+                    db=db,
+                    redis=redis,
+                    http_client=MagicMock(),
+                    ai_orchestrator=MagicMock(),
+                    image_storage=MagicMock(),
+                )
 
             # Should show rate limit alert
             callback.answer.assert_called()
@@ -422,12 +425,14 @@ class TestProjectLimit:
         user = make_user(id=42)
         db = MagicMock()
 
-        with patch("routers.projects.create.ProjectsRepository") as mock_repo_cls:
-            mock_repo = MagicMock()
-            mock_repo_cls.return_value = mock_repo
-            mock_repo.get_count_by_user = AsyncMock(return_value=MAX_PROJECTS_PER_USER)
+        mock_proj_svc = MagicMock()
+        mock_proj_svc.check_project_limit = AsyncMock(return_value=False)
+        project_service_factory = MagicMock(return_value=mock_proj_svc)
 
-            await start_create(callback=callback, state=state, user=user, db=db)
+        await start_create(
+            callback=callback, state=state, user=user, db=db,
+            project_service_factory=project_service_factory,
+        )
 
         callback.answer.assert_called_once()
         call_args = callback.answer.call_args
@@ -453,13 +458,15 @@ class TestProjectLimit:
         user = make_user(id=42)
         db = MagicMock()
 
-        with patch("routers.projects.create.ProjectsRepository") as mock_repo_cls:
-            mock_repo = MagicMock()
-            mock_repo_cls.return_value = mock_repo
-            mock_repo.get_count_by_user = AsyncMock(return_value=5)
+        mock_proj_svc = MagicMock()
+        mock_proj_svc.check_project_limit = AsyncMock(return_value=True)
+        project_service_factory = MagicMock(return_value=mock_proj_svc)
 
-            with patch("routers.projects.create.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None):
-                await start_create(callback=callback, state=state, user=user, db=db)
+        with patch("routers.projects.create.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None):
+            await start_create(
+                callback=callback, state=state, user=user, db=db,
+                project_service_factory=project_service_factory,
+            )
 
         state.set_state.assert_called_once()
 
@@ -495,7 +502,10 @@ class TestCategoryLimit:
 
         with patch("routers.categories.manage.get_owned_project", new_callable=AsyncMock, return_value=project):
             await start_category_create(
-                callback=callback, state=state, user=user, db=db,
+                callback=callback,
+                state=state,
+                user=user,
+                db=db,
                 category_service_factory=category_service_factory,
             )
 
@@ -534,7 +544,10 @@ class TestCategoryLimit:
             patch("routers.categories.manage.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None),
         ):
             await start_category_create(
-                callback=callback, state=state, user=user, db=db,
+                callback=callback,
+                state=state,
+                user=user,
+                db=db,
                 category_service_factory=category_service_factory,
             )
 
@@ -554,11 +567,16 @@ class TestPaymentsRepoSumReferralBonuses:
         from tests.unit.db.repositories.conftest import MockResponse, MockSupabaseClient
 
         db = MockSupabaseClient()
-        db.set_response("token_expenses", MockResponse(data=[
-            {"amount": 100},
-            {"amount": 50},
-            {"amount": 200},
-        ]))
+        db.set_response(
+            "token_expenses",
+            MockResponse(
+                data=[
+                    {"amount": 100},
+                    {"amount": 50},
+                    {"amount": 200},
+                ]
+            ),
+        )
 
         repo = PaymentsRepository(db)  # type: ignore[arg-type]
         total = await repo.sum_referral_bonuses(42)
