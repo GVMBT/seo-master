@@ -5,8 +5,9 @@ import structlog
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
+from bot.assets import edit_screen
 from bot.config import get_settings
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import payment_method_kb, tariffs_kb, yookassa_link_kb
@@ -38,7 +39,7 @@ async def nav_tokens(
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
     text = stars_svc.format_tariffs_text(user.balance)
 
-    await msg.edit_text(text, reply_markup=tariffs_kb())
+    await edit_screen(msg, "tariffs.png", text, reply_markup=tariffs_kb())
     await callback.answer()
 
 
@@ -66,7 +67,7 @@ async def select_package(
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
     text = stars_svc.format_package_text(package_name)
 
-    await msg.edit_text(text, reply_markup=payment_method_kb(package_name))
+    await safe_edit_text(msg, text, reply_markup=payment_method_kb(package_name))
     await callback.answer()
 
 
@@ -149,5 +150,5 @@ async def pay_with_yookassa(
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
     text = stars_svc.format_payment_link_text(package_name)
 
-    await msg.edit_text(text, reply_markup=yookassa_link_kb(url, package_name))
+    await safe_edit_text(msg, text, reply_markup=yookassa_link_kb(url, package_name))
     await callback.answer()

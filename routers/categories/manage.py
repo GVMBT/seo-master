@@ -9,8 +9,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
+from bot.assets import edit_screen
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import get_owned_project, safe_message
+from bot.helpers import get_owned_project, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
 from db.client import SupabaseClient
 from db.models import User
@@ -66,7 +67,9 @@ async def show_category_list(
 
     if not categories:
         safe_name = html.escape(project.name)
-        await msg.edit_text(
+        await edit_screen(
+            msg,
+            "empty_categories.png",
             f"<b>{safe_name}</b> \u2014 Категории\n\n"
             "\U0001f4c2 Категорий пока нет.\n\n"
             "Категория = тема контента "
@@ -75,7 +78,9 @@ async def show_category_list(
         )
     else:
         safe_name = html.escape(project.name)
-        await msg.edit_text(
+        await edit_screen(
+            msg,
+            "empty_categories.png",
             f"<b>{safe_name}</b> — Категории ({len(categories)})",
             reply_markup=category_list_kb(categories, project_id),
         )
@@ -111,7 +116,9 @@ async def paginate_categories(
         return
 
     safe_name = html.escape(project.name)
-    await msg.edit_text(
+    await edit_screen(
+        msg,
+        "empty_categories.png",
         f"<b>{safe_name}</b> — Категории ({len(categories)})",
         reply_markup=category_list_kb(categories, project_id, page),
     )
@@ -267,7 +274,7 @@ async def show_category_card(
         lines.append("\U0001f5bc Медиа: \u274c нет файлов")
 
     text = "\n".join(lines)
-    await msg.edit_text(text, reply_markup=category_card_kb(category_id, category.project_id))
+    await safe_edit_text(msg, text, reply_markup=category_card_kb(category_id, category.project_id))
     await callback.answer()
 
 
@@ -304,7 +311,8 @@ async def confirm_category_delete(
         impact_lines.append(f"Будет отменено расписаний: {active_count}")
     impact_lines.append("Это действие нельзя отменить.")
 
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         "\n".join(impact_lines),
         reply_markup=category_delete_confirm_kb(category_id, category.project_id),
     )

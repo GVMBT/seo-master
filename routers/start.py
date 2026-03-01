@@ -9,9 +9,10 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, Message
 
+from bot.assets import asset_photo, cache_file_id, edit_screen
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import DashboardServiceFactory
 from bot.texts.legal import LEGAL_NOTICE, PRIVACY_POLICY_CHUNKS, TERMS_OF_SERVICE_CHUNKS
 from cache.client import RedisClient
@@ -285,7 +286,17 @@ async def cmd_start(
         return
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    await message.answer(text + "\n\nВыберите действие:", reply_markup=kb)
+    full_text = text + "\n\nВыберите действие:"
+    if is_new_user:
+        result = await message.answer_photo(
+            asset_photo("welcome.png"),
+            caption=full_text,
+            reply_markup=kb,
+        )
+        if result.photo:
+            cache_file_id("welcome.png", result.photo[-1].file_id)
+    else:
+        await message.answer(full_text, reply_markup=kb)
 
 
 # ---------------------------------------------------------------------------
@@ -381,11 +392,11 @@ async def nav_dashboard(
     redis: RedisClient,
     dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
-    """Navigate to Dashboard via editMessageText."""
+    """Navigate to Dashboard via edit_screen (photo menu)."""
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text(text, reply_markup=kb)
+        await edit_screen(msg, "welcome.png", text, reply_markup=kb)
     await callback.answer()
 
 
@@ -424,12 +435,14 @@ async def _route_to_step(
         projects_repo = ProjectsRepository(db)
         projects = await projects_repo.get_by_user(user.id)
         if not projects:
-            await msg.edit_text(
+            await safe_edit_text(
+                msg,
                 "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
                 reply_markup=pipeline_no_projects_kb(),
             )
         else:
-            await msg.edit_text(
+            await safe_edit_text(
+                msg,
                 "Статья (1/5) — Проект\n\nДля какого проекта?",
                 reply_markup=pipeline_projects_kb(projects),
             )
@@ -437,7 +450,8 @@ async def _route_to_step(
         return
 
     if step == "select_wp":
-        await msg.edit_text(
+        await safe_edit_text(
+            msg,
             "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
             reply_markup=pipeline_no_wp_kb(),
         )
@@ -446,8 +460,9 @@ async def _route_to_step(
 
     if step == "select_category":
         if not project_id:
-            await msg.edit_text(
-                "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.", reply_markup=menu_kb()
+            await safe_edit_text(
+                msg,
+                "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.", reply_markup=menu_kb(),
             )
             await redis.delete(CacheKeys.pipeline_state(user.id))
             await state.clear()
@@ -455,7 +470,8 @@ async def _route_to_step(
         cats_repo = CategoriesRepository(db)
         categories = await cats_repo.get_by_project(project_id)
         if not categories:
-            await msg.edit_text(
+            await safe_edit_text(
+                msg,
                 "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
                 reply_markup=cancel_kb("pipeline:article:cancel"),
             )
@@ -467,7 +483,8 @@ async def _route_to_step(
 
             await show_readiness_check(callback, state, user, db, redis)
         else:
-            await msg.edit_text(
+            await safe_edit_text(
+                msg,
                 "Статья (3/5) — Тема\n\nКакая тема?",
                 reply_markup=pipeline_categories_kb(categories, project_id),
             )
@@ -500,13 +517,14 @@ async def _route_to_step(
                 f"Объём: ~{preview.word_count or 0} слов | Изображения: {preview.images_count or 0}",
                 f"Списано: {preview.tokens_charged or 0} ток.",
             ]
-            await msg.edit_text("\n".join(lines), reply_markup=kb)
+            await safe_edit_text(msg, "\n".join(lines), reply_markup=kb)
             await state.set_state(ArticlePipelineFSM.preview)
             return
 
         # Preview expired or already published
-        await msg.edit_text(
-            "\u26a0\ufe0f Превью устарело. Нажмите /start чтобы начать заново.", reply_markup=menu_kb()
+        await safe_edit_text(
+            msg,
+            "\u26a0\ufe0f Превью устарело. Нажмите /start чтобы начать заново.", reply_markup=menu_kb(),
         )
         await redis.delete(CacheKeys.pipeline_state(user.id))
         return
@@ -514,7 +532,7 @@ async def _route_to_step(
     # Fallback: show dashboard
     log.warning("pipeline.resume_unknown_step", step=step, user_id=user.id)
     text, kb = await _build_dashboard(user, False, db, redis, dashboard_service_factory)
-    await msg.edit_text(text, reply_markup=kb)
+    await edit_screen(msg, "welcome.png", text, reply_markup=kb)
 
 
 # ---------------------------------------------------------------------------
@@ -638,7 +656,7 @@ async def _route_social_to_step(
     text, kb = await _build_dashboard(
         user, is_new_user=False, db=db, redis=redis, dashboard_service_factory=dashboard_service_factory
     )
-    await msg.edit_text(text, reply_markup=kb)
+    await edit_screen(msg, "welcome.png", text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "pipeline:restart")
@@ -657,7 +675,7 @@ async def pipeline_restart(
     msg = safe_message(callback)
     if msg:
         text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-        await msg.edit_text(text, reply_markup=kb)
+        await edit_screen(msg, "welcome.png", text, reply_markup=kb)
     await callback.answer()
 
 

@@ -126,7 +126,10 @@ def mock_message() -> MagicMock:
     """Mock Message with async methods."""
     msg = MagicMock(spec=Message)
     msg.answer = AsyncMock()
+    msg.answer_photo = AsyncMock()
     msg.edit_text = AsyncMock()
+    msg.edit_media = AsyncMock()
+    msg.delete = AsyncMock()
     msg.text = ""
     msg.from_user = MagicMock(spec=TgUser)
     msg.from_user.id = 123456

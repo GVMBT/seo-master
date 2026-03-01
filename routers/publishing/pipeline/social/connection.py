@@ -29,7 +29,7 @@ from aiogram.types import (
     Message,
 )
 
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.validators import TG_CHANNEL_RE
 from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
@@ -87,7 +87,8 @@ async def _show_connection_step(
     social_conns = await conn_svc.get_social_connections(project_id)
 
     if len(social_conns) == 0:
-        await msg.edit_text(
+        await safe_edit_text(
+            msg,
             f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nПодключите соцсеть для публикации.",
             reply_markup=social_no_connections_kb(),
         )
@@ -116,7 +117,8 @@ async def _show_connection_step(
         )
         return
 
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nКуда публикуем?",
         reply_markup=social_connections_kb(social_conns, project_id),
     )

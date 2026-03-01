@@ -20,7 +20,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
 from cache.client import RedisClient
 from db.client import SupabaseClient
@@ -129,7 +129,7 @@ async def show_readiness_check(
     project_id = data.get("project_id")
     project_name = data.get("project_name", "")
     if not category_id:
-        await msg.edit_text("Категория не выбрана. Начните заново.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Категория не выбрана. Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -152,7 +152,7 @@ async def show_readiness_check(
 
     text = _build_checklist_text(report, data)
     kb = pipeline_readiness_kb(report)
-    await msg.edit_text(text, reply_markup=kb)
+    await safe_edit_text(msg, text, reply_markup=kb)
     await state.set_state(ArticlePipelineFSM.readiness_check)
     await state.update_data(image_count=image_count)
     await save_checkpoint(

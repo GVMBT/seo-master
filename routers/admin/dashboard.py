@@ -13,8 +13,9 @@ from aiogram.types import (
     Message,
 )
 
+from bot.assets import edit_screen
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import AdminServiceFactory
 from cache.client import RedisClient
 from db.client import SupabaseClient
@@ -89,7 +90,7 @@ async def admin_panel(
         f"Затраты API (30д): ${stats.revenue_30d:.2f}\n"
     )
 
-    await msg.edit_text(text, reply_markup=admin_panel_kb())
+    await edit_screen(msg, "admin.png", text, reply_markup=admin_panel_kb())
     await callback.answer()
 
 
@@ -128,7 +129,7 @@ async def admin_monitoring(
         f"Активных расписаний: {status.active_schedules}\n"
     )
 
-    await msg.edit_text(text, reply_markup=_BACK_TO_PANEL_KB)
+    await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
     await callback.answer()
 
 
@@ -159,7 +160,7 @@ async def admin_api_costs(
 
     text = f"<b>Затраты API</b>\n\n7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
 
-    await msg.edit_text(text, reply_markup=_BACK_TO_PANEL_KB)
+    await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
     await callback.answer()
 
 
@@ -184,7 +185,8 @@ async def user_lookup_start(callback: CallbackQuery, user: User, state: FSMConte
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(UserLookupFSM.waiting_input)
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         "<b>Просмотр пользователя</b>\n\nОтправьте ID (число) или @username:",
         reply_markup=_BACK_TO_PANEL_KB,
     )
@@ -259,7 +261,8 @@ async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(BroadcastFSM.audience)
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         "<b>Рассылка</b>\n\nВыберите аудиторию:",
         reply_markup=broadcast_audience_kb(),
     )
@@ -304,11 +307,12 @@ async def broadcast_audience(
     await state.update_data(broadcast_audience=audience_key, broadcast_count=count)
     await state.set_state(BroadcastFSM.text)
 
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         f"<b>Рассылка</b>\n\n"
         f"Аудитория: {_AUDIENCE_LABELS.get(audience_key, audience_key)}\n"
         f"Получателей: ~{count}\n\n"
-        f"Отправьте текст сообщения:"
+        f"Отправьте текст сообщения:",
     )
     await callback.answer()
 

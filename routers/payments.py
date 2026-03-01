@@ -4,6 +4,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, PreCheckoutQuery
 
+from bot.assets import asset_photo, cache_file_id
 from bot.config import get_settings
 from db.client import SupabaseClient
 from db.models import User
@@ -138,9 +139,14 @@ async def successful_payment_handler(
             ],
         ]
     )
-    await message.answer(
-        f"\U0001f389 Оплата прошла успешно!\n\n"
-        f"\U0001f4b0 Начислено: <b>{tokens}</b> токенов\n"
-        f"\U0001f4b0 Баланс: <b>{new_balance}</b> токенов",
+    photo_msg = await message.answer_photo(
+        asset_photo("payment_success.png"),
+        caption=(
+            f"\U0001f389 Оплата прошла успешно!\n\n"
+            f"\U0001f4b0 Начислено: <b>{tokens}</b> токенов\n"
+            f"\U0001f4b0 Баланс: <b>{new_balance}</b> токенов"
+        ),
         reply_markup=kb,
     )
+    if photo_msg.photo:
+        cache_file_id("payment_success.png", photo_msg.photo[-1].file_id)

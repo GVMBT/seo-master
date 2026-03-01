@@ -6,7 +6,8 @@ import structlog
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
-from bot.helpers import safe_message
+from bot.assets import edit_screen
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory, TokenServiceFactory
 from db.client import SupabaseClient
 from db.models import User
@@ -65,7 +66,7 @@ async def show_project_card(
     lines.append(f"\U0001f4ca Публикаций: {card_data.pub_count}")
 
     text = "\n".join(lines)
-    await msg.edit_text(text, reply_markup=project_card_kb(project_id))
+    await edit_screen(msg, "project_card.png", text, reply_markup=project_card_kb(project_id))
     await callback.answer()
 
 
@@ -107,7 +108,8 @@ async def confirm_delete(
         return
 
     safe_name = html.escape(project.name)
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         f"Удалить проект «{safe_name}»?\n\n"
         "Будут удалены все категории, подключения и расписания.\n"
         "Это действие нельзя отменить.",

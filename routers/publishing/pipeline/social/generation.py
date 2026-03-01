@@ -24,6 +24,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
+from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
 from bot.helpers import safe_message
 from cache.client import RedisClient
@@ -72,9 +73,9 @@ def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
     lines = ["\U0001f4dd Генерация поста", ""]
     for i, (active_label, done_label) in enumerate(steps):
         if i < current:
-            lines.append(f"\u2705 {done_label}")
+            lines.append(f"{EMOJI_DONE} {done_label}")
         elif i == current:
-            lines.append(f"\u23f3 {active_label}...")
+            lines.append(f"{EMOJI_PROGRESS} {active_label}...")
     return "\n".join(lines)
 
 
