@@ -211,14 +211,12 @@ async def run_keyword_generation(
         cat_svc = CategoryService(db=db)
         category = await cat_svc.get_owned_category(category_id, user.id)
         if not category:
-            log.error("keywords_save_failed.ownership", category_id=category_id, user_id=user.id)
-            return
+            raise RuntimeError("keywords_save_failed.ownership")
         existing: list[dict[str, Any]] = (category.keywords or [])
         merged = existing + enriched
         saved = await cat_svc.update_keywords(category_id, user.id, merged)
         if not saved:
-            log.error("keywords_save_failed.update", category_id=category_id, user_id=user.id)
-            return
+            raise RuntimeError("keywords_save_failed.update")
 
         total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
         total_volume = sum(c.get("total_volume", 0) for c in enriched)
