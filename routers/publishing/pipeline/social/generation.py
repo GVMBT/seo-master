@@ -29,7 +29,6 @@ from bot.helpers import safe_message
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
-from db.repositories.categories import CategoriesRepository
 from db.repositories.publications import PublicationsRepository
 from keyboards.inline import menu_kb
 from keyboards.pipeline import (
@@ -751,8 +750,10 @@ async def more_posts_social(
         regen_count=None,
     )
 
-    cats_repo = CategoriesRepository(db)
-    categories = await cats_repo.get_by_project(project_id)
+    from services.categories import CategoryService
+
+    cat_svc = CategoryService(db=db)
+    categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     from keyboards.pipeline import pipeline_categories_kb
 

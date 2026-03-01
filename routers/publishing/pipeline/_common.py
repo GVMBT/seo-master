@@ -17,7 +17,7 @@ from cache.client import RedisClient
 from cache.keys import PIPELINE_CHECKPOINT_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.models import User
-from db.repositories.categories import CategoriesRepository
+from services.categories import CategoryService
 from services.tokens import TokenService
 
 log = structlog.get_logger()
@@ -202,8 +202,8 @@ async def select_keyword(
     For articles: prefers cluster_type="article", falls back to all clusters with warning.
     Sorts by total_volume DESC (highest traffic first).
     """
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
+    cat_svc = CategoryService(db=db)
+    category = await cat_svc.get_category_raw(category_id)
     if not category or not category.keywords:
         return None
 

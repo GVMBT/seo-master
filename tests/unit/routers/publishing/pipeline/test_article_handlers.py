@@ -68,33 +68,51 @@ def _patch_repos(
     created_category: Any = None,
     validate_wp_error: str | None = None,
 ):
-    """Context manager that patches repos and ConnectionService used by pipeline handlers.
+    """Create mock service factories and patches for pipeline handlers.
 
-    Returns (patches_dict, projects_repo_mock, conn_svc_mock, cat_repo_mock).
+    After H23 migration, handlers use ProjectService/CategoryService via factories
+    instead of direct repository access.
+
+    Returns (patches_dict, proj_svc_mock, conn_svc_mock, cat_svc_mock,
+             proj_factory, cat_factory).
     """
-    projects_mock = MagicMock()
-    projects_mock.get_by_user = AsyncMock(return_value=projects or [])
-    projects_mock.get_by_id = AsyncMock(return_value=project)
-    projects_mock.create = AsyncMock(return_value=created_project)
+    # ProjectService mock (replaces ProjectsRepository)
+    proj_svc_mock = MagicMock()
+    proj_svc_mock.list_by_user = AsyncMock(return_value=projects or [])
+    proj_svc_mock.get_owned_project = AsyncMock(return_value=project)
+    proj_svc_mock.create_project = AsyncMock(return_value=created_project)
+    proj_svc_mock.update_project = AsyncMock(return_value=project)
 
+    # Factory callable that returns the mock service
+    proj_factory = MagicMock(return_value=proj_svc_mock)
+
+    # ConnectionService mock (still patched at module level)
     conn_mock = MagicMock()
     conn_mock.get_by_project_and_platform = AsyncMock(return_value=wp_connections or [])
     conn_mock.get_by_id = AsyncMock(return_value=connection)
     conn_mock.create = AsyncMock(return_value=created_connection)
     conn_mock.validate_wordpress = AsyncMock(return_value=validate_wp_error)
 
-    cat_mock = MagicMock()
-    cat_mock.get_by_project = AsyncMock(return_value=categories or [])
-    cat_mock.get_by_id = AsyncMock(return_value=category)
-    cat_mock.create = AsyncMock(return_value=created_category)
+    # CategoryService mock (replaces CategoriesRepository)
+    cat_svc_mock = MagicMock()
+    cat_svc_mock.list_by_project = AsyncMock(return_value=categories or [])
+    cat_svc_mock.get_owned_category = AsyncMock(return_value=category)
+    cat_svc_mock.create_category = AsyncMock(return_value=created_category)
+    cat_svc_mock.update_keywords = AsyncMock(return_value=True)
+    cat_svc_mock.update_prices = AsyncMock(return_value=category)
+    cat_svc_mock.update_description = AsyncMock(return_value=category)
+    cat_svc_mock.get_category_raw = AsyncMock(return_value=category)
+
+    # Factory callable that returns the mock service
+    cat_factory = MagicMock(return_value=cat_svc_mock)
 
     patches = {
-        "projects": patch(f"{_MODULE}.ProjectsRepository", return_value=projects_mock),
+        # CategoryService is used directly (not via factory) in helper functions
+        "cats": patch(f"{_MODULE}.CategoryService", return_value=cat_svc_mock),
         "conn": patch(f"{_MODULE}.ConnectionService", return_value=conn_mock),
-        "cats": patch(f"{_MODULE}.CategoriesRepository", return_value=cat_mock),
         "fsm_utils": patch(f"{_MODULE}.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None),
     }
-    return patches, projects_mock, conn_mock, cat_mock
+    return patches, proj_svc_mock, conn_mock, cat_svc_mock, proj_factory, cat_factory
 
 
 # ---------------------------------------------------------------------------
@@ -113,8 +131,8 @@ class TestPipelineArticleStart:
         user: Any,
     ) -> None:
         """0 projects -> shows no_projects_kb, sets FSM to select_project."""
-        patches, _, _, _ = _patch_repos(projects=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(projects=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -122,6 +140,7 @@ class TestPipelineArticleStart:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         mock_callback.message.edit_text.assert_called_once()
@@ -141,8 +160,8 @@ class TestPipelineArticleStart:
     ) -> None:
         """1 project -> auto-select, skip to WP step (calls _show_wp_step)."""
         project = make_project(id=5, name="Solo Project")
-        patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -150,11 +169,14 @@ class TestPipelineArticleStart:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         # Should save project data to state
         mock_state.update_data.assert_called_once_with(
-            project_id=5, project_name="Solo Project", company_name="TestCo",
+            project_id=5,
+            project_name="Solo Project",
+            company_name="TestCo",
         )
 
     async def test_multiple_projects_shows_list(
@@ -166,8 +188,8 @@ class TestPipelineArticleStart:
     ) -> None:
         """>1 projects -> show project list keyboard."""
         projects = [make_project(id=1), make_project(id=2)]
-        patches, _, _, _ = _patch_repos(projects=projects)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(projects=projects)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -175,6 +197,7 @@ class TestPipelineArticleStart:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         mock_callback.message.edit_text.assert_called_once()
@@ -196,8 +219,8 @@ class TestPipelineArticleStart:
         callback.message = MagicMock(spec=InaccessibleMessage)
         callback.answer = AsyncMock()
 
-        patches, _, _, _ = _patch_repos()
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos()
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 callback,
                 mock_state,
@@ -205,6 +228,7 @@ class TestPipelineArticleStart:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         callback.answer.assert_called_once()
@@ -221,8 +245,8 @@ class TestPipelineArticleStart:
         callback.message = None
         callback.answer = AsyncMock()
 
-        patches, _, _, _ = _patch_repos()
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos()
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 callback,
                 mock_state,
@@ -230,6 +254,7 @@ class TestPipelineArticleStart:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         callback.answer.assert_called_once()
@@ -254,8 +279,8 @@ class TestPipelineSelectProject:
         project = make_project(id=5, user_id=user.id, name="My Site")
         mock_callback.data = "pipeline:article:5:select"
 
-        patches, _, _, _ = _patch_repos(project=project, wp_connections=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(project=project, wp_connections=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
                 mock_callback,
                 mock_state,
@@ -263,10 +288,13 @@ class TestPipelineSelectProject:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         mock_state.update_data.assert_called_with(
-            project_id=5, project_name="My Site", company_name="TestCo",
+            project_id=5,
+            project_name="My Site",
+            company_name="TestCo",
         )
 
     async def test_ownership_check_fails(
@@ -276,12 +304,12 @@ class TestPipelineSelectProject:
         mock_redis: MagicMock,
         user: Any,
     ) -> None:
-        """Project owned by different user -> alert, no state change."""
-        other_user_project = make_project(id=5, user_id=999999)
+        """Project owned by different user -> service returns None -> alert, no state change."""
         mock_callback.data = "pipeline:article:5:select"
 
-        patches, _, _, _ = _patch_repos(project=other_user_project)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        # get_owned_project returns None for projects not owned by this user
+        patches, _, _, _, pf, _cf = _patch_repos(project=None)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
                 mock_callback,
                 mock_state,
@@ -289,6 +317,7 @@ class TestPipelineSelectProject:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         mock_callback.answer.assert_called_with("Проект не найден.", show_alert=True)
@@ -304,8 +333,8 @@ class TestPipelineSelectProject:
         """Project not in DB -> alert."""
         mock_callback.data = "pipeline:article:999:select"
 
-        patches, _, _, _ = _patch_repos(project=None)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(project=None)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
                 mock_callback,
                 mock_state,
@@ -313,6 +342,7 @@ class TestPipelineSelectProject:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         mock_callback.answer.assert_called_with("Проект не найден.", show_alert=True)
@@ -327,8 +357,8 @@ class TestPipelineSelectProject:
         """callback.data is None -> early return."""
         mock_callback.data = None
 
-        patches, _, _, _ = _patch_repos()
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos()
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
                 mock_callback,
                 mock_state,
@@ -336,6 +366,7 @@ class TestPipelineSelectProject:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         mock_callback.answer.assert_called_once()
@@ -358,9 +389,9 @@ class TestPipelineProjectsPage:
         mock_callback.data = "page:pipeline_projects:2"
         projects = [make_project(id=i) for i in range(1, 12)]  # > PAGE_SIZE
 
-        patches, _, _, _ = _patch_repos(projects=projects)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_projects_page(mock_callback, user, MagicMock())
+        patches, _, _, _, pf, _cf = _patch_repos(projects=projects)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+            await pipeline_projects_page(mock_callback, user, MagicMock(), pf)
 
         mock_callback.message.edit_text.assert_called_once()
         call_kwargs = mock_callback.message.edit_text.call_args.kwargs
@@ -515,8 +546,8 @@ class TestPipelineCreateProjectUrl:
             }
         )
         created = make_project(id=42, name="Test")
-        patches, proj_mock, _, _ = _patch_repos(created_project=created, wp_connections=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, proj_mock, _, _, pf, _cf = _patch_repos(created_project=created, wp_connections=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_create_project_url(
                 mock_message,
                 mock_state,
@@ -524,10 +555,11 @@ class TestPipelineCreateProjectUrl:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         # Project creation called
-        proj_mock.create.assert_called_once()
+        proj_mock.create_project.assert_called_once()
         # State updated with project_id
         update_calls = mock_state.update_data.call_args_list
         proj_call = next(
@@ -555,8 +587,8 @@ class TestPipelineCreateProjectUrl:
             }
         )
         created = make_project(id=42, name="Test")
-        patches, proj_mock, _, _ = _patch_repos(created_project=created, wp_connections=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, proj_mock, _, _, pf, _cf = _patch_repos(created_project=created, wp_connections=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_create_project_url(
                 mock_message,
                 mock_state,
@@ -564,10 +596,11 @@ class TestPipelineCreateProjectUrl:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         # Check that website_url is None in the create call
-        create_arg = proj_mock.create.call_args.args[0]
+        create_arg = proj_mock.create_project.call_args.args[0]
         assert create_arg.website_url is None
 
     async def test_invalid_url_rejected(
@@ -586,6 +619,7 @@ class TestPipelineCreateProjectUrl:
             MagicMock(),
             MagicMock(),
             mock_redis,
+            MagicMock(),
         )
         assert "Некорректный URL" in mock_message.answer.call_args.args[0]
 
@@ -607,8 +641,8 @@ class TestPipelineCreateProjectUrl:
             }
         )
         created = make_project(id=42, name="Test")
-        patches, proj_mock, _, _ = _patch_repos(created_project=created, wp_connections=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, proj_mock, _, _, pf, _cf = _patch_repos(created_project=created, wp_connections=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_create_project_url(
                 mock_message,
                 mock_state,
@@ -616,9 +650,10 @@ class TestPipelineCreateProjectUrl:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
-        create_arg = proj_mock.create.call_args.args[0]
+        create_arg = proj_mock.create_project.call_args.args[0]
         assert create_arg.website_url == "https://example.com"
 
 
@@ -642,8 +677,8 @@ class TestPipelineWpStep:
     ) -> None:
         """0 WP connections -> shows no_wp_kb."""
         project = make_project(id=1)
-        patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -651,6 +686,7 @@ class TestPipelineWpStep:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         # Should set state to select_wp (from _show_wp_step)
@@ -666,8 +702,8 @@ class TestPipelineWpStep:
         """1 WP connection -> auto-select, skip to category step."""
         project = make_project(id=1)
         conn = make_connection(id=5, identifier="site.com")
-        patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[conn], categories=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[conn], categories=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -675,6 +711,7 @@ class TestPipelineWpStep:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         # Should update state with connection_id
@@ -705,8 +742,8 @@ class TestPipelinePreviewOnly:
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
-        patches, _, _, _ = _patch_repos(categories=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, _pf, _cf = _patch_repos(categories=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_preview_only(
                 mock_callback,
                 mock_state,
@@ -729,8 +766,8 @@ class TestPipelinePreviewOnly:
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
         cat = make_category(id=10, project_id=5)
 
-        patches, _, _, _ = _patch_repos(categories=[cat])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, _pf, _cf = _patch_repos(categories=[cat])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_preview_only(
                 mock_callback,
                 mock_state,
@@ -756,18 +793,20 @@ class TestPipelineStartConnectWp:
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
+        user: Any,
     ) -> None:
         mock_callback.data = "pipeline:article:connect_wp"
-        await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock())
+        await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock(), MagicMock(), user)
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_url)
 
     async def test_edits_message_with_url_prompt(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
+        user: Any,
     ) -> None:
         mock_callback.data = "pipeline:article:connect_wp"
-        await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock())
+        await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock(), MagicMock(), user)
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "адрес" in text.lower()
 
@@ -775,14 +814,14 @@ class TestPipelineStartConnectWp:
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
+        user: Any,
     ) -> None:
         """If project.website_url exists, skip URL step and go to login."""
         mock_callback.data = "pipeline:article:connect_wp"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
         project = make_project(website_url="https://example.com")
-        patches, _, _, _ = _patch_repos(project=project)
-        with patches["projects"]:
-            await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock())
+        _, _, _, _, pf, _ = _patch_repos(project=project)
+        await pipeline_start_connect_wp(mock_callback, mock_state, MagicMock(), pf, user)
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_login)
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "example.com" in text
@@ -791,13 +830,14 @@ class TestPipelineStartConnectWp:
     async def test_inaccessible_message_returns_early(
         self,
         mock_state: MagicMock,
+        user: Any,
     ) -> None:
         from aiogram.types import InaccessibleMessage
 
         callback = MagicMock()
         callback.message = MagicMock(spec=InaccessibleMessage)
         callback.answer = AsyncMock()
-        await pipeline_start_connect_wp(callback, mock_state, MagicMock())
+        await pipeline_start_connect_wp(callback, mock_state, MagicMock(), MagicMock(), user)
         callback.answer.assert_called_once()
         mock_state.set_state.assert_not_called()
 
@@ -886,14 +926,14 @@ class TestPipelineConnectWpPassword:
         project = make_project(id=5, user_id=user.id)
         created_conn = make_connection(id=99, identifier="example.com")
 
-        patches, _, conn_mock, _ = _patch_repos(
+        patches, _, conn_mock, _, pf, _cf = _patch_repos(
             project=project,
             wp_connections=[],  # no existing WP
             created_connection=created_conn,
             categories=[],
             validate_wp_error=None,  # success
         )
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -901,6 +941,7 @@ class TestPipelineConnectWpPassword:
                 MagicMock(),
                 mock_redis,
                 MagicMock(),
+                pf,
             )
 
         # Connection created
@@ -927,10 +968,10 @@ class TestPipelineConnectWpPassword:
             }
         )
 
-        patches, _, _, _ = _patch_repos(
+        patches, _, _, _, pf, _cf = _patch_repos(
             validate_wp_error="Неверный логин или пароль. Попробуйте ещё раз.",
         )
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -938,6 +979,7 @@ class TestPipelineConnectWpPassword:
                 MagicMock(),
                 mock_redis,
                 MagicMock(),
+                pf,
             )
 
         error_text = mock_message.answer.call_args.args[0]
@@ -962,10 +1004,10 @@ class TestPipelineConnectWpPassword:
             }
         )
 
-        patches, _, _, _ = _patch_repos(
+        patches, _, _, _, pf, _cf = _patch_repos(
             validate_wp_error="Сайт вернул ошибку (500). Проверьте URL и данные.",
         )
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -973,6 +1015,7 @@ class TestPipelineConnectWpPassword:
                 MagicMock(),
                 mock_redis,
                 MagicMock(),
+                pf,
             )
 
         error_text = mock_message.answer.call_args.args[0]
@@ -997,10 +1040,10 @@ class TestPipelineConnectWpPassword:
             }
         )
 
-        patches, _, _, _ = _patch_repos(
+        patches, _, _, _, pf, _cf = _patch_repos(
             validate_wp_error="Сайт не отвечает. Проверьте URL.",
         )
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -1008,6 +1051,7 @@ class TestPipelineConnectWpPassword:
                 MagicMock(),
                 mock_redis,
                 MagicMock(),
+                pf,
             )
 
         error_text = mock_message.answer.call_args.args[0]
@@ -1032,10 +1076,10 @@ class TestPipelineConnectWpPassword:
             }
         )
 
-        patches, _, _, _ = _patch_repos(
+        patches, _, _, _, pf, _cf = _patch_repos(
             validate_wp_error="Не удалось подключиться к сайту. Проверьте URL.",
         )
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -1043,6 +1087,7 @@ class TestPipelineConnectWpPassword:
                 MagicMock(),
                 mock_redis,
                 MagicMock(),
+                pf,
             )
 
         error_text = mock_message.answer.call_args.args[0]
@@ -1059,8 +1104,8 @@ class TestPipelineConnectWpPassword:
         mock_message.text = "short"
         mock_message.delete = AsyncMock()
 
-        patches, _, conn_mock, _ = _patch_repos()
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, conn_mock, _, pf, _cf = _patch_repos()
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -1068,6 +1113,7 @@ class TestPipelineConnectWpPassword:
                 MagicMock(),
                 mock_redis,
                 MagicMock(),
+                pf,
             )
 
         assert "короткий" in mock_message.answer.call_args.args[0].lower()
@@ -1094,13 +1140,13 @@ class TestPipelineConnectWpPassword:
         project = make_project(id=5, user_id=user.id)
         existing_conn = make_connection(id=77, identifier="other.com")
 
-        patches, _, conn_mock, _ = _patch_repos(
+        patches, _, conn_mock, _, pf, _cf = _patch_repos(
             project=project,
             wp_connections=[existing_conn],  # already has one
             categories=[],
             validate_wp_error=None,
         )
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -1108,6 +1154,7 @@ class TestPipelineConnectWpPassword:
                 MagicMock(),
                 mock_redis,
                 MagicMock(),
+                pf,
             )
 
         # Should NOT create new connection
@@ -1140,6 +1187,7 @@ class TestPipelineConnectWpPassword:
             MagicMock(),
             mock_redis,
             MagicMock(),
+            MagicMock(),
         )
 
         mock_state.clear.assert_called_once()
@@ -1164,8 +1212,8 @@ class TestPipelineConnectWpPassword:
             }
         )
 
-        patches, _, _, _ = _patch_repos(project=None, validate_wp_error=None)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(project=None, validate_wp_error=None)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -1173,6 +1221,7 @@ class TestPipelineConnectWpPassword:
                 MagicMock(),
                 mock_redis,
                 MagicMock(),
+                pf,
             )
 
         mock_state.clear.assert_called_once()
@@ -1239,8 +1288,8 @@ class TestPipelineCategoryStep:
         """0 categories -> prompt for inline creation, FSM -> create_category_name."""
         project = make_project(id=1)
         conn = make_connection(id=5)
-        patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[conn], categories=[])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[conn], categories=[])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -1248,6 +1297,7 @@ class TestPipelineCategoryStep:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         # After auto-selecting project and WP, 0 categories -> create_category_name state
@@ -1264,8 +1314,8 @@ class TestPipelineCategoryStep:
         project = make_project(id=1)
         conn = make_connection(id=5)
         cat = make_category(id=10, name="SEO Tips")
-        patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[conn], categories=[cat])
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[conn], categories=[cat])
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -1273,6 +1323,7 @@ class TestPipelineCategoryStep:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         update_calls = mock_state.update_data.call_args_list
@@ -1295,8 +1346,8 @@ class TestPipelineCategoryStep:
         project = make_project(id=1)
         conn = make_connection(id=5)
         cats = [make_category(id=i) for i in range(1, 4)]
-        patches, _, _, _ = _patch_repos(projects=[project], wp_connections=[conn], categories=cats)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
+        patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[conn], categories=cats)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -1304,6 +1355,7 @@ class TestPipelineCategoryStep:
                 MagicMock(),
                 MagicMock(),
                 mock_redis,
+                pf,
             )
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.select_category)
@@ -1324,9 +1376,9 @@ class TestPipelineSelectCategory:
         mock_callback.data = "pipeline:article:5:cat:12"
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
-        patches, _, _, _ = _patch_repos(category=cat)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis)
+        patches, _, _, _, _pf, _cf = _patch_repos(category=cat)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, _cf)
 
         mock_state.update_data.assert_called_with(category_id=12, category_name="Content Marketing", image_count=4)
 
@@ -1341,9 +1393,9 @@ class TestPipelineSelectCategory:
         mock_callback.data = "pipeline:article:5:cat:999"
         mock_state.get_data = AsyncMock(return_value={"project_id": 5})
 
-        patches, _, _, _ = _patch_repos(category=None)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis)
+        patches, _, _, _, _pf, _cf = _patch_repos(category=None)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, _cf)
 
         mock_callback.answer.assert_called_with("Категория не найдена.", show_alert=True)
 
@@ -1354,16 +1406,16 @@ class TestPipelineSelectCategory:
         mock_redis: MagicMock,
         user: Any,
     ) -> None:
-        """Category belongs to different project -> alert."""
-        cat = make_category(id=12, project_id=99)  # belongs to project 99
+        """Category belongs to different project -> service returns None -> alert."""
         mock_callback.data = "pipeline:article:5:cat:12"
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
-        patches, _, _, _ = _patch_repos(category=cat)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis)
+        # get_owned_category returns None for categories not owned by this user
+        patches, _, _, _, _pf, _cf = _patch_repos(category=None)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, _cf)
 
-        mock_callback.answer.assert_called_with("Категория не принадлежит проекту.", show_alert=True)
+        mock_callback.answer.assert_called_with("Категория не найдена.", show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1386,9 +1438,9 @@ class TestPipelineCreateCategoryName:
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
         created_cat = make_category(id=20, project_id=5, name="New Category")
 
-        patches, _, _, _ = _patch_repos(created_category=created_cat)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
+        patches, _, _, _, _pf, _cf = _patch_repos(created_category=created_cat)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+            await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, _cf)
 
         mock_state.update_data.assert_called_with(category_id=20, category_name="New Category", image_count=4)
 
@@ -1403,7 +1455,7 @@ class TestPipelineCreateCategoryName:
         mock_message.text = ""
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
-        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
+        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_message.answer.assert_called_once()
         assert "100 символов" in mock_message.answer.call_args.args[0]
@@ -1420,7 +1472,7 @@ class TestPipelineCreateCategoryName:
         mock_message.text = "A" * 101
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
-        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
+        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_message.answer.assert_called_once()
         assert "100 символов" in mock_message.answer.call_args.args[0]
@@ -1437,7 +1489,7 @@ class TestPipelineCreateCategoryName:
         mock_message.text = "   "
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
-        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
+        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_message.answer.assert_called_once()
         mock_state.update_data.assert_not_called()
@@ -1453,7 +1505,7 @@ class TestPipelineCreateCategoryName:
         mock_message.text = None
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
-        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
+        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         mock_message.answer.assert_called_once()
         mock_state.update_data.assert_not_called()
@@ -1469,9 +1521,9 @@ class TestPipelineCreateCategoryName:
         mock_message.text = "New Category"
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
-        patches, _, _, _ = _patch_repos(created_category=None)
-        with patches["projects"], patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
+        patches, _, _, _, _pf, _cf = _patch_repos(created_category=None)
+        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+            await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, _cf)
 
         # Should show error message
         error_calls = [c for c in mock_message.answer.call_args_list if "Не удалось" in str(c)]
@@ -1518,9 +1570,7 @@ class TestPipelineArticleCancel:
     ) -> None:
         """Cancel -> message edited to 'Публикация отменена.'."""
         await pipeline_article_cancel(mock_callback, mock_state, user, mock_redis)
-        mock_callback.message.edit_text.assert_called_with(
-            "Публикация отменена.", reply_markup=menu_kb()
-        )
+        mock_callback.message.edit_text.assert_called_with("Публикация отменена.", reply_markup=menu_kb())
 
     async def test_answers_callback(
         self,

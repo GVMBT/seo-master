@@ -124,7 +124,10 @@ def _make_token_mock(balance: int = 1500, *, has_balance: bool = True) -> MagicM
 
 
 def _patch_token_svc(
-    balance: int = 1500, *, has_balance: bool = True, module: str = _MODULE,
+    balance: int = 1500,
+    *,
+    has_balance: bool = True,
+    module: str = _MODULE,
 ):
     """Patch TokenService for balance checks."""
     token_mock = _make_token_mock(balance, has_balance=has_balance)
@@ -132,12 +135,40 @@ def _patch_token_svc(
 
 
 def _patch_cats_repo(category: Any = None, module: str = _MODULE):
-    """Patch CategoriesRepository."""
+    """Patch CategoryService (formerly CategoriesRepository).
+
+    For handlers using DI (factory), create a mock factory instead.
+    For internal helpers using CategoryService(db=db) directly, patch at module level.
+    """
     cat_mock = MagicMock()
-    cat_mock.update = AsyncMock()
-    cat_mock.update_keywords = AsyncMock()
-    cat_mock.get_by_id = AsyncMock(return_value=category)
-    return patch(f"{module}.CategoriesRepository", return_value=cat_mock), cat_mock
+    cat_mock.get_owned_category = AsyncMock(return_value=category)
+    cat_mock.get_category_raw = AsyncMock(return_value=category)
+    cat_mock.list_by_project = AsyncMock(return_value=[category] if category else [])
+    cat_mock.update_keywords = AsyncMock(return_value=True)
+    cat_mock.update_prices = AsyncMock(return_value=category)
+    cat_mock.update_description = AsyncMock(return_value=category)
+    return patch(f"{module}.CategoryService", return_value=cat_mock), cat_mock
+
+
+def _make_cat_factory(category: Any = None) -> MagicMock:
+    """Create a mock CategoryServiceFactory for DI."""
+    cat_svc = MagicMock()
+    cat_svc.get_owned_category = AsyncMock(return_value=category)
+    cat_svc.get_category_raw = AsyncMock(return_value=category)
+    cat_svc.list_by_project = AsyncMock(return_value=[category] if category else [])
+    cat_svc.update_keywords = AsyncMock(return_value=True)
+    cat_svc.update_prices = AsyncMock(return_value=category)
+    cat_svc.update_description = AsyncMock(return_value=category)
+    return MagicMock(return_value=cat_svc)
+
+
+def _make_proj_factory(project: Any = None) -> MagicMock:
+    """Create a mock ProjectServiceFactory for DI."""
+    proj_svc = MagicMock()
+    proj_svc.get_owned_project = AsyncMock(return_value=project)
+    proj_svc.list_by_user = AsyncMock(return_value=[project] if project else [])
+    proj_svc.update_project = AsyncMock(return_value=project)
+    return MagicMock(return_value=proj_svc)
 
 
 def _patch_settings(module: str = _MODULE):
@@ -148,11 +179,15 @@ def _patch_settings(module: str = _MODULE):
 
 
 def _patch_projects_repo(project: Any = None, module: str = _MODULE):
-    """Patch ProjectsRepository."""
+    """Patch ProjectService (formerly ProjectsRepository) at module level.
+
+    For handlers using DI, use _make_proj_factory() instead.
+    """
     proj_mock = MagicMock()
-    proj_mock.get_by_id = AsyncMock(return_value=project)
-    proj_mock.update = AsyncMock()
-    return patch(f"{module}.ProjectsRepository", return_value=proj_mock), proj_mock
+    proj_mock.get_owned_project = AsyncMock(return_value=project)
+    proj_mock.list_by_user = AsyncMock(return_value=[project] if project else [])
+    proj_mock.update_project = AsyncMock(return_value=project)
+    return patch(f"{module}.ProjectService", return_value=proj_mock), proj_mock
 
 
 def _make_state_data(**overrides: Any) -> dict[str, Any]:
@@ -365,15 +400,8 @@ class TestKeywordsSubFlow:
 
         cat_obj = MagicMock()
         cat_obj.name = "Test Category"
-        p_cats, _ = _patch_cats_repo(category=cat_obj, module=_COMMON)
-        p_projects = patch(
-            f"{_COMMON}.ProjectsRepository",
-            return_value=MagicMock(
-                get_by_id=AsyncMock(
-                    return_value=MagicMock(company_city="Москва"),
-                ),
-            ),
-        )
+        cf = _make_cat_factory(category=cat_obj)
+        pf = _make_proj_factory(project=MagicMock(company_city="Москва"))
         p_settings = patch(f"{_COMMON}.get_settings", return_value=MagicMock(admin_ids=[]))
         p_token = patch(
             f"{_COMMON}.TokenService",
@@ -382,12 +410,14 @@ class TestKeywordsSubFlow:
             ),
         )
 
-        with p_cats, p_projects, p_settings, p_token:
+        with p_settings, p_token:
             await readiness_keywords_auto(
                 mock_callback,
                 mock_state,
                 user,
                 mock_db,
+                cf,
+                pf,
             )
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
@@ -411,23 +441,17 @@ class TestKeywordsSubFlow:
 
         cat_obj = MagicMock()
         cat_obj.name = "Test Category"
-        p_cats, _ = _patch_cats_repo(category=cat_obj, module=_COMMON)
-        p_projects = patch(
-            f"{_COMMON}.ProjectsRepository",
-            return_value=MagicMock(
-                get_by_id=AsyncMock(
-                    return_value=MagicMock(company_city=None),
-                ),
-            ),
-        )
+        cf = _make_cat_factory(category=cat_obj)
+        pf = _make_proj_factory(project=MagicMock(company_city=None))
 
-        with p_cats, p_projects:
-            await readiness_keywords_auto(
-                mock_callback,
-                mock_state,
-                user,
-                mock_db,
-            )
+        await readiness_keywords_auto(
+            mock_callback,
+            mock_state,
+            user,
+            mock_db,
+            cf,
+            pf,
+        )
 
         # Should transition to geo state with kw_mode="auto"
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_geo)
@@ -482,19 +506,25 @@ class TestKeywordsSubFlow:
 
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        p_cats, cat_mock = _patch_cats_repo(module=_COMMON)
+        cf = _make_cat_factory()
+        cat_svc = cf.return_value
         mock_show, orig = _mock_cfg_show_check_msg()
 
         try:
-            with p_cats:
-                await readiness_keywords_upload_file(
-                    mock_message, mock_state, user, mock_db, mock_redis,
-                )
+            await readiness_keywords_upload_file(
+                mock_message,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                cf,
+            )
         finally:
             object.__setattr__(_CFG, "show_check_msg", orig)
 
-        cat_mock.update_keywords.assert_called_once()
-        keywords_arg = cat_mock.update_keywords.call_args[0][1]
+        cat_svc.update_keywords.assert_called_once()
+        # Service call: cat_svc.update_keywords(category_id, user.id, keywords)
+        keywords_arg = cat_svc.update_keywords.call_args[0][2]
         assert len(keywords_arg) == 3
         assert keywords_arg[0]["phrase"] == "ключевое слово 1"
         mock_show.assert_called_once()
@@ -513,7 +543,12 @@ class TestKeywordsSubFlow:
         mock_message.document.file_size = 100
 
         await readiness_keywords_upload_file(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -533,7 +568,12 @@ class TestKeywordsSubFlow:
         mock_message.document.file_size = 2 * 1024 * 1024  # 2 MB
 
         await readiness_keywords_upload_file(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -562,7 +602,12 @@ class TestKeywordsSubFlow:
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
         await readiness_keywords_upload_file(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -588,7 +633,12 @@ class TestKeywordsSubFlow:
         mock_message.bot.download = AsyncMock(return_value=file_obj)
 
         await readiness_keywords_upload_file(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -606,19 +656,25 @@ class TestKeywordsSubFlow:
         mock_message.text = "фраза один\nфраза два\nфраза три"
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        p_cats, cat_mock = _patch_cats_repo(module=_COMMON)
+        cf = _make_cat_factory()
+        cat_svc = cf.return_value
         mock_show, orig = _mock_cfg_show_check_msg()
 
         try:
-            with p_cats:
-                await readiness_keywords_text_input(
-                    mock_message, mock_state, user, mock_db, mock_redis,
-                )
+            await readiness_keywords_text_input(
+                mock_message,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                cf,
+            )
         finally:
             object.__setattr__(_CFG, "show_check_msg", orig)
 
-        cat_mock.update_keywords.assert_called_once()
-        assert len(cat_mock.update_keywords.call_args[0][1]) == 3
+        cat_svc.update_keywords.assert_called_once()
+        # Service call: cat_svc.update_keywords(category_id, user.id, keywords)
+        assert len(cat_svc.update_keywords.call_args[0][2]) == 3
         mock_show.assert_called_once()
 
     async def test_upload_text_empty(
@@ -633,7 +689,12 @@ class TestKeywordsSubFlow:
         mock_message.text = ""
 
         await readiness_keywords_text_input(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -651,7 +712,12 @@ class TestKeywordsSubFlow:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
 
         await readiness_keywords_text_input(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -691,8 +757,8 @@ class TestDescriptionSubFlow:
         token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
         p_token = patch(f"{_COMMON}.TokenService", return_value=token_mock)
         cat_mock = MagicMock()
-        cat_mock.update = AsyncMock()
-        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_mock)
+        cat_mock.update_description = AsyncMock()
+        p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_mock)
         settings_mock = MagicMock()
         settings_mock.admin_ids = [999]
         p_settings = patch(f"{_COMMON}.get_settings", return_value=settings_mock)
@@ -707,7 +773,11 @@ class TestDescriptionSubFlow:
                     return_value=MagicMock(content="Generated description"),
                 )
                 await readiness_description_ai(
-                    mock_callback, mock_state, user, mock_db, mock_redis,
+                    mock_callback,
+                    mock_state,
+                    user,
+                    mock_db,
+                    mock_redis,
                     mock_orchestrator,
                 )
         finally:
@@ -715,7 +785,7 @@ class TestDescriptionSubFlow:
 
         token_mock.check_balance.assert_called_once()
         token_mock.charge.assert_called_once()
-        cat_mock.update.assert_called_once()
+        cat_mock.update_description.assert_called_once()
         mock_show.assert_called_once()
 
     async def test_ai_insufficient_balance(
@@ -742,7 +812,11 @@ class TestDescriptionSubFlow:
 
         with p_token, p_settings:
             await readiness_description_ai(
-                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
                 mock_orchestrator,
             )
 
@@ -769,8 +843,8 @@ class TestDescriptionSubFlow:
         token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
         p_token = patch(f"{_COMMON}.TokenService", return_value=token_mock)
         cat_mock = MagicMock()
-        cat_mock.update = AsyncMock(return_value=None)
-        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_mock)
+        cat_mock.update_description = AsyncMock(return_value=None)
+        p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_mock)
         settings_mock = MagicMock()
         settings_mock.admin_ids = [999]
         p_settings = patch(f"{_COMMON}.get_settings", return_value=settings_mock)
@@ -782,7 +856,11 @@ class TestDescriptionSubFlow:
                 return_value=MagicMock(content="Generated description"),
             )
             await readiness_description_ai(
-                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
                 mock_orchestrator,
             )
 
@@ -815,21 +893,26 @@ class TestDescriptionSubFlow:
         mock_message.text = "A" * 50  # 50 chars, valid
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        p_cats, cat_mock = _patch_cats_repo(module=_COMMON)
+        cf = _make_cat_factory()
+        cat_svc = cf.return_value
         mock_show, orig = _mock_cfg_show_check_msg()
 
         try:
-            with p_cats:
-                await readiness_description_manual_input(
-                    mock_message, mock_state, user, mock_db, mock_redis,
-                )
+            await readiness_description_manual_input(
+                mock_message,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                cf,
+            )
         finally:
             object.__setattr__(_CFG, "show_check_msg", orig)
 
-        cat_mock.update.assert_called_once()
-        # Check the description was passed
-        update_arg = cat_mock.update.call_args[0][1]
-        assert update_arg.description == "A" * 50
+        cat_svc.update_description.assert_called_once()
+        # Service call: cat_svc.update_description(category_id, user.id, text)
+        desc_arg = cat_svc.update_description.call_args[0][2]
+        assert desc_arg == "A" * 50
         mock_show.assert_called_once()
 
     async def test_manual_input_too_short(
@@ -844,7 +927,12 @@ class TestDescriptionSubFlow:
         mock_message.text = "Short"
 
         await readiness_description_manual_input(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -862,7 +950,12 @@ class TestDescriptionSubFlow:
         mock_message.text = "A" * 2001
 
         await readiness_description_manual_input(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -902,18 +995,25 @@ class TestPricesSubFlow:
         mock_message.text = "Кухня Прага — 120 000 руб.\nШкаф-купе — 45 000 руб."
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        # Prices handler is in readiness.py, calls show_readiness_check_msg directly
-        p_cats, cat_mock = _patch_cats_repo()
+        # Prices handler uses CategoryServiceFactory (DI)
+        cf = _make_cat_factory()
+        cat_svc = cf.return_value
         p_show = patch(f"{_MODULE}.show_readiness_check_msg", new_callable=AsyncMock)
 
-        with p_cats, p_show as mock_show:
+        with p_show as mock_show:
             await readiness_prices_text_input(
-                mock_message, mock_state, user, mock_db, mock_redis,
+                mock_message,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                cf,
             )
 
-        cat_mock.update.assert_called_once()
-        update_arg = cat_mock.update.call_args[0][1]
-        assert "Кухня Прага" in update_arg.prices
+        cat_svc.update_prices.assert_called_once()
+        # Service call: cat_svc.update_prices(category_id, user.id, prices_text)
+        prices_arg = cat_svc.update_prices.call_args[0][2]
+        assert "Кухня Прага" in prices_arg
         mock_show.assert_called_once()
 
     async def test_text_input_empty(
@@ -928,7 +1028,12 @@ class TestPricesSubFlow:
         mock_message.text = ""
 
         await readiness_prices_text_input(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -945,7 +1050,12 @@ class TestPricesSubFlow:
         mock_message.text = "A" * 50_001
 
         await readiness_prices_text_input(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -963,7 +1073,12 @@ class TestPricesSubFlow:
         mock_message.text = "\n".join(f"Item {i} — {i} руб." for i in range(1001))
 
         await readiness_prices_text_input(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -991,7 +1106,12 @@ class TestPricesSubFlow:
         mock_message.document.file_size = 100
 
         await readiness_prices_excel_file(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -1011,7 +1131,12 @@ class TestPricesSubFlow:
         mock_message.document.file_size = 6 * 1024 * 1024
 
         await readiness_prices_excel_file(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
 
         mock_message.answer.assert_called_once()
@@ -1041,18 +1166,25 @@ class TestPricesSubFlow:
             "routers.categories.prices.parse_excel_rows",
             return_value=parsed_rows,
         )
-        # Prices handler is in readiness.py
-        p_cats, cat_mock = _patch_cats_repo()
+        # Prices handler uses CategoryServiceFactory (DI)
+        cf = _make_cat_factory()
+        cat_svc = cf.return_value
         p_show = patch(f"{_MODULE}.show_readiness_check_msg", new_callable=AsyncMock)
 
-        with p_parse, p_cats, p_show as mock_show:
+        with p_parse, p_show as mock_show:
             await readiness_prices_excel_file(
-                mock_message, mock_state, user, mock_db, mock_redis,
+                mock_message,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                cf,
             )
 
-        cat_mock.update.assert_called_once()
-        update_arg = cat_mock.update.call_args[0][1]
-        assert "Кухня" in update_arg.prices
+        cat_svc.update_prices.assert_called_once()
+        # Service call: cat_svc.update_prices(category_id, user.id, prices_text)
+        prices_arg = cat_svc.update_prices.call_args[0][2]
+        assert "Кухня" in prices_arg
         mock_show.assert_called_once()
 
     async def test_excel_parse_error(
@@ -1079,7 +1211,12 @@ class TestPricesSubFlow:
 
         with p_parse:
             await readiness_prices_excel_file(
-                mock_message, mock_state, user, mock_db, mock_redis,
+                mock_message,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                MagicMock(),
             )
 
         mock_message.answer.assert_called_once()
@@ -1130,7 +1267,11 @@ class TestImagesSubFlow:
 
         with p_show as mock_show:
             await readiness_images_select(
-                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
             )
 
         mock_state.update_data.assert_called_with(image_count=6)
@@ -1151,7 +1292,11 @@ class TestImagesSubFlow:
 
         with p_show:
             await readiness_images_select(
-                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
             )
 
         mock_state.update_data.assert_called_with(image_count=0)
@@ -1168,7 +1313,11 @@ class TestImagesSubFlow:
         mock_callback.data = "pipeline:readiness:images:99"
 
         await readiness_images_select(
-            mock_callback, mock_state, user, mock_db, mock_redis,
+            mock_callback,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
         )
 
         mock_state.update_data.assert_not_called()
@@ -1337,7 +1486,12 @@ class TestConfigureProductsValidation:
         )
         # _handle_configure_products is called internally, verify its effect
         await readiness_keywords_text_input(
-            mock_message, mock_state, user, mock_db, mock_redis,
+            mock_message,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            MagicMock(),
         )
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_geo)
 
@@ -1407,19 +1561,20 @@ class TestCitySelectHandler:
         mock_state.get_data = AsyncMock(
             return_value=_make_state_data(kw_mode="auto", kw_products="Мебель"),
         )
-        p_projects, proj_mock = _patch_projects_repo(module=_COMMON)
+        pf = _make_proj_factory()
+        proj_svc = pf.return_value
         p_settings = _patch_settings(module=_COMMON)
         p_token, _ = _patch_token_svc(balance=500, module=_COMMON)
 
-        with p_projects, p_settings, p_token:
-            await readiness_keywords_city_select(mock_callback, mock_state, user, mock_db)
+        with p_settings, p_token:
+            await readiness_keywords_city_select(mock_callback, mock_state, user, mock_db, pf)
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
         update_kwargs = mock_state.update_data.call_args.kwargs
         assert update_kwargs["kw_geography"] == "Москва"
         assert update_kwargs["kw_quantity"] == 100
         # Should save city to project
-        proj_mock.update.assert_called_once()
+        proj_svc.update_project.assert_called_once()
         # Confirm text shown
         edit_text = mock_callback.message.edit_text.call_args[0][0]
         assert "Автоподбор" in edit_text
@@ -1436,10 +1591,9 @@ class TestCitySelectHandler:
         mock_state.get_data = AsyncMock(
             return_value=_make_state_data(kw_mode="configure", kw_products="Мебель"),
         )
-        p_projects, _ = _patch_projects_repo(module=_COMMON)
+        pf = _make_proj_factory()
 
-        with p_projects:
-            await readiness_keywords_city_select(mock_callback, mock_state, user, mock_db)
+        await readiness_keywords_city_select(mock_callback, mock_state, user, mock_db, pf)
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
         mock_state.update_data.assert_called_with(kw_geography="СПб")
@@ -1534,7 +1688,10 @@ class TestConfirmHandler:
         """E01: insufficient balance -> show_alert, no charge."""
         mock_state.get_data = AsyncMock(
             return_value=_make_state_data(
-                kw_cost=100, kw_quantity=100, kw_products="Test", kw_geography="Москва",
+                kw_cost=100,
+                kw_quantity=100,
+                kw_products="Test",
+                kw_geography="Москва",
             ),
         )
         p_settings = _patch_settings(module=_COMMON)
@@ -1542,8 +1699,13 @@ class TestConfirmHandler:
 
         with p_settings, p_token:
             await readiness_keywords_confirm(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                ai_orchestrator=AsyncMock(),
+                dataforseo_client=AsyncMock(),
             )
 
         token_mock.charge.assert_not_called()
@@ -1561,7 +1723,10 @@ class TestConfirmHandler:
         """Sufficient balance -> charge tokens, set generating state, call pipeline."""
         mock_state.get_data = AsyncMock(
             return_value=_make_state_data(
-                kw_cost=100, kw_quantity=100, kw_products="Test", kw_geography="Москва",
+                kw_cost=100,
+                kw_quantity=100,
+                kw_products="Test",
+                kw_geography="Москва",
             ),
         )
         p_settings = _patch_settings(module=_COMMON)
@@ -1571,8 +1736,13 @@ class TestConfirmHandler:
 
         with p_settings, p_token, p_pipeline as mock_pipeline:
             await readiness_keywords_confirm(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                ai_orchestrator=AsyncMock(),
+                dataforseo_client=AsyncMock(),
             )
 
         token_mock.charge.assert_called_once()
@@ -1595,8 +1765,13 @@ class TestConfirmHandler:
         """Missing category_id or cost -> show_alert error."""
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
         await readiness_keywords_confirm(
-            mock_callback, mock_state, user, mock_db, mock_redis,
-            ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+            mock_callback,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            ai_orchestrator=AsyncMock(),
+            dataforseo_client=AsyncMock(),
         )
         mock_callback.answer.assert_called_once()
         assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
@@ -1622,7 +1797,11 @@ class TestCancelHandler:
         mock_show, orig = _mock_cfg_show_check()
         try:
             await readiness_keywords_cancel(
-                mock_callback, mock_state, user, mock_db, mock_redis,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
             )
         finally:
             object.__setattr__(_CFG, "show_check", orig)
@@ -1649,27 +1828,29 @@ class TestRunPipelineKeywordGeneration:
         """Create a mock KeywordService with configurable return values."""
         kw_mock = MagicMock()
         kw_mock.fetch_raw_phrases = AsyncMock(
-            return_value=(
-                ["фраза 1", "фраза 2"] if raw_phrases is self._SENTINEL else raw_phrases
-            ),
+            return_value=(["фраза 1", "фраза 2"] if raw_phrases is self._SENTINEL else raw_phrases),
         )
         kw_mock.cluster_phrases = AsyncMock(
-            return_value=clusters or [
-                {"cluster_name": "C1", "main_phrase": "фраза 1",
-                 "phrases": [{"phrase": "фраза 1"}]},
+            return_value=clusters
+            or [
+                {"cluster_name": "C1", "main_phrase": "фраза 1", "phrases": [{"phrase": "фраза 1"}]},
             ],
         )
         kw_mock.generate_clusters_direct = AsyncMock(
-            return_value=clusters or [
-                {"cluster_name": "C1", "main_phrase": "фраза 1",
-                 "phrases": [{"phrase": "фраза 1"}]},
+            return_value=clusters
+            or [
+                {"cluster_name": "C1", "main_phrase": "фраза 1", "phrases": [{"phrase": "фраза 1"}]},
             ],
         )
         kw_mock.enrich_clusters = AsyncMock(
-            return_value=enriched or [
-                {"cluster_name": "C1", "main_phrase": "фраза 1",
-                 "phrases": [{"phrase": "фраза 1", "volume": 100}],
-                 "total_volume": 100},
+            return_value=enriched
+            or [
+                {
+                    "cluster_name": "C1",
+                    "main_phrase": "фраза 1",
+                    "phrases": [{"phrase": "фраза 1", "volume": 100}],
+                    "total_volume": 100,
+                },
             ],
         )
         kw_mock.filter_low_quality = MagicMock(side_effect=lambda x: x)
@@ -1688,10 +1869,10 @@ class TestRunPipelineKeywordGeneration:
         cat_obj = MagicMock()
         cat_obj.keywords = []
         p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
-        cat_repo_mock = MagicMock()
-        cat_repo_mock.get_by_id = AsyncMock(return_value=cat_obj)
-        cat_repo_mock.update_keywords = AsyncMock()
-        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_repo_mock)
+        cat_svc_mock = MagicMock()
+        cat_svc_mock.get_owned_category = AsyncMock(return_value=cat_obj)
+        cat_svc_mock.update_keywords = AsyncMock(return_value=True)
+        p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_svc_mock)
         mock_show = AsyncMock()
         token_mock = MagicMock()
         token_mock.refund = AsyncMock()
@@ -1702,13 +1883,20 @@ class TestRunPipelineKeywordGeneration:
 
         with p_kw, p_cats:
             await _run_pipeline_keyword_generation(
-                callback=mock_callback, state=mock_state, user=user,
-                db=mock_db, redis=mock_redis,
-                category_id=10, project_id=1,
-                products="мебель", geography="Москва",
-                quantity=100, cost=100,
+                callback=mock_callback,
+                state=mock_state,
+                user=user,
+                db=mock_db,
+                redis=mock_redis,
+                category_id=10,
+                project_id=1,
+                products="мебель",
+                geography="Москва",
+                quantity=100,
+                cost=100,
                 token_service=token_mock,
-                ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+                ai_orchestrator=AsyncMock(),
+                dataforseo_client=AsyncMock(),
                 log_prefix="pipeline.readiness",
                 readiness_state=ArticlePipelineFSM.readiness_check,
                 on_success=mock_show,
@@ -1717,7 +1905,7 @@ class TestRunPipelineKeywordGeneration:
         kw_mock.fetch_raw_phrases.assert_awaited_once()
         kw_mock.cluster_phrases.assert_awaited_once()
         kw_mock.enrich_clusters.assert_awaited_once()
-        cat_repo_mock.update_keywords.assert_called_once()
+        cat_svc_mock.update_keywords.assert_called_once()
         # Tokens NOT refunded on success
         token_mock.refund.assert_not_called()
         # Checklist shown
@@ -1736,23 +1924,30 @@ class TestRunPipelineKeywordGeneration:
         cat_obj = MagicMock()
         cat_obj.keywords = []
         p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
-        cat_repo_mock = MagicMock()
-        cat_repo_mock.get_by_id = AsyncMock(return_value=cat_obj)
-        cat_repo_mock.update_keywords = AsyncMock()
-        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_repo_mock)
+        cat_svc_mock = MagicMock()
+        cat_svc_mock.get_owned_category = AsyncMock(return_value=cat_obj)
+        cat_svc_mock.update_keywords = AsyncMock(return_value=True)
+        p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_svc_mock)
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()
         mock_callback.message.delete = AsyncMock()
 
         with p_kw, p_cats:
             await _run_pipeline_keyword_generation(
-                callback=mock_callback, state=mock_state, user=user,
-                db=mock_db, redis=mock_redis,
-                category_id=10, project_id=1,
-                products="мебель", geography="Москва",
-                quantity=100, cost=100,
+                callback=mock_callback,
+                state=mock_state,
+                user=user,
+                db=mock_db,
+                redis=mock_redis,
+                category_id=10,
+                project_id=1,
+                products="мебель",
+                geography="Москва",
+                quantity=100,
+                cost=100,
                 token_service=MagicMock(refund=AsyncMock()),
-                ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+                ai_orchestrator=AsyncMock(),
+                dataforseo_client=AsyncMock(),
                 log_prefix="pipeline.readiness",
                 readiness_state=ArticlePipelineFSM.readiness_check,
                 on_success=AsyncMock(),
@@ -1781,13 +1976,20 @@ class TestRunPipelineKeywordGeneration:
 
         with p_kw:
             await _run_pipeline_keyword_generation(
-                callback=mock_callback, state=mock_state, user=user,
-                db=mock_db, redis=mock_redis,
-                category_id=10, project_id=1,
-                products="мебель", geography="Москва",
-                quantity=100, cost=100,
+                callback=mock_callback,
+                state=mock_state,
+                user=user,
+                db=mock_db,
+                redis=mock_redis,
+                category_id=10,
+                project_id=1,
+                products="мебель",
+                geography="Москва",
+                quantity=100,
+                cost=100,
                 token_service=token_mock,
-                ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+                ai_orchestrator=AsyncMock(),
+                dataforseo_client=AsyncMock(),
                 log_prefix="pipeline.readiness",
                 readiness_state=ArticlePipelineFSM.readiness_check,
                 on_success=AsyncMock(),
@@ -1809,41 +2011,52 @@ class TestRunPipelineKeywordGeneration:
     ) -> None:
         """Existing keywords in category are preserved (MERGE, not overwrite)."""
         existing_kw = [
-            {"cluster_name": "Old", "main_phrase": "old phrase",
-             "phrases": [{"phrase": "old"}]},
+            {"cluster_name": "Old", "main_phrase": "old phrase", "phrases": [{"phrase": "old"}]},
         ]
         new_enriched = [
-            {"cluster_name": "New", "main_phrase": "new phrase",
-             "phrases": [{"phrase": "new", "volume": 50}], "total_volume": 50},
+            {
+                "cluster_name": "New",
+                "main_phrase": "new phrase",
+                "phrases": [{"phrase": "new", "volume": 50}],
+                "total_volume": 50,
+            },
         ]
         kw_mock = self._make_kw_service_mock(enriched=new_enriched)
         cat_obj = MagicMock()
         cat_obj.keywords = existing_kw
         p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
-        cat_repo_mock = MagicMock()
-        cat_repo_mock.get_by_id = AsyncMock(return_value=cat_obj)
-        cat_repo_mock.update_keywords = AsyncMock()
-        p_cats = patch(f"{_COMMON}.CategoriesRepository", return_value=cat_repo_mock)
+        cat_svc_mock = MagicMock()
+        cat_svc_mock.get_owned_category = AsyncMock(return_value=cat_obj)
+        cat_svc_mock.update_keywords = AsyncMock(return_value=True)
+        p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_svc_mock)
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()
         mock_callback.message.delete = AsyncMock()
 
         with p_kw, p_cats:
             await _run_pipeline_keyword_generation(
-                callback=mock_callback, state=mock_state, user=user,
-                db=mock_db, redis=mock_redis,
-                category_id=10, project_id=1,
-                products="мебель", geography="Москва",
-                quantity=100, cost=100,
+                callback=mock_callback,
+                state=mock_state,
+                user=user,
+                db=mock_db,
+                redis=mock_redis,
+                category_id=10,
+                project_id=1,
+                products="мебель",
+                geography="Москва",
+                quantity=100,
+                cost=100,
                 token_service=MagicMock(refund=AsyncMock()),
-                ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+                ai_orchestrator=AsyncMock(),
+                dataforseo_client=AsyncMock(),
                 log_prefix="pipeline.readiness",
                 readiness_state=ArticlePipelineFSM.readiness_check,
                 on_success=AsyncMock(),
             )
 
         # update_keywords called with merged list: existing + new
-        merged = cat_repo_mock.update_keywords.call_args[0][1]
+        # Service call: cat_svc.update_keywords(category_id, user.id, merged)
+        merged = cat_svc_mock.update_keywords.call_args[0][2]
         assert len(merged) == 2
         assert merged[0]["cluster_name"] == "Old"
         assert merged[1]["cluster_name"] == "New"

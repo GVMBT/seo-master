@@ -30,13 +30,12 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from bot.config import get_settings
 from bot.exceptions import RateLimitError
 from bot.helpers import safe_message
+from bot.service_factory import ProjectServiceFactory
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.models import ArticlePreviewCreate, ArticlePreviewUpdate, PublicationLogCreate, User
-from db.repositories.categories import CategoriesRepository
 from db.repositories.previews import PreviewsRepository
-from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from keyboards.inline import menu_kb
 from keyboards.pipeline import (
@@ -590,8 +589,10 @@ async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None
 
     Returns None if category not found or no image settings.
     """
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(category_id)
+    from services.categories import CategoryService
+
+    cat_svc = CategoryService(db=db)
+    category = await cat_svc.get_category_raw(category_id)
     if not category:
         return None
     image_settings = category.image_settings or {}
@@ -599,7 +600,7 @@ async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None
     if count is not None:
         try:
             return int(count)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
     return None
 
@@ -900,7 +901,13 @@ async def cancel_refund(
 
         try:
             await _do_cancel_refund(
-                callback, db, redis, http_client, image_storage, user, preview_id,
+                callback,
+                db,
+                redis,
+                http_client,
+                image_storage,
+                user,
+                preview_id,
             )
         finally:
             await redis.delete(lock_key)
@@ -945,9 +952,7 @@ async def _do_cancel_refund(
     if preview.images:
         try:
             paths = [
-                img.get("storage_path")
-                for img in preview.images
-                if isinstance(img, dict) and img.get("storage_path")
+                img.get("storage_path") for img in preview.images if isinstance(img, dict) and img.get("storage_path")
             ]
             if paths:
                 await image_storage.cleanup_by_paths(paths)
@@ -1014,6 +1019,8 @@ async def connect_wp_publish(
     callback: CallbackQuery,
     state: FSMContext,
     db: SupabaseClient,
+    user: User,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Start WP connection sub-flow from preview (Variant B, G1).
 
@@ -1030,7 +1037,8 @@ async def connect_wp_publish(
     data = await state.get_data()
     project_id = data.get("project_id")
     if project_id:
-        project = await ProjectsRepository(db).get_by_id(project_id)
+        proj_svc = project_service_factory(db)
+        project = await proj_svc.get_owned_project(project_id, user.id)
         if project and project.website_url:
             await state.update_data(wp_url=project.website_url)
             await state.set_state(ArticlePipelineFSM.connect_wp_login)
@@ -1087,8 +1095,10 @@ async def _jump_to_category_selection(
         tokens_charged=None,
     )
 
-    cats_repo = CategoriesRepository(db)
-    categories = await cats_repo.get_by_project(project_id)
+    from services.categories import CategoryService
+
+    cat_svc = CategoryService(db=db)
+    categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     from keyboards.pipeline import pipeline_categories_kb
 

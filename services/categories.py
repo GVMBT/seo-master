@@ -244,3 +244,23 @@ class CategoryService:
             return False
         await self._cats_repo.clear_description(category_id)
         return True
+
+    async def update_keywords(
+        self,
+        category_id: int,
+        user_id: int,
+        keywords: list[dict[str, Any]],
+    ) -> bool:
+        """Update keyword clusters for an owned category."""
+        category = await self.get_owned_category(category_id, user_id)
+        if not category:
+            return False
+        await self._cats_repo.update_keywords(category_id, keywords)
+        return True
+
+    async def get_category_raw(self, category_id: int) -> Category | None:
+        """Load category WITHOUT ownership check (for internal pipeline use only).
+
+        Used by keyword rotation and generation where ownership was pre-validated.
+        """
+        return await self._cats_repo.get_by_id(category_id)
