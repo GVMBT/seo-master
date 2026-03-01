@@ -67,7 +67,7 @@ async def _show_list(
         kb = project_list_kb(projects, page)
         await edit_screen(
             msg,
-            "empty_projects.png",
+            "project_card.png",
             f"\U0001f4c1 Мои проекты ({len(projects)}):",
             reply_markup=kb,
         )

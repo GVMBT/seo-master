@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -23,7 +25,7 @@ ASSETS_DIR = Path(__file__).parent.parent / "assets"
 ASSETS_DIR.mkdir(exist_ok=True)
 
 # Model for image generation
-IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
+IMAGE_MODEL = "google/gemini-2.5-flash-image"
 
 # Style guide for consistency across all images
 STYLE_PREFIX = (
@@ -281,16 +283,19 @@ def generate_image(
     # Decode and save
     try:
         img_bytes = base64.b64decode(image_data)
-    except Exception as e:
+    except binascii.Error as e:
         print(f"  ERROR decoding base64: {e}")
         return None
 
     # Detect format from header bytes
-    ext = "png"
-    if img_bytes[:4] == b"RIFF":
+    if img_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        ext = "png"
+    elif img_bytes[:4] == b"RIFF":
         ext = "webp"
     elif img_bytes[:3] == b"\xff\xd8\xff":
         ext = "jpg"
+    else:
+        ext = "png"
 
     out_path = ASSETS_DIR / f"{name}.{ext}"
     out_path.write_bytes(img_bytes)
@@ -310,7 +315,9 @@ def main() -> None:
 
     if args.all:
         results: dict[str, Path | None] = {}
-        for img_name, img_config in IMAGE_PROMPTS.items():
+        for i, (img_name, img_config) in enumerate(IMAGE_PROMPTS.items()):
+            if i > 0:
+                time.sleep(2)
             path = generate_image(
                 prompt=img_config["prompt"],
                 name=img_name,

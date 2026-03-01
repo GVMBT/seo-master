@@ -21,7 +21,11 @@ def asset_photo(name: str) -> str | FSInputFile:
     """Get cached file_id or FSInputFile for bot UI image."""
     if name in _FILE_ID_CACHE:
         return _FILE_ID_CACHE[name]
-    return FSInputFile(ASSETS_DIR / name)
+    path = ASSETS_DIR / name
+    if not path.is_file():
+        msg = f"Asset not found: {path}"
+        raise FileNotFoundError(msg)
+    return FSInputFile(path)
 
 
 def cache_file_id(name: str, file_id: str) -> None:
