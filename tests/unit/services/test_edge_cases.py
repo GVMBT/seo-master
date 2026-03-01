@@ -84,7 +84,7 @@ class TestE03DataForSEOUnavailable:
 
         with pytest.MonkeyPatch.context() as m:
             m.setattr(
-                "services.keywords.ProjectsRepository", lambda db: MagicMock(get_by_id=AsyncMock(return_value=None))
+                "services.keywords.ProjectsRepository", lambda _db: MagicMock(get_by_id=AsyncMock(return_value=None))
             )
             clusters = await service.generate_clusters_direct(
                 products="obscure niche",
