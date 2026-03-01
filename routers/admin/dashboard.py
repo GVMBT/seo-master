@@ -1,4 +1,4 @@
-"""Admin panel: stats, monitoring, API costs, broadcast (UX_TOOLBOX section 16)."""
+"""Admin panel: stats, monitoring, API costs, user lookup, broadcast (UX_TOOLBOX section 16)."""
 
 import asyncio
 
@@ -16,6 +16,7 @@ from aiogram.types import (
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
 from bot.service_factory import AdminServiceFactory
+from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import admin_panel_kb, broadcast_audience_kb, broadcast_confirm_kb
@@ -30,6 +31,10 @@ class BroadcastFSM(StatesGroup):
     confirm = State()
 
 
+class UserLookupFSM(StatesGroup):
+    waiting_input = State()
+
+
 # ---------------------------------------------------------------------------
 # Admin guard helper
 # ---------------------------------------------------------------------------
@@ -38,6 +43,13 @@ class BroadcastFSM(StatesGroup):
 def _is_admin(user: User) -> bool:
     """Check if user has admin role."""
     return user.role == "admin"
+
+
+_BACK_TO_PANEL_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
+    ]
+)
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +65,7 @@ async def admin_panel(
     admin_service_factory: AdminServiceFactory,
     state: FSMContext,
 ) -> None:
-    """Show admin panel with stats."""
+    """Show admin panel with aggregated stats."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
@@ -62,13 +74,20 @@ async def admin_panel(
         await callback.answer()
         return
 
-    # Clear any active FSM (like broadcast)
+    # Clear any active FSM (like broadcast or user lookup)
     await state.clear()
 
     admin_svc = admin_service_factory(db)
-    total_users = await admin_svc.get_user_count()
+    stats = await admin_svc.get_panel_stats()
 
-    text = f"<b>\U0001f6e1 Админ-панель</b>\n\nПользователей: {total_users}\n"
+    text = (
+        "<b>\U0001f6e1 Админ-панель</b>\n\n"
+        f"Пользователей: {stats.total_users}\n"
+        f"Оплативших: {stats.paid_users}\n"
+        f"Проектов: {stats.total_projects}\n"
+        f"Публикаций (7д): {stats.publications_7d}\n"
+        f"Затраты API (30д): ${stats.revenue_30d:.2f}\n"
+    )
 
     await msg.edit_text(text, reply_markup=admin_panel_kb())
     await callback.answer()
@@ -81,9 +100,13 @@ async def admin_panel(
 
 @router.callback_query(F.data == "admin:monitoring")
 async def admin_monitoring(
-    callback: CallbackQuery, user: User, db: SupabaseClient, admin_service_factory: AdminServiceFactory
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    admin_service_factory: AdminServiceFactory,
 ) -> None:
-    """Show service health status."""
+    """Show service health status: DB, Redis, active schedules."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
@@ -92,19 +115,20 @@ async def admin_monitoring(
         await callback.answer()
         return
 
-    # Quick health check: try DB query
     admin_svc = admin_service_factory(db)
-    db_ok = await admin_svc.check_db_health()
-    db_status = "\u2705" if db_ok else "\u274c"
+    status = await admin_svc.get_monitoring_status(redis)
 
-    text = f"<b>Мониторинг</b>\n\nБаза данных: {db_status}\n"
+    db_icon = "\u2705" if status.db_ok else "\u274c"
+    redis_icon = "\u2705" if status.redis_ok else "\u274c"
 
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
-        ]
+    text = (
+        "<b>Мониторинг</b>\n\n"
+        f"База данных: {db_icon}\n"
+        f"Redis: {redis_icon}\n"
+        f"Активных расписаний: {status.active_schedules}\n"
     )
-    await msg.edit_text(text, reply_markup=kb)
+
+    await msg.edit_text(text, reply_markup=_BACK_TO_PANEL_KB)
     await callback.answer()
 
 
@@ -135,13 +159,83 @@ async def admin_api_costs(
 
     text = f"<b>Затраты API</b>\n\n7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
 
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
-        ]
-    )
-    await msg.edit_text(text, reply_markup=kb)
+    await msg.edit_text(text, reply_markup=_BACK_TO_PANEL_KB)
     await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# User lookup FSM
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "admin:user_lookup")
+async def user_lookup_start(callback: CallbackQuery, user: User, state: FSMContext) -> None:
+    """Start user lookup flow: ask for user_id or @username."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+
+    await state.set_state(UserLookupFSM.waiting_input)
+    await msg.edit_text(
+        "<b>Просмотр пользователя</b>\n\nОтправьте ID (число) или @username:",
+        reply_markup=_BACK_TO_PANEL_KB,
+    )
+    await callback.answer()
+
+
+@router.message(UserLookupFSM.waiting_input)
+async def user_lookup_input(
+    message: Message,
+    user: User,
+    db: SupabaseClient,
+    admin_service_factory: AdminServiceFactory,
+    state: FSMContext,
+) -> None:
+    """Parse input and show user card."""
+    if not _is_admin(user):
+        return
+    raw = (message.text or "").strip()
+    if not raw:
+        await message.answer("Отправьте ID (число) или @username.")
+        return
+
+    admin_svc = admin_service_factory(db)
+
+    # Parse: digits = user_id, otherwise = username
+    if raw.isdigit():
+        card = await admin_svc.lookup_user(user_id=int(raw))
+    else:
+        card = await admin_svc.lookup_user(username=raw)
+
+    await state.clear()
+
+    if card is None:
+        await message.answer("Пользователь не найден.", reply_markup=_BACK_TO_PANEL_KB)
+        return
+
+    name_parts = [p for p in (card.first_name, card.last_name) if p]
+    name = " ".join(name_parts) or "\u2014"
+    uname = f"@{card.username}" if card.username else "\u2014"
+
+    text = (
+        f"<b>Пользователь #{card.user_id}</b>\n\n"
+        f"Имя: {name}\n"
+        f"Username: {uname}\n"
+        f"Роль: {card.role}\n"
+        f"Баланс: {card.balance} токенов\n"
+        f"Проектов: {card.projects_count}\n"
+        f"Регистрация: {card.created_at[:10] if card.created_at else '\u2014'}\n"
+    )
+
+    await message.answer(text, reply_markup=_BACK_TO_PANEL_KB)
 
 
 # ---------------------------------------------------------------------------
@@ -284,13 +378,8 @@ async def broadcast_confirm(
             failed += 1
         await asyncio.sleep(0.05)  # 50ms rate limit
 
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
-        ]
-    )
     await msg.edit_text(
         f"<b>Рассылка завершена</b>\n\nОтправлено: {sent}\nОшибок: {failed}",
-        reply_markup=kb,
+        reply_markup=_BACK_TO_PANEL_KB,
     )
     await callback.answer()

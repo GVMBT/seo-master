@@ -18,6 +18,7 @@ _FSM_NAMES: dict[str, str] = {
     "DescriptionGenerateFSM": "генерация описания",
     "ContentSettingsFSM": "настройка контента",
     "BroadcastFSM": "рассылка сообщений",
+    "UserLookupFSM": "просмотр пользователя",
     "ArticlePipelineFSM": "создание статьи (pipeline)",
     "SocialPipelineFSM": "публикация поста (pipeline)",
 }

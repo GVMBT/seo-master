@@ -46,6 +46,16 @@ class SchedulesRepository(BaseRepository):
         resp = await self._table(_TABLE).select("*").eq("enabled", True).order("created_at").execute()
         return [PlatformSchedule(**row) for row in self._rows(resp)]
 
+    async def count_active(self) -> int:
+        """Count enabled schedules (admin stats)."""
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .eq("enabled", True)
+            .execute()
+        )
+        return self._count(resp)
+
     async def create(self, data: PlatformScheduleCreate) -> PlatformSchedule:
         """Create a new schedule."""
         resp = await self._table(_TABLE).insert(data.model_dump()).execute()

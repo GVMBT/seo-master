@@ -45,6 +45,15 @@ class ProjectsRepository(BaseRepository):
         row = self._first(resp)
         return Project(**row) if row else None
 
+    async def count_all(self) -> int:
+        """Count all projects (admin stats)."""
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .execute()
+        )
+        return self._count(resp)
+
     async def delete(self, project_id: int) -> bool:
         """Delete project. Service must cancel QStash schedules BEFORE calling this (E11)."""
         resp = await self._table(_TABLE).delete().eq("id", project_id).execute()
