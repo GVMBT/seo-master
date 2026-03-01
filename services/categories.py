@@ -62,14 +62,15 @@ class CategoryService:
             return None
         return category
 
-    async def get_project_specialization(self, project_id: int) -> str:
-        """Get project specialization by project ID.
+    async def get_project_specialization(self, project_id: int, user_id: int) -> str:
+        """Get project specialization with ownership check.
 
-        Caller must have already verified ownership via get_owned_category().
-        Returns empty string if project not found.
+        Returns empty string if project not found or not owned by user.
         """
         project = await self._projects_repo.get_by_id(project_id)
-        return project.specialization if project else ""
+        if not project or project.user_id != user_id:
+            return ""
+        return project.specialization or ""
 
     # ------------------------------------------------------------------
     # Read operations

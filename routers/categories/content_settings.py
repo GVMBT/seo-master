@@ -486,7 +486,7 @@ async def show_image_presets(
         return
 
     # Get project niche for recommendation
-    specialization = await cat_svc.get_project_specialization(category.project_id)
+    specialization = await cat_svc.get_project_specialization(category.project_id, user.id)
     niche = detect_niche(specialization) if specialization else "general"
     recommended = _recommend_preset(niche)
 
@@ -554,7 +554,7 @@ async def apply_preset(
     log.info("image_preset_applied", cat_id=cat_id, preset=preset["name"], user_id=user.id)
 
     # Refresh presets screen
-    specialization = await cat_svc.get_project_specialization(category.project_id)
+    specialization = await cat_svc.get_project_specialization(category.project_id, user.id)
     niche = detect_niche(specialization) if specialization else "general"
     recommended = _recommend_preset(niche)
 
@@ -625,7 +625,7 @@ async def stepper_count(
     await cat_svc.update_image_settings(cat_id, user.id, img)
 
     # Rebuild keyboard only (editReplyMarkup)
-    specialization = await cat_svc.get_project_specialization(category.project_id)
+    specialization = await cat_svc.get_project_specialization(category.project_id, user.id)
     niche = detect_niche(specialization) if specialization else "general"
     recommended = _recommend_preset(niche)
     current_preset = img.get("preset")
