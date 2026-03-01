@@ -152,9 +152,10 @@ class TestLegalTexts:
         assert "2 000 токенов" in TERMS_OF_SERVICE
         assert "5 000 токенов" in TERMS_OF_SERVICE
 
-    def test_legal_notice_references_commands(self) -> None:
-        assert "/privacy" in LEGAL_NOTICE
-        assert "/terms" in LEGAL_NOTICE
+    def test_legal_notice_mentions_consent(self) -> None:
+        assert "конфиденциальности" in LEGAL_NOTICE
+        assert "оферту" in LEGAL_NOTICE
+        assert "Принимаю" in LEGAL_NOTICE
 
 
 # ---------------------------------------------------------------------------

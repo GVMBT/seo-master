@@ -1,11 +1,12 @@
-"""Tests for routers/start.py — referral linking via UsersService (CR-77b).
+"""Tests for routers/start.py — referral linking, consent gate.
 
 Verifies that cmd_start delegates referral logic to UsersService
-instead of calling UsersRepository directly.
+and enforces consent acceptance before showing dashboard.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,6 +25,7 @@ def _make_user(**overrides) -> User:  # type: ignore[no-untyped-def]
         "balance": 1500,
         "language": "ru",
         "role": "user",
+        "accepted_terms_at": datetime(2026, 1, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -96,7 +98,6 @@ class TestReferralLinking:
             patch("routers.start.ensure_no_active_fsm", new=AsyncMock(return_value=None)),
             patch("routers.start.UsersService", return_value=mock_users_svc) as mock_svc_cls,
             patch("routers.start._build_dashboard", new=AsyncMock(return_value=("Dashboard", MagicMock()))),
-            patch("routers.start.main_menu_kb", return_value=MagicMock()),
         ):
             from routers.start import cmd_start
 
@@ -160,7 +161,6 @@ class TestReferralLinking:
             patch("routers.start.ensure_no_active_fsm", new=AsyncMock(return_value=None)),
             patch("routers.start.UsersService") as mock_svc_cls,
             patch("routers.start._build_dashboard", new=AsyncMock(return_value=("Dashboard", MagicMock()))),
-            patch("routers.start.main_menu_kb", return_value=MagicMock()),
         ):
             from routers.start import cmd_start
 
@@ -193,7 +193,6 @@ class TestReferralLinking:
             patch("routers.start.ensure_no_active_fsm", new=AsyncMock(return_value=None)),
             patch("routers.start.UsersService") as mock_svc_cls,
             patch("routers.start._build_dashboard", new=AsyncMock(return_value=("Dashboard", MagicMock()))),
-            patch("routers.start.main_menu_kb", return_value=MagicMock()),
         ):
             from routers.start import cmd_start
 
@@ -209,3 +208,76 @@ class TestReferralLinking:
             )
 
         mock_svc_cls.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Consent gate
+# ---------------------------------------------------------------------------
+
+
+class TestConsentGate:
+    """Verify consent gate blocks dashboard until user accepts terms."""
+
+    async def test_no_consent_shows_legal_notice(
+        self,
+        mock_message: MagicMock,
+        mock_state: MagicMock,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """User without accepted_terms_at sees consent screen, not dashboard."""
+        user_no_consent = _make_user(accepted_terms_at=None)
+        mock_message.text = "/start"
+
+        with (
+            patch("routers.start.ensure_no_active_fsm", new=AsyncMock(return_value=None)),
+            patch("routers.start._build_dashboard") as mock_dashboard,
+        ):
+            from routers.start import cmd_start
+
+            await cmd_start(
+                mock_message,
+                mock_state,
+                user_no_consent,
+                is_new_user=True,
+                is_admin=False,
+                db=mock_db,
+                redis=mock_redis,
+                dashboard_service_factory=MagicMock(),
+            )
+
+        # Dashboard should NOT be called
+        mock_dashboard.assert_not_called()
+        # Consent message should be sent
+        mock_message.answer.assert_called_once()
+
+    async def test_with_consent_shows_dashboard(
+        self,
+        mock_message: MagicMock,
+        mock_state: MagicMock,
+        user: User,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """User with accepted_terms_at sees dashboard directly."""
+        mock_message.text = "/start"
+
+        with (
+            patch("routers.start.ensure_no_active_fsm", new=AsyncMock(return_value=None)),
+            patch("routers.start._build_dashboard", new=AsyncMock(return_value=("Dashboard", MagicMock()))),
+        ):
+            from routers.start import cmd_start
+
+            await cmd_start(
+                mock_message,
+                mock_state,
+                user,
+                is_new_user=False,
+                is_admin=False,
+                db=mock_db,
+                redis=mock_redis,
+                dashboard_service_factory=MagicMock(),
+            )
+
+        # Dashboard message should be sent
+        assert mock_message.answer.called

@@ -28,6 +28,7 @@ class User(BaseModel):
     notify_publications: bool = True
     notify_balance: bool = True
     notify_news: bool = True
+    accepted_terms_at: datetime | None = None
     created_at: datetime | None = None
     last_activity: datetime | None = None
 
@@ -57,6 +58,7 @@ class UserUpdate(BaseModel):
     notify_publications: bool | None = None
     notify_balance: bool | None = None
     notify_news: bool | None = None
+    accepted_terms_at: datetime | None = None
     last_activity: datetime | None = None
 
 

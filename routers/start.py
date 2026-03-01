@@ -2,28 +2,30 @@
 
 import html
 import json
+from datetime import UTC, datetime
 
 import structlog
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, Message
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
 from bot.service_factory import DashboardServiceFactory
-from bot.texts.legal import LEGAL_NOTICE
+from bot.texts.legal import LEGAL_NOTICE, PRIVACY_POLICY_CHUNKS, TERMS_OF_SERVICE_CHUNKS
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
-from db.models import PlatformConnectionCreate, User
+from db.models import PlatformConnectionCreate, User, UserUpdate
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import admin_panel_kb, cancel_kb, dashboard_kb, dashboard_resume_kb, menu_kb
+from db.repositories.users import UsersRepository
+from keyboards.inline import admin_panel_kb, cancel_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -280,17 +282,68 @@ async def cmd_start(
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, user, db, redis, nonce)
 
+    # Consent gate: must accept terms before accessing dashboard (C7/H30)
+    if user.accepted_terms_at is None:
+        await message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
+        return
+
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    if is_new_user:
-        # First interaction: set persistent reply keyboard + Dashboard inline buttons (C6)
-        await message.answer(text, reply_markup=main_menu_kb(is_admin))
-        await message.answer("Выберите действие:", reply_markup=kb)
-        # Legal notice (C7/H30): inform about privacy policy and terms
-        await message.answer(LEGAL_NOTICE)
-    else:
-        # Always refresh reply keyboard so admin button appears after role change
-        await message.answer(text, reply_markup=main_menu_kb(is_admin))
-        await message.answer("Выберите действие:", reply_markup=kb)
+    await message.answer(text + "\n\nВыберите действие:", reply_markup=kb)
+
+
+# ---------------------------------------------------------------------------
+# Consent flow (C7/H30)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "legal:privacy")
+async def consent_privacy(callback: CallbackQuery) -> None:
+    """Show privacy policy from consent screen."""
+    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+        for chunk in PRIVACY_POLICY_CHUNKS:
+            await callback.message.answer(chunk)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "legal:terms")
+async def consent_terms(callback: CallbackQuery) -> None:
+    """Show terms of service from consent screen."""
+    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+        for chunk in TERMS_OF_SERVICE_CHUNKS:
+            await callback.message.answer(chunk)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "legal:accept")
+async def consent_accept(
+    callback: CallbackQuery,
+    user: User,
+    is_new_user: bool,
+    is_admin: bool,
+    db: SupabaseClient,
+    redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
+) -> None:
+    """Accept terms -> save timestamp -> show dashboard."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    # Save consent timestamp
+    repo = UsersRepository(db)
+    await repo.update(user.id, UserUpdate(accepted_terms_at=datetime.now(tz=UTC)))
+
+    # Invalidate user cache so next request sees accepted_terms_at
+    await redis.delete(CacheKeys.user_cache(user.id))
+
+    # Set reply keyboard (first real interaction)
+    await msg.answer("Условия приняты!", reply_markup=main_menu_kb(is_admin))
+
+    # Show dashboard
+    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
+    await msg.answer(text + "\n\nВыберите действие:", reply_markup=kb)
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------

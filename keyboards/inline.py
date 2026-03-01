@@ -38,6 +38,17 @@ def cancel_kb(callback_data: str = "fsm:cancel") -> InlineKeyboardMarkup:
     )
 
 
+def consent_kb() -> InlineKeyboardMarkup:
+    """Consent screen: privacy policy, terms, accept button."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Политика конфиденциальности", callback_data="legal:privacy")],
+            [InlineKeyboardButton(text="Оферта", callback_data="legal:terms")],
+            [InlineKeyboardButton(text="Принимаю", callback_data="legal:accept")],
+        ]
+    )
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
