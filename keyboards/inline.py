@@ -938,13 +938,7 @@ def content_settings_kb(cat_id: int, settings: dict[str, Any]) -> InlineKeyboard
         inline_keyboard=[
             [InlineKeyboardButton(text="Длина статьи", callback_data=f"settings:{cat_id}:text_length")],
             [InlineKeyboardButton(text="Стиль текста", callback_data=f"settings:{cat_id}:text_style")],
-            [
-                InlineKeyboardButton(
-                    text="Количество изображений",
-                    callback_data=f"settings:{cat_id}:img_count",
-                ),
-            ],
-            [InlineKeyboardButton(text="Стиль изображений", callback_data=f"settings:{cat_id}:img_style")],
+            [InlineKeyboardButton(text="Изображения", callback_data=f"settings:{cat_id}:images")],
             [InlineKeyboardButton(text="К категории", callback_data=f"category:{cat_id}:card")],
         ]
     )
@@ -1023,6 +1017,66 @@ def image_style_kb(cat_id: int, current: str | None) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def image_presets_kb(
+    cat_id: int,
+    preset_names: list[str],
+    current_preset: str | None,
+    recommended_idx: int,
+    count: int,
+) -> InlineKeyboardMarkup:
+    """Image presets grid with stepper for count.
+
+    Layout: 2 presets per row, then "custom" button, stepper, back.
+    Marks: checkmark on current, star on recommended (when no current).
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for idx, name in enumerate(preset_names):
+        if name == current_preset:
+            prefix = "\u2713 "
+        elif current_preset is None and idx == recommended_idx:
+            prefix = "\u2605 "
+        else:
+            prefix = ""
+        row.append(
+            InlineKeyboardButton(
+                text=f"{prefix}{name}",
+                callback_data=f"settings:{cat_id}:ip:{idx}",
+            ),
+        )
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    # Last preset row + "custom" button
+    row.append(
+        InlineKeyboardButton(
+            text="Свой вариант",
+            callback_data=f"settings:{cat_id}:img_custom",
+        ),
+    )
+    rows.append(row)
+    # Stepper row: [-] [count] [+]
+    rows.append([
+        InlineKeyboardButton(text="\u25c0", callback_data=f"settings:{cat_id}:ic:-"),
+        InlineKeyboardButton(text=f"Количество: {count}", callback_data="noop"),
+        InlineKeyboardButton(text="\u25b6", callback_data=f"settings:{cat_id}:ic:+"),
+    ])
+    rows.append(
+        [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def image_custom_kb(cat_id: int) -> InlineKeyboardMarkup:
+    """Custom image settings: style + back to presets."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Стиль изображений", callback_data=f"settings:{cat_id}:img_style")],
+            [InlineKeyboardButton(text="К пресетам", callback_data=f"settings:{cat_id}:images")],
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
