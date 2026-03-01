@@ -176,6 +176,7 @@ async def test_falls_back_to_request_url_when_no_public_url(
     mock_receiver_cls.return_value = mock_receiver
 
     request = _make_request()
+    request.url = "http://0.0.0.0:8080/api/publish"  # noqa: S104
     # Override settings to have empty public URL
     settings = _make_settings()
     settings.railway_public_url = ""
@@ -185,5 +186,8 @@ async def test_falls_back_to_request_url_when_no_public_url(
 
     await _sample_handler(request)
 
-    call_kwargs = mock_receiver.verify.call_args
-    assert call_kwargs is not None
+    mock_receiver.verify.assert_called_once()
+    assert (
+        mock_receiver.verify.call_args.kwargs["url"]
+        == "http://0.0.0.0:8080/api/publish"  # noqa: S104
+    )
