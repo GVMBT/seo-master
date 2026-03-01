@@ -32,6 +32,7 @@ def _make_settings() -> MagicMock:
     s = MagicMock()
     s.qstash_current_signing_key.get_secret_value.return_value = "current_key"
     s.qstash_next_signing_key.get_secret_value.return_value = "next_key"
+    s.railway_public_url = "https://example.com"
     return s
 
 
@@ -53,6 +54,7 @@ def _make_request(
     request.app = app
     request.read = AsyncMock(return_value=body)
     request.url = "https://example.com/api/publish"
+    request.path = "/api/publish"
 
     headers = {}
     if include_signature:
@@ -140,3 +142,48 @@ async def test_empty_msg_id_defaults(mock_receiver_cls: MagicMock) -> None:
 
     assert resp.status == 200
     request.__setitem__.assert_any_call("qstash_msg_id", "")
+
+
+@patch("qstash.Receiver")
+async def test_uses_public_url_for_verification(mock_receiver_cls: MagicMock) -> None:
+    """Signature verification uses railway_public_url + path, not request.url."""
+    mock_receiver = MagicMock()
+    mock_receiver.verify = MagicMock()
+    mock_receiver_cls.return_value = mock_receiver
+
+    request = _make_request()
+    # Simulate Railway proxy: request.url is internal, but settings has public URL
+    request.url = "http://0.0.0.0:8080/api/publish"
+    request.path = "/api/publish"
+
+    await _sample_handler(request)
+
+    # Should verify with public URL, not internal
+    call_kwargs = mock_receiver.verify.call_args
+    assert call_kwargs is not None
+    verified_url = call_kwargs.kwargs.get("url") or call_kwargs[1].get("url") or call_kwargs[0][2]
+    assert "example.com" in verified_url
+    assert "0.0.0.0" not in verified_url  # noqa: S104
+
+
+@patch("qstash.Receiver")
+async def test_falls_back_to_request_url_when_no_public_url(
+    mock_receiver_cls: MagicMock,
+) -> None:
+    """When railway_public_url is empty, falls back to request.url."""
+    mock_receiver = MagicMock()
+    mock_receiver.verify = MagicMock()
+    mock_receiver_cls.return_value = mock_receiver
+
+    request = _make_request()
+    # Override settings to have empty public URL
+    settings = _make_settings()
+    settings.railway_public_url = ""
+    request.app.__getitem__ = MagicMock(
+        side_effect=lambda key: {"settings": settings}[key]
+    )
+
+    await _sample_handler(request)
+
+    call_kwargs = mock_receiver.verify.call_args
+    assert call_kwargs is not None
