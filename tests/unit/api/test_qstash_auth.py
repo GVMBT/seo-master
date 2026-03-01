@@ -32,6 +32,7 @@ def _make_settings() -> MagicMock:
     s = MagicMock()
     s.qstash_current_signing_key.get_secret_value.return_value = "current_key"
     s.qstash_next_signing_key.get_secret_value.return_value = "next_key"
+    s.railway_public_url = "https://example.com"
     return s
 
 
@@ -53,6 +54,7 @@ def _make_request(
     request.app = app
     request.read = AsyncMock(return_value=body)
     request.url = "https://example.com/api/publish"
+    request.path = "/api/publish"
 
     headers = {}
     if include_signature:
@@ -140,3 +142,50 @@ async def test_empty_msg_id_defaults(mock_receiver_cls: MagicMock) -> None:
 
     assert resp.status == 200
     request.__setitem__.assert_any_call("qstash_msg_id", "")
+
+
+@patch("qstash.Receiver")
+async def test_verify_signature_with_public_url_uses_public_url(
+    mock_receiver_cls: MagicMock,
+) -> None:
+    """When railway_public_url is set, verification uses public URL + path."""
+    mock_receiver = MagicMock()
+    mock_receiver.verify = MagicMock()
+    mock_receiver_cls.return_value = mock_receiver
+
+    request = _make_request()
+    # Simulate Railway proxy: request.url is internal, but settings has public URL
+    request.url = "http://0.0.0.0:8080/api/publish"  # noqa: S104
+    request.path = "/api/publish"
+
+    await _sample_handler(request)
+
+    mock_receiver.verify.assert_called_once()
+    assert mock_receiver.verify.call_args.kwargs["url"] == "https://example.com/api/publish"
+
+
+@patch("qstash.Receiver")
+async def test_verify_signature_without_public_url_falls_back_to_request_url(
+    mock_receiver_cls: MagicMock,
+) -> None:
+    """When railway_public_url is empty, falls back to request.url."""
+    mock_receiver = MagicMock()
+    mock_receiver.verify = MagicMock()
+    mock_receiver_cls.return_value = mock_receiver
+
+    request = _make_request()
+    request.url = "http://0.0.0.0:8080/api/publish"  # noqa: S104
+    # Override settings to have empty public URL
+    settings = _make_settings()
+    settings.railway_public_url = ""
+    request.app.__getitem__ = MagicMock(
+        side_effect=lambda key: {"settings": settings}[key]
+    )
+
+    await _sample_handler(request)
+
+    mock_receiver.verify.assert_called_once()
+    assert (
+        mock_receiver.verify.call_args.kwargs["url"]
+        == "http://0.0.0.0:8080/api/publish"  # noqa: S104
+    )

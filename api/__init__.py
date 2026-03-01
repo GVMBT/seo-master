@@ -29,7 +29,12 @@ def require_qstash_signature(
         settings = request.app["settings"]
         body = await request.read()
         signature = request.headers.get("Upstash-Signature", "")
-        url = str(request.url)
+
+        # Use public URL for signature verification (Railway reverse proxy
+        # makes request.url return internal http://0.0.0.0:8080/... URL,
+        # but QStash signed against the public URL).
+        public_base = settings.railway_public_url.rstrip("/")
+        url = f"{public_base}{request.path}" if public_base else str(request.url)
 
         if not signature:
             log.warning("qstash_missing_signature", url=url)
