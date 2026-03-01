@@ -324,7 +324,7 @@ CREATE TABLE users (
     notify_publications BOOLEAN DEFAULT TRUE,   -- Уведомления о публикациях
     notify_balance  BOOLEAN DEFAULT TRUE,      -- Уведомления о балансе
     notify_news     BOOLEAN DEFAULT TRUE,      -- Уведомления о новостях
-    accepted_terms_at TIMESTAMPTZ,            -- Дата принятия оферты (NULL = не принял)
+    accepted_terms_at TIMESTAMPTZ,            -- Дата принятия политики и оферты (NULL = не принял)
     created_at      TIMESTAMPTZ DEFAULT now(),
     last_activity   TIMESTAMPTZ DEFAULT now()
 );

@@ -42,9 +42,9 @@ def consent_kb() -> InlineKeyboardMarkup:
     """Consent screen: privacy policy, terms, accept button."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Политика конфиденциальности", callback_data="legal:privacy")],
-            [InlineKeyboardButton(text="Оферта", callback_data="legal:terms")],
-            [InlineKeyboardButton(text="Принимаю", callback_data="legal:accept")],
+            [InlineKeyboardButton(text="Политика конфиденциальности", callback_data="legal:consent:privacy")],
+            [InlineKeyboardButton(text="Оферта", callback_data="legal:consent:terms")],
+            [InlineKeyboardButton(text="Принимаю", callback_data="legal:consent:accept")],
         ]
     )
 

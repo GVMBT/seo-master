@@ -2,7 +2,6 @@
 
 import html
 import json
-from datetime import UTC, datetime
 
 import structlog
 from aiogram import F, Router
@@ -19,12 +18,11 @@ from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
-from db.models import PlatformConnectionCreate, User, UserUpdate
+from db.models import PlatformConnectionCreate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from db.repositories.users import UsersRepository
 from keyboards.inline import admin_panel_kb, cancel_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
@@ -296,25 +294,29 @@ async def cmd_start(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "legal:privacy")
+@router.callback_query(F.data == "legal:consent:privacy")
 async def consent_privacy(callback: CallbackQuery) -> None:
     """Show privacy policy from consent screen."""
     if callback.message and not isinstance(callback.message, InaccessibleMessage):
         for chunk in PRIVACY_POLICY_CHUNKS:
             await callback.message.answer(chunk)
+        # Re-show consent keyboard so user can accept without /start (CR-109)
+        await callback.message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
     await callback.answer()
 
 
-@router.callback_query(F.data == "legal:terms")
+@router.callback_query(F.data == "legal:consent:terms")
 async def consent_terms(callback: CallbackQuery) -> None:
     """Show terms of service from consent screen."""
     if callback.message and not isinstance(callback.message, InaccessibleMessage):
         for chunk in TERMS_OF_SERVICE_CHUNKS:
             await callback.message.answer(chunk)
+        # Re-show consent keyboard so user can accept without /start (CR-109)
+        await callback.message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
     await callback.answer()
 
 
-@router.callback_query(F.data == "legal:accept")
+@router.callback_query(F.data == "legal:consent:accept")
 async def consent_accept(
     callback: CallbackQuery,
     user: User,
@@ -330,12 +332,9 @@ async def consent_accept(
         await callback.answer()
         return
 
-    # Save consent timestamp
-    repo = UsersRepository(db)
-    await repo.update(user.id, UserUpdate(accepted_terms_at=datetime.now(tz=UTC)))
-
-    # Invalidate user cache so next request sees accepted_terms_at
-    await redis.delete(CacheKeys.user_cache(user.id))
+    # Save consent + invalidate cache via service layer (CR-109)
+    users_svc = UsersService(db)
+    await users_svc.accept_terms(user.id, redis)
 
     # Set reply keyboard (first real interaction)
     await msg.answer("Условия приняты!", reply_markup=main_menu_kb(is_admin))

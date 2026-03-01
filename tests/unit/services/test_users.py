@@ -1,6 +1,6 @@
 """Tests for services/users.py — UsersService.
 
-Covers: link_referrer (CR-77b), toggle_notification, get_referral_count.
+Covers: accept_terms, link_referrer (CR-77b), toggle_notification, get_referral_count.
 """
 
 from __future__ import annotations
@@ -36,6 +36,28 @@ def service(mock_db: MagicMock, mock_users_repo: AsyncMock) -> UsersService:
     svc._db = mock_db
     svc._users = mock_users_repo
     return svc
+
+
+# ---------------------------------------------------------------------------
+# UsersService.accept_terms
+# ---------------------------------------------------------------------------
+
+
+class TestAcceptTerms:
+    async def test_accept_terms_updates_user_and_invalidates_cache(
+        self,
+        service: UsersService,
+        mock_users_repo: AsyncMock,
+        mock_redis: MagicMock,
+    ) -> None:
+        """accept_terms saves timestamp and deletes user cache."""
+        await service.accept_terms(123, mock_redis)
+
+        mock_users_repo.update.assert_awaited_once()
+        call_args = mock_users_repo.update.call_args
+        assert call_args[0][0] == 123
+        assert call_args[0][1].accepted_terms_at is not None
+        mock_redis.delete.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

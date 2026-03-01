@@ -13,6 +13,7 @@ import pytest
 from aiogram.types import Chat, Message
 from aiogram.types import User as TgUser
 
+from bot.texts.legal import LEGAL_NOTICE
 from db.models import User
 
 
@@ -248,8 +249,14 @@ class TestConsentGate:
 
         # Dashboard should NOT be called
         mock_dashboard.assert_not_called()
-        # Consent message should be sent
+        # Consent message should be sent with correct text and keyboard
         mock_message.answer.assert_called_once()
+        args, kwargs = mock_message.answer.call_args
+        assert args[0] == LEGAL_NOTICE
+        kb = kwargs.get("reply_markup")
+        assert kb is not None
+        callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+        assert "legal:consent:accept" in callbacks
 
     async def test_with_consent_shows_dashboard(
         self,
@@ -279,5 +286,8 @@ class TestConsentGate:
                 dashboard_service_factory=MagicMock(),
             )
 
-        # Dashboard message should be sent
-        assert mock_message.answer.called
+        # Dashboard message should be sent with inline keyboard
+        mock_message.answer.assert_called_once()
+        args, kwargs = mock_message.answer.call_args
+        assert "Dashboard" in args[0]
+        assert kwargs.get("reply_markup") is not None
