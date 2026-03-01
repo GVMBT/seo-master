@@ -84,6 +84,7 @@ CLUSTER_SCHEMA: dict[str, Any] = {
     },
 }
 
+
 class KeywordService:
     """Data-first keyword pipeline (API_CONTRACTS.md §8)."""
 
@@ -181,7 +182,9 @@ class KeywordService:
         for location in locations:
             capped_seeds = seeds[:5]  # max 5 seeds
             results = await self._fetch_seeds_parallel(
-                capped_seeds, location, quantity,
+                capped_seeds,
+                location,
+                quantity,
             )
 
             for kw_list in results:
@@ -226,10 +229,14 @@ class KeywordService:
             async with _DATAFORSEO_SEMAPHORE:
                 suggestions, related = await asyncio.gather(
                     self._dataforseo.keyword_suggestions(
-                        seed, location_code=location, limit=quantity,
+                        seed,
+                        location_code=location,
+                        limit=quantity,
                     ),
                     self._dataforseo.related_keywords(
-                        seed, location_code=location, limit=min(quantity, 100),
+                        seed,
+                        location_code=location,
+                        limit=min(quantity, 100),
                     ),
                 )
                 return [*suggestions, *related]
@@ -356,8 +363,7 @@ class KeywordService:
         for cluster in clusters:
             original_count = len(cluster.get("phrases", []))
             kept: list[dict[str, Any]] = [
-                p for p in cluster.get("phrases", [])
-                if not (p.get("ai_suggested") and p.get("volume", 0) == 0)
+                p for p in cluster.get("phrases", []) if not (p.get("ai_suggested") and p.get("volume", 0) == 0)
             ]
             filtered_total += original_count - len(kept)
 

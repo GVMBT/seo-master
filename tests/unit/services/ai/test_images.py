@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from services.ai.image_director import ImagePlan
 from services.ai.images import ImageService, _flatten_image_settings
 from services.ai.orchestrator import GenerationResult
 
@@ -153,9 +154,13 @@ class TestImageServiceBlockContexts:
         contexts = ["Введение. Текст про SEO.", "Материалы и обзоры."]
         await svc.generate(
             user_id=1,
-            context={"keyword": "seo", "content_type": "article",
-                     "company_name": "Co", "specialization": "SEO",
-                     "image_settings": {}},
+            context={
+                "keyword": "seo",
+                "content_type": "article",
+                "company_name": "Co",
+                "specialization": "SEO",
+                "image_settings": {},
+            },
             count=2,
             block_contexts=contexts,
         )
@@ -172,9 +177,13 @@ class TestImageServiceBlockContexts:
         svc = ImageService(orchestrator)
         await svc.generate(
             user_id=1,
-            context={"keyword": "seo", "content_type": "article",
-                     "company_name": "Co", "specialization": "SEO",
-                     "image_settings": {}},
+            context={
+                "keyword": "seo",
+                "content_type": "article",
+                "company_name": "Co",
+                "specialization": "SEO",
+                "image_settings": {},
+            },
             count=1,
             block_contexts=None,
         )
@@ -188,9 +197,13 @@ class TestImageServiceBlockContexts:
         svc = ImageService(orchestrator)
         await svc.generate(
             user_id=1,
-            context={"keyword": "seo", "content_type": "article",
-                     "company_name": "Co", "specialization": "SEO",
-                     "image_settings": {}},
+            context={
+                "keyword": "seo",
+                "content_type": "article",
+                "company_name": "Co",
+                "specialization": "SEO",
+                "image_settings": {},
+            },
             count=3,
             block_contexts=["Context for first only"],
         )
@@ -200,3 +213,108 @@ class TestImageServiceBlockContexts:
         assert calls[0].args[0].context["block_context"] == "Context for first only"
         assert "block_context" not in calls[1].args[0].context
         assert "block_context" not in calls[2].args[0].context
+
+
+# ---------------------------------------------------------------------------
+# ImageService.generate() — director_plans parameter (§7.4.2)
+# ---------------------------------------------------------------------------
+
+
+class TestImageServiceDirectorPlans:
+    """Verify director_plans inject prompt and override aspect ratio."""
+
+    @pytest.fixture
+    def orchestrator(self) -> AsyncMock:
+        orch = AsyncMock()
+        orch.generate_without_rate_limit = AsyncMock(return_value=_fake_image_result())
+        return orch
+
+    async def test_director_plans_inject_prompt(self, orchestrator: AsyncMock) -> None:
+        """Director plans inject director_prompt and director_negative_prompt into context."""
+        plans = [
+            ImagePlan(
+                section_index=0,
+                concept="Hero",
+                prompt="A pro photo",
+                negative_prompt="cartoon",
+                aspect_ratio="16:9",
+            ),
+        ]
+        svc = ImageService(orchestrator)
+        ctx = {
+            "keyword": "seo",
+            "content_type": "article",
+            "company_name": "Co",
+            "specialization": "SEO",
+            "image_settings": {},
+        }
+        await svc.generate(user_id=1, context=ctx, count=1, director_plans=plans)
+
+        req = orchestrator.generate_without_rate_limit.call_args_list[0].args[0]
+        assert req.context["director_prompt"] == "A pro photo"
+        assert req.context["director_negative_prompt"] == "cartoon"
+
+    async def test_director_plans_override_aspect_ratio(self, orchestrator: AsyncMock) -> None:
+        """Director aspect_ratio overrides round-robin formats."""
+        plans = [
+            ImagePlan(
+                section_index=0,
+                concept="Wide shot",
+                prompt="Landscape",
+                negative_prompt="blurry",
+                aspect_ratio="16:9",
+            ),
+        ]
+        svc = ImageService(orchestrator)
+        ctx = {
+            "keyword": "seo",
+            "content_type": "article",
+            "company_name": "Co",
+            "specialization": "SEO",
+            "image_settings": {"formats": ["1:1"]},
+        }
+        await svc.generate(user_id=1, context=ctx, count=1, director_plans=plans)
+
+        req = orchestrator.generate_without_rate_limit.call_args_list[0].args[0]
+        assert req.context["image_settings"]["formats"] == ["16:9"]
+
+    async def test_without_director_plans_unchanged(self, orchestrator: AsyncMock) -> None:
+        """Without director_plans, round-robin formats are used (no director_prompt key)."""
+        svc = ImageService(orchestrator)
+        ctx = {
+            "keyword": "seo",
+            "content_type": "article",
+            "company_name": "Co",
+            "specialization": "SEO",
+            "image_settings": {"formats": ["4:3"]},
+        }
+        await svc.generate(user_id=1, context=ctx, count=1, director_plans=None)
+
+        req = orchestrator.generate_without_rate_limit.call_args_list[0].args[0]
+        assert "director_prompt" not in req.context
+        assert req.context["image_settings"]["formats"] == ["4:3"]
+
+    async def test_fewer_plans_than_images(self, orchestrator: AsyncMock) -> None:
+        """If director_plans shorter than count, extra images get no director_prompt."""
+        plans = [
+            ImagePlan(
+                section_index=0,
+                concept="Hero",
+                prompt="A pro photo",
+                negative_prompt="cartoon",
+                aspect_ratio="16:9",
+            ),
+        ]
+        svc = ImageService(orchestrator)
+        ctx = {
+            "keyword": "seo",
+            "content_type": "article",
+            "company_name": "Co",
+            "specialization": "SEO",
+            "image_settings": {},
+        }
+        await svc.generate(user_id=1, context=ctx, count=2, director_plans=plans)
+
+        calls = orchestrator.generate_without_rate_limit.call_args_list
+        assert calls[0].args[0].context["director_prompt"] == "A pro photo"
+        assert "director_prompt" not in calls[1].args[0].context

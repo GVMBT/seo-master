@@ -851,9 +851,7 @@ async def test_gather_websearch_with_research_data() -> None:
     """C1: Research data from Perplexity is included in websearch results."""
     mock_orchestrator = MagicMock()
     research = {"facts": [{"claim": "test", "source": "src", "year": "2026"}], "summary": "Test"}
-    mock_orchestrator.generate_without_rate_limit = AsyncMock(
-        return_value=MagicMock(content=research)
-    )
+    mock_orchestrator.generate_without_rate_limit = AsyncMock(return_value=MagicMock(content=research))
     mock_redis = MagicMock()
     mock_redis.get = AsyncMock(return_value=None)
     mock_redis.set = AsyncMock(return_value=True)
@@ -1098,3 +1096,41 @@ def test_identify_gaps_with_pages() -> None:
     result = identify_gaps(pages)
     assert "On-page SEO" in result
     assert "Technical SEO" in result
+
+
+# ---------------------------------------------------------------------------
+# Image Director integration in publish pipeline (§7.4.2)
+# ---------------------------------------------------------------------------
+
+
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_publish_sequential_with_director(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """Article pipeline calls text → Director → images sequentially."""
+    svc = _make_service()
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://test.com/seo"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[]))
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=680)
+
+    # Mock _generate_article (renamed from _generate_article_parallel)
+    svc._generate_article = AsyncMock(return_value=(_make_gen_result(), _make_pub_result(), 0))
+
+    mock_conn = MagicMock()
+    mock_conn.get_by_id = AsyncMock(return_value=_make_connection())
+    mock_conn_cls.return_value = mock_conn
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    result = await svc.execute(_make_payload())
+
+    assert result.status == "ok"
+    svc._generate_article.assert_awaited_once()

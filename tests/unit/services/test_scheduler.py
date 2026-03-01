@@ -396,16 +396,28 @@ def test_filter_social_static() -> None:
 
     conns = [
         PlatformConnection(
-            id=1, project_id=1, platform_type="wordpress",
-            identifier="wp", credentials={}, status="active",
+            id=1,
+            project_id=1,
+            platform_type="wordpress",
+            identifier="wp",
+            credentials={},
+            status="active",
         ),
         PlatformConnection(
-            id=2, project_id=1, platform_type="telegram",
-            identifier="tg", credentials={}, status="active",
+            id=2,
+            project_id=1,
+            platform_type="telegram",
+            identifier="tg",
+            credentials={},
+            status="active",
         ),
         PlatformConnection(
-            id=3, project_id=1, platform_type="vk",
-            identifier="vk", credentials={}, status="error",
+            id=3,
+            project_id=1,
+            platform_type="vk",
+            identifier="vk",
+            credentials={},
+            status="error",
         ),
     ]
     result = SchedulerService._filter_social(conns)
@@ -464,8 +476,12 @@ async def test_apply_schedule_happy(
     cat = Category(id=10, project_id=1, name="C")
     proj = Project(id=1, user_id=42, name="P", company_name="X", specialization="SEO", timezone="UTC")
     conn = PlatformConnection(
-        id=5, project_id=1, platform_type="wordpress",
-        identifier="wp", credentials={}, status="active",
+        id=5,
+        project_id=1,
+        platform_type="wordpress",
+        identifier="wp",
+        credentials={},
+        status="active",
     )
 
     mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=cat)

@@ -14,6 +14,7 @@ from typing import Any
 import structlog
 
 from bot.exceptions import AIGenerationError
+from services.ai.image_director import ImagePlan
 from services.ai.orchestrator import AIOrchestrator, GenerationRequest, GenerationResult
 from services.ai.rate_limiter import RateLimiter
 
@@ -101,6 +102,7 @@ class ImageService:
         context: dict[str, Any],
         count: int = 1,
         block_contexts: list[str] | None = None,
+        director_plans: list[ImagePlan] | None = None,
     ) -> list[GeneratedImage]:
         """Generate N images with variation and optional block context.
 
@@ -135,6 +137,13 @@ class ImageService:
 
             # Round-robin aspect ratio
             img_context["image_settings"]["formats"] = [formats[i % len(formats)]]
+
+            # Director overrides mechanical prompt + aspect ratio (§7.4.2)
+            if director_plans and i < len(director_plans):
+                plan = director_plans[i]
+                img_context["director_prompt"] = plan.prompt
+                img_context["director_negative_prompt"] = plan.negative_prompt
+                img_context["image_settings"]["formats"] = [plan.aspect_ratio]
 
             # Block-aware context (§7.4.1): section text for targeted image generation
             if block_contexts and i < len(block_contexts):

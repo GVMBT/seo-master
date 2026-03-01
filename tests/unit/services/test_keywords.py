@@ -78,9 +78,7 @@ def service(mock_orchestrator: AsyncMock, mock_dataforseo: AsyncMock, mock_db: M
 
 
 class TestNormalizeSeedsAI:
-    async def test_returns_variants_on_success(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_returns_variants_on_success(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result(
             {"variants": ["keyword one", "keyword two", "keyword three"]}
         )
@@ -90,31 +88,23 @@ class TestNormalizeSeedsAI:
         assert len(result) == 3
         assert result[0] == "keyword one"
 
-    async def test_returns_empty_on_failure(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_returns_empty_on_failure(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         mock_orchestrator.generate_without_rate_limit.side_effect = Exception("API down")
 
         result = await service._normalize_seeds_ai("products text", "Moscow")
 
         assert result == []
 
-    async def test_truncates_long_variants(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_truncates_long_variants(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         long_variant = "a" * 200
-        mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result(
-            {"variants": [long_variant]}
-        )
+        mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result({"variants": [long_variant]})
 
         result = await service._normalize_seeds_ai("products", "Moscow")
 
         assert len(result) == 1
         assert len(result[0]) == 100
 
-    async def test_limits_to_5_variants(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_limits_to_5_variants(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result(
             {"variants": [f"kw{i}" for i in range(10)]}
         )
@@ -132,9 +122,7 @@ class TestNormalizeSeedsAI:
 
         assert result == []
 
-    async def test_filters_empty_variants(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_filters_empty_variants(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result(
             {"variants": ["", "valid", None, "good"]}
         )
@@ -155,9 +143,7 @@ class TestFetchRawPhrases:
         self, service: KeywordService, mock_dataforseo: AsyncMock, mock_orchestrator: AsyncMock
     ) -> None:
         """DataForSEO returns results -> use them."""
-        mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result(
-            {"variants": ["ai seed"]}
-        )
+        mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result({"variants": ["ai seed"]})
         mock_dataforseo.keyword_suggestions.return_value = [
             _make_suggestion("seo optimization", 500),
             _make_suggestion("seo tips", 300),
@@ -230,9 +216,7 @@ class TestFetchRawPhrases:
         self, service: KeywordService, mock_dataforseo: AsyncMock, mock_orchestrator: AsyncMock
     ) -> None:
         mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result({"variants": []})
-        mock_dataforseo.keyword_suggestions.return_value = [
-            _make_suggestion(f"kw{i}", 100) for i in range(50)
-        ]
+        mock_dataforseo.keyword_suggestions.return_value = [_make_suggestion(f"kw{i}", 100) for i in range(50)]
         mock_dataforseo.related_keywords.return_value = []
 
         result = await service.fetch_raw_phrases(
@@ -263,9 +247,7 @@ class TestFetchRawPhrases:
         self, service: KeywordService, mock_dataforseo: AsyncMock, mock_orchestrator: AsyncMock
     ) -> None:
         """AI seeds + original seeds are deduplicated and combined."""
-        mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result(
-            {"variants": ["ai keyword"]}
-        )
+        mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result({"variants": ["ai keyword"]})
         mock_dataforseo.keyword_suggestions.return_value = [_make_suggestion("result")]
         mock_dataforseo.related_keywords.return_value = []
 
@@ -286,9 +268,7 @@ class TestFetchRawPhrases:
 
 
 class TestClusterPhrases:
-    async def test_returns_clustered_output(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_returns_clustered_output(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         clusters = [
             {
                 "cluster_name": "SEO basics",
@@ -321,9 +301,7 @@ class TestClusterPhrases:
         assert len(result) == 1
         assert result[0]["cluster_name"] == "SEO basics"
 
-    async def test_assigns_default_metrics(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_assigns_default_metrics(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         clusters = [
             {
                 "cluster_name": "test",
@@ -339,8 +317,12 @@ class TestClusterPhrases:
             with pytest.MonkeyPatch.context() as m:
                 m.setattr("services.keywords.ProjectsRepository", lambda db: mock_proj_repo)
                 result = await service.cluster_phrases(
-                    raw_phrases=[], products="test", geography="Moscow",
-                    quantity=50, project_id=1, user_id=1,
+                    raw_phrases=[],
+                    products="test",
+                    geography="Moscow",
+                    quantity=50,
+                    project_id=1,
+                    user_id=1,
                 )
 
         phrase = result[0]["phrases"][0]
@@ -348,9 +330,7 @@ class TestClusterPhrases:
         assert phrase["difficulty"] == 0
         assert phrase["intent"] == "informational"
 
-    async def test_non_dict_result_returns_empty(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_non_dict_result_returns_empty(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         mock_orchestrator.generate.return_value = _make_gen_result("not a dict")
 
         with MagicMock() as mock_proj_repo:
@@ -358,8 +338,12 @@ class TestClusterPhrases:
             with pytest.MonkeyPatch.context() as m:
                 m.setattr("services.keywords.ProjectsRepository", lambda db: mock_proj_repo)
                 result = await service.cluster_phrases(
-                    raw_phrases=[], products="test", geography="Moscow",
-                    quantity=50, project_id=1, user_id=1,
+                    raw_phrases=[],
+                    products="test",
+                    geography="Moscow",
+                    quantity=50,
+                    project_id=1,
+                    user_id=1,
                 )
 
         assert result == []
@@ -396,9 +380,7 @@ class TestEnrichClusters:
         assert result[0]["phrases"][0]["difficulty"] == 30
         assert result[0]["total_volume"] == 500
 
-    async def test_empty_phrases_returns_unchanged(
-        self, service: KeywordService, mock_dataforseo: AsyncMock
-    ) -> None:
+    async def test_empty_phrases_returns_unchanged(self, service: KeywordService, mock_dataforseo: AsyncMock) -> None:
         clusters = [
             {
                 "cluster_name": "empty",
@@ -415,9 +397,7 @@ class TestEnrichClusters:
         mock_dataforseo.enrich_keywords.assert_not_awaited()
         assert result == clusters
 
-    async def test_lookup_is_case_insensitive(
-        self, service: KeywordService, mock_dataforseo: AsyncMock
-    ) -> None:
+    async def test_lookup_is_case_insensitive(self, service: KeywordService, mock_dataforseo: AsyncMock) -> None:
         mock_dataforseo.enrich_keywords.return_value = [
             _make_keyword_data("SEO Tips", volume=500, difficulty=30),
         ]
@@ -443,9 +423,7 @@ class TestEnrichClusters:
 
 
 class TestGenerateClustersDirect:
-    async def test_e03_generates_ai_only_clusters(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_e03_generates_ai_only_clusters(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         """E03: When DataForSEO unavailable, generate clusters directly via AI."""
         clusters = [
             {
@@ -501,9 +479,7 @@ class TestGenerateClustersDirect:
         assert p["difficulty"] == 0
         assert p["cpc"] == 0.0
 
-    async def test_e03_context_has_zero_raw_count(
-        self, service: KeywordService, mock_orchestrator: AsyncMock
-    ) -> None:
+    async def test_e03_context_has_zero_raw_count(self, service: KeywordService, mock_orchestrator: AsyncMock) -> None:
         """E03 AI path sends raw_count=0 and raw_keywords_json=[] to the prompt."""
         mock_orchestrator.generate.return_value = _make_gen_result({"clusters": []})
 

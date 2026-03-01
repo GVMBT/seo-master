@@ -63,11 +63,13 @@ def split_into_blocks(content_markdown: str) -> list[ContentBlock]:
         if match:
             # Save previous block (if any content)
             if current_heading or current_lines:
-                blocks.append(ContentBlock(
-                    heading=current_heading,
-                    content="\n".join(current_lines).strip(),
-                    level=current_level,
-                ))
+                blocks.append(
+                    ContentBlock(
+                        heading=current_heading,
+                        content="\n".join(current_lines).strip(),
+                        level=current_level,
+                    )
+                )
             current_heading = match.group(2).strip()
             current_level = len(match.group(1))
             current_lines = []
@@ -76,11 +78,13 @@ def split_into_blocks(content_markdown: str) -> list[ContentBlock]:
 
     # Save last block
     if current_heading or current_lines:
-        blocks.append(ContentBlock(
-            heading=current_heading,
-            content="\n".join(current_lines).strip(),
-            level=current_level,
-        ))
+        blocks.append(
+            ContentBlock(
+                heading=current_heading,
+                content="\n".join(current_lines).strip(),
+                level=current_level,
+            )
+        )
 
     return blocks
 
@@ -114,7 +118,7 @@ def distribute_images(blocks: list[ContentBlock], images_count: int) -> list[int
 def extract_block_contexts(
     blocks: list[ContentBlock],
     block_indices: list[int],
-    max_words: int = 200,
+    max_words: int = 300,
 ) -> list[str]:
     """Extract text context from selected blocks for image prompts.
 

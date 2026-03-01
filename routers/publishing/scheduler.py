@@ -60,7 +60,9 @@ class ScheduleSetupFSM(StatesGroup):
 
 @router.callback_query(F.data == "nav:scheduler")
 async def nav_scheduler(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Navigate to scheduler from pipeline result (no project context).
 
@@ -119,7 +121,9 @@ async def nav_scheduler(
 
 @router.callback_query(F.data.regexp(r"^project:\d+:scheduler$"))
 async def scheduler_entry(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Legacy entry — redirect to articles scheduler."""
     msg = safe_message(callback)
@@ -145,7 +149,9 @@ async def scheduler_entry(
 
 @router.callback_query(F.data.regexp(r"^project:\d+:sched_articles$"))
 async def scheduler_articles_entry(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Articles scheduler entry — filters WP-only connections downstream."""
     msg = safe_message(callback)
@@ -171,7 +177,9 @@ async def scheduler_articles_entry(
 
 @router.callback_query(F.data.regexp(r"^project:\d+:sched_social$"))
 async def scheduler_social_entry(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Social scheduler entry — filters social connections."""
     msg = safe_message(callback)
@@ -207,7 +215,9 @@ async def scheduler_social_entry(
 
 @router.callback_query(F.data.regexp(r"^scheduler:\d+:cat:\d+$"))
 async def scheduler_category(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Show connections with schedule summaries."""
     msg = safe_message(callback)
@@ -243,7 +253,9 @@ async def scheduler_category(
 
 @router.callback_query(F.data.regexp(r"^scheduler:\d+:conn_list$"))
 async def scheduler_conn_list_back(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Navigate back to connection list -- reconstruct category context."""
     msg = safe_message(callback)
@@ -274,7 +286,9 @@ async def scheduler_conn_list_back(
 
 @router.callback_query(F.data.regexp(r"^scheduler:\d+:conn:\d+$"))
 async def scheduler_connection(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Show schedule config for a connection."""
     msg = safe_message(callback)
@@ -341,7 +355,12 @@ async def scheduler_preset(
 
     try:
         result = await scheduler_service.apply_schedule(
-            cat_id, conn_id, user.id, days, times, posts_per_day,
+            cat_id,
+            conn_id,
+            user.id,
+            days,
+            times,
+            posts_per_day,
         )
     except Exception:
         log.exception("preset_schedule_creation_failed", cat_id=cat_id, conn_id=conn_id, preset=preset_key)
@@ -408,7 +427,10 @@ async def scheduler_disable(
 
 @router.callback_query(F.data.regexp(r"^sched:\d+:\d+:manual$"))
 async def scheduler_manual(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService, state: FSMContext,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
+    state: FSMContext,
 ) -> None:
     """Enter manual schedule setup FSM."""
     msg = safe_message(callback)
@@ -596,7 +618,12 @@ async def schedule_times_done(
 
     try:
         result = await scheduler_service.apply_schedule(
-            cat_id, conn_id, user.id, selected_days, selected_times, required,
+            cat_id,
+            conn_id,
+            user.id,
+            selected_days,
+            selected_times,
+            required,
         )
     except Exception:
         log.exception("manual_schedule_creation_failed", cat_id=cat_id, conn_id=conn_id)
@@ -638,7 +665,9 @@ async def schedule_times_done(
 
 @router.callback_query(F.data.regexp(r"^sched_social:\d+:cat:\d+$"))
 async def scheduler_social_category(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Show social connections with schedule summaries for a category."""
     msg = safe_message(callback)
@@ -669,7 +698,9 @@ async def scheduler_social_category(
 
 @router.callback_query(F.data.regexp(r"^scheduler:\d+:social_conn_list$"))
 async def scheduler_social_conn_list_back(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Navigate back to social connection list."""
     msg = safe_message(callback)
@@ -700,7 +731,9 @@ async def scheduler_social_conn_list_back(
 
 @router.callback_query(F.data.regexp(r"^sched_social:\d+:conn:\d+$"))
 async def scheduler_social_connection(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Show social schedule config with cross-post option."""
     msg = safe_message(callback)
@@ -754,7 +787,9 @@ async def scheduler_social_connection(
 
 @router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:config$"))
 async def scheduler_crosspost_config(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Show cross-post toggle screen."""
     msg = safe_message(callback)
@@ -782,7 +817,10 @@ async def scheduler_crosspost_config(
     await msg.edit_text(
         text,
         reply_markup=scheduler_crosspost_kb(
-            cat_id, conn_id, config.social_connections, config.selected_ids,
+            cat_id,
+            conn_id,
+            config.social_connections,
+            config.selected_ids,
         ),
     )
     await callback.answer()
@@ -790,7 +828,9 @@ async def scheduler_crosspost_config(
 
 @router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:\d+:toggle$"))
 async def scheduler_crosspost_toggle(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Toggle a cross-post target connection."""
     msg = safe_message(callback)
@@ -830,7 +870,9 @@ async def scheduler_crosspost_toggle(
 
 @router.callback_query(F.data.regexp(r"^sched_xp:\d+:\d+:save$"))
 async def scheduler_crosspost_save(
-    callback: CallbackQuery, user: User, scheduler_service: SchedulerService,
+    callback: CallbackQuery,
+    user: User,
+    scheduler_service: SchedulerService,
 ) -> None:
     """Save cross_post_connection_ids to schedule."""
     msg = safe_message(callback)
@@ -849,11 +891,7 @@ async def scheduler_crosspost_save(
         await callback.answer("Расписание не найдено", show_alert=True)
         return
 
-    result_msg = (
-        f"Кросс-постинг сохранён: {result.count} платформ."
-        if result.count
-        else "Кросс-постинг отключён."
-    )
+    result_msg = f"Кросс-постинг сохранён: {result.count} платформ." if result.count else "Кросс-постинг отключён."
 
     await msg.edit_text(
         result_msg,

@@ -106,10 +106,12 @@ def mock_db() -> MagicMock:
 @pytest.fixture
 def mock_image_storage() -> AsyncMock:
     storage = AsyncMock()
-    storage.upload = AsyncMock(return_value=MagicMock(
-        path="123/1/12345_0.webp",
-        signed_url="https://storage.example.com/signed/12345_0.webp",
-    ))
+    storage.upload = AsyncMock(
+        return_value=MagicMock(
+            path="123/1/12345_0.webp",
+            signed_url="https://storage.example.com/signed/12345_0.webp",
+        )
+    )
     storage.download = AsyncMock(return_value=b"fake_image_bytes")
     return storage
 
@@ -146,9 +148,7 @@ def mock_firecrawl() -> AsyncMock:
             meta_description="SEO guide description",
         )
     )
-    fc.map_site = AsyncMock(
-        return_value=_MockMapResult(urls=[{"url": "https://example.com/page1"}])
-    )
+    fc.map_site = AsyncMock(return_value=_MockMapResult(urls=[{"url": "https://example.com/page1"}]))
     return fc
 
 
@@ -400,9 +400,7 @@ class TestGenerateArticleContent:
         preview_service: PreviewService,
         mock_image_storage: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(
-            return_value=MagicMock(image_settings={"count": 2})
-        )
+        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={"count": 2}))
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
                 website_url="https://example.com",
@@ -416,13 +414,9 @@ class TestGenerateArticleContent:
         mock_audit_cls.return_value.get_branding_by_project = AsyncMock(return_value=None)
 
         # Article service returns text first (sequential, not parallel)
-        mock_article_svc.return_value.generate = AsyncMock(
-            return_value=_gen_result(_ARTICLE_CONTENT)
-        )
+        mock_article_svc.return_value.generate = AsyncMock(return_value=_gen_result(_ARTICLE_CONTENT))
         # Image service generates AFTER text with block_contexts
-        mock_image_svc.return_value.generate = AsyncMock(
-            return_value=[_MockImageResult(data=b"fake_img")]
-        )
+        mock_image_svc.return_value.generate = AsyncMock(return_value=[_MockImageResult(data=b"fake_img")])
 
         mock_reconcile.return_value = (
             "## Introduction\n\nText with ![img]({{RECONCILED_IMAGE_1}})",
@@ -462,21 +456,21 @@ class TestGenerateArticleContent:
         mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={}))
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
-                website_url=None, specialization="", company_name="",
-                company_city="", description="", id=1,
+                website_url=None,
+                specialization="",
+                company_name="",
+                company_city="",
+                description="",
+                id=1,
             )
         )
         mock_audit_cls.return_value.get_branding_by_project = AsyncMock(return_value=None)
 
-        mock_article_svc.return_value.generate = AsyncMock(
-            side_effect=ValueError("Text gen failed")
-        )
+        mock_article_svc.return_value.generate = AsyncMock(side_effect=ValueError("Text gen failed"))
         mock_image_svc.return_value.generate = AsyncMock(return_value=[])
 
         with pytest.raises(ValueError, match="Text gen failed"):
-            await preview_service.generate_article_content(
-                user_id=1, project_id=1, category_id=10, keyword="test"
-            )
+            await preview_service.generate_article_content(user_id=1, project_id=1, category_id=10, keyword="test")
 
     @patch("services.ai.articles.sanitize_html", side_effect=lambda x: x)
     @patch("services.ai.markdown_renderer.render_markdown", return_value="<p>Text</p>")
@@ -502,21 +496,19 @@ class TestGenerateArticleContent:
         mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={}))
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
-                website_url=None, specialization="", company_name="",
-                company_city="", description="", id=1,
+                website_url=None,
+                specialization="",
+                company_name="",
+                company_city="",
+                description="",
+                id=1,
             )
         )
         mock_audit_cls.return_value.get_branding_by_project = AsyncMock(return_value=None)
-        mock_article_svc.return_value.generate = AsyncMock(
-            return_value=_gen_result(_ARTICLE_CONTENT)
-        )
-        mock_image_svc.return_value.generate = AsyncMock(
-            side_effect=AIGenerationError(message="Image gen failed")
-        )
+        mock_article_svc.return_value.generate = AsyncMock(return_value=_gen_result(_ARTICLE_CONTENT))
+        mock_image_svc.return_value.generate = AsyncMock(side_effect=AIGenerationError(message="Image gen failed"))
 
-        result = await preview_service.generate_article_content(
-            user_id=1, project_id=1, category_id=10, keyword="test"
-        )
+        result = await preview_service.generate_article_content(user_id=1, project_id=1, category_id=10, keyword="test")
 
         assert isinstance(result, ArticleContent)
         assert result.images_count == 0
@@ -546,26 +538,24 @@ class TestGenerateArticleContent:
         mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={}))
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
-                website_url=None, specialization="", company_name="",
-                company_city="", description="", id=1,
+                website_url=None,
+                specialization="",
+                company_name="",
+                company_city="",
+                description="",
+                id=1,
             )
         )
         mock_audit_cls.return_value.get_branding_by_project = AsyncMock(return_value=None)
-        mock_article_svc.return_value.generate = AsyncMock(
-            return_value=_gen_result(_ARTICLE_CONTENT)
-        )
-        mock_image_svc.return_value.generate = AsyncMock(
-            return_value=[_MockImageResult(data=b"img")]
-        )
+        mock_article_svc.return_value.generate = AsyncMock(return_value=_gen_result(_ARTICLE_CONTENT))
+        mock_image_svc.return_value.generate = AsyncMock(return_value=[_MockImageResult(data=b"img")])
         mock_reconcile.return_value = (
             "## Text\n\n![alt]({{RECONCILED_IMAGE_1}})",
             [MagicMock(data=b"img", alt_text="alt", filename="f", caption="c")],
         )
         mock_image_storage.upload.side_effect = Exception("Storage down")
 
-        result = await preview_service.generate_article_content(
-            user_id=1, project_id=1, category_id=10, keyword="test"
-        )
+        result = await preview_service.generate_article_content(user_id=1, project_id=1, category_id=10, keyword="test")
 
         # Article still returned, but without stored images
         assert isinstance(result, ArticleContent)
@@ -587,7 +577,13 @@ class TestPublishToWordpress:
     ) -> None:
         preview = MagicMock()
         preview.images = [
-            {"storage_path": "123/1/img.webp", "alt_text": "alt", "filename": "img", "caption": "cap", "url": "http://x"},
+            {
+                "storage_path": "123/1/img.webp",
+                "alt_text": "alt",
+                "filename": "img",
+                "caption": "cap",
+                "url": "http://x",
+            },
         ]
         preview.content_html = "<p>Article</p>"
         preview.title = "Test Article"
@@ -652,3 +648,93 @@ class TestPublishToWordpress:
         await preview_service.publish_to_wordpress(preview, connection)
 
         mock_wp.publish.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Image Director integration (§7.4.2)
+# ---------------------------------------------------------------------------
+
+
+class TestImageDirectorIntegration:
+    @patch("services.preview.gather_websearch_data")
+    @patch("services.ai.articles.sanitize_html", side_effect=lambda x: x)
+    @patch("services.ai.markdown_renderer.render_markdown", return_value="<h2>Intro</h2><p>Text</p>")
+    @patch("services.ai.reconciliation.reconcile_images", return_value=("## Text", []))
+    @patch("services.ai.reconciliation.extract_block_contexts", return_value=["Intro ctx"])
+    @patch("services.ai.reconciliation.distribute_images", return_value=[0])
+    @patch("services.ai.reconciliation.split_into_blocks")
+    @patch("services.ai.images.ImageService")
+    @patch("services.ai.articles.ArticleService")
+    @patch("services.preview.AuditsRepository")
+    @patch("services.preview.ProjectsRepository")
+    @patch("services.preview.CategoriesRepository")
+    @patch("services.ai.image_director.ImageDirectorService")
+    async def test_generate_article_calls_image_director(
+        self,
+        mock_director_cls: MagicMock,
+        mock_cat_cls: MagicMock,
+        mock_proj_cls: MagicMock,
+        mock_audit_cls: MagicMock,
+        mock_article_svc: MagicMock,
+        mock_image_svc: MagicMock,
+        mock_split: MagicMock,
+        mock_distribute: MagicMock,
+        mock_extract_ctx: MagicMock,
+        mock_reconcile: MagicMock,
+        mock_render: MagicMock,
+        mock_sanitize: MagicMock,
+        mock_gather: MagicMock,
+        preview_service: PreviewService,
+    ) -> None:
+        """Director is called and plans are passed to ImageService."""
+        from services.ai.image_director import DirectorResult, ImagePlan
+
+        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={"count": 1}))
+        mock_proj_cls.return_value.get_by_id = AsyncMock(
+            return_value=MagicMock(
+                website_url=None,
+                specialization="SEO",
+                company_name="TestCo",
+                company_city="",
+                description="",
+                id=1,
+            )
+        )
+        mock_audit_cls.return_value.get_branding_by_project = AsyncMock(return_value=None)
+        mock_article_svc.return_value.generate = AsyncMock(return_value=_gen_result(_ARTICLE_CONTENT))
+        mock_image_svc.return_value.generate = AsyncMock(return_value=[])
+
+        mock_block = MagicMock()
+        mock_block.heading = "Introduction"
+        mock_block.content = "Some text about SEO"
+        mock_split.return_value = [mock_block]
+
+        mock_gather.return_value = {
+            "serper_data": None,
+            "competitor_pages": [],
+            "competitor_analysis": "",
+            "competitor_gaps": "",
+            "internal_links": "",
+            "research_data": None,
+        }
+
+        director_plans = [
+            ImagePlan(
+                section_index=0,
+                concept="Hero",
+                prompt="A pro shot",
+                negative_prompt="blurry",
+                aspect_ratio="16:9",
+            ),
+        ]
+        mock_director_cls.return_value.plan_images = AsyncMock(
+            return_value=DirectorResult(images=director_plans, visual_narrative="A story")
+        )
+
+        await preview_service.generate_article_content(user_id=1, project_id=1, category_id=10, keyword="seo")
+
+        # Director was called
+        mock_director_cls.return_value.plan_images.assert_awaited_once()
+        # Plans were passed to ImageService
+        img_call = mock_image_svc.return_value.generate.call_args
+        assert img_call.kwargs.get("director_plans") == director_plans

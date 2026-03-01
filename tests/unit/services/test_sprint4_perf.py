@@ -87,9 +87,7 @@ class TestC19ParallelDataForSEO:
     @pytest.fixture
     def service(self) -> KeywordService:
         orch = AsyncMock()
-        orch.generate_without_rate_limit = AsyncMock(
-            return_value=_make_gen_result({"variants": []})
-        )
+        orch.generate_without_rate_limit = AsyncMock(return_value=_make_gen_result({"variants": []}))
         dfs = AsyncMock()
         dfs.keyword_suggestions = AsyncMock(return_value=[_make_suggestion("kw1")])
         dfs.related_keywords = AsyncMock(return_value=[_make_suggestion("kw2")])
@@ -145,16 +143,12 @@ class TestC19ParallelDataForSEO:
     async def test_parallel_empty_result_falls_back_to_next_location(self) -> None:
         """Empty results from Ukraine -> tries Kazakhstan (location fallback still works)."""
         orch = AsyncMock()
-        orch.generate_without_rate_limit = AsyncMock(
-            return_value=_make_gen_result({"variants": []})
-        )
+        orch.generate_without_rate_limit = AsyncMock(return_value=_make_gen_result({"variants": []}))
         dfs = AsyncMock()
 
         call_count = 0
 
-        async def suggestions_side_effect(
-            seed: str, location_code: int, limit: int
-        ) -> list[KeywordSuggestion]:
+        async def suggestions_side_effect(seed: str, location_code: int, limit: int) -> list[KeywordSuggestion]:
             nonlocal call_count
             call_count += 1
             if location_code == 2804:
@@ -165,9 +159,7 @@ class TestC19ParallelDataForSEO:
         dfs.related_keywords.return_value = []
 
         svc = KeywordService(orchestrator=orch, dataforseo=dfs, db=MagicMock())
-        result = await svc.fetch_raw_phrases(
-            products="test", geography="Moscow", quantity=100, project_id=1, user_id=1
-        )
+        result = await svc.fetch_raw_phrases(products="test", geography="Moscow", quantity=100, project_id=1, user_id=1)
         assert len(result) >= 1
         assert result[0]["phrase"] == "kz_result"
 
@@ -253,9 +245,13 @@ class TestC20BatchProfileStats:
             sched_repo = AsyncMock()
             sched_repo.get_by_project.return_value = [
                 PlatformSchedule(
-                    id=1, category_id=10, platform_type="wordpress",
-                    connection_id=1, enabled=True,
-                    schedule_days=["mon"], posts_per_day=1,
+                    id=1,
+                    category_id=10,
+                    platform_type="wordpress",
+                    connection_id=1,
+                    enabled=True,
+                    schedule_days=["mon"],
+                    posts_per_day=1,
                 ),
             ]
             mock_sched_cls.return_value = sched_repo
@@ -291,9 +287,7 @@ class TestH24BatchDigest:
 
         with patch("services.notifications.PublicationsRepository") as mock_pubs_cls:
             mock_pubs = MagicMock()
-            mock_pubs.get_stats_by_users_batch = AsyncMock(
-                return_value={1: 10, 2: 25}
-            )
+            mock_pubs.get_stats_by_users_batch = AsyncMock(return_value={1: 10, 2: 25})
             mock_pubs_cls.return_value = mock_pubs
 
             result = await svc.build_weekly_digest()
@@ -310,9 +304,7 @@ class TestH24BatchDigest:
     async def test_zero_publications_for_user(self) -> None:
         """User not in batch result should show 0 publications."""
         svc = NotifyService(db=MagicMock())
-        svc._users.get_active_users = AsyncMock(
-            return_value=[_make_notify_user(id=99, notify_news=True, balance=500)]
-        )
+        svc._users.get_active_users = AsyncMock(return_value=[_make_notify_user(id=99, notify_news=True, balance=500)])
 
         with patch("services.notifications.PublicationsRepository") as mock_pubs_cls:
             mock_pubs = MagicMock()

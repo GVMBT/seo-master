@@ -178,6 +178,7 @@ AI Pipeline Rework (Phase 10):
 - Anti-slop blacklist: ~20 запрещённых слов-штампов AI в system prompt
 - keywords_v2→v3: data-first (DataForSEO → AI clustering), кластерный JSON
 - Image improvements: negative prompts, niche style presets, post-processing (Pillow), smart aspect ratio
+- **Image Director (§7.4.2)**: AI-слой промпт-инжиниринга между text и image generation. DeepSeek V3.2 (reasoning) анализирует статью + секции → structured JSON (prompt, negative_prompt, aspect_ratio per image). ~$0.001/статья, +3-5с. Graceful degradation E54 → механические промпты
 - WP publisher: WebP + images_meta (alt_text, filename, caption) через WP REST
 - Parallel pipeline: text + images через asyncio.gather; 96с→56с
 - Rotation: кластерная ротация (cluster_type, total_volume, main_phrase cooldown, <3 warning)

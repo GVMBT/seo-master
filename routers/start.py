@@ -47,7 +47,7 @@ def _parse_referrer_id(arg: str) -> int | None:
     raw = arg.removeprefix("referrer_")
     try:
         return int(raw)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         log.warning("referral_invalid_arg", arg=arg)
         return None
 

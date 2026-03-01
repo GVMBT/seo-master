@@ -143,9 +143,11 @@ class FSMInactivityMiddleware(BaseMiddleware):
     async def _send_expired_message(event: TelegramObject, data: dict[str, Any]) -> None:
         """Send session expired notification with a button to return to dashboard."""
         text = "⏳ Сессия истекла."
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Меню", callback_data="nav:dashboard")],
-        ])
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📋 Меню", callback_data="nav:dashboard")],
+            ]
+        )
         if isinstance(event, Message):
             await event.answer(text, reply_markup=kb)
         elif isinstance(event, CallbackQuery):

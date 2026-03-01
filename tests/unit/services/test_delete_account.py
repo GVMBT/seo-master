@@ -94,9 +94,7 @@ class TestDeleteAccountSuccess:
         mock_projects_cls.return_value.get_by_user = AsyncMock(return_value=projects)
 
         preview = _make_preview(project_id=1, tokens_charged=320)
-        mock_previews_cls.return_value.get_active_drafts_by_project = AsyncMock(
-            side_effect=[[preview], []]
-        )
+        mock_previews_cls.return_value.get_active_drafts_by_project = AsyncMock(side_effect=[[preview], []])
 
         mock_token_svc = AsyncMock()
         mock_token_svc.refund_active_previews = AsyncMock(return_value=1)
@@ -178,12 +176,8 @@ class TestDeleteAccountPartialFailure:
         mock_projects_cls.return_value.get_by_user = AsyncMock(return_value=projects)
 
         # First project fails, second succeeds
-        mock_scheduler.cancel_schedules_for_project = AsyncMock(
-            side_effect=[Exception("QStash down"), None]
-        )
-        mock_previews_cls.return_value.get_active_drafts_by_project = AsyncMock(
-            return_value=[]
-        )
+        mock_scheduler.cancel_schedules_for_project = AsyncMock(side_effect=[Exception("QStash down"), None])
+        mock_previews_cls.return_value.get_active_drafts_by_project = AsyncMock(return_value=[])
         mock_token_cls.return_value = AsyncMock()
         service._users.anonymize_financial_records = AsyncMock(return_value=(0, 0))
         service._users.delete_user = AsyncMock(return_value=True)

@@ -832,7 +832,14 @@ async def pipeline_select_pinterest_board(
 
     await callback.answer("Выбор доски пока недоступен.")
     await _show_connection_step(
-        callback, state, user, db, redis, project_id, project_name, http_client=http_client,
+        callback,
+        state,
+        user,
+        db,
+        redis,
+        project_id,
+        project_name,
+        http_client=http_client,
     )
 
 

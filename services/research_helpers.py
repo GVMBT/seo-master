@@ -162,11 +162,9 @@ async def _scrape_competitors(
     project_url: str | None,
 ) -> list[dict[str, Any]]:
     """Scrape top competitor pages from Serper organic results via Firecrawl."""
-    competitor_urls = [
-        r["link"]
-        for r in organic
-        if r.get("link") and not is_own_site(r["link"], project_url)
-    ][:MAX_COMPETITOR_SCRAPE]
+    competitor_urls = [r["link"] for r in organic if r.get("link") and not is_own_site(r["link"], project_url)][
+        :MAX_COMPETITOR_SCRAPE
+    ]
     if not competitor_urls:
         return []
     scrape_tasks = [firecrawl.scrape_content(url) for url in competitor_urls]

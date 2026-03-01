@@ -435,9 +435,7 @@ class TestAvgCostByPlatform:
 
 
 class TestGetProfileStats:
-    async def test_wordpress_schedule_uses_320_cost(
-        self, service: TokenService, mock_users_repo: AsyncMock
-    ) -> None:
+    async def test_wordpress_schedule_uses_320_cost(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         """C17: WP schedules must use ~320 tokens/post, not 40."""
         from db.models import Category, PlatformSchedule, Project, User
 
@@ -485,9 +483,7 @@ class TestGetProfileStats:
         assert stats["tokens_per_week"] == 3 * 320  # 960
         assert stats["tokens_per_month"] == 3 * 320 * 4  # 3840
 
-    async def test_mixed_platforms_differentiated_cost(
-        self, service: TokenService, mock_users_repo: AsyncMock
-    ) -> None:
+    async def test_mixed_platforms_differentiated_cost(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         """C17: Mixed WP + social schedules use different costs."""
         from db.models import Category, PlatformSchedule, Project, User
 
@@ -552,9 +548,7 @@ class TestGetProfileStats:
         assert stats["tokens_per_week"] == 2120
         assert stats["tokens_per_month"] == 2120 * 4
 
-    async def test_social_only_schedule(
-        self, service: TokenService, mock_users_repo: AsyncMock
-    ) -> None:
+    async def test_social_only_schedule(self, service: TokenService, mock_users_repo: AsyncMock) -> None:
         """Social-only schedule uses 40 tokens/post."""
         from db.models import Category, PlatformSchedule, Project, User
 

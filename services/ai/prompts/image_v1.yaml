@@ -5,6 +5,11 @@ meta:
   max_tokens: 4000
 
 user: |
+  <% if director_prompt %>
+  <<director_prompt>>
+
+  Avoid: <<director_negative_prompt>>
+  <% else %>
   Сгенерируй изображение для <<content_type>> на тему "<<keyword>>".
 
   <% if block_context %>
@@ -29,6 +34,7 @@ user: |
   <% if image_number %>
   Это изображение <<image_number>> из <<total_images>>.
   Вариация: <<variation_hint>>.
+  <% endif %>
   <% endif %>
 
 variables:
@@ -90,5 +96,13 @@ variables:
     default: ""
   - name: variation_hint
     source: round-robin from angles or defaults
+    required: false
+    default: ""
+  - name: director_prompt
+    source: ImageDirectorService.plan_images() → ImagePlan.prompt (§7.4.2)
+    required: false
+    default: ""
+  - name: director_negative_prompt
+    source: ImageDirectorService.plan_images() → ImagePlan.negative_prompt (§7.4.2)
     required: false
     default: ""

@@ -254,9 +254,7 @@ class TestDeleteProject:
         # E11: QStash cancelled BEFORE delete
         scheduler.cancel_schedules_for_project.assert_awaited_once_with(5)
         # E42: previews refunded
-        token_svc.refund_active_previews.assert_awaited_once_with(
-            active_previews, 42, "удаление проекта #5"
-        )
+        token_svc.refund_active_previews.assert_awaited_once_with(active_previews, 42, "удаление проекта #5")
         proj_svc._repo.delete.assert_awaited_once_with(5)
 
     @patch(f"{_SVC_MODULE}.PreviewsRepository")
