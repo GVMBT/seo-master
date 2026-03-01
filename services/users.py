@@ -6,6 +6,7 @@ Zero dependencies on Telegram/Aiogram.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 import structlog
 
@@ -45,6 +46,12 @@ class UsersService:
     def __init__(self, db: SupabaseClient) -> None:
         self._db = db
         self._users = UsersRepository(db)
+
+    async def accept_terms(self, user_id: int, redis: RedisClient) -> None:
+        """Record consent acceptance timestamp and invalidate user cache."""
+        await self._users.update(user_id, UserUpdate(accepted_terms_at=datetime.now(tz=UTC)))
+        await redis.delete(CacheKeys.user_cache(user_id))
+        log.info("terms_accepted", user_id=user_id)
 
     async def link_referrer(
         self,

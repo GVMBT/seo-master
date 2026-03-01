@@ -314,9 +314,9 @@ TERMS_OF_SERVICE = (
 PRIVACY_POLICY_CHUNKS: list[str] = split_message(PRIVACY_POLICY)
 TERMS_OF_SERVICE_CHUNKS: list[str] = split_message(TERMS_OF_SERVICE)
 
-# Short consent notice for /start (new users)
+# Consent notice for /start (shown until user accepts)
 LEGAL_NOTICE = (
-    "Используя бота, вы принимаете "
-    "/privacy (политика конфиденциальности) и "
-    "/terms (оферта)."
+    "Для использования бота необходимо принять "
+    "политику конфиденциальности и оферту.\n\n"
+    "Ознакомьтесь с документами и нажмите «Принимаю»:"
 )

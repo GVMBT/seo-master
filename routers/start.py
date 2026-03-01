@@ -7,13 +7,13 @@ import structlog
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, Message
 
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
 from bot.service_factory import DashboardServiceFactory
-from bot.texts.legal import LEGAL_NOTICE
+from bot.texts.legal import LEGAL_NOTICE, PRIVACY_POLICY_CHUNKS, TERMS_OF_SERVICE_CHUNKS
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
@@ -23,7 +23,7 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import admin_panel_kb, cancel_kb, dashboard_kb, dashboard_resume_kb, menu_kb
+from keyboards.inline import admin_panel_kb, cancel_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -31,7 +31,7 @@ from keyboards.pipeline import (
     pipeline_preview_kb,
     pipeline_projects_kb,
 )
-from keyboards.reply import BTN_ADMIN, BTN_MENU, main_menu_kb
+from keyboards.reply import BTN_ADMIN, main_menu_kb
 from routers.publishing.pipeline._common import ArticlePipelineFSM
 from services.users import UsersService
 
@@ -280,17 +280,69 @@ async def cmd_start(
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, user, db, redis, nonce)
 
+    # Consent gate: must accept terms before accessing dashboard (C7/H30)
+    if user.accepted_terms_at is None:
+        await message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
+        return
+
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    if is_new_user:
-        # First interaction: set persistent reply keyboard + Dashboard inline buttons (C6)
-        await message.answer(text, reply_markup=main_menu_kb(is_admin))
-        await message.answer("Выберите действие:", reply_markup=kb)
-        # Legal notice (C7/H30): inform about privacy policy and terms
-        await message.answer(LEGAL_NOTICE)
-    else:
-        # Always refresh reply keyboard so admin button appears after role change
-        await message.answer(text, reply_markup=main_menu_kb(is_admin))
-        await message.answer("Выберите действие:", reply_markup=kb)
+    await message.answer(text + "\n\nВыберите действие:", reply_markup=kb)
+
+
+# ---------------------------------------------------------------------------
+# Consent flow (C7/H30)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "legal:consent:privacy")
+async def consent_privacy(callback: CallbackQuery) -> None:
+    """Show privacy policy from consent screen."""
+    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+        for chunk in PRIVACY_POLICY_CHUNKS:
+            await callback.message.answer(chunk)
+        # Re-show consent keyboard so user can accept without /start (CR-109)
+        await callback.message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "legal:consent:terms")
+async def consent_terms(callback: CallbackQuery) -> None:
+    """Show terms of service from consent screen."""
+    if callback.message and not isinstance(callback.message, InaccessibleMessage):
+        for chunk in TERMS_OF_SERVICE_CHUNKS:
+            await callback.message.answer(chunk)
+        # Re-show consent keyboard so user can accept without /start (CR-109)
+        await callback.message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "legal:consent:accept")
+async def consent_accept(
+    callback: CallbackQuery,
+    user: User,
+    is_new_user: bool,
+    is_admin: bool,
+    db: SupabaseClient,
+    redis: RedisClient,
+    dashboard_service_factory: DashboardServiceFactory,
+) -> None:
+    """Accept terms -> save timestamp -> show dashboard."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    # Save consent + invalidate cache via service layer (CR-109)
+    users_svc = UsersService(db)
+    await users_svc.accept_terms(user.id, redis)
+
+    # Set reply keyboard (first real interaction)
+    await msg.answer("Условия приняты!", reply_markup=main_menu_kb(is_admin))
+
+    # Show dashboard
+    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
+    await msg.answer(text + "\n\nВыберите действие:", reply_markup=kb)
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
@@ -652,23 +704,6 @@ async def admin_entry(message: Message, user: User) -> None:
         "<b>\U0001f6e1 Админ-панель</b>",
         reply_markup=admin_panel_kb(),
     )
-
-
-@router.message(F.text == BTN_MENU)
-async def reply_menu(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    is_new_user: bool,
-    is_admin: bool,
-    db: SupabaseClient,
-    redis: RedisClient,
-    dashboard_service_factory: DashboardServiceFactory,
-) -> None:
-    """Reply keyboard: Menu button → Dashboard."""
-    await ensure_no_active_fsm(state)
-    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    await message.answer(text, reply_markup=kb)
 
 
 @router.message(F.text == "Отмена")
