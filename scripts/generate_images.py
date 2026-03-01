@@ -10,13 +10,13 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import os
 import sys
 import time
 from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
@@ -25,7 +25,7 @@ ASSETS_DIR = Path(__file__).parent.parent / "assets"
 ASSETS_DIR.mkdir(exist_ok=True)
 
 # Model for image generation
-IMAGE_MODEL = "google/gemini-2.5-flash-image"
+IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
 
 # Style guide for consistency across all images
 STYLE_PREFIX = (
