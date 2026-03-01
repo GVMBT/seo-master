@@ -561,6 +561,11 @@ class PublishService:
 
         content_html = sanitize_html(content_html)
 
+        # Build reconciled placeholder URLs so WP publisher can replace them
+        # with real WP media URLs after upload (preview flow uses Supabase Storage
+        # URLs; auto-publish skips Storage and passes placeholders directly).
+        reconciled_urls = [f"{{{{RECONCILED_IMAGE_{i + 1}}}}}" for i in range(len(uploads))]
+
         pub_result = await publisher.publish(
             PublishRequest(
                 connection=connection,
@@ -570,7 +575,11 @@ class PublishService:
                 images=[u.data for u in uploads],
                 images_meta=[{"alt": u.alt_text, "filename": u.filename, "figcaption": u.caption} for u in uploads],
                 category=category,
-                metadata={"seo_description": meta_desc, "focus_keyword": keyword},
+                metadata={
+                    "meta_description": meta_desc,
+                    "focus_keyword": keyword,
+                    "storage_urls": reconciled_urls,
+                },
             )
         )
 

@@ -354,3 +354,41 @@ class TestExtractBlockContexts:
         blocks = split_into_blocks(_MULTI_SECTION_MD)
         contexts = extract_block_contexts(blocks, [])
         assert contexts == []
+
+
+# ---------------------------------------------------------------------------
+# Regression: AI-wrapped placeholders must not create nested ![](![](…))
+# ---------------------------------------------------------------------------
+
+
+class TestAIWrappedPlaceholders:
+    def test_no_nested_markdown_when_ai_wraps_placeholder(self) -> None:
+        """AI writes ![alt]({{IMAGE_N}} 'cap') — reconciliation must replace
+        the FULL markdown image, not just {{IMAGE_N}}, to avoid nested syntax."""
+        md = '## Intro\n\n![AI alt]({{IMAGE_1}} "AI caption")\n\nEnd.'
+        images = [_SAMPLE_IMAGE]
+        meta = [{"alt": "Recon alt", "filename": "recon-file", "figcaption": "Recon cap"}]
+
+        result_md, _uploads = reconcile_images(md, meta, images, "Test")
+
+        # Must NOT contain nested ![..](![..](..))
+        assert "![AI alt](![" not in result_md
+        # Reconciled placeholder should be present
+        assert "{{RECONCILED_IMAGE_1}}" in result_md
+        # Reconciled alt/caption from images_meta should replace AI's
+        assert "Recon alt" in result_md
+        assert "Recon cap" in result_md
+        # Original AI alt should be replaced entirely
+        assert "![AI alt]" not in result_md
+
+    def test_standalone_placeholder_still_wrapped(self) -> None:
+        """If AI writes just {{IMAGE_1}} (no wrapping markdown), it gets wrapped."""
+        md = "## Intro\n\nText here.\n\n{{IMAGE_1}}\n\nEnd."
+        images = [_SAMPLE_IMAGE]
+        meta = [{"alt": "Standalone alt", "filename": "standalone", "figcaption": "Cap"}]
+
+        result_md, _uploads = reconcile_images(md, meta, images, "Test")
+
+        assert "{{RECONCILED_IMAGE_1}}" in result_md
+        assert "Standalone alt" in result_md
+        assert "{{IMAGE_1}}" not in result_md
