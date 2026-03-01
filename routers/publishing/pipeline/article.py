@@ -428,8 +428,8 @@ async def pipeline_preview_only(
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
-    await _show_category_step(callback, state, user, db, redis, project_id, project_name)
     await callback.answer()
+    await _show_category_step(callback, state, user, db, redis, project_id, project_name)
 
 
 async def _show_wp_step_msg(
@@ -852,13 +852,13 @@ async def pipeline_select_category(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
+    await callback.answer()
     await state.update_data(
         category_id=category.id,
         category_name=category.name,
         image_count=_get_image_count(category),
     )
     await show_readiness_check(callback, state, user, db, redis)
-    await callback.answer()
 
 
 @router.message(ArticlePipelineFSM.create_category_name)
