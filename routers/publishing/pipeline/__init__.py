@@ -6,7 +6,7 @@ from routers.publishing.pipeline import article, exit_protection, generation, re
 from routers.publishing.pipeline import social as social_pkg
 
 router = Router()
-# Exit protection FIRST — intercepts "Меню"/"Отмена"/"/cancel" before other handlers
+# Exit protection FIRST — intercepts "Отмена"/"/cancel" before other handlers
 router.include_router(exit_protection.router)
 router.include_router(article.router)
 router.include_router(readiness.router)

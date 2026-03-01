@@ -58,6 +58,8 @@ def dashboard_kb(
     has_wp: bool,
     has_social: bool,
     balance: int,
+    *,
+    is_admin: bool = False,
 ) -> InlineKeyboardMarkup:
     """Dashboard keyboard with pipeline CTAs and nav row.
 
@@ -129,6 +131,16 @@ def dashboard_kb(
             ),
         ]
     )
+
+    if is_admin:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="\U0001f6e1 Админка",
+                    callback_data="admin:panel",
+                ),
+            ]
+        )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
