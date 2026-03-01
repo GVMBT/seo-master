@@ -6,6 +6,7 @@ Zero dependencies on Telegram/Aiogram.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 
 from pydantic import BaseModel
 
@@ -14,7 +15,25 @@ from db.credential_manager import CredentialManager
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
+from db.repositories.publications import PublicationsRepository
 from db.repositories.schedules import SchedulesRepository
+
+# Average token cost per scheduled post, by platform type.
+_PLATFORM_COST: dict[str, int] = {
+    "wordpress": 320,
+    "telegram": 40,
+    "vk": 40,
+    "pinterest": 40,
+}
+_DEFAULT_PLATFORM_COST = 40
+
+
+class LastPublication(BaseModel, frozen=True):
+    """Most recent publication summary for dashboard."""
+
+    keyword: str
+    content_type: str
+    created_at: datetime
 
 
 class DashboardData(BaseModel, frozen=True):
@@ -24,6 +43,10 @@ class DashboardData(BaseModel, frozen=True):
     schedule_count: int
     has_wp: bool
     has_social: bool
+    total_publications: int
+    last_publication: LastPublication | None
+    tokens_per_week: int
+    tokens_per_month: int
 
 
 class DashboardService:
@@ -37,19 +60,36 @@ class DashboardService:
         self._encryption_key = encryption_key
 
     async def get_dashboard_data(self, user_id: int) -> DashboardData:
-        """Aggregate dashboard data: projects, schedules, platform flags."""
+        """Aggregate dashboard data: projects, schedules, platform flags, publications."""
         projects_repo = ProjectsRepository(self._db)
-        projects = await projects_repo.get_by_user(user_id)
+        pub_repo = PublicationsRepository(self._db)
+
+        projects, pub_stats, last_pubs = await asyncio.gather(
+            projects_repo.get_by_user(user_id),
+            pub_repo.get_stats_by_user(user_id),
+            pub_repo.get_by_user(user_id, limit=1),
+        )
+
         project_count = len(projects)
         project_ids = [p.id for p in projects]
 
         has_wp = False
         has_social = False
         schedule_count = 0
+        tokens_per_week = 0
         if project_count > 0:
-            (has_wp, has_social), schedule_count = await asyncio.gather(
+            (has_wp, has_social), (schedule_count, tokens_per_week) = await asyncio.gather(
                 self._get_platform_flags(project_ids),
-                self._count_active_schedules(project_ids),
+                self._get_schedule_stats(project_ids),
+            )
+
+        last_pub = None
+        if last_pubs:
+            lp = last_pubs[0]
+            last_pub = LastPublication(
+                keyword=lp.keyword or "",
+                content_type=lp.content_type,
+                created_at=lp.created_at or datetime.min,
             )
 
         return DashboardData(
@@ -57,6 +97,10 @@ class DashboardService:
             schedule_count=schedule_count,
             has_wp=has_wp,
             has_social=has_social,
+            total_publications=pub_stats.get("total_publications", 0),
+            last_publication=last_pub,
+            tokens_per_week=tokens_per_week,
+            tokens_per_month=tokens_per_week * 4,
         )
 
     async def _get_platform_flags(
@@ -83,13 +127,13 @@ class DashboardService:
                 break
         return has_wp, has_social
 
-    async def _count_active_schedules(
+    async def _get_schedule_stats(
         self,
         project_ids: list[int],
-    ) -> int:
-        """Count enabled schedules across given projects.
+    ) -> tuple[int, int]:
+        """Count enabled schedules and compute weekly token forecast.
 
-        Uses asyncio.gather to fetch categories for all projects in parallel.
+        Returns: (schedule_count, tokens_per_week).
         """
         cats_repo = CategoriesRepository(self._db)
         sched_repo = SchedulesRepository(self._db)
@@ -98,7 +142,18 @@ class DashboardService:
 
         all_cat_ids = [c.id for cats in cat_lists for c in cats]
         if not all_cat_ids:
-            return 0
+            return 0, 0
 
         schedules = await sched_repo.get_by_project(all_cat_ids)
-        return sum(1 for s in schedules if s.enabled)
+
+        schedule_count = 0
+        tokens_per_week = 0
+        for s in schedules:
+            if s.enabled:
+                schedule_count += 1
+                days_count = len(s.schedule_days) if s.schedule_days else 7
+                weekly_posts = s.posts_per_day * days_count
+                avg_cost = _PLATFORM_COST.get(s.platform_type, _DEFAULT_PLATFORM_COST)
+                tokens_per_week += weekly_posts * avg_cost
+
+        return schedule_count, tokens_per_week
