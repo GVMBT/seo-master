@@ -114,8 +114,11 @@ class TestReferralLinking:
 
         mock_svc_cls.assert_called_once_with(mock_db)
         mock_users_svc.link_referrer.assert_awaited_once_with(user.id, 999, mock_redis)
-        # Dashboard shown
+        # Dashboard shown with text and inline keyboard
         mock_message.answer.assert_called_once()
+        args, kwargs = mock_message.answer.call_args
+        assert "Dashboard" in args[0]
+        assert kwargs.get("reply_markup") is not None
 
     async def test_existing_user_referral_ignored(
         self,
@@ -284,5 +287,6 @@ class TestConsentGate:
 
         # Single message with dashboard text + inline keyboard
         mock_message.answer.assert_called_once()
-        args, _ = mock_message.answer.call_args
+        args, kwargs = mock_message.answer.call_args
         assert "Dashboard" in args[0]
+        assert kwargs.get("reply_markup") is not None
