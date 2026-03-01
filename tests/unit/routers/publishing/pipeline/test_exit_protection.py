@@ -1,7 +1,7 @@
 """Tests for routers/publishing/pipeline/exit_protection.py.
 
 Covers exit protection for Article + Social Pipeline steps 4-7:
-- Reply keyboard "Меню"/"Отмена" interception on protected states
+- Reply keyboard "Отмена" interception on protected states
 - /cancel command interception on protected states
 - Exit confirm — clear FSM, keep checkpoint
 - Exit cancel — dismiss dialog, continue pipeline
@@ -27,8 +27,8 @@ from tests.unit.routers.conftest import make_user
 
 
 async def test_exit_protection_reply_article_shows_confirm(mock_message: MagicMock) -> None:
-    """Reply 'Меню' on protected article state shows exit confirmation."""
-    mock_message.text = "Меню"
+    """Reply 'Отмена' on protected article state shows exit confirmation."""
+    mock_message.text = "Отмена"
     mock_message.answer = AsyncMock()
 
     await exit_protection_reply_article(mock_message)
@@ -44,25 +44,14 @@ async def test_exit_protection_reply_article_shows_confirm(mock_message: MagicMo
     assert "pipeline:article:exit_cancel" in callbacks
 
 
-async def test_exit_protection_reply_article_otmena(mock_message: MagicMock) -> None:
-    """Reply 'Отмена' also triggers article exit protection."""
-    mock_message.text = "Отмена"
-    mock_message.answer = AsyncMock()
-
-    await exit_protection_reply_article(mock_message)
-
-    mock_message.answer.assert_called_once()
-    assert "Прервать публикацию?" in mock_message.answer.call_args[0][0]
-
-
 # ---------------------------------------------------------------------------
 # exit_protection_reply (social)
 # ---------------------------------------------------------------------------
 
 
 async def test_exit_protection_reply_social_shows_confirm(mock_message: MagicMock) -> None:
-    """Reply 'Меню' on protected social state shows exit confirmation."""
-    mock_message.text = "Меню"
+    """Reply 'Отмена' on protected social state shows exit confirmation."""
+    mock_message.text = "Отмена"
     mock_message.answer = AsyncMock()
 
     await exit_protection_reply_social(mock_message)

@@ -33,7 +33,7 @@ from keyboards.pipeline import (
     pipeline_preview_kb,
     pipeline_projects_kb,
 )
-from keyboards.reply import BTN_ADMIN, BTN_MENU, main_menu_kb
+from keyboards.reply import BTN_ADMIN, main_menu_kb
 from routers.publishing.pipeline._common import ArticlePipelineFSM
 from services.users import UsersService
 
@@ -705,23 +705,6 @@ async def admin_entry(message: Message, user: User) -> None:
         "<b>\U0001f6e1 Админ-панель</b>",
         reply_markup=admin_panel_kb(),
     )
-
-
-@router.message(F.text == BTN_MENU)
-async def reply_menu(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    is_new_user: bool,
-    is_admin: bool,
-    db: SupabaseClient,
-    redis: RedisClient,
-    dashboard_service_factory: DashboardServiceFactory,
-) -> None:
-    """Reply keyboard: Menu button → Dashboard."""
-    await ensure_no_active_fsm(state)
-    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    await message.answer(text, reply_markup=kb)
 
 
 @router.message(F.text == "Отмена")
