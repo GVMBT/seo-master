@@ -109,13 +109,24 @@ class TestCheckProjectLimit:
 
 class TestCreateProject:
     async def test_creates_and_returns(self, proj_svc: ProjectService) -> None:
-        data = MagicMock()
+        data = MagicMock(user_id=42)
         created = MagicMock(id=1)
+        proj_svc._repo.get_count_by_user = AsyncMock(return_value=5)
         proj_svc._repo.create = AsyncMock(return_value=created)
 
         result = await proj_svc.create_project(data)
         assert result is created
+        proj_svc._repo.get_count_by_user.assert_awaited_once_with(42)
         proj_svc._repo.create.assert_awaited_once_with(data)
+
+    async def test_returns_none_at_limit(self, proj_svc: ProjectService) -> None:
+        data = MagicMock(user_id=42)
+        proj_svc._repo.get_count_by_user = AsyncMock(return_value=MAX_PROJECTS_PER_USER)
+        proj_svc._repo.create = AsyncMock()
+
+        result = await proj_svc.create_project(data)
+        assert result is None
+        proj_svc._repo.create.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

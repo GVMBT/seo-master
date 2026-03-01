@@ -533,6 +533,7 @@ MODEL_CHAINS = {
     "description":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "cross_post":           ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],           # Text adaptation between platforms (budget)
     "image":                ["google/gemini-3.1-flash-image-preview", "google/gemini-2.5-flash-image"],
+    "image_director":       ["deepseek/deepseek-v3.2", "google/gemini-2.5-flash"],  # AI prompt engineering for images (reasoning, structured output)
 }
 
 # Использование — один запрос, OpenRouter сам делает fallback
@@ -1401,8 +1402,12 @@ def sanitize_variables(context: dict) -> dict:
            дополняй своей экспертизой где research не покрывает"
 Шаг 6a. BLOCK SPLIT: разбить текст на логические блоки (по H2/H3)
          → distribute_images(blocks, images_count) → block_indices
-         → для каждого block_index: извлечь block_context (первые 200 слов секции)
-         → запустить N image-промптов параллельно (block_context + image_settings)
+         → для каждого block_index: извлечь block_context (первые 300 слов секции)
+Шаг 6b. IMAGE DIRECTOR (§7.4.2): AI анализирует статью + целевые секции
+         → DeepSeek V3.2 (reasoning) → structured JSON: prompt, negative_prompt, aspect_ratio per image
+         → обеспечивает визуальную нарративу (images рассказывают историю, не N random stock photos)
+         → fallback: при ошибке Director — механические промпты из block_context (как было до Director)
+         → запустить N image-генераций параллельно с промптами от Director
 Шаг 7.  ContentQualityScorer (§3.7): программная оценка качества
          → score >= 80: pass | score 60-79: warn | score < 40: block
 Шаг 8.  CONDITIONAL CRITIQUE: если score < 80:
@@ -1834,27 +1839,35 @@ async def generate_article_pipeline(cluster, category, project, connections):
     competitor_analysis = summarize_competitors(valid_pages)  # -> str (для <<competitor_analysis>> в промпте)
     competitor_gaps = detect_gaps(valid_pages)                # -> str (для <<competitor_gaps>> в промпте)
 
-    # Stage 4: Текст и изображения ПАРАЛЛЕЛЬНО
+    # Stage 4: Text generation (multi-step: outline → expand → critique)
     # research_data передаётся в ArticleService.generate() → per-step formatting:
     # - Outline: format_research_for_prompt(data, "outline") — для планирования разделов
     # - Expand: format_research_for_prompt(data, "expand") — приоритизация при противоречиях
     # - Critique: format_research_for_prompt(data, "critique") — верификация фактов
-    # Stage 3: Text generation (multi-step: outline → expand → critique)
     text_result = await article_service.generate(
         ..., research_data=research_data,  # raw dict, formatted per-step internally
     )
 
-    # Stage 4: Block-aware image generation (§7.4.1)
-    # Images AFTER text — each image gets block_context from H2-sections
+    # Stage 5a: Block split + Image Director (§7.4.2)
     content_markdown = text_result.content["content_markdown"]
     blocks = split_into_blocks(content_markdown)       # parse H2/H3 sections
     block_indices = distribute_images(blocks, image_count)  # evenly spaced
-    block_contexts = [blocks[i]["content"][:200] for i in block_indices]
+    block_contexts = extract_block_contexts(blocks, block_indices, max_words=300)
+
+    # Image Director: AI reasons about visual composition per section
+    director_result = await image_director.plan_images(
+        title=title, content_markdown=content_markdown,
+        blocks=blocks, block_indices=block_indices,
+        image_context=image_context,  # keyword, company, niche, branding, settings
+    )
+    # Fallback: if Director fails → mechanical prompts from block_context (E54)
+
+    # Stage 5b: Generate images using Director's specific prompts
     images_result = await image_service.generate(
-        ..., block_contexts=block_contexts,  # per-image section context
+        ..., director_plans=director_result.images,  # per-image AI-crafted prompts
     )
 
-    # Stage 5: Reconciliation + WebP + upload + Telegraph
+    # Stage 6: Reconciliation + WebP + upload + Telegraph
     # ...
 ```
 
@@ -1864,7 +1877,7 @@ async def generate_article_pipeline(cluster, category, project, connections):
 **Timeline:**
 
 ```text
-[Serper(2с) || Research(10с)] → Firecrawl(5с) → Analysis(1с) → Text(45с) → BlockSplit+Images(30с) → Upload(3с) = 94с
+[Serper(2с) || Research(10с)] → Firecrawl(5с) → Analysis(1с) → Text(45с) → BlockSplit(0с) → Director(3с) → Images(30с) → Upload(3с) = 97с
  ↑ параллельно ↑
 ```
 
@@ -2416,7 +2429,7 @@ def distribute_images(blocks: list[dict], images_count: int) -> list[int]:
 **Контекстный промпт:** Каждое изображение получает `block_context` — краткое содержание блока, к которому оно привязано. Это заменяет generic-промпт по теме статьи на точный контекст раздела.
 
 **Стратегия вариативности:** Каждый запрос из N получает модифицированный промпт:
-- `block_context`: текст H2-секции (первые 200 слов), к которой привязано изображение
+- `block_context`: текст H2-секции (первые 300 слов), к которой привязано изображение
 - Изображение 1: базовый промпт + block_context (hero, 16:9)
 - Изображение 2+: block_context + суффикс `"Покажи с другого ракурса: {angle}"`, где angle берётся из `image_settings.angles` (round-robin) или из предустановленного списка `["крупный план", "общий план", "детали", "в контексте использования"]`
 
@@ -2425,6 +2438,68 @@ def distribute_images(blocks: list[dict], images_count: int) -> list[int]:
 **Параллельная генерация:** Все N запросов запускаются одновременно через `asyncio.gather(return_exceptions=True)` — каждый бандл (block_context + image prompt) независим.
 
 **Partial failure:** Если K из N изображений успешны (K >= 1) — продолжить с K изображениями, перераспределить оставшиеся по блокам, предупредить: "Сгенерировано {K} из {N} изображений". Если все N провалились — fallback на следующую модель из `MODEL_CHAINS["image"]`. Если вся цепочка исчерпана — возврат 30*N токенов, уведомление об ошибке.
+
+#### 7.4.2 Image Director — AI-слой промпт-инжиниринга
+
+**Проблема:** Механическая сборка промптов (keyword + style + block_context[:200]) создаёт generic "stock photo" изображения. AI не понимает зачем нужна картинка, какая композиция подходит секции, как N изображений связаны визуально.
+
+**Решение:** Выделенный AI-шаг между text generation и image generation:
+
+```text
+Text Generation → Block Split → ★ IMAGE DIRECTOR ★ → Image Generation (N parallel) → Reconciliation
+```
+
+**Модель:** `deepseek/deepseek-v3.2` (reasoning enabled) — $0.25/$0.40 per M tokens, ~$0.001/статья. Уже в стеке (Outline, Critique).
+
+**Input (structured):**
+
+```json
+{
+  "article_title": "Кухни на заказ в Москве: полное руководство",
+  "article_summary": "First 500 words of article...",
+  "company_name": "МосКухни",
+  "niche": "home_renovation",
+  "image_count": 4,
+  "target_sections": [
+    {"index": 1, "heading": "Фасады из массива дуба", "context": "First 300 words..."},
+    {"index": 3, "heading": "Фурнитура и комплектующие", "context": "First 300 words..."}
+  ],
+  "brand_colors": {"primary": "#8B4513", "accent": "#DAA520"},
+  "image_settings": {"style": "photorealism", "tone": "professional"}
+}
+```
+
+**Output (JSON Schema, structured output):**
+
+```json
+{
+  "images": [
+    {
+      "section_index": 1,
+      "concept": "Close-up of oak wood cabinet door showing grain texture",
+      "prompt": "Professional interior photograph, close-up of solid oak kitchen cabinet door...",
+      "negative_prompt": "text, watermark, blurry, low quality, cartoon, illustration",
+      "aspect_ratio": "4:3"
+    }
+  ],
+  "visual_narrative": "Images progress from material details → hardware → full kitchen → pricing context"
+}
+```
+
+**Ключевые принципы:**
+1. Director видит ВСЮ статью + каждую целевую секцию → принимает осмысленные решения
+2. Prompt содержит конкретную композицию, освещение, ракурс, фокус (не generic "a kitchen")
+3. `visual_narrative` обеспечивает связность N изображений (история, не N random photos)
+4. `negative_prompt` контекстный (медицина → "no blood", еда → "no artificial look")
+5. `aspect_ratio` выбирается по содержанию секции (hero 16:9, detail 1:1, content 4:3)
+
+**Fallback (E54):** Если Director недоступен или ошибка → graceful degradation на текущие механические промпты (block_context + image_settings). Изображения будут generic, но pipeline не прерывается.
+
+**Стоимость:** ~$0.001/статья (+0.3% к total). **Латентность:** ~3-5с (+3% к pipeline).
+
+**Промпт-шаблон:** `image_director_v1.yaml` (Jinja2 << >> delimiters, как остальные промпты).
+
+**Хранение visual_narrative:** В `article_previews.images` JSONB добавляется ключ `"visual_narrative"` (рядом с `"urls"`). Для кросс-постинга и дебага.
 
 ### 7.5 Промпт-шаблон (image.yaml)
 
@@ -2519,7 +2594,7 @@ variables:
     required: false
     default: ""
   - name: block_context
-    source: первые 200 слов H2-секции, к которой привязано изображение (§7.4.1 distribute_images)
+    source: первые 300 слов H2-секции, к которой привязано изображение (§7.4.1 distribute_images)
     required: false
     default: ""
   - name: niche_style

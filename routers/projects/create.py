@@ -234,6 +234,10 @@ async def process_website_url(
         )
     )
 
+    if not project:
+        await message.answer("Достигнут лимит проектов.", reply_markup=menu_kb())
+        return
+
     safe_name = html.escape(project.name)
     await message.answer(
         f"Проект «{safe_name}» создан!\nТеперь подключите платформу для публикации.",

@@ -177,8 +177,10 @@ class TestDeleteCategory:
             MockPreviews.return_value.get_active_drafts_by_category = AsyncMock(return_value=active_previews)
 
             deleted, cat, remaining_result = await cat_svc.delete_category(
-                category_id=5, user_id=42,
-                scheduler_svc=scheduler_svc, token_svc=token_svc,
+                category_id=5,
+                user_id=42,
+                scheduler_svc=scheduler_svc,
+                token_svc=token_svc,
             )
 
         assert deleted is True
@@ -218,8 +220,10 @@ class TestDeleteCategory:
             MockPreviews.return_value.get_active_drafts_by_category = AsyncMock(return_value=[])
 
             deleted, _cat, _remaining = await cat_svc.delete_category(
-                category_id=5, user_id=42,
-                scheduler_svc=scheduler_svc, token_svc=token_svc,
+                category_id=5,
+                user_id=42,
+                scheduler_svc=scheduler_svc,
+                token_svc=token_svc,
             )
 
         assert deleted is True
@@ -239,10 +243,9 @@ class TestGetDeleteImpact:
 
         cat_svc._cats_repo.get_by_id = AsyncMock(return_value=category)
         cat_svc._projects_repo.get_by_id = AsyncMock(return_value=project)
+        cat_svc._sched_repo.get_by_category = AsyncMock(return_value=schedules)
 
-        with patch(f"{_SVC_MODULE}.SchedulesRepository") as MockSched:
-            MockSched.return_value.get_by_category = AsyncMock(return_value=schedules)
-            result = await cat_svc.get_delete_impact(5, 42)
+        result = await cat_svc.get_delete_impact(5, 42)
 
         assert result is not None
         cat_out, active_count = result

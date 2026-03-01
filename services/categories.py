@@ -39,6 +39,7 @@ class CategoryService:
         self._db = db
         self._cats_repo = CategoriesRepository(db)
         self._projects_repo = ProjectsRepository(db)
+        self._sched_repo = SchedulesRepository(db)
 
     # ------------------------------------------------------------------
     # Ownership helpers
@@ -88,8 +89,7 @@ class CategoryService:
         category = await self.get_owned_category(category_id, user_id)
         if not category:
             return None
-        sched_repo = SchedulesRepository(self._db)
-        schedules = await sched_repo.get_by_category(category_id)
+        schedules = await self._sched_repo.get_by_category(category_id)
         active_count = sum(1 for s in schedules if s.enabled)
         return category, active_count
 
