@@ -145,8 +145,8 @@ def _patch_cats_repo(category: Any = None, module: str = _MODULE):
     cat_mock.get_category_raw = AsyncMock(return_value=category)
     cat_mock.list_by_project = AsyncMock(return_value=[category] if category else [])
     cat_mock.update_keywords = AsyncMock(return_value=True)
-    cat_mock.update_prices = AsyncMock(return_value=category)
-    cat_mock.update_description = AsyncMock(return_value=category)
+    cat_mock.update_prices = AsyncMock(return_value=True)
+    cat_mock.update_description = AsyncMock(return_value=True)
     return patch(f"{module}.CategoryService", return_value=cat_mock), cat_mock
 
 
@@ -157,8 +157,8 @@ def _make_cat_factory(category: Any = None) -> MagicMock:
     cat_svc.get_category_raw = AsyncMock(return_value=category)
     cat_svc.list_by_project = AsyncMock(return_value=[category] if category else [])
     cat_svc.update_keywords = AsyncMock(return_value=True)
-    cat_svc.update_prices = AsyncMock(return_value=category)
-    cat_svc.update_description = AsyncMock(return_value=category)
+    cat_svc.update_prices = AsyncMock(return_value=True)
+    cat_svc.update_description = AsyncMock(return_value=True)
     return MagicMock(return_value=cat_svc)
 
 

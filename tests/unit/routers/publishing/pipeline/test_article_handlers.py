@@ -99,8 +99,8 @@ def _patch_repos(
     cat_svc_mock.get_owned_category = AsyncMock(return_value=category)
     cat_svc_mock.create_category = AsyncMock(return_value=created_category)
     cat_svc_mock.update_keywords = AsyncMock(return_value=True)
-    cat_svc_mock.update_prices = AsyncMock(return_value=category)
-    cat_svc_mock.update_description = AsyncMock(return_value=category)
+    cat_svc_mock.update_prices = AsyncMock(return_value=True)
+    cat_svc_mock.update_description = AsyncMock(return_value=True)
     cat_svc_mock.get_category_raw = AsyncMock(return_value=category)
 
     # Factory callable that returns the mock service

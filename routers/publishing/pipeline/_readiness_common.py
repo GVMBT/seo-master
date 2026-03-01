@@ -210,9 +210,15 @@ async def run_keyword_generation(
         # Save (MERGE with existing)
         cat_svc = CategoryService(db=db)
         category = await cat_svc.get_owned_category(category_id, user.id)
-        existing: list[dict[str, Any]] = (category.keywords if category else []) or []
+        if not category:
+            log.error("keywords_save_failed.ownership", category_id=category_id, user_id=user.id)
+            return
+        existing: list[dict[str, Any]] = (category.keywords or [])
         merged = existing + enriched
-        await cat_svc.update_keywords(category_id, user.id, merged)
+        saved = await cat_svc.update_keywords(category_id, user.id, merged)
+        if not saved:
+            log.error("keywords_save_failed.update", category_id=category_id, user_id=user.id)
+            return
 
         total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
         total_volume = sum(c.get("total_volume", 0) for c in enriched)
@@ -622,7 +628,11 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
 
         keywords = [{"phrase": p, "volume": 0, "cpc": 0.0} for p in phrases]
         cat_svc = category_service_factory(db)
-        await cat_svc.update_keywords(category_id, user.id, keywords)
+        saved = await cat_svc.update_keywords(category_id, user.id, keywords)
+        if not saved:
+            log.error(f"{log_prefix}.keywords_upload_failed", category_id=category_id, user_id=user.id)
+            await message.answer("Не удалось сохранить фразы. Попробуйте снова.")
+            return
 
         log.info(
             f"{log_prefix}.keywords_uploaded",
@@ -705,7 +715,11 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
 
         keywords = [{"phrase": p, "volume": 0, "cpc": 0.0} for p in phrases]
         cat_svc = category_service_factory(db)
-        await cat_svc.update_keywords(category_id, user.id, keywords)
+        saved = await cat_svc.update_keywords(category_id, user.id, keywords)
+        if not saved:
+            log.error(f"{log_prefix}.keywords_text_failed", category_id=category_id, user_id=user.id)
+            await message.answer("Не удалось сохранить фразы. Попробуйте снова.")
+            return
 
         log.info(
             f"{log_prefix}.keywords_text",
@@ -1088,7 +1102,11 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             return
 
         cat_svc = category_service_factory(db)
-        await cat_svc.update_description(category_id, user.id, text)
+        saved = await cat_svc.update_description(category_id, user.id, text)
+        if not saved:
+            log.error(f"{log_prefix}.description_save_failed", category_id=category_id, user_id=user.id)
+            await message.answer("Не удалось сохранить описание. Попробуйте снова.")
+            return
 
         log.info(
             f"{log_prefix}.description_manual",

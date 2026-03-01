@@ -349,7 +349,11 @@ async def readiness_prices_text_input(
 
     prices_text = "\n".join(lines)
     cat_svc = category_service_factory(db)
-    await cat_svc.update_prices(category_id, user.id, prices_text)
+    saved = await cat_svc.update_prices(category_id, user.id, prices_text)
+    if not saved:
+        log.error("pipeline.readiness.prices_save_failed", category_id=category_id, user_id=user.id)
+        await message.answer("Не удалось сохранить цены. Попробуйте снова.")
+        return
 
     log.info(
         "pipeline.readiness.prices_text",
@@ -454,7 +458,11 @@ async def readiness_prices_excel_file(
 
     prices_text = "\n".join(result)
     cat_svc = category_service_factory(db)
-    await cat_svc.update_prices(category_id, user.id, prices_text)
+    saved = await cat_svc.update_prices(category_id, user.id, prices_text)
+    if not saved:
+        log.error("pipeline.readiness.prices_excel_failed", category_id=category_id, user_id=user.id)
+        await message.answer("Не удалось сохранить цены. Попробуйте снова.")
+        return
 
     log.info(
         "pipeline.readiness.prices_excel",
