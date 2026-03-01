@@ -87,7 +87,7 @@ class WordPressPublisher(BasePublisher):
             meta = request.images_meta[i] if i < len(request.images_meta) else {}
             raw_filename = meta.get("filename", f"image-{i}")
             # Avoid double extension — reconciliation already adds .webp/.png
-            if not raw_filename.endswith((".webp", ".png")):
+            if not raw_filename.lower().endswith((".webp", ".png")):
                 raw_filename = f"{raw_filename}.webp"
             filename = raw_filename
             alt_text = meta.get("alt", "")
