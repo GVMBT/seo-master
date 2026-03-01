@@ -107,7 +107,6 @@ class TestReferralLinking:
                 mock_state,
                 user,
                 is_new_user=True,
-                is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
@@ -115,6 +114,11 @@ class TestReferralLinking:
 
         mock_svc_cls.assert_called_once_with(mock_db)
         mock_users_svc.link_referrer.assert_awaited_once_with(user.id, 999, mock_redis)
+        # Dashboard shown with text and inline keyboard
+        mock_message.answer.assert_called_once()
+        args, kwargs = mock_message.answer.call_args
+        assert "Dashboard" in args[0]
+        assert kwargs.get("reply_markup") is not None
 
     async def test_existing_user_referral_ignored(
         self,
@@ -139,7 +143,6 @@ class TestReferralLinking:
                 mock_state,
                 user,
                 is_new_user=False,
-                is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
@@ -170,7 +173,6 @@ class TestReferralLinking:
                 mock_state,
                 user,
                 is_new_user=True,
-                is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
@@ -202,7 +204,6 @@ class TestReferralLinking:
                 mock_state,
                 user,
                 is_new_user=True,
-                is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
@@ -241,7 +242,6 @@ class TestConsentGate:
                 mock_state,
                 user_no_consent,
                 is_new_user=True,
-                is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
@@ -280,13 +280,12 @@ class TestConsentGate:
                 mock_state,
                 user,
                 is_new_user=False,
-                is_admin=False,
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
             )
 
-        # Dashboard message should be sent with inline keyboard
+        # Single message with dashboard text + inline keyboard
         mock_message.answer.assert_called_once()
         args, kwargs = mock_message.answer.call_args
         assert "Dashboard" in args[0]

@@ -77,7 +77,7 @@ async def nav_scheduler(
     projects = await scheduler_service.get_user_projects(user.id)
     if not projects:
         await callback.answer(
-            "Сначала создайте проект в \U0001f4cb Меню \u2192 \U0001f4c1 Мои проекты",
+            "Сначала создайте проект в /start \u2192 \U0001f4c1 Мои проекты",
             show_alert=True,
         )
         return

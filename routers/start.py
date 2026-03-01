@@ -23,7 +23,7 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import admin_panel_kb, cancel_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
+from keyboards.inline import cancel_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -31,7 +31,6 @@ from keyboards.pipeline import (
     pipeline_preview_kb,
     pipeline_projects_kb,
 )
-from keyboards.reply import BTN_ADMIN, main_menu_kb
 from routers.publishing.pipeline._common import ArticlePipelineFSM
 from services.users import UsersService
 
@@ -219,6 +218,7 @@ async def _build_dashboard(
         has_wp=data.has_wp,
         has_social=data.has_social,
         balance=user.balance,
+        is_admin=user.role == "admin",
     )
 
     if checkpoint_text:
@@ -257,7 +257,6 @@ async def cmd_start(
     state: FSMContext,
     user: User,
     is_new_user: bool,
-    is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
     dashboard_service_factory: DashboardServiceFactory,
@@ -321,7 +320,6 @@ async def consent_accept(
     callback: CallbackQuery,
     user: User,
     is_new_user: bool,
-    is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
     dashboard_service_factory: DashboardServiceFactory,
@@ -336,12 +334,12 @@ async def consent_accept(
     users_svc = UsersService(db)
     await users_svc.accept_terms(user.id, redis)
 
-    # Set reply keyboard (first real interaction)
-    await msg.answer("Условия приняты!", reply_markup=main_menu_kb(is_admin))
-
-    # Show dashboard
+    # Show dashboard (admin button included in inline kb via user.role check)
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    await msg.answer(text + "\n\nВыберите действие:", reply_markup=kb)
+    await msg.answer(
+        "Условия приняты!\n\n" + text + "\n\nВыберите действие:",
+        reply_markup=kb,
+    )
     await callback.answer()
 
 
@@ -356,7 +354,6 @@ async def cmd_cancel(
     state: FSMContext,
     user: User,
     is_new_user: bool,
-    is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
     dashboard_service_factory: DashboardServiceFactory,
@@ -450,7 +447,7 @@ async def _route_to_step(
     if step == "select_category":
         if not project_id:
             await msg.edit_text(
-                "\u26a0\ufe0f Сессия устарела. Нажмите \U0001f4cb Меню чтобы начать заново.", reply_markup=menu_kb()
+                "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.", reply_markup=menu_kb()
             )
             await redis.delete(CacheKeys.pipeline_state(user.id))
             await state.clear()
@@ -509,7 +506,7 @@ async def _route_to_step(
 
         # Preview expired or already published
         await msg.edit_text(
-            "\u26a0\ufe0f Превью устарело. Нажмите \U0001f4cb Меню чтобы начать заново.", reply_markup=menu_kb()
+            "\u26a0\ufe0f Превью устарело. Нажмите /start чтобы начать заново.", reply_markup=menu_kb()
         )
         await redis.delete(CacheKeys.pipeline_state(user.id))
         return
@@ -681,7 +678,7 @@ async def pipeline_stale_catchall(callback: CallbackQuery) -> None:
     Without this, clicks on old pipeline keyboards silently drop
     (no handler matches without FSM state) → "spinning clock" forever.
     """
-    await callback.answer("Сессия завершена. Нажмите \U0001f4cb Меню для продолжения.", show_alert=True)
+    await callback.answer("Сессия завершена. Нажмите /start для продолжения.", show_alert=True)
 
 
 @router.callback_query(F.data == "noop")
@@ -691,19 +688,8 @@ async def noop_handler(callback: CallbackQuery) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Reply text dispatch (persistent keyboard)
+# Reply text dispatch
 # ---------------------------------------------------------------------------
-
-
-@router.message(F.text == BTN_ADMIN)
-async def admin_entry(message: Message, user: User) -> None:
-    """Admin panel entry via reply keyboard."""
-    if user.role != "admin":
-        return  # Silently ignore for non-admins
-    await message.answer(
-        "<b>\U0001f6e1 Админ-панель</b>",
-        reply_markup=admin_panel_kb(),
-    )
 
 
 @router.message(F.text == "Отмена")
@@ -712,7 +698,6 @@ async def reply_cancel(
     state: FSMContext,
     user: User,
     is_new_user: bool,
-    is_admin: bool,
     db: SupabaseClient,
     redis: RedisClient,
     dashboard_service_factory: DashboardServiceFactory,
