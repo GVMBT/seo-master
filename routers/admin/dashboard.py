@@ -15,10 +15,9 @@ from aiogram.types import (
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import AdminServiceFactory
 from db.client import SupabaseClient
 from db.models import User
-from db.repositories.payments import PaymentsRepository
-from db.repositories.users import UsersRepository
 from keyboards.inline import admin_panel_kb, broadcast_audience_kb, broadcast_confirm_kb
 
 log = structlog.get_logger()
@@ -47,7 +46,13 @@ def _is_admin(user: User) -> bool:
 
 
 @router.callback_query(F.data == "admin:panel")
-async def admin_panel(callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext) -> None:
+async def admin_panel(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    admin_service_factory: AdminServiceFactory,
+    state: FSMContext,
+) -> None:
     """Show admin panel with stats."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -60,8 +65,8 @@ async def admin_panel(callback: CallbackQuery, user: User, db: SupabaseClient, s
     # Clear any active FSM (like broadcast)
     await state.clear()
 
-    users_repo = UsersRepository(db)
-    total_users = await users_repo.count_all()
+    admin_svc = admin_service_factory(db)
+    total_users = await admin_svc.get_user_count()
 
     text = f"<b>\U0001f6e1 Админ-панель</b>\n\nПользователей: {total_users}\n"
 
@@ -75,7 +80,9 @@ async def admin_panel(callback: CallbackQuery, user: User, db: SupabaseClient, s
 
 
 @router.callback_query(F.data == "admin:monitoring")
-async def admin_monitoring(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+async def admin_monitoring(
+    callback: CallbackQuery, user: User, db: SupabaseClient, admin_service_factory: AdminServiceFactory
+) -> None:
     """Show service health status."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -86,13 +93,9 @@ async def admin_monitoring(callback: CallbackQuery, user: User, db: SupabaseClie
         return
 
     # Quick health check: try DB query
-    try:
-        users_repo = UsersRepository(db)
-        await users_repo.count_all()
-        db_status = "\u2705"
-    except Exception:
-        log.exception("admin_monitoring_db_check_failed")
-        db_status = "\u274c"
+    admin_svc = admin_service_factory(db)
+    db_ok = await admin_svc.check_db_health()
+    db_status = "\u2705" if db_ok else "\u274c"
 
     text = f"<b>Мониторинг</b>\n\nБаза данных: {db_status}\n"
 
@@ -111,7 +114,9 @@ async def admin_monitoring(callback: CallbackQuery, user: User, db: SupabaseClie
 
 
 @router.callback_query(F.data == "admin:api_costs")
-async def admin_api_costs(callback: CallbackQuery, user: User, db: SupabaseClient) -> None:
+async def admin_api_costs(
+    callback: CallbackQuery, user: User, db: SupabaseClient, admin_service_factory: AdminServiceFactory
+) -> None:
     """Show API cost summary for 7/30/90 days."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -121,10 +126,12 @@ async def admin_api_costs(callback: CallbackQuery, user: User, db: SupabaseClien
         await callback.answer()
         return
 
-    repo = PaymentsRepository(db)
-    cost_7d = await repo.sum_api_costs(7)
-    cost_30d = await repo.sum_api_costs(30)
-    cost_90d = await repo.sum_api_costs(90)
+    admin_svc = admin_service_factory(db)
+    cost_7d, cost_30d, cost_90d = await asyncio.gather(
+        admin_svc.get_api_costs(7),
+        admin_svc.get_api_costs(30),
+        admin_svc.get_api_costs(90),
+    )
 
     text = f"<b>Затраты API</b>\n\n7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
 
@@ -177,7 +184,13 @@ _AUDIENCE_LABELS: dict[str, str] = {
     BroadcastFSM.audience,
     F.data.regexp(r"^broadcast:audience:(all|active_7d|active_30d|paid)$"),
 )
-async def broadcast_audience(callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext) -> None:
+async def broadcast_audience(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    admin_service_factory: AdminServiceFactory,
+    state: FSMContext,
+) -> None:
     """Select audience, show count, ask for text."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -188,10 +201,10 @@ async def broadcast_audience(callback: CallbackQuery, user: User, db: SupabaseCl
         return
 
     audience_key = str(callback.data).split(":")[-1]
-    users_repo = UsersRepository(db)
 
-    # Count audience using get_ids_by_audience
-    user_ids = await users_repo.get_ids_by_audience(audience_key)
+    # Count audience using service
+    admin_svc = admin_service_factory(db)
+    user_ids = await admin_svc.get_audience_ids(audience_key)
     count = len(user_ids)
 
     await state.update_data(broadcast_audience=audience_key, broadcast_count=count)
@@ -230,7 +243,13 @@ async def broadcast_text(message: Message, user: User, state: FSMContext) -> Non
 
 
 @router.callback_query(BroadcastFSM.confirm, F.data == "broadcast:send")
-async def broadcast_confirm(callback: CallbackQuery, user: User, db: SupabaseClient, state: FSMContext) -> None:
+async def broadcast_confirm(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    admin_service_factory: AdminServiceFactory,
+    state: FSMContext,
+) -> None:
     """Execute broadcast with rate limiting."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
@@ -246,8 +265,8 @@ async def broadcast_confirm(callback: CallbackQuery, user: User, db: SupabaseCli
 
     await state.clear()
 
-    users_repo = UsersRepository(db)
-    user_ids = await users_repo.get_ids_by_audience(audience_key)
+    admin_svc = admin_service_factory(db)
+    user_ids = await admin_svc.get_audience_ids(audience_key)
 
     await msg.edit_text(f"Рассылка запущена... (0/{len(user_ids)})")
 

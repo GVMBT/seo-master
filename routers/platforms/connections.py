@@ -21,11 +21,11 @@ from aiogram.types import (
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import ProjectServiceFactory
 from bot.validators import TG_CHANNEL_RE, URL_RE
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PlatformConnectionCreate, User
-from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
     cancel_kb,
     connection_delete_confirm_kb,
@@ -78,6 +78,7 @@ async def show_connections(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Show connection list for a project (UX_TOOLBOX.md section 5.1)."""
     msg = safe_message(callback)
@@ -86,10 +87,9 @@ async def show_connections(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
 
-    if not project or project.user_id != user.id:
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -114,6 +114,7 @@ async def connections_list_back(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Back navigation to connection list."""
     msg = safe_message(callback)
@@ -122,10 +123,9 @@ async def connections_list_back(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
 
-    if not project or project.user_id != user.id:
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -155,6 +155,7 @@ async def manage_connection(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Show connection detail (UX_TOOLBOX.md section 5.2)."""
     msg = safe_message(callback)
@@ -169,9 +170,8 @@ async def manage_connection(
         await callback.answer("Подключение не найдено.", show_alert=True)
         return
 
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(conn.project_id)
-    if not project or project.user_id != user.id:
+    project = await project_service_factory(db).get_owned_project(conn.project_id, user.id)
+    if not project:
         await callback.answer("Подключение не найдено.", show_alert=True)
         return
 
@@ -191,6 +191,7 @@ async def confirm_connection_delete(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Show connection delete confirmation."""
     msg = safe_message(callback)
@@ -205,9 +206,8 @@ async def confirm_connection_delete(
         await callback.answer("Подключение не найдено.", show_alert=True)
         return
 
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(conn.project_id)
-    if not project or project.user_id != user.id:
+    project = await project_service_factory(db).get_owned_project(conn.project_id, user.id)
+    if not project:
         await callback.answer("Подключение не найдено.", show_alert=True)
         return
 
@@ -227,6 +227,7 @@ async def execute_connection_delete(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
     scheduler_service: SchedulerService,
 ) -> None:
     """Delete connection with E24 cleanup: cancel QStash schedules."""
@@ -242,9 +243,8 @@ async def execute_connection_delete(
         await callback.answer("Подключение не найдено.", show_alert=True)
         return
 
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(conn.project_id)
-    if not project or project.user_id != user.id:
+    project = await project_service_factory(db).get_owned_project(conn.project_id, user.id)
+    if not project:
         await callback.answer("Подключение не найдено.", show_alert=True)
         return
 
@@ -285,6 +285,7 @@ async def start_wp_connect(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Start WordPress connection wizard."""
     msg = safe_message(callback)
@@ -293,9 +294,8 @@ async def start_wp_connect(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -377,6 +377,7 @@ async def wp_process_password(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """WP step 3: Application Password — validate and create connection."""
     text = (message.text or "").strip()
@@ -421,9 +422,8 @@ async def wp_process_password(
         return
 
     # Re-validate ownership before creating connection (I7)
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
+    if not project:
         await state.clear()
         await message.answer("Проект не найден.", reply_markup=menu_kb())
         return
@@ -442,11 +442,9 @@ async def wp_process_password(
 
     log.info("wordpress_connected", conn_id=conn.id, project_id=project_id, identifier=identifier)
 
-    # Reload list
+    # Reload list (project already validated above)
     connections = await conn_svc.get_by_project(project_id)
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    safe_name = html.escape(project.name) if project else ""
+    safe_name = html.escape(project.name)
     await message.answer(
         f"WordPress ({html.escape(identifier)}) подключён!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
@@ -465,6 +463,7 @@ async def start_tg_connect(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Start Telegram connection wizard."""
     msg = safe_message(callback)
@@ -473,9 +472,8 @@ async def start_tg_connect(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -540,6 +538,7 @@ async def tg_process_token(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """TG step 2: bot token — validate and create connection."""
     text = (message.text or "").strip()
@@ -637,8 +636,7 @@ async def tg_process_token(
     log.info("telegram_connected", conn_id=conn.id, project_id=project_id, channel=channel_id)
 
     connections = await conn_svc.get_by_project(project_id)
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
     safe_name = html.escape(project.name) if project else ""
     await message.answer(
         f"Telegram-канал {channel_id} подключён!\n\n<b>{safe_name}</b> — Подключения",
@@ -658,6 +656,7 @@ async def start_vk_connect(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Start VK connection wizard."""
     msg = safe_message(callback)
@@ -666,9 +665,8 @@ async def start_vk_connect(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -770,6 +768,7 @@ async def vk_select_group(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """VK step 2: group selected — create connection."""
     msg = safe_message(callback)
@@ -817,8 +816,7 @@ async def vk_select_group(
     log.info("vk_connected", conn_id=conn.id, project_id=project_id, group_id=group_id)
 
     connections = await conn_svc.get_by_project(project_id)
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
     safe_name = html.escape(project.name) if project else ""
     await msg.edit_text(
         f"VK-группа «{html.escape(group_name)}» подключена!\n\n<b>{safe_name}</b> — Подключения",
@@ -839,6 +837,7 @@ async def start_pinterest_connect(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
     redis: RedisClient,
 ) -> None:
     """Start Pinterest OAuth connection wizard."""
@@ -848,9 +847,8 @@ async def start_pinterest_connect(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
+    if not project:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -909,6 +907,7 @@ async def _cancel_connection_wizard(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Common cancel logic for connection wizards."""
     msg = safe_message(callback)
@@ -928,9 +927,8 @@ async def _cancel_connection_wizard(
     await state.clear()
 
     if project_id:
-        projects_repo = ProjectsRepository(db)
-        project = await projects_repo.get_by_id(project_id)
-        if project and project.user_id == user.id:
+        project = await project_service_factory(db).get_owned_project(project_id, user.id)
+        if project:
             conn_svc = ConnectionService(db, http_client)
             connections = await conn_svc.get_by_project(project_id)
             safe_name = html.escape(project.name)
@@ -952,9 +950,10 @@ async def cancel_wp_connect(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Cancel WordPress connection via inline button."""
-    await _cancel_connection_wizard(callback, state, user, db, http_client)
+    await _cancel_connection_wizard(callback, state, user, db, http_client, project_service_factory)
 
 
 @router.callback_query(F.data.regexp(r"^conn:\d+:tg_cancel$"))
@@ -964,9 +963,10 @@ async def cancel_tg_connect(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Cancel Telegram connection via inline button."""
-    await _cancel_connection_wizard(callback, state, user, db, http_client)
+    await _cancel_connection_wizard(callback, state, user, db, http_client, project_service_factory)
 
 
 @router.callback_query(F.data.regexp(r"^conn:\d+:vk_cancel$"))
@@ -976,6 +976,7 @@ async def cancel_vk_connect(
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Cancel VK connection via inline button."""
-    await _cancel_connection_wizard(callback, state, user, db, http_client)
+    await _cancel_connection_wizard(callback, state, user, db, http_client, project_service_factory)

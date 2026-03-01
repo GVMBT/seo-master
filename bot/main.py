@@ -394,6 +394,7 @@ def create_app() -> web.Application:
 
     # Service factories — per-request db, bound admin_ids (S6: DRY DI)
     from bot.service_factory import (
+        create_admin_service_factory,
         create_category_service_factory,
         create_connection_service_factory,
         create_dashboard_service_factory,
@@ -401,6 +402,7 @@ def create_app() -> web.Application:
         create_token_service_factory,
     )
 
+    dp.workflow_data["admin_service_factory"] = create_admin_service_factory()
     dp.workflow_data["token_service_factory"] = create_token_service_factory(settings.admin_ids)
     dp.workflow_data["connection_service_factory"] = create_connection_service_factory()
     dp.workflow_data["category_service_factory"] = create_category_service_factory()
