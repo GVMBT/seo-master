@@ -92,6 +92,7 @@ class TestGetPanelStats:
         assert stats.total_projects == 50
         assert stats.revenue_30d == 200.50
         assert stats.publications_7d == 30
+        admin_svc._payments.sum_api_costs.assert_awaited_once_with(30)
 
     async def test_get_panel_stats_returns_zeros(self) -> None:
         admin_svc = AdminService(db=MagicMock())

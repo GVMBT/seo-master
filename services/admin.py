@@ -129,7 +129,11 @@ class AdminService:
         user_id: int | None = None,
         username: str | None = None,
     ) -> UserCard | None:
-        """Find user by ID or username and build admin card."""
+        """Find user by ID or username and build admin card.
+
+        When both user_id and username are provided, user_id takes precedence.
+        Returns None if no arguments given or user not found.
+        """
         user = None
         if user_id is not None:
             user = await self._users.get_by_id(user_id)
