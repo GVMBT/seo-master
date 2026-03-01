@@ -325,9 +325,7 @@ async def process_excel(
     except Exception:
         log.exception("excel_parse_error")
         await state.clear()
-        await message.answer(
-            "Не удалось прочитать файл. Убедитесь, что это корректный .xlsx.", reply_markup=menu_kb()
-        )
+        await message.answer("Не удалось прочитать файл. Убедитесь, что это корректный .xlsx.", reply_markup=menu_kb())
         return
 
     if result == "empty":

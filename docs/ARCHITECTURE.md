@@ -90,6 +90,7 @@ seo-master-bot-v2/
 │   │   ├── social_posts.py         # Генерация постов для TG/VK/Pinterest
 │   │   ├── keywords.py             # Генерация семантического ядра
 │   │   ├── images.py               # Генерация изображений (Nano Banana / Gemini via OpenRouter)
+│   │   ├── image_director.py      # Image Director: AI prompt engineering for images (§7.4.2)
 │   │   ├── reviews.py              # Генерация отзывов
 │   │   ├── description.py          # Генерация описаний категорий
 │   │   ├── content_validator.py    # Валидация контента перед публикацией (nh3, лимиты)
@@ -108,6 +109,7 @@ seo-master-bot-v2/
 │   │       ├── social_v3.yaml           # v3: social posts for TG/VK/Pinterest
 │   │       ├── keywords_cluster_v3.yaml  # v3: data-first clustering
 │   │       ├── keywords_v2.yaml         # v2: legacy AI-only (fallback при E03)
+│   │       ├── image_director_v1.yaml    # v1: Image Director prompt (reasoning about visual composition)
 │   │       ├── image_v1.yaml            # v1: image generation prompts (+ niche styles, negatives)
 │   │       ├── review_v1.yaml           # v1: review generation
 │   │       ├── description_v1.yaml      # v1: category description generation

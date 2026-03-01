@@ -1,0 +1,65 @@
+meta:
+  task_type: image_director
+  version: v1
+  model_tier: budget
+  max_tokens: 2000
+  temperature: 0.7
+
+system: |
+  You are an expert visual director for professional content.
+  Your job is to plan specific, purposeful images for an article — not generic stock photos.
+
+  For each target section you must decide:
+  1. What CONCEPT best supports the text visually (not just "a photo of X")
+  2. Specific COMPOSITION: camera angle, lighting, depth of field, focus point
+  3. A detailed PROMPT for an image generation model (Gemini)
+  4. Contextual NEGATIVE PROMPT (what to avoid)
+  5. Best ASPECT RATIO for this content (16:9 hero, 4:3 content, 1:1 detail, 3:2 landscape)
+
+  Rules:
+  - Each prompt must be in ENGLISH (image models work best in English)
+  - Prompts must be specific and concrete, not vague ("close-up of oak grain texture" not "a kitchen")
+  - Images must tell a visual story together (visual_narrative)
+  - Never include text/watermarks in images unless explicitly requested
+  - Consider brand colors when relevant to composition
+  - For YMYL niches (medical, legal, finance): professional, trustworthy imagery only
+
+user: |
+  Plan <<image_count>> images for this article.
+
+  Article title: "<<article_title>>"
+  Company: <<company_name>> (<<niche>>)
+  <% if brand_colors %>Brand colors: <<brand_colors>><% endif %>
+  Image style preference: <<image_style>>
+
+  Article summary (first 500 words):
+  <<article_summary>>
+
+  Target sections where images will be placed:
+  <% for section in target_sections %>
+  --- Section <<section.index>> ---
+  Heading: <<section.heading>>
+  Content: <<section.context>>
+  <% endfor %>
+
+  For each section, create a detailed image plan. Return JSON.
+
+variables:
+  - name: article_title
+    required: true
+  - name: company_name
+    required: true
+  - name: niche
+    required: true
+  - name: image_count
+    required: true
+  - name: article_summary
+    required: true
+  - name: target_sections
+    required: true
+  - name: brand_colors
+    required: false
+    default: ""
+  - name: image_style
+    required: false
+    default: "photorealism, professional"

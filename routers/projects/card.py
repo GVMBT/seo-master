@@ -136,9 +136,7 @@ async def execute_delete(
     proj_svc = project_service_factory(db)
     token_service = token_service_factory(db)
 
-    deleted, project = await proj_svc.delete_project(
-        project_id, user.id, scheduler_service, token_service
-    )
+    deleted, project = await proj_svc.delete_project(project_id, user.id, scheduler_service, token_service)
 
     if deleted and project:
         safe_name = html.escape(project.name)

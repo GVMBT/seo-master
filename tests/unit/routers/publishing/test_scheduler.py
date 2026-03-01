@@ -177,9 +177,7 @@ def scheduler_service() -> AsyncMock:
         return_value=SchedulerContext(category=_make_category(), project=_make_project())
     )
     # Combined operations defaults
-    svc.apply_schedule = AsyncMock(
-        return_value=ApplyScheduleResult(connection=_make_connection(), weekly_cost=960)
-    )
+    svc.apply_schedule = AsyncMock(return_value=ApplyScheduleResult(connection=_make_connection(), weekly_cost=960))
     svc.disable_connection_schedule = AsyncMock(return_value=True)
     svc.has_active_schedule = AsyncMock(return_value=False)
     svc.get_crosspost_config = AsyncMock(return_value=None)

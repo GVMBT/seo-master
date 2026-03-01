@@ -79,6 +79,7 @@
 | E47 | Markdown → HTML: mistune parse error | Fallback: использовать raw Markdown как plain text в `<pre>` блоке. Log "markdown_parse_failed". Редкий случай — mistune устойчив к невалидному Markdown |
 | E48 | Anti-hallucination: цена в тексте не совпадает с прайсом | Warning (не error): "Возможно выдуманная цена: {N} руб." Пользователь решает при превью. НЕ блокировать публикацию — может быть контекстная цена ("от 10 000 руб./мес" для услуги, не из прайса товаров) |
 | E53 | Perplexity Sonar Pro недоступен / ошибка research | Graceful degradation: pipeline продолжает БЕЗ research-данных (`current_research = ""`). Статья генерируется на знаниях модели + Serper + Firecrawl. Warning в лог: "research_skipped". НЕ уведомлять пользователя (не ошибка, а degradation). НЕ отключать расписание |
+| E54 | Image Director недоступен / ошибка AI-планирования изображений | Graceful degradation: fallback на механические промпты (block_context + image_settings, как было до Director). Изображения будут generic, но pipeline продолжает. Warning в лог: "image_director_skipped". НЕ уведомлять пользователя. Стоимость не меняется (Director ~$0.001 не списывается при ошибке) |
 
 ## Pipeline edge cases (UX_PIPELINE.md)
 

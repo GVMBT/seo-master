@@ -2,7 +2,7 @@
 
 Executes the full publish pipeline: load data, rotate keyword,
 check balance, charge, generate, validate, publish, log.
-Parallel pipeline: text + images via asyncio.gather (96s→56s).
+Sequential pipeline: text → Image Director → images (§7.4.2).
 Web research: Serper + Firecrawl + Perplexity in parallel (C1).
 Cluster context: matching cluster from category.keywords (C2).
 Zero dependencies on Telegram/Aiogram.
@@ -10,7 +10,6 @@ Zero dependencies on Telegram/Aiogram.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from dataclasses import field as dataclasses_field
 from datetime import UTC, datetime
@@ -21,7 +20,7 @@ import structlog
 
 from api.models import PublishPayload
 from bot.config import get_settings
-from bot.exceptions import InsufficientBalanceError
+from bot.exceptions import AIGenerationError, InsufficientBalanceError
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
@@ -391,14 +390,14 @@ class PublishService:
         category: Any,
         cluster: dict[str, Any] | None = None,
     ) -> tuple[Any, PublishResult, int]:
-        """Generate content + images in parallel, then publish.
+        """Generate content + images, then publish.
 
-        For articles: text and images are generated concurrently via asyncio.gather.
+        For articles: text → Director → images sequentially (§7.4.2).
         For social posts: text generated first, then published with optional image.
         Returns (gen_result, pub_result, failed_image_count).
         """
         if content_type == "article":
-            return await self._generate_article_parallel(
+            return await self._generate_article(
                 user_id,
                 project_id,
                 category_id,
@@ -418,7 +417,7 @@ class PublishService:
         )
         return result, pub, 0
 
-    async def _generate_article_parallel(
+    async def _generate_article(
         self,
         user_id: int,
         project_id: int,
@@ -428,10 +427,11 @@ class PublishService:
         category: Any,
         cluster: dict[str, Any] | None = None,
     ) -> tuple[Any, PublishResult, int]:
-        """Parallel article pipeline: websearch + text + images (C1, C2).
+        """Sequential article pipeline: websearch → text → Director → images (C1, C2, §7.4.2).
 
         Phase 1: Gather web research (Serper + Firecrawl + Perplexity) in parallel.
-        Phase 2: Generate text + images in parallel via asyncio.gather (96s->56s).
+        Phase 2: Generate text (needs article for Director context).
+        Phase 3: Image Director + Image Generation (Director needs article text).
         Returns (gen_result, pub_result, failed_image_count).
         """
         from services.ai.articles import ArticleService
@@ -472,8 +472,8 @@ class PublishService:
             company_description_short=((project.description or "")[:200]) if project else "",
         )
 
-        # Phase 2: Parallel text + images
-        text_task = article_service.generate(
+        # Phase 2: Text generation (sequential — Director needs article text)
+        text_result = await article_service.generate(
             user_id=user_id,
             project_id=project_id,
             category_id=category_id,
@@ -486,16 +486,6 @@ class PublishService:
             internal_links=websearch.get("internal_links", ""),
             research_data=websearch.get("research_data"),
         )
-        image_task = image_service.generate(
-            user_id=user_id,
-            context=image_context,
-            count=image_count,
-        )
-
-        text_result, image_result = await asyncio.gather(text_task, image_task, return_exceptions=True)
-
-        if isinstance(text_result, BaseException):
-            raise text_result
 
         # Extract text content
         content_markdown = ""
@@ -508,16 +498,63 @@ class PublishService:
             meta_desc = text_result.content.get("meta_description", "")
             images_meta = text_result.content.get("images_meta", [])
 
-        # Collect raw images (bytes or exceptions) for reconciliation
+        # Phase 3: Image Director + Image Generation (§7.4.2)
+        from services.ai.image_director import ImageDirectorContext, ImageDirectorService
+        from services.ai.niche_detector import detect_niche
+        from services.ai.reconciliation import distribute_images, extract_block_contexts, split_into_blocks
+
+        director_plans = None
+        block_contexts_list: list[str] | None = None
+        branding = None
+        blocks = split_into_blocks(content_markdown) if content_markdown else []
+        if blocks and image_count > 0:
+            block_indices = distribute_images(blocks, image_count)
+            block_contexts_list = extract_block_contexts(blocks, block_indices)
+
+            # Load branding for Director
+            branding_colors: dict[str, str] = {}
+            audits_repo = AuditsRepository(self._db)
+            branding = await audits_repo.get_branding_by_project(project_id)
+            if branding and branding.colors:
+                branding_colors = branding.colors
+
+            target_sections = [
+                {"index": idx, "heading": blocks[idx].heading, "context": blocks[idx].content[:300]}
+                for idx in block_indices
+                if idx < len(blocks)
+            ]
+            director_service = ImageDirectorService(self._ai_orchestrator)
+            director_ctx = ImageDirectorContext(
+                article_title=title,
+                article_summary=content_markdown,
+                company_name=(project.company_name or "") if project else "",
+                niche=detect_niche((project.specialization or "") if project else ""),
+                image_count=image_count,
+                target_sections=target_sections,
+                brand_colors=branding_colors,
+                image_style=(category.image_settings or {}).get("style", "photorealism, professional"),
+                image_tone=(category.image_settings or {}).get("tone", "professional"),
+            )
+            director_result = await director_service.plan_images(director_ctx, user_id)
+            if director_result:
+                director_plans = director_result.images
+                log.info("image_director_narrative", visual_narrative=director_result.visual_narrative)
+
+        # Generate images (with Director plans or mechanical fallback)
         raw_images: list[bytes | BaseException] = []
         failed_images = 0
-        if isinstance(image_result, BaseException):
-            log.warning("image_generation_failed", error=str(image_result))
-            failed_images = image_count  # all images failed
-        elif image_result:
-            raw_images = [img.data for img in image_result]
-            failed_images = image_count - len(image_result)
-        else:
+        try:
+            image_result_list = await image_service.generate(
+                user_id=user_id,
+                context=image_context,
+                count=image_count,
+                block_contexts=block_contexts_list,
+                director_plans=director_plans,
+            )
+            raw_images = [img.data for img in image_result_list]
+            failed_images = image_count - len(image_result_list)
+        except AIGenerationError:
+            log.warning("image_generation_failed", exc_info=True)
             failed_images = image_count
 
         # Validate images_meta before reconciliation (API_CONTRACTS.md §3.7)
@@ -547,8 +584,9 @@ class PublishService:
         from services.ai.markdown_renderer import render_markdown
 
         branding_dict: dict[str, str] = {}
-        audits_repo = AuditsRepository(self._db)
-        branding = await audits_repo.get_branding_by_project(project_id)
+        if branding is None:
+            audits_repo = AuditsRepository(self._db)
+            branding = await audits_repo.get_branding_by_project(project_id)
         if branding and branding.colors:
             branding_dict = {
                 "text": branding.colors.get("text", ""),

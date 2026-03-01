@@ -33,6 +33,7 @@ TaskType = Literal[
     "seed_normalize",
     "review",
     "image",
+    "image_director",
     "description",
     "cross_post",
 ]
@@ -83,6 +84,10 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "google/gemini-3.1-flash-image-preview",
         "google/gemini-2.5-flash-image",
     ],
+    "image_director": [
+        "deepseek/deepseek-v3.2",
+        "google/gemini-2.5-flash",
+    ],
 }
 
 # Tasks that use budget provider routing (sort: price)
@@ -96,6 +101,7 @@ BUDGET_TASKS: set[str] = {
     "article_outline",
     "article_critique",
     "article_research",
+    "image_director",
 }
 
 # JSON schema responses (API_CONTRACTS.md structured outputs table)
@@ -109,6 +115,7 @@ STRUCTURED_TASKS: set[str] = {
     "keywords",
     "seed_normalize",
     "review",
+    "image_director",
 }
 
 # Tasks that use response-healing plugin
@@ -120,6 +127,7 @@ HEALING_TASKS: set[str] = {
     "social_post",
     "keywords",
     "review",
+    "image_director",
 }
 
 # Budget model for heal_response fallback
@@ -256,6 +264,7 @@ _RATE_ACTION: dict[str, str] = {
     "review": "text_generation",
     "description": "text_generation",
     "image": "image_generation",
+    "image_director": "text_generation",
 }
 
 

@@ -685,6 +685,7 @@ class TestModelChains:
             "description",
             "cross_post",
             "image",
+            "image_director",
             "article_outline",
             "article_critique",
         }

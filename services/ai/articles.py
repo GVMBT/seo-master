@@ -223,9 +223,7 @@ def format_research_for_prompt(research: dict[str, Any] | None, step: str) -> st
 
     trends = research.get("trends") or []
     if trends:
-        trends_text = "\n".join(
-            f"- {t.get('trend', '')}" for t in trends if isinstance(t, dict) and t.get("trend")
-        )
+        trends_text = "\n".join(f"- {t.get('trend', '')}" for t in trends if isinstance(t, dict) and t.get("trend"))
         if trends_text:
             parts.append(f"Тренды:\n{trends_text}")
 

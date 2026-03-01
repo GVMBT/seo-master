@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" pytest tests/ -x -q --timeout=60 --ignore=tests/e2e",
+            "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" pytest tests/ -x -q --timeout=60 --ignore=tests/e2e",
             "timeout": 120
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF --quiet",
+            "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF --ignore=RUF001,RUF002,RUF003 --quiet",
             "timeout": 60
           }
         ]
@@ -47,13 +47,52 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Users\\GVMBT\\.local\\bin\\uv.exe run --project \"%CLAUDE_PROJECT_DIR%\" mypy bot/ services/ db/ api/ cache/ --check-untyped-defs --no-error-summary",
+            "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" ruff format --check .",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" mypy bot/ services/ db/ api/ cache/ --check-untyped-defs --no-error-summary",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" bandit -r bot/ services/ db/ api/ cache/ platform_rules/ -ll --quiet",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" vulture bot/ services/ db/ api/ cache/ platform_rules/ --min-confidence 80",
             "timeout": 60
           }
         ]
       }
     ],
-    "PreToolUse": []
+    "PreToolUse": [],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF --ignore=RUF001,RUF002,RUF003 --quiet",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
   },
   "mcpServers": {}
 }

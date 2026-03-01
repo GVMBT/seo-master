@@ -4,6 +4,12 @@ from services.ai.anti_hallucination import check_fabricated_data, extract_prices
 from services.ai.articles import ArticleService
 from services.ai.content_validator import ContentValidator, ValidationResult
 from services.ai.description import DescriptionService
+from services.ai.image_director import (
+    DirectorResult,
+    ImageDirectorContext,
+    ImageDirectorService,
+    ImagePlan,
+)
 from services.ai.images import GeneratedImage, ImageService
 from services.ai.keywords import KeywordService
 from services.ai.markdown_renderer import SEORenderer, render_markdown, slugify
@@ -30,9 +36,13 @@ __all__ = [
     "ContentQualityScorer",
     "ContentValidator",
     "DescriptionService",
+    "DirectorResult",
     "GeneratedImage",
     "GenerationRequest",
     "GenerationResult",
+    "ImageDirectorContext",
+    "ImageDirectorService",
+    "ImagePlan",
     "ImageService",
     "ImageStorage",
     "ImageUpload",

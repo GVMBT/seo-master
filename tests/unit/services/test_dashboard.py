@@ -89,27 +89,21 @@ class TestGetDashboardDataWithProjects:
 
         # Connections: project 1 has WP, project 2 has telegram
         mock_conn = MagicMock()
-        mock_conn.get_platform_types_by_project = AsyncMock(
-            side_effect=[["wordpress"], ["telegram"]]
-        )
+        mock_conn.get_platform_types_by_project = AsyncMock(side_effect=[["wordpress"], ["telegram"]])
         mock_conn_cls.return_value = mock_conn
 
         # Categories + schedules
         cat1 = MagicMock(id=10)
         cat2 = MagicMock(id=20)
         mock_cats = MagicMock()
-        mock_cats.get_by_project = AsyncMock(
-            side_effect=[[cat1], [cat2]]
-        )
+        mock_cats.get_by_project = AsyncMock(side_effect=[[cat1], [cat2]])
         mock_cats_cls.return_value = mock_cats
 
         sched1 = MagicMock(enabled=True)
         sched2 = MagicMock(enabled=False)
         sched3 = MagicMock(enabled=True)
         mock_sched = MagicMock()
-        mock_sched.get_by_project = AsyncMock(
-            return_value=[sched1, sched2, sched3]
-        )
+        mock_sched.get_by_project = AsyncMock(return_value=[sched1, sched2, sched3])
         mock_sched_cls.return_value = mock_sched
 
         result = await dash_svc.get_dashboard_data(42)
@@ -195,9 +189,7 @@ class TestGetDashboardDataWithProjects:
         mock_proj_cls.return_value.get_by_user = AsyncMock(return_value=projects)
 
         mock_conn = MagicMock()
-        mock_conn.get_platform_types_by_project = AsyncMock(
-            side_effect=[["wordpress", "telegram"], [], []]
-        )
+        mock_conn.get_platform_types_by_project = AsyncMock(side_effect=[["wordpress", "telegram"], [], []])
         mock_conn_cls.return_value = mock_conn
 
         mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=[])

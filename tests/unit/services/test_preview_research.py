@@ -270,7 +270,11 @@ class TestFetchResearchCacheKey:
     ) -> str:
         """Call fetch_research and return the cache key used for redis.get."""
         await fetch_research(
-            orch, redis, main_phrase=phrase, specialization=spec, company_name=company,
+            orch,
+            redis,
+            main_phrase=phrase,
+            specialization=spec,
+            company_name=company,
         )
         return redis.get.call_args[0][0]
 

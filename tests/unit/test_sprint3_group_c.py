@@ -17,7 +17,6 @@ from api.yookassa import _YOOKASSA_IDEMPOTENCY_TTL, yookassa_webhook
 from cache.keys import CacheKeys
 from db.repositories.categories import CategoriesRepository
 from db.repositories.payments import PaymentsRepository
-from services.projects import MAX_PROJECTS_PER_USER
 from services.ai.rate_limiter import RATE_LIMITS
 from services.categories import MAX_CATEGORIES_PER_PROJECT
 from services.payments.stars import (
@@ -25,6 +24,7 @@ from services.payments.stars import (
     MAX_REFERRAL_LIFETIME_TOKENS,
     credit_referral_bonus,
 )
+from services.projects import MAX_PROJECTS_PER_USER
 from tests.unit.routers.conftest import make_user
 
 _STARS_MODULE = "services.payments.stars"
@@ -430,7 +430,10 @@ class TestProjectLimit:
         project_service_factory = MagicMock(return_value=mock_proj_svc)
 
         await start_create(
-            callback=callback, state=state, user=user, db=db,
+            callback=callback,
+            state=state,
+            user=user,
+            db=db,
             project_service_factory=project_service_factory,
         )
 
@@ -464,7 +467,10 @@ class TestProjectLimit:
 
         with patch("routers.projects.create.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None):
             await start_create(
-                callback=callback, state=state, user=user, db=db,
+                callback=callback,
+                state=state,
+                user=user,
+                db=db,
                 project_service_factory=project_service_factory,
             )
 

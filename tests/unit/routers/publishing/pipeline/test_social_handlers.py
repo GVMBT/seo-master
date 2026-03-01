@@ -84,7 +84,9 @@ def _patch_repos(
     - patches["cats"] patches CategoryService for internal helpers (_show_category_step*).
     """
     proj_factory = _make_proj_factory(
-        projects=projects, project=project, created_project=created_project,
+        projects=projects,
+        project=project,
+        created_project=created_project,
     )
 
     cat_mock = MagicMock()
@@ -215,7 +217,13 @@ class TestPipelineSelectProject:
         patches, pf, _ = _patch_repos(project=p, categories=[make_category()])
         with patches["cats"], patches["fsm_utils"], patches["conn_step"]:
             await pipeline_select_project(
-                mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
+                pf,
             )
 
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
@@ -233,7 +241,13 @@ class TestPipelineSelectProject:
         patches, pf, _ = _patch_repos(project=None)
         with patches["cats"], patches["fsm_utils"]:
             await pipeline_select_project(
-                mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf,
+                mock_callback,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
+                pf,
             )
 
         mock_callback.answer.assert_awaited_once()
@@ -311,7 +325,13 @@ class TestInlineProjectCreation:
         patches, pf, _ = _patch_repos(created_project=p, categories=[make_category()])
         with patches["cats"], patches["conn_step_msg"]:
             await pipeline_create_project_url(
-                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf,
+                mock_message,
+                mock_state,
+                user,
+                MagicMock(),
+                mock_redis,
+                MagicMock(),
+                pf,
             )
 
         # Should have created the project and updated state

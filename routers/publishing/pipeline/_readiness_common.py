@@ -212,7 +212,7 @@ async def run_keyword_generation(
         category = await cat_svc.get_owned_category(category_id, user.id)
         if not category:
             raise RuntimeError("keywords_save_failed.ownership")
-        existing: list[dict[str, Any]] = (category.keywords or [])
+        existing: list[dict[str, Any]] = category.keywords or []
         merged = existing + enriched
         saved = await cat_svc.update_keywords(category_id, user.id, merged)
         if not saved:

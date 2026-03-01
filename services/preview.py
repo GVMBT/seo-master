@@ -129,6 +129,7 @@ class PreviewService:
         }
 
         # Load branding colors for image prompt (image_v1.yaml)
+        branding = None
         if project:
             try:
                 branding = await AuditsRepository(self._db).get_branding_by_project(project.id)
@@ -165,9 +166,10 @@ class PreviewService:
         meta_description: str = content.get("meta_description", "")
         images_meta: list[dict[str, str]] = content.get("images_meta", [])
 
-        # Phase 3: Block-aware image generation (§7.4.1)
-        # Images AFTER text — each prompt gets H2-section context
+        # Phase 3: Block-aware image generation (§7.4.1 + §7.4.2)
+        # Images AFTER text — each prompt gets H2-section context + Director plans
         raw_images: list[bytes] = []
+        director_result = None
         if image_count > 0:
             blocks = split_into_blocks(content_markdown)
             block_indices = distribute_images(blocks, image_count)
@@ -179,12 +181,40 @@ class PreviewService:
                 image_count=image_count,
             )
 
+            # Image Director: AI prompt engineering for targeted images (§7.4.2)
+            from services.ai.image_director import ImageDirectorContext, ImageDirectorService
+            from services.ai.niche_detector import detect_niche
+
+            director_service = ImageDirectorService(self._orchestrator)
+            target_sections = [
+                {"index": idx, "heading": blocks[idx].heading, "context": blocks[idx].content[:300]}
+                for idx in block_indices
+                if idx < len(blocks)
+            ]
+            director_context = ImageDirectorContext(
+                article_title=title,
+                article_summary=content_markdown,
+                company_name=(project.company_name or "") if project else "",
+                niche=detect_niche((project.specialization or "") if project else ""),
+                image_count=image_count,
+                target_sections=target_sections,
+                brand_colors=(branding.colors if branding and branding.colors else {}),
+                image_style=image_settings.get("style", "photorealism, professional"),
+                image_tone=image_settings.get("tone", "professional"),
+            )
+            director_result = await director_service.plan_images(director_context, user_id)
+            director_plans = director_result.images if director_result else None
+
+            if director_result:
+                log.info("image_director_narrative", visual_narrative=director_result.visual_narrative)
+
             try:
                 image_result = await image_service.generate(
                     user_id=user_id,
                     context=image_context,
                     count=image_count,
                     block_contexts=block_contexts,
+                    director_plans=director_plans,
                 )
                 raw_images = [img.data for img in image_result]
             except AIGenerationError:
@@ -322,5 +352,3 @@ class PreviewService:
                 },
             )
         )
-
-

@@ -59,8 +59,11 @@ class TestE03DataForSEOUnavailable:
         mock_dfs.related_keywords.return_value = []
 
         raw = await service.fetch_raw_phrases(
-            products="obscure niche", geography="Moscow",
-            quantity=100, project_id=1, user_id=1,
+            products="obscure niche",
+            geography="Moscow",
+            quantity=100,
+            project_id=1,
+            user_id=1,
         )
 
         # Caller checks: if not raw -> use generate_clusters_direct
@@ -80,12 +83,15 @@ class TestE03DataForSEOUnavailable:
         mock_orch.generate.return_value = _gen_result(clusters_content)
 
         with pytest.MonkeyPatch.context() as m:
-            m.setattr("services.keywords.ProjectsRepository", lambda db: MagicMock(
-                get_by_id=AsyncMock(return_value=None)
-            ))
+            m.setattr(
+                "services.keywords.ProjectsRepository", lambda _db: MagicMock(get_by_id=AsyncMock(return_value=None))
+            )
             clusters = await service.generate_clusters_direct(
-                products="obscure niche", geography="Moscow",
-                quantity=50, project_id=1, user_id=1,
+                products="obscure niche",
+                geography="Moscow",
+                quantity=50,
+                project_id=1,
+                user_id=1,
             )
 
         assert len(clusters) == 1
@@ -108,8 +114,11 @@ class TestE03DataForSEOUnavailable:
 
         # Should not raise
         raw = await service.fetch_raw_phrases(
-            products="test", geography="Moscow",
-            quantity=100, project_id=1, user_id=1,
+            products="test",
+            geography="Moscow",
+            quantity=100,
+            project_id=1,
+            user_id=1,
         )
         assert raw == []
 
@@ -134,8 +143,13 @@ class TestE06DuplicateQStashTasks:
         svc._qstash = mock_qstash
 
         schedule = PlatformSchedule(
-            id=42, category_id=10, platform_type="wordpress", connection_id=5,
-            schedule_days=["mon"], schedule_times=["09:00"], posts_per_day=1,
+            id=42,
+            category_id=10,
+            platform_type="wordpress",
+            connection_id=5,
+            schedule_days=["mon"],
+            schedule_times=["09:00"],
+            posts_per_day=1,
         )
 
         await svc.create_qstash_schedules(schedule, user_id=1, project_id=1, timezone="UTC")
@@ -159,7 +173,9 @@ class TestE13ConnectionInvalidAtPublish:
         from db.models import PlatformConnection
 
         conn = PlatformConnection(
-            id=5, project_id=1, platform_type="wordpress",
+            id=5,
+            project_id=1,
+            platform_type="wordpress",
             identifier="blog.example.com",
             credentials={"url": "https://blog.example.com"},
             status="error",  # became invalid after schedule creation
@@ -187,12 +203,14 @@ class TestE43OutlineFailedFallback:
         # Second call (one-shot) succeeds
         mock_orchestrator.generate.side_effect = [
             AIGenerationError("Outline timeout"),
-            _gen_result({
-                "title": "Fallback Article",
-                "content_markdown": "## Content\n\nArticle text.",
-                "meta_description": "desc",
-                "images_meta": [],
-            }),
+            _gen_result(
+                {
+                    "title": "Fallback Article",
+                    "content_markdown": "## Content\n\nArticle text.",
+                    "meta_description": "desc",
+                    "images_meta": [],
+                }
+            ),
         ]
 
         # Simulate the outline->fallback pattern
@@ -343,9 +361,7 @@ class TestE34TextOkImagesFailed:
         async def gen_images() -> list:
             raise ValueError("All image gen failed")
 
-        text_result, image_result = await asyncio.gather(
-            gen_text(), gen_images(), return_exceptions=True
-        )
+        text_result, image_result = await asyncio.gather(gen_text(), gen_images(), return_exceptions=True)
 
         assert isinstance(text_result, dict)
         assert isinstance(image_result, BaseException)
@@ -367,9 +383,7 @@ class TestE35ImageOkTextFailed:
         async def gen_images() -> list:
             return [MagicMock(data=b"img")]
 
-        text_result, image_result = await asyncio.gather(
-            gen_text(), gen_images(), return_exceptions=True
-        )
+        text_result, image_result = await asyncio.gather(gen_text(), gen_images(), return_exceptions=True)
 
         assert isinstance(text_result, BaseException)
         assert not isinstance(image_result, BaseException)

@@ -330,13 +330,15 @@ async def execute_category_delete(
     cat_svc = category_service_factory(db)
     token_svc = token_service_factory(db)
 
-    deleted, category, remaining = await cat_svc.delete_category(
-        category_id, user.id, scheduler_service, token_svc
-    )
+    deleted, category, remaining = await cat_svc.delete_category(category_id, user.id, scheduler_service, token_svc)
 
     if deleted and category:
         safe_name = html.escape(category.name)
-        kb = category_list_kb(remaining, category.project_id) if remaining else category_list_empty_kb(category.project_id)
+        kb = (
+            category_list_kb(remaining, category.project_id)
+            if remaining
+            else category_list_empty_kb(category.project_id)
+        )
         await msg.edit_text(
             f"Категория «{safe_name}» удалена.",
             reply_markup=kb,

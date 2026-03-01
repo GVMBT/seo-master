@@ -235,13 +235,7 @@ class PublicationsRepository(BaseRepository):
         """
         if not user_ids:
             return {}
-        resp = (
-            await self._table(_TABLE)
-            .select("user_id")
-            .in_("user_id", user_ids)
-            .eq("status", "success")
-            .execute()
-        )
+        resp = await self._table(_TABLE).select("user_id").in_("user_id", user_ids).eq("status", "success").execute()
         rows: list[dict[str, Any]] = self._rows(resp)
         counts: dict[int, int] = {}
         for row in rows:

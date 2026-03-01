@@ -316,10 +316,12 @@ class UsersRepository(BaseRepository):
         # Anonymize payments: clear identifiable fields
         pay_resp = (
             await self._db.table("payments")
-            .update({
-                "yookassa_payment_method_id": None,
-                "subscription_id": None,
-            })
+            .update(
+                {
+                    "yookassa_payment_method_id": None,
+                    "subscription_id": None,
+                }
+            )
             .eq("user_id", user_id)
             .execute()
         )

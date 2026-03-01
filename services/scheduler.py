@@ -284,7 +284,9 @@ class SchedulerService:
     # ------------------------------------------------------------------
 
     async def verify_category_ownership(
-        self, cat_id: int, user_id: int,
+        self,
+        cat_id: int,
+        user_id: int,
     ) -> SchedulerContext | None:
         """Load category -> project, verify ownership. Returns None if invalid."""
         cat = await CategoriesRepository(self._db).get_by_id(cat_id)
@@ -314,7 +316,9 @@ class SchedulerService:
         return await ProjectsRepository(self._db).get_by_user(user_id)
 
     async def get_project_categories(
-        self, project_id: int, user_id: int,
+        self,
+        project_id: int,
+        user_id: int,
     ) -> list[Category] | None:
         """List categories for an owned project. Returns None if not owned."""
         project = await ProjectsRepository(self._db).get_by_id(project_id)
@@ -323,7 +327,9 @@ class SchedulerService:
         return await CategoriesRepository(self._db).get_by_project(project_id)
 
     async def get_project_connections(
-        self, project_id: int, user_id: int,
+        self,
+        project_id: int,
+        user_id: int,
     ) -> list[PlatformConnection] | None:
         """List connections for an owned project. Returns None if not owned."""
         project = await ProjectsRepository(self._db).get_by_id(project_id)
@@ -332,7 +338,9 @@ class SchedulerService:
         return await self._conn_repo().get_by_project(project_id)
 
     async def get_social_connections(
-        self, project_id: int, user_id: int,
+        self,
+        project_id: int,
+        user_id: int,
     ) -> list[PlatformConnection] | None:
         """List active social connections for an owned project. Returns None if not owned."""
         conns = await self.get_project_connections(project_id, user_id)
@@ -341,7 +349,9 @@ class SchedulerService:
         return self._filter_social(conns)
 
     async def get_social_connections_by_category(
-        self, cat_id: int, user_id: int,
+        self,
+        cat_id: int,
+        user_id: int,
     ) -> list[PlatformConnection] | None:
         """List social connections resolving project from category. Returns None if not owned."""
         ctx = await self.verify_category_ownership(cat_id, user_id)
@@ -351,7 +361,8 @@ class SchedulerService:
         return self._filter_social(conns)
 
     async def get_category_schedules_map(
-        self, cat_id: int,
+        self,
+        cat_id: int,
     ) -> dict[int, PlatformSchedule]:
         """Get schedules for category indexed by connection_id."""
         schedules = await self._schedules.get_by_category(cat_id)
@@ -405,7 +416,10 @@ class SchedulerService:
         return ApplyScheduleResult(connection=conn, weekly_cost=weekly_cost)
 
     async def disable_connection_schedule(
-        self, cat_id: int, conn_id: int, user_id: int,
+        self,
+        cat_id: int,
+        conn_id: int,
+        user_id: int,
     ) -> bool:
         """Verify ownership and delete schedule for category+connection.
 
@@ -427,7 +441,10 @@ class SchedulerService:
         return any(s.connection_id == conn_id and s.enabled for s in schedules)
 
     async def get_crosspost_config(
-        self, cat_id: int, conn_id: int, user_id: int,
+        self,
+        cat_id: int,
+        conn_id: int,
+        user_id: int,
     ) -> CrosspostConfig | None:
         """Load cross-post configuration data. Returns None if not owned."""
         ctx = await self.verify_category_ownership(cat_id, user_id)

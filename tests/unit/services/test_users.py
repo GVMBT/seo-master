@@ -152,9 +152,7 @@ class TestToggleNotification:
         update_arg = mock_users_repo.update.call_args[0][1]
         assert update_arg.notify_balance is True
 
-    async def test_toggle_news(
-        self, service: UsersService, mock_users_repo: AsyncMock, mock_redis: MagicMock
-    ) -> None:
+    async def test_toggle_news(self, service: UsersService, mock_users_repo: AsyncMock, mock_redis: MagicMock) -> None:
         """Toggle news field."""
         updated_user = MagicMock(notify_news=False)
         mock_users_repo.update.return_value = MagicMock()
@@ -189,9 +187,7 @@ class TestToggleNotification:
 
         assert result is not None
 
-    async def test_invalid_field_raises_value_error(
-        self, service: UsersService, mock_redis: MagicMock
-    ) -> None:
+    async def test_invalid_field_raises_value_error(self, service: UsersService, mock_redis: MagicMock) -> None:
         """Unknown field raises ValueError."""
         with pytest.raises(ValueError, match="Unknown notification field"):
             await service.toggle_notification(42, "invalid_field", True, mock_redis)
@@ -214,9 +210,7 @@ class TestToggleNotification:
 
 
 class TestGetReferralCount:
-    async def test_returns_count(
-        self, service: UsersService, mock_users_repo: AsyncMock
-    ) -> None:
+    async def test_returns_count(self, service: UsersService, mock_users_repo: AsyncMock) -> None:
         """Delegates to UsersRepository.get_referral_count."""
         mock_users_repo.get_referral_count.return_value = 5
 
@@ -225,9 +219,7 @@ class TestGetReferralCount:
         assert result == 5
         mock_users_repo.get_referral_count.assert_awaited_once_with(42)
 
-    async def test_returns_zero(
-        self, service: UsersService, mock_users_repo: AsyncMock
-    ) -> None:
+    async def test_returns_zero(self, service: UsersService, mock_users_repo: AsyncMock) -> None:
         """Returns 0 when no referrals."""
         mock_users_repo.get_referral_count.return_value = 0
 

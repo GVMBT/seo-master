@@ -69,12 +69,11 @@ class TestRefundedPaymentHandler:
         mock_message.refunded_payment = refund_obj
 
         mock_svc = MagicMock()
-        mock_svc.process_refund = AsyncMock(
-            return_value={"tokens_debited": 500, "new_balance": 1000}
-        )
+        mock_svc.process_refund = AsyncMock(return_value={"tokens_debited": 500, "new_balance": 1000})
 
-        with patch("routers.payments.get_settings") as mock_settings, patch(
-            "routers.payments.StarsPaymentService", return_value=mock_svc
+        with (
+            patch("routers.payments.get_settings") as mock_settings,
+            patch("routers.payments.StarsPaymentService", return_value=mock_svc),
         ):
             mock_settings.return_value.admin_ids = [999]
             from routers.payments import refunded_payment_handler
@@ -100,12 +99,11 @@ class TestRefundedPaymentHandler:
         mock_message.refunded_payment = refund_obj
 
         mock_svc = MagicMock()
-        mock_svc.process_refund = AsyncMock(
-            return_value={"tokens_debited": 2000, "new_balance": -500}
-        )
+        mock_svc.process_refund = AsyncMock(return_value={"tokens_debited": 2000, "new_balance": -500})
 
-        with patch("routers.payments.get_settings") as mock_settings, patch(
-            "routers.payments.StarsPaymentService", return_value=mock_svc
+        with (
+            patch("routers.payments.get_settings") as mock_settings,
+            patch("routers.payments.StarsPaymentService", return_value=mock_svc),
         ):
             mock_settings.return_value.admin_ids = [999]
             from routers.payments import refunded_payment_handler
@@ -143,12 +141,11 @@ class TestRefundedPaymentHandler:
         mock_message.refunded_payment = refund_obj
 
         mock_svc = MagicMock()
-        mock_svc.process_refund = AsyncMock(
-            return_value={"tokens_debited": 0, "already_refunded": True}
-        )
+        mock_svc.process_refund = AsyncMock(return_value={"tokens_debited": 0, "already_refunded": True})
 
-        with patch("routers.payments.get_settings") as mock_settings, patch(
-            "routers.payments.StarsPaymentService", return_value=mock_svc
+        with (
+            patch("routers.payments.get_settings") as mock_settings,
+            patch("routers.payments.StarsPaymentService", return_value=mock_svc),
         ):
             mock_settings.return_value.admin_ids = [999]
             from routers.payments import refunded_payment_handler
@@ -170,12 +167,11 @@ class TestRefundedPaymentHandler:
         mock_message.refunded_payment = refund_obj
 
         mock_svc = MagicMock()
-        mock_svc.process_refund = AsyncMock(
-            return_value={"tokens_debited": 0, "error": "Payment not found"}
-        )
+        mock_svc.process_refund = AsyncMock(return_value={"tokens_debited": 0, "error": "Payment not found"})
 
-        with patch("routers.payments.get_settings") as mock_settings, patch(
-            "routers.payments.StarsPaymentService", return_value=mock_svc
+        with (
+            patch("routers.payments.get_settings") as mock_settings,
+            patch("routers.payments.StarsPaymentService", return_value=mock_svc),
         ):
             mock_settings.return_value.admin_ids = [999]
             from routers.payments import refunded_payment_handler

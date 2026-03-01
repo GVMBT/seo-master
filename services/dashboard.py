@@ -70,9 +70,7 @@ class DashboardService:
         cm = CredentialManager(self._encryption_key)
         conn_repo = ConnectionsRepository(self._db, cm)
 
-        results = await asyncio.gather(
-            *(conn_repo.get_platform_types_by_project(pid) for pid in project_ids)
-        )
+        results = await asyncio.gather(*(conn_repo.get_platform_types_by_project(pid) for pid in project_ids))
 
         has_wp = False
         has_social = False
@@ -96,9 +94,7 @@ class DashboardService:
         cats_repo = CategoriesRepository(self._db)
         sched_repo = SchedulesRepository(self._db)
 
-        cat_lists = await asyncio.gather(
-            *(cats_repo.get_by_project(pid) for pid in project_ids)
-        )
+        cat_lists = await asyncio.gather(*(cats_repo.get_by_project(pid) for pid in project_ids))
 
         all_cat_ids = [c.id for cats in cat_lists for c in cats]
         if not all_cat_ids:
