@@ -24,10 +24,13 @@ from keyboards.inline import (
     category_card_kb,
     content_settings_kb,
     image_count_kb,
+    image_custom_kb,
+    image_presets_kb,
     image_style_kb,
     menu_kb,
     text_style_kb,
 )
+from services.ai.niche_detector import detect_niche
 
 log = structlog.get_logger()
 router = Router()
@@ -55,6 +58,64 @@ _IMAGE_STYLES: list[str] = [
 
 _VALID_TEXT_STYLES: set[str] = set(_TEXT_STYLES)
 _VALID_IMAGE_STYLES: set[str] = set(_IMAGE_STYLES)
+
+_IMAGE_PRESETS: list[dict[str, Any]] = [
+    {
+        "name": "Фотосток",
+        "desc": "Реалистичные фото, профессиональное освещение",
+        "style": "Фотореализм",
+        "tone": "professional",
+        "formats": ["16:9", "4:3"],
+        "count": 3,
+        "niches": ["realestate", "auto", "construction", "general"],
+    },
+    {
+        "name": "Товарная карточка",
+        "desc": "Предметная съёмка, акцент на товаре",
+        "style": "Фотореализм",
+        "tone": "professional",
+        "formats": ["1:1"],
+        "count": 2,
+        "niches": [],
+    },
+    {
+        "name": "Лайфстайл",
+        "desc": "Тёплое освещение, естественные цвета",
+        "style": "Фотореализм",
+        "tone": "warm",
+        "formats": ["3:2", "4:3"],
+        "count": 3,
+        "niches": ["food", "beauty", "travel", "sport", "pets"],
+    },
+    {
+        "name": "Инфографика",
+        "desc": "Чистый дизайн, схемы",
+        "style": "Минимализм",
+        "tone": "corporate",
+        "formats": ["4:3", "16:9"],
+        "count": 2,
+        "niches": ["finance", "it", "education"],
+    },
+    {
+        "name": "Иллюстрация",
+        "desc": "Художественный стиль, мягкие тона",
+        "style": "Акварель",
+        "tone": "creative",
+        "formats": ["4:3"],
+        "count": 3,
+        "niches": ["children", "education"],
+    },
+]
+
+_IMAGE_PRESET_NAMES: list[str] = [p["name"] for p in _IMAGE_PRESETS]
+
+
+def _recommend_preset(niche: str) -> int:
+    """Return index of recommended preset for given niche. Default: 0 (Фотосток)."""
+    for i, p in enumerate(_IMAGE_PRESETS):
+        if niche in p["niches"]:
+            return i
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -128,17 +189,13 @@ async def show_settings(
     else:
         lines.append("Стиль текста: не выбран")
 
-    img_count = img.get("count")
-    if img_count is not None:
-        lines.append(f"Изображений: {img_count}/статью")
+    preset_name = img.get("preset")
+    img_count = img.get("count", 4)
+    if preset_name:
+        lines.append(f"Изображения: {preset_name} ({img_count} шт)")
     else:
-        lines.append("Изображений: по умолчанию")
-
-    img_style = img.get("style")
-    if img_style:
-        lines.append(f"Стиль изображений: {img_style}")
-    else:
-        lines.append("Стиль изображений: по умолчанию")
+        img_style = img.get("style")
+        lines.append(f"Изображения: {img_style or 'по умолчанию'} ({img_count} шт)")
 
     settings_dict = {**ts, **img}
     await msg.edit_text(
@@ -401,6 +458,182 @@ async def save_styles(
         reply_markup=content_settings_kb(cat_id, {**ts, **img}),
     )
     await callback.answer("Стили сохранены.")
+
+
+# ---------------------------------------------------------------------------
+# 3b. Image presets (unified image settings screen)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^settings:\d+:images$"))
+async def show_image_presets(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
+) -> None:
+    """Show image presets screen with niche-based recommendation."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
+    if not category:
+        await callback.answer("Категория не найдена.", show_alert=True)
+        return
+
+    # Get project niche for recommendation
+    specialization = await cat_svc.get_project_specialization(category.project_id, user.id)
+    niche = detect_niche(specialization) if specialization else "general"
+    recommended = _recommend_preset(niche)
+
+    img = _get_image_settings(category)
+    current_preset = img.get("preset")
+    count = img.get("count", 4)
+
+    # Build description text
+    if current_preset:
+        desc = ""
+        for p in _IMAGE_PRESETS:
+            if p["name"] == current_preset:
+                desc = p["desc"]
+                break
+        text = f"Текущий пресет: <b>{html.escape(current_preset)}</b>\n{html.escape(desc)}"
+    else:
+        text = "Выберите пресет изображений:"
+
+    await msg.edit_text(
+        text,
+        reply_markup=image_presets_kb(cat_id, _IMAGE_PRESET_NAMES, current_preset, recommended, count),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^settings:\d+:ip:\d+$"))
+async def apply_preset(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
+) -> None:
+    """Apply an image preset (style, tone, formats, count)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cat_id = int(parts[1])
+    preset_idx = int(parts[3])
+
+    if preset_idx < 0 or preset_idx >= len(_IMAGE_PRESETS):
+        await callback.answer("Неизвестный пресет.", show_alert=True)
+        return
+
+    preset = _IMAGE_PRESETS[preset_idx]
+
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
+    if not category:
+        await callback.answer("Категория не найдена.", show_alert=True)
+        return
+
+    img = _get_image_settings(category)
+    img.update({
+        "preset": preset["name"],
+        "style": preset["style"],
+        "tone": preset["tone"],
+        "formats": preset["formats"],
+        "count": preset["count"],
+    })
+    await cat_svc.update_image_settings(cat_id, user.id, img)
+
+    log.info("image_preset_applied", cat_id=cat_id, preset=preset["name"], user_id=user.id)
+
+    # Refresh presets screen
+    specialization = await cat_svc.get_project_specialization(category.project_id, user.id)
+    niche = detect_niche(specialization) if specialization else "general"
+    recommended = _recommend_preset(niche)
+
+    desc = preset["desc"]
+    await msg.edit_text(
+        f"Текущий пресет: <b>{html.escape(preset['name'])}</b>\n{html.escape(desc)}",
+        reply_markup=image_presets_kb(cat_id, _IMAGE_PRESET_NAMES, preset["name"], recommended, preset["count"]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^settings:\d+:img_custom$"))
+async def open_custom_settings(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
+) -> None:
+    """Open custom image settings (style selection)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
+    if not category:
+        await callback.answer("Категория не найдена.", show_alert=True)
+        return
+
+    await msg.edit_text(
+        "Настройте изображения вручную:",
+        reply_markup=image_custom_kb(cat_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^settings:\d+:ic:[+-]$"))
+async def stepper_count(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
+) -> None:
+    """Increment/decrement image count via stepper buttons."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cat_id = int(parts[1])
+    direction = parts[3]
+
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(cat_id, user.id)
+    if not category:
+        await callback.answer("Категория не найдена.", show_alert=True)
+        return
+
+    img = _get_image_settings(category)
+    count = img.get("count", 4)
+
+    count = min(count + 1, 10) if direction == "+" else max(count - 1, 0)
+
+    img["count"] = count
+    await cat_svc.update_image_settings(cat_id, user.id, img)
+
+    # Rebuild keyboard only (editReplyMarkup)
+    specialization = await cat_svc.get_project_specialization(category.project_id, user.id)
+    niche = detect_niche(specialization) if specialization else "general"
+    recommended = _recommend_preset(niche)
+    current_preset = img.get("preset")
+
+    await msg.edit_reply_markup(
+        reply_markup=image_presets_kb(cat_id, _IMAGE_PRESET_NAMES, current_preset, recommended, count),
+    )
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------

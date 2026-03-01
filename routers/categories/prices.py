@@ -1,8 +1,10 @@
 """Price list management: text input and Excel upload (UX_TOOLBOX.md section 11)."""
 
 import html
+import itertools
 import time
 from io import BytesIO
+from typing import Any
 
 import structlog
 from aiogram import F, Router
@@ -23,6 +25,55 @@ router = Router()
 # Limits (E09)
 _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 _MAX_ROWS = 1000
+
+_HEADER_KEYWORDS: set[str] = {
+    "название",
+    "наименование",
+    "товар",
+    "услуга",
+    "продукт",
+    "цена",
+    "стоимость",
+    "прайс",
+    "артикул",
+    "код",
+    "sku",
+    "описание",
+    "характеристика",
+    "материал",
+    "размер",
+    "вес",
+    "количество",
+    "ед",
+    "категория",
+    "бренд",
+    "марка",
+}
+
+
+def _is_numeric(text: str) -> bool:
+    """Check if text looks like a number (prices, quantities)."""
+    cleaned = text.replace(" ", "").replace("\xa0", "").replace(",", ".").replace("-", "")
+    if not cleaned:
+        return False
+    try:
+        float(cleaned)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_header_row(row: tuple[Any, ...]) -> bool:
+    """Detect if a row is likely a header (keyword match or all-text heuristic)."""
+    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+    if not cells:
+        return False
+    for cell in cells:
+        if cell.lower() in _HEADER_KEYWORDS:
+            return True
+    all_text = all(not _is_numeric(c) for c in cells)
+    avg_len = sum(len(c) for c in cells) / len(cells)
+    return all_text and avg_len < 30
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +278,8 @@ async def start_excel(
     await state.update_data(last_update_time=time.time(), prices_cat_id=cat_id)
 
     await msg.answer(
-        "Загрузите Excel-файл (.xlsx) с прайсом.\nФормат: колонка A = название, колонка B = цена.",
+        "Загрузите Excel-файл (.xlsx) с прайсом.\n"
+        "Будут использованы все столбцы. Заголовки распознаются автоматически.",
         reply_markup=cancel_kb(f"price:{cat_id}:cancel"),
     )
     await callback.answer()
@@ -249,7 +301,7 @@ async def handle_text_in_excel_state(
 
 
 def parse_excel_rows(file_bytes: bytes) -> list[str] | str:
-    """Parse Excel file into price lines. Returns list of lines or error string."""
+    """Parse Excel — reads ALL columns, auto-detects headers."""
     import openpyxl  # type: ignore[import-untyped]
 
     wb = openpyxl.load_workbook(BytesIO(file_bytes), read_only=True, data_only=True)
@@ -258,29 +310,49 @@ def parse_excel_rows(file_bytes: bytes) -> list[str] | str:
         if ws is None:
             return "empty"
 
-        lines: list[str] = []
-        row_count = 0
-        for row in ws.iter_rows(min_row=1, values_only=True):
-            if not row or all(cell is None or str(cell).strip() == "" for cell in row):
-                continue
+        rows_iter = (
+            r
+            for r in ws.iter_rows(values_only=True)
+            if r and not all(c is None or str(c).strip() == "" for c in r)
+        )
+        first_row = next(rows_iter, None)
+        if first_row is None:
+            return "empty"
 
-            row_count += 1
-            if row_count > _MAX_ROWS:
+        # Detect headers (only when >1 row to avoid treating single data row as header)
+        second_row = next(rows_iter, None)
+        headers: list[str] | None = None
+        if second_row is not None and _is_header_row(first_row):
+            headers = [
+                str(c).strip() if c is not None else f"Столбец {i + 1}" for i, c in enumerate(first_row)
+            ]
+            data_rows: itertools.chain[tuple[Any, ...]] = itertools.chain([second_row], rows_iter)
+        elif second_row is not None:
+            data_rows = itertools.chain([first_row, second_row], rows_iter)
+        else:
+            data_rows = itertools.chain([first_row])
+
+        lines: list[str] = []
+        for row in data_rows:
+            if len(lines) >= _MAX_ROWS:
                 return "too_many_rows"
 
-            name = str(row[0]).strip() if len(row) > 0 and row[0] is not None else ""
-            price = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
-            desc = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
-
-            if not name:
+            cells = [str(c).strip() if c is not None else "" for c in row]
+            if not any(cells):
                 continue
 
-            if desc:
-                lines.append(f"{name} \u2014 {price} \u2014 {desc}")
-            elif price:
-                lines.append(f"{name} \u2014 {price}")
+            if headers:
+                parts = [
+                    f"{headers[i] if i < len(headers) else f'Столбец {i + 1}'}: {v}"
+                    for i, v in enumerate(cells)
+                    if v
+                ]
+                if parts:
+                    lines.append(" | ".join(parts))
             else:
-                lines.append(name)
+                non_empty = [c for c in cells if c]
+                if non_empty:
+                    lines.append(" \u2014 ".join(non_empty))
         return lines
     finally:
         wb.close()
@@ -342,7 +414,7 @@ async def process_excel(
     if not lines:
         await state.clear()
         await message.answer(
-            "В файле не найдено данных. Колонка A = название, колонка B = цена.", reply_markup=menu_kb()
+            "В файле не найдено данных. Загрузите файл с заполненными строками.", reply_markup=menu_kb()
         )
         return
 
