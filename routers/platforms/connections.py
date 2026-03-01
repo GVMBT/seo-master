@@ -442,10 +442,9 @@ async def wp_process_password(
 
     log.info("wordpress_connected", conn_id=conn.id, project_id=project_id, identifier=identifier)
 
-    # Reload list
+    # Reload list (project already validated above)
     connections = await conn_svc.get_by_project(project_id)
-    project = await project_service_factory(db).get_owned_project(project_id, user.id)
-    safe_name = html.escape(project.name) if project else ""
+    safe_name = html.escape(project.name)
     await message.answer(
         f"WordPress ({html.escape(identifier)}) подключён!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),

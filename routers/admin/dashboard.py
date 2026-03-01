@@ -127,9 +127,11 @@ async def admin_api_costs(
         return
 
     admin_svc = admin_service_factory(db)
-    cost_7d = await admin_svc.get_api_costs(7)
-    cost_30d = await admin_svc.get_api_costs(30)
-    cost_90d = await admin_svc.get_api_costs(90)
+    cost_7d, cost_30d, cost_90d = await asyncio.gather(
+        admin_svc.get_api_costs(7),
+        admin_svc.get_api_costs(30),
+        admin_svc.get_api_costs(90),
+    )
 
     text = f"<b>Затраты API</b>\n\n7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
 
