@@ -14,6 +14,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
+from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
 from bot.service_factory import CategoryServiceFactory
@@ -206,7 +207,7 @@ async def confirm_generate(
     )
 
     # Show progress indicator before AI call
-    await msg.edit_text("\u23f3 Генерирую описание...")
+    await msg.edit_text(f"{EMOJI_PROGRESS} Генерирую описание...")
     await callback.answer()
 
     # Generate description via AI
@@ -371,7 +372,7 @@ async def review_regenerate(
         )
 
     # Show progress indicator before AI call
-    await msg.edit_text("\u23f3 Генерирую описание...")
+    await msg.edit_text(f"{EMOJI_PROGRESS} Генерирую описание...")
     await callback.answer()
 
     # Regenerate via AI

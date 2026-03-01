@@ -18,9 +18,10 @@ from aiogram.types import (
     Message,
 )
 
+from bot.assets import edit_screen
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.validators import TG_CHANNEL_RE, URL_RE
 from cache.client import RedisClient
@@ -101,7 +102,9 @@ async def show_connections(
     if not connections:
         text += "\n\nПодключений пока нет. Добавьте платформу для публикации."
 
-    await msg.edit_text(
+    await edit_screen(
+        msg,
+        "empty_connections.png",
         text,
         reply_markup=connection_list_kb(connections, project_id),
     )
@@ -137,7 +140,9 @@ async def connections_list_back(
     if not connections:
         text += "\n\nПодключений пока нет. Добавьте платформу для публикации."
 
-    await msg.edit_text(
+    await edit_screen(
+        msg,
+        "empty_connections.png",
         text,
         reply_markup=connection_list_kb(connections, project_id),
     )
@@ -178,7 +183,8 @@ async def manage_connection(
     status_text = "Активно" if conn.status == "active" else "Ошибка"
     safe_id = html.escape(conn.identifier)
     text = f"<b>{conn.platform_type.capitalize()}</b>\n\nИдентификатор: {safe_id}\nСтатус: {status_text}\n"
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         text,
         reply_markup=connection_manage_kb(conn_id, conn.project_id),
     )
@@ -212,7 +218,8 @@ async def confirm_connection_delete(
         return
 
     safe_id = html.escape(conn.identifier)
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         f"Удалить подключение {conn.platform_type.capitalize()} ({safe_id})?\n\n"
         "Связанные расписания будут отменены.\n"
         "Это действие нельзя отменить.",
@@ -932,14 +939,16 @@ async def _cancel_connection_wizard(
             conn_svc = ConnectionService(db, http_client)
             connections = await conn_svc.get_by_project(project_id)
             safe_name = html.escape(project.name)
-            await msg.edit_text(
+            await edit_screen(
+                msg,
+                "empty_connections.png",
                 f"<b>{safe_name}</b> — Подключения",
                 reply_markup=connection_list_kb(connections, project_id),
             )
             await callback.answer()
             return
 
-    await msg.edit_text("Подключение отменено.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Подключение отменено.", reply_markup=menu_kb())
     await callback.answer()
 
 

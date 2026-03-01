@@ -24,7 +24,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
 from bot.validators import URL_RE
 from cache.client import RedisClient
@@ -99,7 +99,8 @@ async def pipeline_article_start(
 
     if not projects:
         # No projects — offer inline create
-        await msg.edit_text(
+        await safe_edit_text(
+            msg,
             "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
             reply_markup=pipeline_no_projects_kb(),
         )
@@ -121,7 +122,8 @@ async def pipeline_article_start(
         return
 
     # Multiple projects — show list
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         "Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects),
     )
@@ -383,7 +385,8 @@ async def _show_wp_step(
         return
 
     # No WP connections — offer connect or preview-only
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
         reply_markup=pipeline_no_wp_kb(),
     )
@@ -723,7 +726,8 @@ async def _show_category_step(
 
     if not categories:
         # No categories — prompt for inline creation
-        await msg.edit_text(
+        await safe_edit_text(
+            msg,
             "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
@@ -749,7 +753,8 @@ async def _show_category_step(
         return
 
     # Multiple categories — show list
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         "Статья (3/5) — Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id),
     )

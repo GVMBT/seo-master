@@ -28,8 +28,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from bot.config import get_settings
+from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from cache.client import RedisClient
 from cache.keys import CacheKeys
@@ -89,9 +90,9 @@ def _progress_text(title: str, steps: list[tuple[str, str]], current: int) -> st
     lines = [title, ""]
     for i, (active_label, done_label) in enumerate(steps):
         if i < current:
-            lines.append(f"\u2705 {done_label}")
+            lines.append(f"{EMOJI_DONE} {done_label}")
         elif i == current:
-            lines.append(f"\u23f3 {active_label}...")
+            lines.append(f"{EMOJI_PROGRESS} {active_label}...")
         # Future steps are not shown
     return "\n".join(lines)
 
@@ -119,7 +120,7 @@ async def show_confirm(
 
     text = _build_confirm_text(fsm_data, report, user)
     kb = _get_confirm_kb(report, user)
-    await msg.edit_text(text, reply_markup=kb)
+    await safe_edit_text(msg, text, reply_markup=kb)
     await state.set_state(ArticlePipelineFSM.confirm_cost)
     await save_checkpoint(
         redis,

@@ -66,6 +66,10 @@ def user() -> User:
 def mock_message() -> MagicMock:
     msg = MagicMock(spec=Message)
     msg.answer = AsyncMock()
+    msg.answer_photo = AsyncMock()
+    msg.edit_text = AsyncMock()
+    msg.edit_media = AsyncMock()
+    msg.delete = AsyncMock()
     msg.from_user = MagicMock(spec=TgUser)
     msg.from_user.id = 123456
     msg.chat = MagicMock(spec=Chat)
@@ -114,10 +118,10 @@ class TestReferralLinking:
 
         mock_svc_cls.assert_called_once_with(mock_db)
         mock_users_svc.link_referrer.assert_awaited_once_with(user.id, 999, mock_redis)
-        # Dashboard shown with text and inline keyboard
-        mock_message.answer.assert_called_once()
-        args, kwargs = mock_message.answer.call_args
-        assert "Dashboard" in args[0]
+        # Dashboard shown as photo for new users
+        mock_message.answer_photo.assert_called_once()
+        _, kwargs = mock_message.answer_photo.call_args
+        assert "Dashboard" in kwargs["caption"]
         assert kwargs.get("reply_markup") is not None
 
     async def test_existing_user_referral_ignored(

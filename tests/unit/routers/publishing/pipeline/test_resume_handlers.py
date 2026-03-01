@@ -156,7 +156,7 @@ async def test_restart_clears_checkpoint_and_fsm(
 
     mock_redis.delete.assert_called_once()
     mock_state.clear.assert_called_once()
-    mock_callback.message.edit_text.assert_called_once()
+    mock_callback.message.edit_media.assert_called_once()
     mock_callback.answer.assert_called_once()
 
 

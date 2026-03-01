@@ -2,11 +2,15 @@
 
 S1a: safe_message() eliminates ~170 InaccessibleMessage guard blocks.
 S1c: get_owned_project/category ownership check helpers.
+safe_edit_text: graceful photo→text transition (delete+resend).
 """
 
 from __future__ import annotations
 
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from typing import Any, cast
+
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, Message
 
 from db.client import SupabaseClient
 from db.models import Category, Project
@@ -35,6 +39,35 @@ def safe_message(callback: CallbackQuery) -> Message | None:
     if not callback.message or isinstance(callback.message, InaccessibleMessage):
         return None
     return callback.message
+
+
+# ---------------------------------------------------------------------------
+# Photo→text transition helper
+# ---------------------------------------------------------------------------
+
+
+async def safe_edit_text(
+    msg: Message,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    **kwargs: Any,
+) -> Message:
+    """Edit text; if message has media, fallback to delete+resend.
+
+    Photo messages don't support edit_text (Telegram API limitation).
+    This helper catches that error and does delete+answer instead.
+    """
+    try:
+        return cast("Message", await msg.edit_text(text, reply_markup=reply_markup, **kwargs))
+    except TelegramBadRequest as e:
+        if "there is no text in the message" not in str(e):
+            raise
+        # Photo message — delete and resend as text
+        try:
+            await msg.delete()
+        except TelegramBadRequest:
+            pass  # Message too old to delete — send new one anyway
+        return await msg.answer(text, reply_markup=reply_markup, **kwargs)
 
 
 # ---------------------------------------------------------------------------

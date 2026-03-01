@@ -5,8 +5,9 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
+from bot.assets import edit_screen
 from bot.config import get_settings
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.texts.legal import (
     PRIVACY_POLICY_CHUNKS,
     TERMS_OF_SERVICE_CHUNKS,
@@ -64,7 +65,7 @@ async def nav_profile(
             f"Прогноз расхода:\n~{stats['tokens_per_week']} токенов/неделю\n~{stats['tokens_per_month']} токенов/месяц"
         )
 
-    await msg.edit_text(text, reply_markup=profile_kb())
+    await edit_screen(msg, "profile.png", text, reply_markup=profile_kb())
     await callback.answer()
 
 
@@ -86,7 +87,8 @@ async def show_notifications(
 
     text = "<b>\U0001f514 Уведомления</b>\n\nНажмите для переключения:"
 
-    await msg.edit_text(
+    await safe_edit_text(
+        msg,
         text,
         reply_markup=notifications_kb(
             notify_publications=user.notify_publications,
@@ -171,7 +173,7 @@ async def show_referral(
         f"Заработано: <b>{referral_earned}</b> токенов"
     )
 
-    await msg.edit_text(text, reply_markup=referral_kb())
+    await edit_screen(msg, "referral.png", text, reply_markup=referral_kb())
     await callback.answer()
 
 

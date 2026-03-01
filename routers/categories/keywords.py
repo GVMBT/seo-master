@@ -21,6 +21,7 @@ from aiogram.types import (
 )
 
 from bot.config import get_settings
+from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
 from db.client import SupabaseClient
@@ -572,7 +573,7 @@ async def _run_generation_pipeline(
                 user_id=user.id,
             )
         else:
-            await msg.edit_text("\u23f3 DataForSEO без данных. Генерирую фразы через AI...")
+            await msg.edit_text(f"{EMOJI_PROGRESS} DataForSEO без данных. Генерирую фразы через AI...")
             clusters = await kw_service.generate_clusters_direct(
                 products=products,
                 geography=geography,
