@@ -226,7 +226,7 @@ def render_markdown(
     renderer = SEORenderer(branding=branding)
 
     try:
-        md = mistune.create_markdown(renderer=renderer)
+        md = mistune.create_markdown(renderer=renderer, plugins=["table", "strikethrough"])
         html: str = str(md(markdown_text))
     except Exception:
         log.warning("markdown_parse_failed", exc_info=True)
