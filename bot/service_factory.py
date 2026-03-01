@@ -16,11 +16,21 @@ from __future__ import annotations
 import httpx
 
 from db.client import SupabaseClient
+from services.admin import AdminService
 from services.categories import CategoryService
 from services.connections import ConnectionService
 from services.dashboard import DashboardService
 from services.projects import ProjectService
 from services.tokens import TokenService
+
+
+def create_admin_service_factory() -> AdminServiceFactory:
+    """Create a factory that produces AdminService instances.
+
+    Registered once in dp.workflow_data["admin_service_factory"].
+    Called per-handler: `admin_svc = admin_service_factory(db)`
+    """
+    return AdminServiceFactory()
 
 
 def create_token_service_factory(admin_ids: list[int]) -> TokenServiceFactory:
@@ -66,6 +76,13 @@ def create_project_service_factory(encryption_key: str) -> ProjectServiceFactory
     Called per-handler: `proj_svc = project_service_factory(db)`
     """
     return ProjectServiceFactory(encryption_key)
+
+
+class AdminServiceFactory:
+    """Callable factory for AdminService."""
+
+    def __call__(self, db: SupabaseClient) -> AdminService:
+        return AdminService(db=db)
 
 
 class TokenServiceFactory:
