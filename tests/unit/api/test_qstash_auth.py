@@ -145,29 +145,27 @@ async def test_empty_msg_id_defaults(mock_receiver_cls: MagicMock) -> None:
 
 
 @patch("qstash.Receiver")
-async def test_uses_public_url_for_verification(mock_receiver_cls: MagicMock) -> None:
-    """Signature verification uses railway_public_url + path, not request.url."""
+async def test_verify_signature_with_public_url_uses_public_url(
+    mock_receiver_cls: MagicMock,
+) -> None:
+    """When railway_public_url is set, verification uses public URL + path."""
     mock_receiver = MagicMock()
     mock_receiver.verify = MagicMock()
     mock_receiver_cls.return_value = mock_receiver
 
     request = _make_request()
     # Simulate Railway proxy: request.url is internal, but settings has public URL
-    request.url = "http://0.0.0.0:8080/api/publish"
+    request.url = "http://0.0.0.0:8080/api/publish"  # noqa: S104
     request.path = "/api/publish"
 
     await _sample_handler(request)
 
-    # Should verify with public URL, not internal
-    call_kwargs = mock_receiver.verify.call_args
-    assert call_kwargs is not None
-    verified_url = call_kwargs.kwargs.get("url") or call_kwargs[1].get("url") or call_kwargs[0][2]
-    assert "example.com" in verified_url
-    assert "0.0.0.0" not in verified_url  # noqa: S104
+    mock_receiver.verify.assert_called_once()
+    assert mock_receiver.verify.call_args.kwargs["url"] == "https://example.com/api/publish"
 
 
 @patch("qstash.Receiver")
-async def test_falls_back_to_request_url_when_no_public_url(
+async def test_verify_signature_without_public_url_falls_back_to_request_url(
     mock_receiver_cls: MagicMock,
 ) -> None:
     """When railway_public_url is empty, falls back to request.url."""
