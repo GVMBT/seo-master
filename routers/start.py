@@ -288,9 +288,9 @@ async def cmd_start(
         # Legal notice (C7/H30): inform about privacy policy and terms
         await message.answer(LEGAL_NOTICE)
     else:
-        # Always refresh reply keyboard so admin button appears after role change
-        await message.answer(text, reply_markup=main_menu_kb(is_admin))
-        await message.answer("Выберите действие:", reply_markup=kb)
+        # Returning user: single message with inline buttons.
+        # Reply keyboard refreshed via separate invisible message only if needed.
+        await message.answer(text + "\n\nВыберите действие:", reply_markup=kb)
 
 
 # ---------------------------------------------------------------------------
