@@ -327,6 +327,7 @@ async def pipeline_create_project_url(
 
     if not project:
         await state.clear()
+        await clear_checkpoint(redis, user.id)
         await message.answer("Достигнут лимит проектов.")
         return
 

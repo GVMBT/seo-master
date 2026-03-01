@@ -2429,7 +2429,7 @@ def distribute_images(blocks: list[dict], images_count: int) -> list[int]:
 **Контекстный промпт:** Каждое изображение получает `block_context` — краткое содержание блока, к которому оно привязано. Это заменяет generic-промпт по теме статьи на точный контекст раздела.
 
 **Стратегия вариативности:** Каждый запрос из N получает модифицированный промпт:
-- `block_context`: текст H2-секции (первые 200 слов), к которой привязано изображение
+- `block_context`: текст H2-секции (первые 300 слов), к которой привязано изображение
 - Изображение 1: базовый промпт + block_context (hero, 16:9)
 - Изображение 2+: block_context + суффикс `"Покажи с другого ракурса: {angle}"`, где angle берётся из `image_settings.angles` (round-robin) или из предустановленного списка `["крупный план", "общий план", "детали", "в контексте использования"]`
 
@@ -2445,13 +2445,14 @@ def distribute_images(blocks: list[dict], images_count: int) -> list[int]:
 
 **Решение:** Выделенный AI-шаг между text generation и image generation:
 
-```
+```text
 Text Generation → Block Split → ★ IMAGE DIRECTOR ★ → Image Generation (N parallel) → Reconciliation
 ```
 
 **Модель:** `deepseek/deepseek-v3.2` (reasoning enabled) — $0.25/$0.40 per M tokens, ~$0.001/статья. Уже в стеке (Outline, Critique).
 
 **Input (structured):**
+
 ```json
 {
   "article_title": "Кухни на заказ в Москве: полное руководство",
@@ -2469,6 +2470,7 @@ Text Generation → Block Split → ★ IMAGE DIRECTOR ★ → Image Generation 
 ```
 
 **Output (JSON Schema, structured output):**
+
 ```json
 {
   "images": [
@@ -2592,7 +2594,7 @@ variables:
     required: false
     default: ""
   - name: block_context
-    source: первые 200 слов H2-секции, к которой привязано изображение (§7.4.1 distribute_images)
+    source: первые 300 слов H2-секции, к которой привязано изображение (§7.4.1 distribute_images)
     required: false
     default: ""
   - name: niche_style
