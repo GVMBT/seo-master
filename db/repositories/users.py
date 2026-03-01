@@ -251,6 +251,30 @@ class UsersRepository(BaseRepository):
         )
         return self._count(resp)
 
+    async def count_paid(self) -> int:
+        """Count distinct users who completed at least one payment (admin stats).
+
+        Uses SELECT user_id (lightweight) + Python dedup.
+        PostgREST does not support COUNT(DISTINCT col) natively.
+        """
+        resp = (
+            await self._db.table("payments")
+            .select("user_id")
+            .eq("status", "completed")
+            .execute()
+        )
+        rows = self._rows(resp)
+        return len({row["user_id"] for row in rows})
+
+    async def get_by_username(self, username: str) -> User | None:
+        """Get user by username (case-insensitive). For admin lookup."""
+        clean = username.lstrip("@")
+        if not clean:
+            return None
+        resp = await self._table(_TABLE).select("*").ilike("username", clean).limit(1).execute()
+        rows = self._rows(resp)
+        return User(**rows[0]) if rows else None
+
     async def get_ids_by_audience(self, audience: str) -> list[int]:
         """Get user IDs by audience type for broadcast.
 

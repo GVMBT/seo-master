@@ -31,7 +31,7 @@ from keyboards.pipeline import (
     pipeline_preview_kb,
     pipeline_projects_kb,
 )
-from keyboards.reply import BTN_ADMIN, BTN_ARTICLE, BTN_MENU, BTN_POST, main_menu_kb
+from keyboards.reply import BTN_ADMIN, BTN_MENU, main_menu_kb
 from routers.publishing.pipeline._common import ArticlePipelineFSM
 from services.users import UsersService
 
@@ -668,46 +668,6 @@ async def reply_menu(
     """Reply keyboard: Menu button → Dashboard."""
     await ensure_no_active_fsm(state)
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    await message.answer(text, reply_markup=kb)
-
-
-@router.message(F.text == BTN_ARTICLE)
-async def reply_article(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    is_new_user: bool,
-    is_admin: bool,
-    db: SupabaseClient,
-    redis: RedisClient,
-    dashboard_service_factory: DashboardServiceFactory,
-) -> None:
-    """Reply keyboard: Write Article → show Dashboard with pipeline CTA."""
-    await ensure_no_active_fsm(state)
-    await redis.delete(CacheKeys.pipeline_state(user.id))
-    text, kb = await _build_dashboard(
-        user, is_new_user=is_new_user, db=db, redis=redis, dashboard_service_factory=dashboard_service_factory
-    )
-    await message.answer(text, reply_markup=kb)
-
-
-@router.message(F.text == BTN_POST)
-async def reply_social(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    is_new_user: bool,
-    is_admin: bool,
-    db: SupabaseClient,
-    redis: RedisClient,
-    dashboard_service_factory: DashboardServiceFactory,
-) -> None:
-    """Reply keyboard: Create Post → show Dashboard with social pipeline CTA."""
-    await ensure_no_active_fsm(state)
-    await redis.delete(CacheKeys.pipeline_state(user.id))
-    text, kb = await _build_dashboard(
-        user, is_new_user=is_new_user, db=db, redis=redis, dashboard_service_factory=dashboard_service_factory
-    )
     await message.answer(text, reply_markup=kb)
 
 

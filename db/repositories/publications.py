@@ -197,6 +197,18 @@ class PublicationsRepository(BaseRepository):
         first_phrase = sorted_kw[0].get("phrase", "") if sorted_kw else None
         return first_phrase or None, low_pool_warning
 
+    async def count_recent(self, days: int = 7) -> int:
+        """Count successful publications in the last N days (admin stats)."""
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .eq("status", "success")
+            .gte("created_at", cutoff)
+            .execute()
+        )
+        return self._count(resp)
+
     async def delete_old_logs(self, cutoff_iso: str) -> int:
         """Delete publication logs created before cutoff date.
 

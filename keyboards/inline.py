@@ -1486,6 +1486,7 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
     """Admin panel main keyboard."""
     rows = [
         [InlineKeyboardButton(text="Мониторинг", callback_data="admin:monitoring")],
+        [InlineKeyboardButton(text="Просмотр пользователя", callback_data="admin:user_lookup")],
         [InlineKeyboardButton(text="Рассылка", callback_data="admin:broadcast")],
         [InlineKeyboardButton(text="Затраты API", callback_data="admin:api_costs")],
         [InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")],
