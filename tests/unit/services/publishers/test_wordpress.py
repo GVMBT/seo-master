@@ -311,3 +311,115 @@ class TestDeletePost:
         conn = _make_connection()
         result = await pub.delete_post(conn, "42")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: double .webp.webp extension
+# ---------------------------------------------------------------------------
+
+
+class TestImageFilename:
+    async def test_filename_with_extension_not_doubled(self) -> None:
+        """Filename already having .webp should NOT get .webp appended again."""
+        captured_filenames: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "/media" in url:
+                disp = request.headers.get("Content-Disposition", "")
+                captured_filenames.append(disp)
+                return httpx.Response(
+                    201, json={"id": 100, "source_url": "https://example.com/img.webp"}
+                )
+            if "/posts" in url:
+                return httpx.Response(
+                    201, json={"id": 1, "link": "https://example.com/p"}
+                )
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection()
+        req = PublishRequest(
+            connection=conn,
+            content="<p>Test</p>",
+            content_type="html",
+            title="Test",
+            images=[b"RIFF\x00\x00\x00\x00WEBP"],  # starts with RIFF = webp mime
+            images_meta=[{"filename": "my-image.webp", "alt": "Alt"}],
+        )
+        result = await pub.publish(req)
+        assert result.success is True
+        # filename should be "my-image.webp", NOT "my-image.webp.webp"
+        assert ".webp.webp" not in captured_filenames[0]
+        assert 'filename="my-image.webp"' in captured_filenames[0]
+
+    async def test_filename_without_extension_gets_webp(self) -> None:
+        """Filename without extension should get .webp appended."""
+        captured_filenames: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "/media" in url:
+                disp = request.headers.get("Content-Disposition", "")
+                captured_filenames.append(disp)
+                return httpx.Response(
+                    201, json={"id": 100, "source_url": "https://example.com/img.webp"}
+                )
+            if "/posts" in url:
+                return httpx.Response(
+                    201, json={"id": 1, "link": "https://example.com/p"}
+                )
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection()
+        req = PublishRequest(
+            connection=conn,
+            content="<p>Test</p>",
+            content_type="html",
+            title="Test",
+            images=[b"RIFF\x00\x00\x00\x00WEBP"],
+            images_meta=[{"filename": "my-image", "alt": "Alt"}],
+        )
+        result = await pub.publish(req)
+        assert result.success is True
+        assert 'filename="my-image.webp"' in captured_filenames[0]
+
+    async def test_storage_url_replacement_with_reconciled_placeholders(self) -> None:
+        """Auto-publish passes {{RECONCILED_IMAGE_N}} as storage_urls; WP publisher
+        should replace them with real WP media URLs in content."""
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "/media" in url and request.method == "POST":
+                content_type = request.headers.get("Content-Type", "")
+                if content_type.startswith("image/"):
+                    return httpx.Response(
+                        201,
+                        json={"id": 100, "source_url": "https://example.com/wp-media.webp"},
+                    )
+                # alt_text update
+                return httpx.Response(200, json={"id": 100})
+            if "/posts" in url:
+                body = json.loads(request.content)
+                # Verify content has real WP URL, not placeholder
+                assert "{{RECONCILED_IMAGE_1}}" not in body["content"]
+                assert "https://example.com/wp-media.webp" in body["content"]
+                return httpx.Response(
+                    201, json={"id": 1, "link": "https://example.com/p"}
+                )
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection()
+        req = PublishRequest(
+            connection=conn,
+            content='<figure><img src="{{RECONCILED_IMAGE_1}}" alt="Alt"></figure>',
+            content_type="html",
+            title="Test",
+            images=[b"PNG_DATA"],
+            images_meta=[{"filename": "img.webp", "alt": "Alt", "figcaption": "Cap"}],
+            metadata={"storage_urls": ["{{RECONCILED_IMAGE_1}}"]},
+        )
+        result = await pub.publish(req)
+        assert result.success is True

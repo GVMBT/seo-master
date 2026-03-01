@@ -217,15 +217,28 @@ def reconcile_images(
     # Replace {{IMAGE_N}} placeholders with indexed markers for later URL injection.
     # After Storage upload, caller replaces {{RECONCILED_IMAGE_N}} with real URLs.
     # Placeholders are 1-indexed: {{IMAGE_1}}, {{IMAGE_2}}, etc.
+    #
+    # AI already wraps placeholders: ![alt]({{IMAGE_N}} "caption").
+    # We must replace the FULL markdown image, not just {{IMAGE_N}},
+    # to avoid broken nested syntax like ![a](![b]({{RECONCILED...}}) "c").
     markdown = content_markdown
     for i, upload in enumerate(uploads):
-        placeholder = f"{{{{IMAGE_{i + 1}}}}}"
-        # Replace with Markdown image syntax using a resolvable marker
+        img_idx = i + 1
         alt = upload.alt_text.replace('"', '\\"')
         escaped_caption = upload.caption.replace('"', '\\"') if upload.caption else ""
         caption_attr = f' "{escaped_caption}"' if escaped_caption else ""
-        img_md = f"![{alt}]({{{{RECONCILED_IMAGE_{i + 1}}}}}{caption_attr})"
-        markdown = markdown.replace(placeholder, img_md)
+        img_md = f"![{alt}]({{{{RECONCILED_IMAGE_{img_idx}}}}}{caption_attr})"
+
+        # First try: replace full ![...]({{IMAGE_N}}...) to avoid nested markdown
+        full_pattern = re.compile(
+            rf"!\[[^\]]*\]\(\s*\{{\{{IMAGE_{img_idx}\}}\}}[^)]*\)"
+        )
+        if full_pattern.search(markdown):
+            markdown = full_pattern.sub(img_md, markdown)
+        else:
+            # Standalone placeholder (no wrapping markdown syntax)
+            placeholder = f"{{{{IMAGE_{img_idx}}}}}"
+            markdown = markdown.replace(placeholder, img_md)
 
     # Remove unreplaced image placeholders (if images < expected)
     # Pattern matches Markdown image syntax: ![alt]({{IMAGE_N}} "title") or ![alt]({{IMAGE_N}})

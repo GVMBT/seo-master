@@ -187,6 +187,30 @@ class TestRenderMarkdown:
         assert 'style="color: #0066cc"' in html
         assert "https://example.com" in html
 
+    def test_render_markdown_table_converted_to_html(self) -> None:
+        """Tables must be converted to <table> HTML, not left as raw markdown."""
+        md = (
+            "## Comparison\n\n"
+            "| Feature | A | B |\n"
+            "|---------|---|---|\n"
+            "| Speed   | Fast | Slow |\n"
+            "| Price   | $10  | $20  |\n"
+        )
+        html = render_markdown(md, insert_toc=False)
+        assert "<table>" in html or "<table" in html
+        assert "<th>" in html or "<th " in html
+        assert "<td>" in html or "<td " in html
+        # Raw markdown pipe syntax must NOT appear
+        assert "| Feature |" not in html
+        assert "|------" not in html
+
+    def test_render_markdown_strikethrough(self) -> None:
+        """Strikethrough ~~text~~ must produce <del> or <s> tags."""
+        md = "This is ~~deleted~~ text."
+        html = render_markdown(md, insert_toc=False)
+        assert "<del>" in html or "<s>" in html
+        assert "~~deleted~~" not in html
+
     def test_render_markdown_e47_fallback(self) -> None:
         """E47: On parse error, fallback to <pre> block.
 

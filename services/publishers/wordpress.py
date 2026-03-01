@@ -85,7 +85,11 @@ class WordPressPublisher(BasePublisher):
         wp_media_urls: list[str] = []
         for i, img_bytes in enumerate(request.images):
             meta = request.images_meta[i] if i < len(request.images_meta) else {}
-            filename = f"{meta.get('filename', f'image-{i}')}.webp"
+            raw_filename = meta.get("filename", f"image-{i}")
+            # Avoid double extension — reconciliation already adds .webp/.png
+            if not raw_filename.lower().endswith((".webp", ".png")):
+                raw_filename = f"{raw_filename}.webp"
+            filename = raw_filename
             alt_text = meta.get("alt", "")
             mime = "image/webp" if img_bytes[:4] == b"RIFF" else "image/png"
 
