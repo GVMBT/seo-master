@@ -26,6 +26,7 @@ class AdminService:
     def __init__(self, db: SupabaseClient) -> None:
         self._db = db
         self._users = UsersRepository(db)
+        self._payments = PaymentsRepository(db)
 
     async def get_user_count(self) -> int:
         """Count total registered users."""
@@ -42,8 +43,7 @@ class AdminService:
 
     async def get_api_costs(self, days: int) -> float:
         """Sum API costs for the last N days."""
-        repo = PaymentsRepository(self._db)
-        return await repo.sum_api_costs(days)
+        return await self._payments.sum_api_costs(days)
 
     async def get_audience_ids(self, audience_key: str) -> list[int]:
         """Get user IDs for broadcast audience segmentation."""

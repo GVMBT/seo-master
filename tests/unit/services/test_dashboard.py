@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from services.dashboard import DashboardData, DashboardService
 
@@ -25,17 +26,17 @@ def dash_svc(mock_db: MagicMock) -> DashboardService:
 
 
 # ---------------------------------------------------------------------------
-# DashboardData is frozen
+# DashboardData model
 # ---------------------------------------------------------------------------
 
 
 class TestDashboardData:
-    def test_frozen(self) -> None:
+    def test_create_frozen_model_raises_on_mutation(self) -> None:
         data = DashboardData(project_count=1, schedule_count=2, has_wp=True, has_social=False)
-        with pytest.raises(AttributeError):
+        with pytest.raises(ValidationError):
             data.project_count = 5  # type: ignore[misc]
 
-    def test_fields(self) -> None:
+    def test_create_model_stores_fields(self) -> None:
         data = DashboardData(project_count=3, schedule_count=7, has_wp=True, has_social=True)
         assert data.project_count == 3
         assert data.schedule_count == 7
@@ -49,7 +50,7 @@ class TestDashboardData:
 
 
 class TestGetDashboardDataNoProjects:
-    async def test_no_projects(self, dash_svc: DashboardService) -> None:
+    async def test_get_dashboard_data_empty_returns_zeros(self, dash_svc: DashboardService) -> None:
         dash_svc._db = MagicMock()
 
         with patch(f"{_SVC_MODULE}.ProjectsRepository") as mock_repo_cls:
@@ -74,7 +75,7 @@ class TestGetDashboardDataWithProjects:
     @patch(f"{_SVC_MODULE}.ConnectionsRepository")
     @patch(f"{_SVC_MODULE}.CredentialManager")
     @patch(f"{_SVC_MODULE}.ProjectsRepository")
-    async def test_with_wp_and_social(
+    async def test_get_dashboard_data_wp_and_social_aggregated(
         self,
         mock_proj_cls: MagicMock,
         _mock_cm_cls: MagicMock,
@@ -107,7 +108,7 @@ class TestGetDashboardDataWithProjects:
         sched3 = MagicMock(enabled=True)
         mock_sched = MagicMock()
         mock_sched.get_by_project = AsyncMock(
-            side_effect=[[sched1, sched2], [sched3]]
+            return_value=[sched1, sched2, sched3]
         )
         mock_sched_cls.return_value = mock_sched
 
@@ -123,7 +124,7 @@ class TestGetDashboardDataWithProjects:
     @patch(f"{_SVC_MODULE}.ConnectionsRepository")
     @patch(f"{_SVC_MODULE}.CredentialManager")
     @patch(f"{_SVC_MODULE}.ProjectsRepository")
-    async def test_wp_only(
+    async def test_get_dashboard_data_wp_only_detected(
         self,
         mock_proj_cls: MagicMock,
         _mock_cm_cls: MagicMock,
@@ -153,7 +154,7 @@ class TestGetDashboardDataWithProjects:
     @patch(f"{_SVC_MODULE}.ConnectionsRepository")
     @patch(f"{_SVC_MODULE}.CredentialManager")
     @patch(f"{_SVC_MODULE}.ProjectsRepository")
-    async def test_no_connections(
+    async def test_get_dashboard_data_no_connections_returns_false(
         self,
         mock_proj_cls: MagicMock,
         _mock_cm_cls: MagicMock,
@@ -180,7 +181,7 @@ class TestGetDashboardDataWithProjects:
     @patch(f"{_SVC_MODULE}.ConnectionsRepository")
     @patch(f"{_SVC_MODULE}.CredentialManager")
     @patch(f"{_SVC_MODULE}.ProjectsRepository")
-    async def test_early_exit_when_both_flags_found(
+    async def test_get_platform_flags_parallel_fetches_all_projects(
         self,
         mock_proj_cls: MagicMock,
         _mock_cm_cls: MagicMock,
@@ -189,14 +190,13 @@ class TestGetDashboardDataWithProjects:
         mock_sched_cls: MagicMock,
         dash_svc: DashboardService,
     ) -> None:
-        """Platform flags loop breaks early when both flags are True."""
+        """asyncio.gather fetches platform types for all projects in parallel."""
         projects = [MagicMock(id=1), MagicMock(id=2), MagicMock(id=3)]
         mock_proj_cls.return_value.get_by_user = AsyncMock(return_value=projects)
 
-        # First project has both — should break after 1st
         mock_conn = MagicMock()
         mock_conn.get_platform_types_by_project = AsyncMock(
-            return_value=["wordpress", "telegram"]
+            side_effect=[["wordpress", "telegram"], [], []]
         )
         mock_conn_cls.return_value = mock_conn
 
@@ -207,5 +207,5 @@ class TestGetDashboardDataWithProjects:
 
         assert result.has_wp is True
         assert result.has_social is True
-        # Only 1 call because loop breaks early
-        assert mock_conn.get_platform_types_by_project.await_count == 1
+        # All 3 projects fetched in parallel via asyncio.gather
+        assert mock_conn.get_platform_types_by_project.await_count == 3

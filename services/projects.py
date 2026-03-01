@@ -115,8 +115,11 @@ class ProjectService:
         count = await self._repo.get_count_by_user(user_id)
         return count < MAX_PROJECTS_PER_USER
 
-    async def create_project(self, data: ProjectCreate) -> Project:
-        """Create a new project."""
+    async def create_project(self, data: ProjectCreate) -> Project | None:
+        """Create a new project. Returns None if at project limit (TOCTOU guard)."""
+        count = await self._repo.get_count_by_user(data.user_id)
+        if count >= MAX_PROJECTS_PER_USER:
+            return None
         return await self._repo.create(data)
 
     # ------------------------------------------------------------------

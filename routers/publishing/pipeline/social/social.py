@@ -325,6 +325,11 @@ async def pipeline_create_project_url(
         )
     )
 
+    if not project:
+        await state.clear()
+        await message.answer("Достигнут лимит проектов.")
+        return
+
     log.info("pipeline.social.project_created", project_id=project.id, user_id=user.id)
 
     await state.update_data(project_id=project.id, project_name=project.name)

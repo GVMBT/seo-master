@@ -5,7 +5,9 @@ Zero dependencies on Telegram/Aiogram.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+
+from pydantic import BaseModel
 
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
@@ -15,8 +17,7 @@ from db.repositories.projects import ProjectsRepository
 from db.repositories.schedules import SchedulesRepository
 
 
-@dataclass(frozen=True, slots=True)
-class DashboardData:
+class DashboardData(BaseModel, frozen=True):
     """Aggregated data for the Dashboard screen."""
 
     project_count: int
@@ -46,8 +47,10 @@ class DashboardService:
         has_social = False
         schedule_count = 0
         if project_count > 0:
-            has_wp, has_social = await self._get_platform_flags(project_ids)
-            schedule_count = await self._count_active_schedules(project_ids)
+            (has_wp, has_social), schedule_count = await asyncio.gather(
+                self._get_platform_flags(project_ids),
+                self._count_active_schedules(project_ids),
+            )
 
         return DashboardData(
             project_count=project_count,
@@ -60,13 +63,20 @@ class DashboardService:
         self,
         project_ids: list[int],
     ) -> tuple[bool, bool]:
-        """Return (has_wp, has_social) across given projects."""
-        has_wp = False
-        has_social = False
+        """Return (has_wp, has_social) across given projects.
+
+        Uses asyncio.gather to fetch platform types for all projects in parallel.
+        """
         cm = CredentialManager(self._encryption_key)
         conn_repo = ConnectionsRepository(self._db, cm)
-        for pid in project_ids:
-            ptypes = await conn_repo.get_platform_types_by_project(pid)
+
+        results = await asyncio.gather(
+            *(conn_repo.get_platform_types_by_project(pid) for pid in project_ids)
+        )
+
+        has_wp = False
+        has_social = False
+        for ptypes in results:
             if "wordpress" in ptypes:
                 has_wp = True
             if any(p in ptypes for p in ("telegram", "vk", "pinterest")):
@@ -79,14 +89,20 @@ class DashboardService:
         self,
         project_ids: list[int],
     ) -> int:
-        """Count enabled schedules across given projects."""
+        """Count enabled schedules across given projects.
+
+        Uses asyncio.gather to fetch categories for all projects in parallel.
+        """
         cats_repo = CategoriesRepository(self._db)
         sched_repo = SchedulesRepository(self._db)
-        schedule_count = 0
-        for pid in project_ids:
-            cats = await cats_repo.get_by_project(pid)
-            cat_ids = [c.id for c in cats]
-            if cat_ids:
-                schedules = await sched_repo.get_by_project(cat_ids)
-                schedule_count += sum(1 for s in schedules if s.enabled)
-        return schedule_count
+
+        cat_lists = await asyncio.gather(
+            *(cats_repo.get_by_project(pid) for pid in project_ids)
+        )
+
+        all_cat_ids = [c.id for cats in cat_lists for c in cats]
+        if not all_cat_ids:
+            return 0
+
+        schedules = await sched_repo.get_by_project(all_cat_ids)
+        return sum(1 for s in schedules if s.enabled)
