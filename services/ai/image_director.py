@@ -214,7 +214,7 @@ class ImageDirectorService:
                         aspect_ratio=aspect,
                     )
                 )
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 log.warning("image_director_plan_skip", image=img, exc_info=True)
                 continue
 

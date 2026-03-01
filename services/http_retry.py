@@ -50,7 +50,7 @@ def _parse_retry_after(response: httpx.Response) -> float | None:
     try:
         seconds = float(raw)
         return min(seconds, _MAX_RETRY_AFTER)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 

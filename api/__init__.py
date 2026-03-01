@@ -57,7 +57,7 @@ def require_qstash_signature(
 
         try:
             request["verified_body"] = json.loads(body)
-        except json.JSONDecodeError, UnicodeDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             log.warning("qstash_malformed_body", url=url)
             return web.Response(status=401, text="Malformed body")
 
