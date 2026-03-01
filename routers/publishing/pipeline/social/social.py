@@ -22,12 +22,11 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
 from bot.validators import URL_RE
 from cache.client import RedisClient
 from db.client import SupabaseClient
-from db.models import CategoryCreate, ProjectCreate, User
-from db.repositories.categories import CategoriesRepository
-from db.repositories.projects import ProjectsRepository
+from db.models import ProjectCreate, User
 from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
@@ -47,6 +46,7 @@ from routers.publishing.pipeline.social.readiness import (
     show_social_readiness_check,
     show_social_readiness_check_msg,
 )
+from services.categories import CategoryService
 
 log = structlog.get_logger()
 router = Router()
@@ -68,6 +68,7 @@ async def pipeline_social_start(
     db: SupabaseClient,
     redis: RedisClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Start social pipeline — show project selection (step 1).
 
@@ -86,8 +87,8 @@ async def pipeline_social_start(
     if interrupted:
         log.info("pipeline.social.fsm_interrupted", user_id=user.id, interrupted=interrupted)
 
-    repo = ProjectsRepository(db)
-    projects = await repo.get_by_user(user.id)
+    proj_svc = project_service_factory(db)
+    projects = await proj_svc.list_by_user(user.id)
 
     if not projects:
         await msg.edit_text(
@@ -135,6 +136,7 @@ async def pipeline_select_project(
     db: SupabaseClient,
     redis: RedisClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Handle project selection from list."""
     msg = safe_message(callback)
@@ -147,10 +149,10 @@ async def pipeline_select_project(
         return
     project_id = int(callback.data.split(":")[2])
 
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
 
-    if project is None or project.user_id != user.id:
+    if project is None:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
@@ -176,6 +178,7 @@ async def pipeline_projects_page(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Handle project list pagination."""
     msg = safe_message(callback)
@@ -184,8 +187,8 @@ async def pipeline_projects_page(
         return
 
     page = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
-    repo = ProjectsRepository(db)
-    projects = await repo.get_by_user(user.id)
+    proj_svc = project_service_factory(db)
+    projects = await proj_svc.list_by_user(user.id)
 
     await msg.edit_text(
         f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
@@ -295,6 +298,7 @@ async def pipeline_create_project_url(
     db: SupabaseClient,
     redis: RedisClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Inline project creation step 4: URL -> create project -> proceed to step 2."""
     text = (message.text or "").strip()
@@ -310,8 +314,8 @@ async def pipeline_create_project_url(
         website_url = text if text.startswith("http") else f"https://{text}"
 
     data = await state.get_data()
-    repo = ProjectsRepository(db)
-    project = await repo.create(
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.create_project(
         ProjectCreate(
             user_id=user.id,
             name=data["new_project_name"],
@@ -372,8 +376,8 @@ async def _show_category_step(
     if not msg:
         return
 
-    repo = CategoriesRepository(db)
-    categories = await repo.get_by_project(project_id)
+    cat_svc = CategoryService(db=db)
+    categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     if not categories:
         await msg.edit_text(
@@ -422,8 +426,8 @@ async def _show_category_step_msg(
     project_name: str,
 ) -> None:
     """Show category selection via message (non-edit context)."""
-    repo = CategoriesRepository(db)
-    categories = await repo.get_by_project(project_id)
+    cat_svc = CategoryService(db=db)
+    categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     if not categories:
         await message.answer(
@@ -472,6 +476,7 @@ async def pipeline_select_category(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Handle category selection from list."""
     msg = safe_message(callback)
@@ -482,22 +487,11 @@ async def pipeline_select_category(
     parts = callback.data.split(":")  # type: ignore[union-attr]
     category_id = int(parts[4])
 
-    repo = CategoriesRepository(db)
-    category = await repo.get_by_id(category_id)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(category_id, user.id)
 
     if category is None:
         await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    data = await state.get_data()
-    project_id = data.get("project_id")
-    if not project_id:
-        await callback.answer("Проект не выбран.", show_alert=True)
-        return
-
-    # Ownership check: category belongs to the selected project
-    if category.project_id != project_id:
-        await callback.answer("Категория не принадлежит проекту.", show_alert=True)
         return
 
     await state.update_data(category_id=category.id, category_name=category.name)
@@ -515,6 +509,7 @@ async def pipeline_categories_page(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Handle category list pagination."""
     msg = safe_message(callback)
@@ -529,8 +524,8 @@ async def pipeline_categories_page(
         return
 
     page = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
-    repo = CategoriesRepository(db)
-    categories = await repo.get_by_project(project_id)
+    cat_svc = category_service_factory(db)
+    categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     await msg.edit_text(
         f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
@@ -546,6 +541,7 @@ async def pipeline_create_category_name(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Inline category creation — user typed a category name."""
     name = (message.text or "").strip()
@@ -562,13 +558,8 @@ async def pipeline_create_category_name(
         await message.answer("Проект не выбран. Начните создание поста заново.", reply_markup=menu_kb())
         return
 
-    repo = CategoriesRepository(db)
-    category = await repo.create(
-        CategoryCreate(
-            project_id=project_id,
-            name=name,
-        )
-    )
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.create_category(project_id, user.id, name)
     if category is None:
         await message.answer("Не удалось создать категорию. Попробуйте снова.", reply_markup=menu_kb())
         return

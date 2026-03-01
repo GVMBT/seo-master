@@ -425,8 +425,8 @@ class TestSelectKeyword:
 
     async def test_flat_format(self, mock_db: MagicMock) -> None:
         cat = make_category(keywords=[{"phrase": "seo tips"}, {"phrase": "marketing"}])
-        with patch(f"{_COMMON_MODULE}.CategoriesRepository") as cls:
-            cls.return_value.get_by_id = AsyncMock(return_value=cat)
+        with patch(f"{_COMMON_MODULE}.CategoryService") as cls:
+            cls.return_value.get_category_raw = AsyncMock(return_value=cat)
             result = await select_keyword(mock_db, 10)
         assert result in ("seo tips", "marketing")
 
@@ -436,21 +436,21 @@ class TestSelectKeyword:
                 {"main_phrase": "seo tools", "phrases": ["seo tools", "best seo"]},
             ]
         )
-        with patch(f"{_COMMON_MODULE}.CategoriesRepository") as cls:
-            cls.return_value.get_by_id = AsyncMock(return_value=cat)
+        with patch(f"{_COMMON_MODULE}.CategoryService") as cls:
+            cls.return_value.get_category_raw = AsyncMock(return_value=cat)
             result = await select_keyword(mock_db, 10)
         assert result == "seo tools"
 
     async def test_no_keywords_returns_none(self, mock_db: MagicMock) -> None:
         cat = make_category(keywords=[])
-        with patch(f"{_COMMON_MODULE}.CategoriesRepository") as cls:
-            cls.return_value.get_by_id = AsyncMock(return_value=cat)
+        with patch(f"{_COMMON_MODULE}.CategoryService") as cls:
+            cls.return_value.get_category_raw = AsyncMock(return_value=cat)
             result = await select_keyword(mock_db, 10)
         assert result is None
 
     async def test_no_category_returns_none(self, mock_db: MagicMock) -> None:
-        with patch(f"{_COMMON_MODULE}.CategoriesRepository") as cls:
-            cls.return_value.get_by_id = AsyncMock(return_value=None)
+        with patch(f"{_COMMON_MODULE}.CategoryService") as cls:
+            cls.return_value.get_category_raw = AsyncMock(return_value=None)
             result = await select_keyword(mock_db, 10)
         assert result is None
 
@@ -774,8 +774,13 @@ class TestCancelRefund:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
             repo_cls.return_value.update = AsyncMock()
             await cancel_refund(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                mock_http, mock_storage,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                mock_http,
+                mock_storage,
             )
 
         mock_state.clear.assert_called_once()
@@ -812,8 +817,13 @@ class TestCancelRefund:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
             repo_cls.return_value.update = AsyncMock()
             await cancel_refund(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                mock_http, mock_storage,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                mock_http,
+                mock_storage,
             )
 
         # Refund must still happen despite Telegraph error
@@ -847,8 +857,13 @@ class TestCancelRefund:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
             repo_cls.return_value.update = AsyncMock()
             await cancel_refund(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                mock_http, mock_storage,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                mock_http,
+                mock_storage,
             )
 
         refund_mock.assert_called_once()
@@ -872,8 +887,13 @@ class TestCancelRefund:
         mock_storage = MagicMock()
 
         await cancel_refund(
-            mock_callback, mock_state, user, mock_db, mock_redis,
-            mock_http, mock_storage,
+            mock_callback,
+            mock_state,
+            user,
+            mock_db,
+            mock_redis,
+            mock_http,
+            mock_storage,
         )
 
         mock_callback.answer.assert_called()
@@ -907,8 +927,13 @@ class TestCancelRefund:
             repo_cls.return_value.get_by_id = AsyncMock(return_value=preview)
             repo_cls.return_value.update = AsyncMock()
             await cancel_refund(
-                mock_callback, mock_state, user, mock_db, mock_redis,
-                mock_http, mock_storage,
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                mock_http,
+                mock_storage,
             )
 
         # Lock should be deleted in finally block
@@ -938,8 +963,13 @@ class TestCancelRefund:
             )
             with contextlib.suppress(RuntimeError):
                 await cancel_refund(
-                    mock_callback, mock_state, user, mock_db, mock_redis,
-                    mock_http, mock_storage,
+                    mock_callback,
+                    mock_state,
+                    user,
+                    mock_db,
+                    mock_redis,
+                    mock_http,
+                    mock_storage,
                 )
 
         # Lock should still be deleted despite error
@@ -1020,8 +1050,9 @@ class TestConnectWpPublish:
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
+        user: Any,
     ) -> None:
-        await connect_wp_publish(mock_callback, mock_state, MagicMock())
+        await connect_wp_publish(mock_callback, mock_state, MagicMock(), user, MagicMock())
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_url)
 
     async def test_skips_url_when_project_has_website(
@@ -1029,13 +1060,15 @@ class TestConnectWpPublish:
         mock_callback: MagicMock,
         mock_state: MagicMock,
         mock_db: MagicMock,
+        user: Any,
     ) -> None:
         """If project.website_url exists, skip URL step and go to login."""
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
         project = make_project(website_url="https://mysite.com")
-        with patch(f"{_MODULE}.ProjectsRepository") as repo_cls:
-            repo_cls.return_value.get_by_id = AsyncMock(return_value=project)
-            await connect_wp_publish(mock_callback, mock_state, mock_db)
+        proj_svc = MagicMock()
+        proj_svc.get_owned_project = AsyncMock(return_value=project)
+        pf = MagicMock(return_value=proj_svc)
+        await connect_wp_publish(mock_callback, mock_state, mock_db, user, pf)
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_login)
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "mysite.com" in text
@@ -1059,10 +1092,10 @@ class TestMoreArticles:
     ) -> None:
         mock_state.get_data = AsyncMock(return_value=_make_fsm_data(preview_id=100))
         with (
-            patch(f"{_MODULE}.CategoriesRepository") as cats_cls,
+            patch("services.categories.CategoryService") as cats_cls,
             patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock),
         ):
-            cats_cls.return_value.get_by_project = AsyncMock(
+            cats_cls.return_value.list_by_project = AsyncMock(
                 return_value=[
                     make_category(id=10),
                     make_category(id=11),
@@ -1085,11 +1118,11 @@ class TestMoreArticles:
     ) -> None:
         mock_state.get_data = AsyncMock(return_value=_make_fsm_data(preview_id=100))
         with (
-            patch(f"{_MODULE}.CategoriesRepository") as cats_cls,
+            patch("services.categories.CategoryService") as cats_cls,
             patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock),
             patch("routers.publishing.pipeline.readiness.show_readiness_check", new_callable=AsyncMock) as show_mock,
         ):
-            cats_cls.return_value.get_by_project = AsyncMock(return_value=[make_category()])
+            cats_cls.return_value.list_by_project = AsyncMock(return_value=[make_category()])
             await more_articles(mock_callback, mock_state, user, mock_db, mock_redis)
         show_mock.assert_called_once()
 
@@ -1143,7 +1176,7 @@ class TestBuildPreviewText:
         """HTML tags like <h1>, <h2>, <p> must be stripped — Telegram rejects them."""
         content = ArticleContent(
             title="Test",
-            content_html='<h1>Title</h1><h2>Section</h2><p>Paragraph with <b>bold</b></p>',
+            content_html="<h1>Title</h1><h2>Section</h2><p>Paragraph with <b>bold</b></p>",
             word_count=100,
             images_count=0,
         )
@@ -1159,7 +1192,7 @@ class TestBuildPreviewText:
 # ---------------------------------------------------------------------------
 
 
-@patch(f"{_MODULE}.CategoriesRepository")
+@patch("services.categories.CategoryService")
 @patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
 async def test_change_topic_multiple_categories_shows_list(
     _mock_save: AsyncMock,
@@ -1171,7 +1204,7 @@ async def test_change_topic_multiple_categories_shows_list(
     """change_topic with multiple categories shows category list."""
     user = make_user()
     cats = [make_category(), make_category(id=11, name="Cat 2")]
-    mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=cats)
+    mock_cats_cls.return_value.list_by_project = AsyncMock(return_value=cats)
     mock_state.get_data = AsyncMock(
         return_value={
             "project_id": 1,
@@ -1188,7 +1221,7 @@ async def test_change_topic_multiple_categories_shows_list(
     mock_state.set_state.assert_called_with(ArticlePipelineFSM.select_category)
 
 
-@patch(f"{_MODULE}.CategoriesRepository")
+@patch("services.categories.CategoryService")
 @patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
 async def test_change_topic_no_project_id_shows_stale_alert(
     _mock_save: AsyncMock,
@@ -1206,7 +1239,7 @@ async def test_change_topic_no_project_id_shows_stale_alert(
     mock_callback.answer.assert_called_with("Данные сессии устарели.", show_alert=True)
 
 
-@patch(f"{_MODULE}.CategoriesRepository")
+@patch("services.categories.CategoryService")
 @patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock)
 @patch("routers.publishing.pipeline.readiness.show_readiness_check", new_callable=AsyncMock)
 async def test_change_topic_single_category_clears_generation_data(
@@ -1219,7 +1252,7 @@ async def test_change_topic_single_category_clears_generation_data(
 ) -> None:
     """change_topic clears generation-specific data from state."""
     user = make_user()
-    mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=[make_category()])
+    mock_cats_cls.return_value.list_by_project = AsyncMock(return_value=[make_category()])
     mock_state.get_data = AsyncMock(
         return_value={
             "project_id": 1,
@@ -1248,7 +1281,8 @@ async def test_connect_wp_publish_sets_from_preview(
     mock_state: MagicMock,
 ) -> None:
     """connect_wp_publish sets from_preview=True in state data."""
-    await connect_wp_publish(mock_callback, mock_state, MagicMock())
+    user = make_user()
+    await connect_wp_publish(mock_callback, mock_state, MagicMock(), user, MagicMock())
 
     # Check that from_preview was set (first call before get_data)
     mock_state.update_data.assert_any_call(from_preview=True)

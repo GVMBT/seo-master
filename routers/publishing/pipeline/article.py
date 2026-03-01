@@ -25,13 +25,12 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_message
+from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
 from bot.validators import URL_RE
 from cache.client import RedisClient
 from db.client import SupabaseClient
-from db.models import CategoryCreate, PlatformConnectionCreate, ProjectCreate, User
-from db.repositories.categories import CategoriesRepository
+from db.models import PlatformConnectionCreate, ProjectCreate, User
 from db.repositories.previews import PreviewsRepository
-from db.repositories.projects import ProjectsRepository
 from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
@@ -49,6 +48,7 @@ from routers.publishing.pipeline.readiness import (
     show_readiness_check,
     show_readiness_check_msg,
 )
+from services.categories import CategoryService
 from services.connections import ConnectionService
 
 log = structlog.get_logger()
@@ -75,6 +75,7 @@ async def pipeline_article_start(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     redis: RedisClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Start article pipeline — show project selection (step 1).
 
@@ -93,8 +94,8 @@ async def pipeline_article_start(
     if interrupted:
         log.info("pipeline.article.fsm_interrupted", user_id=user.id, interrupted=interrupted)
 
-    repo = ProjectsRepository(db)
-    projects = await repo.get_by_user(user.id)
+    proj_svc = project_service_factory(db)
+    projects = await proj_svc.list_by_user(user.id)
 
     if not projects:
         # No projects — offer inline create
@@ -111,7 +112,9 @@ async def pipeline_article_start(
         # Auto-select the only project
         project = projects[0]
         await state.update_data(
-            project_id=project.id, project_name=project.name, company_name=project.company_name,
+            project_id=project.id,
+            project_name=project.name,
+            company_name=project.company_name,
         )
         await _show_wp_step(callback, state, user, db, http_client, redis, project.id, project.name)
         await callback.answer()
@@ -138,6 +141,7 @@ async def pipeline_select_project(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     redis: RedisClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Handle project selection from list."""
     msg = safe_message(callback)
@@ -150,15 +154,17 @@ async def pipeline_select_project(
         return
     project_id = int(callback.data.split(":")[2])  # pipeline:article:{id}:select
 
-    repo = ProjectsRepository(db)
-    project = await repo.get_by_id(project_id)
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
 
-    if project is None or project.user_id != user.id:
+    if project is None:
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
     await state.update_data(
-        project_id=project.id, project_name=project.name, company_name=project.company_name,
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
     )
     await _show_wp_step(callback, state, user, db, http_client, redis, project.id, project.name)
     await callback.answer()
@@ -172,6 +178,7 @@ async def pipeline_projects_page(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Handle project list pagination."""
     msg = safe_message(callback)
@@ -180,8 +187,8 @@ async def pipeline_projects_page(
         return
 
     page = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
-    repo = ProjectsRepository(db)
-    projects = await repo.get_by_user(user.id)
+    proj_svc = project_service_factory(db)
+    projects = await proj_svc.list_by_user(user.id)
 
     await msg.edit_text(
         "Статья (1/5) — Проект\n\nДля какого проекта?",
@@ -292,6 +299,7 @@ async def pipeline_create_project_url(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     redis: RedisClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Inline project creation step 4: URL -> create project -> proceed to step 2."""
     text = (message.text or "").strip()
@@ -307,8 +315,8 @@ async def pipeline_create_project_url(
         website_url = text if text.startswith("http") else f"https://{text}"
 
     data = await state.get_data()
-    repo = ProjectsRepository(db)
-    project = await repo.create(
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.create_project(
         ProjectCreate(
             user_id=user.id,
             name=data["new_project_name"],
@@ -321,7 +329,9 @@ async def pipeline_create_project_url(
     log.info("pipeline.project_created", project_id=project.id, user_id=user.id)
 
     await state.update_data(
-        project_id=project.id, project_name=project.name, company_name=project.company_name,
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
     )
     await message.answer(f"Проект «{html.escape(project.name)}» создан!")
 
@@ -465,6 +475,8 @@ async def pipeline_start_connect_wp(
     callback: CallbackQuery,
     state: FSMContext,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
+    user: User,
 ) -> None:
     """Start inline WP connection within pipeline."""
     msg = safe_message(callback)
@@ -476,7 +488,8 @@ async def pipeline_start_connect_wp(
     data = await state.get_data()
     project_id = data.get("project_id")
     if project_id:
-        project = await ProjectsRepository(db).get_by_id(project_id)
+        proj_svc = project_service_factory(db)
+        project = await proj_svc.get_owned_project(project_id, user.id)
         if project and project.website_url:
             await state.update_data(wp_url=project.website_url, last_update_time=time.time())
             await state.set_state(ArticlePipelineFSM.connect_wp_login)
@@ -551,6 +564,7 @@ async def pipeline_connect_wp_password(
     db: SupabaseClient,
     redis: RedisClient,
     http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Inline WP connection step 3: password -> validate -> create -> proceed to step 3."""
     text = (message.text or "").strip()
@@ -590,9 +604,9 @@ async def pipeline_connect_wp_password(
         return
 
     # Re-validate project ownership
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
+    if not project:
         await state.clear()
         await clear_checkpoint(redis, user.id)
         await message.answer("Проект не найден.", reply_markup=menu_kb())
@@ -698,8 +712,8 @@ async def _show_category_step(
     if not msg:
         return
 
-    repo = CategoriesRepository(db)
-    categories = await repo.get_by_project(project_id)
+    cat_svc = CategoryService(db=db)
+    categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     if not categories:
         # No categories — prompt for inline creation
@@ -757,8 +771,8 @@ async def _show_category_step_msg(
     Used after inline project/WP creation (text messages can't be edited).
     Same logic as _show_category_step but sends new messages.
     """
-    repo = CategoriesRepository(db)
-    categories = await repo.get_by_project(project_id)
+    cat_svc = CategoryService(db=db)
+    categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     if not categories:
         await message.answer(
@@ -809,6 +823,7 @@ async def pipeline_select_category(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Handle category selection from list."""
     msg = safe_message(callback)
@@ -819,22 +834,11 @@ async def pipeline_select_category(
     parts = callback.data.split(":")  # type: ignore[union-attr]
     category_id = int(parts[4])
 
-    repo = CategoriesRepository(db)
-    category = await repo.get_by_id(category_id)
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.get_owned_category(category_id, user.id)
 
     if category is None:
         await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    data = await state.get_data()
-    project_id = data.get("project_id")
-    if not project_id:
-        await callback.answer("Проект не выбран.", show_alert=True)
-        return
-
-    # Ownership check: category belongs to the selected project
-    if category.project_id != project_id:
-        await callback.answer("Категория не принадлежит проекту.", show_alert=True)
         return
 
     await state.update_data(
@@ -853,6 +857,7 @@ async def pipeline_create_category_name(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Inline category creation — user typed a category name.
 
@@ -872,13 +877,8 @@ async def pipeline_create_category_name(
         await message.answer("Проект не выбран. Начните создание статьи заново.", reply_markup=menu_kb())
         return
 
-    repo = CategoriesRepository(db)
-    category = await repo.create(
-        CategoryCreate(
-            project_id=project_id,
-            name=name,
-        )
-    )
+    cat_svc = category_service_factory(db)
+    category = await cat_svc.create_category(project_id, user.id, name)
     if category is None:
         await message.answer("Не удалось создать категорию. Попробуйте снова.", reply_markup=menu_kb())
         return

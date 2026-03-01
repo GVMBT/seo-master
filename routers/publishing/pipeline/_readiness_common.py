@@ -24,9 +24,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
 from bot.helpers import safe_message
-from db.models import CategoryUpdate, User
-from db.repositories.categories import CategoriesRepository
-from db.repositories.projects import ProjectsRepository
+from db.models import User
 from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_back_to_checklist_kb,
@@ -37,12 +35,14 @@ from keyboards.pipeline import (
     pipeline_keywords_qty_kb,
 )
 from services.ai.description import DescriptionService
+from services.categories import CategoryService
 from services.keywords import KeywordService
 from services.tokens import COST_DESCRIPTION, TokenService, estimate_keywords_cost
 
 if TYPE_CHECKING:
     from aiogram.fsm.context import FSMContext
 
+    from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
     from cache.client import RedisClient
     from db.client import SupabaseClient
     from services.ai.orchestrator import AIOrchestrator
@@ -208,11 +208,15 @@ async def run_keyword_generation(
         enriched = kw_service.filter_low_quality(enriched)
 
         # Save (MERGE with existing)
-        cats_repo = CategoriesRepository(db)
-        category = await cats_repo.get_by_id(category_id)
-        existing: list[dict[str, Any]] = (category.keywords if category else []) or []
+        cat_svc = CategoryService(db=db)
+        category = await cat_svc.get_owned_category(category_id, user.id)
+        if not category:
+            raise RuntimeError("keywords_save_failed.ownership")
+        existing: list[dict[str, Any]] = (category.keywords or [])
         merged = existing + enriched
-        await cats_repo.update_keywords(category_id, merged)
+        saved = await cat_svc.update_keywords(category_id, user.id, merged)
+        if not saved:
+            raise RuntimeError("keywords_save_failed.update")
 
         total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
         total_volume = sum(c.get("total_volume", 0) for c in enriched)
@@ -292,9 +296,7 @@ async def generate_description_ai(
     ai_orchestrator: AIOrchestrator,
     *,
     log_prefix: str,
-    on_success: Callable[
-        [CallbackQuery, FSMContext, User, SupabaseClient, RedisClient], Awaitable[None]
-    ],
+    on_success: Callable[[CallbackQuery, FSMContext, User, SupabaseClient, RedisClient], Awaitable[None]],
 ) -> None:
     """Generate category description via AI, charge tokens, and return to checklist.
 
@@ -356,8 +358,8 @@ async def generate_description_ai(
         )
         generated = result.content if isinstance(result.content, str) else str(result.content)
 
-        cats_repo = CategoriesRepository(db)
-        save_result = await cats_repo.update(category_id, CategoryUpdate(description=generated))
+        cat_svc = CategoryService(db=db)
+        save_result = await cat_svc.update_description(category_id, user.id, generated)
         if not save_result:
             raise RuntimeError("description_save_failed")
     except Exception:
@@ -440,6 +442,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         state: FSMContext,
         user: User,
         db: SupabaseClient,
+        category_service_factory: CategoryServiceFactory,
+        project_service_factory: ProjectServiceFactory,
     ) -> None:
         """Auto keyword generation -- quick path (100 phrases, defaults from DB)."""
         msg = safe_message(callback)
@@ -454,14 +458,14 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer("Категория не найдена.", show_alert=True)
             return
 
-        cats_repo = CategoriesRepository(db)
-        category = await cats_repo.get_by_id(category_id)
+        cat_svc = category_service_factory(db)
+        category = await cat_svc.get_owned_category(category_id, user.id)
         if not category:
             await callback.answer("Категория не найдена.", show_alert=True)
             return
 
-        projects_repo = ProjectsRepository(db)
-        project = await projects_repo.get_by_id(project_id)
+        proj_svc = project_service_factory(db)
+        project = await proj_svc.get_owned_project(project_id, user.id)
 
         products = category.name
         geography = project.company_city if project and project.company_city else None
@@ -568,6 +572,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         user: User,
         db: SupabaseClient,
         redis: RedisClient,
+        category_service_factory: CategoryServiceFactory,
     ) -> None:
         """Process uploaded TXT file with keyword phrases."""
         doc = message.document
@@ -620,8 +625,12 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             return
 
         keywords = [{"phrase": p, "volume": 0, "cpc": 0.0} for p in phrases]
-        cats_repo = CategoriesRepository(db)
-        await cats_repo.update_keywords(category_id, keywords)
+        cat_svc = category_service_factory(db)
+        saved = await cat_svc.update_keywords(category_id, user.id, keywords)
+        if not saved:
+            log.error(f"{log_prefix}.keywords_upload_failed", category_id=category_id, user_id=user.id)
+            await message.answer("Не удалось сохранить фразы. Попробуйте снова.")
+            return
 
         log.info(
             f"{log_prefix}.keywords_uploaded",
@@ -663,6 +672,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         user: User,
         db: SupabaseClient,
         redis: RedisClient,
+        category_service_factory: CategoryServiceFactory,
     ) -> None:
         """Handle text input -- route by kw_mode (configure=products, upload=phrases)."""
         data = await state.get_data()
@@ -702,8 +712,12 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             return
 
         keywords = [{"phrase": p, "volume": 0, "cpc": 0.0} for p in phrases]
-        cats_repo = CategoriesRepository(db)
-        await cats_repo.update_keywords(category_id, keywords)
+        cat_svc = category_service_factory(db)
+        saved = await cat_svc.update_keywords(category_id, user.id, keywords)
+        if not saved:
+            log.error(f"{log_prefix}.keywords_text_failed", category_id=category_id, user_id=user.id)
+            await message.answer("Не удалось сохранить фразы. Попробуйте снова.")
+            return
 
         log.info(
             f"{log_prefix}.keywords_text",
@@ -730,6 +744,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         state: FSMContext,
         user: User,
         db: SupabaseClient,
+        project_service_factory: ProjectServiceFactory,
     ) -> None:
         """Quick city selection for auto-keywords (UX_PIPELINE SS4a).
 
@@ -754,8 +769,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         if project_id:
             from db.models import ProjectUpdate
 
-            projects_repo = ProjectsRepository(db)
-            await projects_repo.update(project_id, ProjectUpdate(company_city=city))
+            proj_svc = project_service_factory(db)
+            await proj_svc.update_project(project_id, user.id, ProjectUpdate(company_city=city))
 
         if kw_mode == "auto":
             # Auto path: city selected -> go straight to confirm (100 phrases)
@@ -1067,6 +1082,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         user: User,
         db: SupabaseClient,
         redis: RedisClient,
+        category_service_factory: CategoryServiceFactory,
     ) -> None:
         """Save manually entered description."""
         text = (message.text or "").strip()
@@ -1083,8 +1099,12 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
             return
 
-        cats_repo = CategoriesRepository(db)
-        await cats_repo.update(category_id, CategoryUpdate(description=text))
+        cat_svc = category_service_factory(db)
+        saved = await cat_svc.update_description(category_id, user.id, text)
+        if not saved:
+            log.error(f"{log_prefix}.description_save_failed", category_id=category_id, user_id=user.id)
+            await message.answer("Не удалось сохранить описание. Попробуйте снова.")
+            return
 
         log.info(
             f"{log_prefix}.description_manual",

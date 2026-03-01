@@ -21,10 +21,10 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
 from bot.helpers import safe_message
+from bot.service_factory import CategoryServiceFactory
 from cache.client import RedisClient
 from db.client import SupabaseClient
-from db.models import CategoryUpdate, User
-from db.repositories.categories import CategoriesRepository
+from db.models import User
 from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_images_options_kb,
@@ -315,6 +315,7 @@ async def readiness_prices_text_input(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Save prices from text input."""
     text = (message.text or "").strip()
@@ -347,8 +348,12 @@ async def readiness_prices_text_input(
         return
 
     prices_text = "\n".join(lines)
-    cats_repo = CategoriesRepository(db)
-    await cats_repo.update(category_id, CategoryUpdate(prices=prices_text))
+    cat_svc = category_service_factory(db)
+    saved = await cat_svc.update_prices(category_id, user.id, prices_text)
+    if not saved:
+        log.error("pipeline.readiness.prices_save_failed", category_id=category_id, user_id=user.id)
+        await message.answer("Не удалось сохранить цены. Попробуйте снова.")
+        return
 
     log.info(
         "pipeline.readiness.prices_text",
@@ -392,6 +397,7 @@ async def readiness_prices_excel_file(
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    category_service_factory: CategoryServiceFactory,
 ) -> None:
     """Process uploaded Excel file with prices."""
     doc = message.document
@@ -451,8 +457,12 @@ async def readiness_prices_excel_file(
         return
 
     prices_text = "\n".join(result)
-    cats_repo = CategoriesRepository(db)
-    await cats_repo.update(category_id, CategoryUpdate(prices=prices_text))
+    cat_svc = category_service_factory(db)
+    saved = await cat_svc.update_prices(category_id, user.id, prices_text)
+    if not saved:
+        log.error("pipeline.readiness.prices_excel_failed", category_id=category_id, user_id=user.id)
+        await message.answer("Не удалось сохранить цены. Попробуйте снова.")
+        return
 
     log.info(
         "pipeline.readiness.prices_excel",

@@ -38,6 +38,36 @@ from tests.unit.routers.conftest import make_category, make_project
 _MODULE = "routers.publishing.pipeline.social.social"
 
 
+def _make_proj_factory(
+    *,
+    projects: list | None = None,
+    project: Any = None,
+    created_project: Any = None,
+) -> MagicMock:
+    """Create a mock ProjectServiceFactory for DI."""
+    proj_svc = MagicMock()
+    proj_svc.list_by_user = AsyncMock(return_value=projects or [])
+    proj_svc.get_owned_project = AsyncMock(return_value=project)
+    proj_svc.create_project = AsyncMock(return_value=created_project)
+    factory = MagicMock(return_value=proj_svc)
+    return factory
+
+
+def _make_cat_factory(
+    *,
+    categories: list | None = None,
+    category: Any = None,
+    created_category: Any = None,
+) -> MagicMock:
+    """Create a mock CategoryServiceFactory for DI."""
+    cat_svc = MagicMock()
+    cat_svc.list_by_project = AsyncMock(return_value=categories or [])
+    cat_svc.get_owned_category = AsyncMock(return_value=category)
+    cat_svc.create_category = AsyncMock(return_value=created_category)
+    factory = MagicMock(return_value=cat_svc)
+    return factory
+
+
 def _patch_repos(
     *,
     projects: list | None = None,
@@ -47,20 +77,25 @@ def _patch_repos(
     category: Any = None,
     created_category: Any = None,
 ):
-    """Patch repos used by social pipeline handlers."""
-    projects_mock = MagicMock()
-    projects_mock.get_by_user = AsyncMock(return_value=projects or [])
-    projects_mock.get_by_id = AsyncMock(return_value=project)
-    projects_mock.create = AsyncMock(return_value=created_project)
+    """Build patches and mock factories for social pipeline handlers.
+
+    Returns (patches, proj_factory, cat_factory).
+    - proj_factory / cat_factory are DI kwargs for handlers that take factories.
+    - patches["cats"] patches CategoryService for internal helpers (_show_category_step*).
+    """
+    proj_factory = _make_proj_factory(
+        projects=projects, project=project, created_project=created_project,
+    )
 
     cat_mock = MagicMock()
-    cat_mock.get_by_project = AsyncMock(return_value=categories or [])
-    cat_mock.get_by_id = AsyncMock(return_value=category)
-    cat_mock.create = AsyncMock(return_value=created_category)
+    cat_mock.list_by_project = AsyncMock(return_value=categories or [])
+    cat_mock.get_owned_category = AsyncMock(return_value=category)
+    cat_mock.create_category = AsyncMock(return_value=created_category)
+    cat_factory = MagicMock(return_value=cat_mock)
 
     patches = {
-        "projects": patch(f"{_MODULE}.ProjectsRepository", return_value=projects_mock),
-        "cats": patch(f"{_MODULE}.CategoriesRepository", return_value=cat_mock),
+        # For internal helpers that do CategoryService(db=db) directly
+        "cats": patch(f"{_MODULE}.CategoryService", return_value=cat_mock),
         "fsm_utils": patch(
             f"{_MODULE}.ensure_no_active_fsm",
             new_callable=AsyncMock,
@@ -85,7 +120,7 @@ def _patch_repos(
             new_callable=AsyncMock,
         ),
     }
-    return patches, projects_mock, cat_mock
+    return patches, proj_factory, cat_factory
 
 
 # ---------------------------------------------------------------------------
@@ -103,9 +138,9 @@ class TestPipelineSocialStart:
         mock_redis: MagicMock,
         user: Any,
     ) -> None:
-        patches, _, _ = _patch_repos(projects=[])
-        with patches["projects"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
+        patches, pf, _ = _patch_repos(projects=[])
+        with patches["cats"], patches["fsm_utils"]:
+            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf)
 
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_project)
         mock_callback.message.edit_text.assert_awaited_once()
@@ -120,9 +155,9 @@ class TestPipelineSocialStart:
         user: Any,
     ) -> None:
         p = make_project()
-        patches, _, _cat_mock = _patch_repos(projects=[p], categories=[make_category()])
-        with patches["projects"], patches["cats"], patches["fsm_utils"], patches["conn_step"]:
-            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
+        patches, pf, _ = _patch_repos(projects=[p], categories=[make_category()])
+        with patches["cats"], patches["fsm_utils"], patches["conn_step"]:
+            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf)
 
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
 
@@ -135,9 +170,9 @@ class TestPipelineSocialStart:
     ) -> None:
         p1 = make_project(id=1, name="P1")
         p2 = make_project(id=2, name="P2")
-        patches, _, _ = _patch_repos(projects=[p1, p2])
-        with patches["projects"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
+        patches, pf, _ = _patch_repos(projects=[p1, p2])
+        with patches["cats"], patches["fsm_utils"]:
+            await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf)
 
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_project)
         mock_callback.message.edit_text.assert_awaited_once()
@@ -155,9 +190,9 @@ class TestPipelineSocialStart:
         callback = MagicMock()
         callback.message = MagicMock(spec=InaccessibleMessage)
         callback.answer = AsyncMock()
-        patches, _, _ = _patch_repos()
-        with patches["projects"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_social_start(callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
+        patches, pf, _ = _patch_repos()
+        with patches["cats"], patches["fsm_utils"]:
+            await pipeline_social_start(callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf)
 
         mock_state.set_state.assert_not_awaited()
 
@@ -177,9 +212,11 @@ class TestPipelineSelectProject:
     ) -> None:
         p = make_project(user_id=user.id)
         mock_callback.data = f"pipeline:social:{p.id}:select"
-        patches, _, _cat_mock = _patch_repos(project=p, categories=[make_category()])
-        with patches["projects"], patches["cats"], patches["fsm_utils"], patches["conn_step"]:
-            await pipeline_select_project(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
+        patches, pf, _ = _patch_repos(project=p, categories=[make_category()])
+        with patches["cats"], patches["fsm_utils"], patches["conn_step"]:
+            await pipeline_select_project(
+                mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf,
+            )
 
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
 
@@ -192,9 +229,12 @@ class TestPipelineSelectProject:
     ) -> None:
         p = make_project(user_id=999999)
         mock_callback.data = f"pipeline:social:{p.id}:select"
-        patches, _, _ = _patch_repos(project=p)
-        with patches["projects"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_select_project(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock())
+        # get_owned_project returns None for non-owned project
+        patches, pf, _ = _patch_repos(project=None)
+        with patches["cats"], patches["fsm_utils"]:
+            await pipeline_select_project(
+                mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf,
+            )
 
         mock_callback.answer.assert_awaited_once()
         assert "не найден" in mock_callback.answer.call_args[0][0]
@@ -268,9 +308,11 @@ class TestInlineProjectCreation:
                 "new_specialization": "SEO",
             }
         )
-        patches, _, _cat_mock = _patch_repos(created_project=p, categories=[make_category()])
-        with patches["projects"], patches["cats"], patches["conn_step_msg"]:
-            await pipeline_create_project_url(mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock())
+        patches, pf, _ = _patch_repos(created_project=p, categories=[make_category()])
+        with patches["cats"], patches["conn_step_msg"]:
+            await pipeline_create_project_url(
+                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf,
+            )
 
         # Should have created the project and updated state
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
@@ -292,9 +334,9 @@ class TestCategorySelection:
         cat = make_category(project_id=1)
         mock_callback.data = f"pipeline:social:1:cat:{cat.id}"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "Test"})
-        patches, _, _cat_mock = _patch_repos(category=cat)
-        with patches["projects"], patches["cats"], patches["readiness_check"] as mock_readiness:
-            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis)
+        patches, _, cf = _patch_repos(category=cat)
+        with patches["cats"], patches["readiness_check"] as mock_readiness:
+            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, cf)
 
         mock_state.update_data.assert_any_await(category_id=cat.id, category_name=cat.name)
         mock_readiness.assert_awaited_once()
@@ -309,12 +351,12 @@ class TestCategorySelection:
         cat = make_category(project_id=999)
         mock_callback.data = f"pipeline:social:1:cat:{cat.id}"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "Test"})
-        patches, _, _ = _patch_repos(category=cat)
-        with patches["projects"], patches["cats"]:
-            await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis)
+        # get_owned_category returns None for non-owned category
+        _, _, cf = _patch_repos(category=None)
+        await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, cf)
 
         mock_callback.answer.assert_awaited_once()
-        assert "не принадлежит" in mock_callback.answer.call_args[0][0]
+        assert "не найдена" in mock_callback.answer.call_args[0][0]
 
     async def test_inline_category_creation(
         self,
@@ -326,9 +368,9 @@ class TestCategorySelection:
         cat = make_category()
         mock_message.text = "New Topic"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "Test"})
-        patches, _, _ = _patch_repos(created_category=cat)
-        with patches["projects"], patches["cats"], patches["readiness_check_msg"] as mock_readiness_msg:
-            await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
+        patches, _, cf = _patch_repos(created_category=cat)
+        with patches["cats"], patches["readiness_check_msg"] as mock_readiness_msg:
+            await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, cf)
 
         mock_state.update_data.assert_any_await(category_id=cat.id, category_name=cat.name)
         mock_readiness_msg.assert_awaited_once()
@@ -342,7 +384,7 @@ class TestCategorySelection:
     ) -> None:
         mock_message.text = "X"
         mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "Test"})
-        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis)
+        await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock())
 
         # Should ask for valid name, NOT set state
         mock_state.set_state.assert_not_awaited()
