@@ -45,13 +45,13 @@ def test_image_presets_kb_marks_current() -> None:
     kb = image_presets_kb(
         cat_id=10,
         preset_names=_IMAGE_PRESET_NAMES,
-        current_preset="Lifestyle",
+        current_preset="Лайфстайл",
         recommended_idx=0,
         count=3,
     )
     buttons = [btn for row in kb.inline_keyboard for btn in row]
     for btn in buttons:
-        if "Lifestyle" in btn.text:
+        if "Лайфстайл" in btn.text:
             assert btn.text.startswith("\u2713 ")
             break
     else:

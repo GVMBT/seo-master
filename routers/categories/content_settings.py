@@ -19,7 +19,6 @@ from bot.helpers import safe_message
 from bot.service_factory import CategoryServiceFactory
 from db.client import SupabaseClient
 from db.models import Category, User
-from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
     cancel_kb,
     category_card_kb,
@@ -80,7 +79,7 @@ _IMAGE_PRESETS: list[dict[str, Any]] = [
         "niches": [],
     },
     {
-        "name": "Lifestyle",
+        "name": "Лайфстайл",
         "desc": "Тёплое освещение, естественные цвета",
         "style": "Фотореализм",
         "tone": "warm",
@@ -486,10 +485,9 @@ async def show_image_presets(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    # Load project for niche detection
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    niche = detect_niche(project.specialization) if project else "general"
+    # Get project niche for recommendation
+    specialization = await cat_svc.get_project_specialization(category.project_id)
+    niche = detect_niche(specialization) if specialization else "general"
     recommended = _recommend_preset(niche)
 
     img = _get_image_settings(category)
@@ -498,7 +496,6 @@ async def show_image_presets(
 
     # Build description text
     if current_preset:
-        # Find preset desc
         desc = ""
         for p in _IMAGE_PRESETS:
             if p["name"] == current_preset:
@@ -557,9 +554,8 @@ async def apply_preset(
     log.info("image_preset_applied", cat_id=cat_id, preset=preset["name"], user_id=user.id)
 
     # Refresh presets screen
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    niche = detect_niche(project.specialization) if project else "general"
+    specialization = await cat_svc.get_project_specialization(category.project_id)
+    niche = detect_niche(specialization) if specialization else "general"
     recommended = _recommend_preset(niche)
 
     desc = preset["desc"]
@@ -629,9 +625,8 @@ async def stepper_count(
     await cat_svc.update_image_settings(cat_id, user.id, img)
 
     # Rebuild keyboard only (editReplyMarkup)
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(category.project_id)
-    niche = detect_niche(project.specialization) if project else "general"
+    specialization = await cat_svc.get_project_specialization(category.project_id)
+    niche = detect_niche(specialization) if specialization else "general"
     recommended = _recommend_preset(niche)
     current_preset = img.get("preset")
 

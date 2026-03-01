@@ -1,6 +1,7 @@
 """Price list management: text input and Excel upload (UX_TOOLBOX.md section 11)."""
 
 import html
+import itertools
 import time
 from io import BytesIO
 from typing import Any
@@ -309,25 +310,30 @@ def parse_excel_rows(file_bytes: bytes) -> list[str] | str:
         if ws is None:
             return "empty"
 
-        all_rows = [
+        rows_iter = (
             r
             for r in ws.iter_rows(values_only=True)
             if r and not all(c is None or str(c).strip() == "" for c in r)
-        ]
-        if not all_rows:
+        )
+        first_row = next(rows_iter, None)
+        if first_row is None:
             return "empty"
 
-        # Detect headers (only when >1 row)
+        # Detect headers (only when >1 row to avoid treating single data row as header)
+        second_row = next(rows_iter, None)
         headers: list[str] | None = None
-        data_start = 0
-        if len(all_rows) > 1 and _is_header_row(all_rows[0]):
+        if second_row is not None and _is_header_row(first_row):
             headers = [
-                str(c).strip() if c is not None else f"Столбец {i + 1}" for i, c in enumerate(all_rows[0])
+                str(c).strip() if c is not None else f"Столбец {i + 1}" for i, c in enumerate(first_row)
             ]
-            data_start = 1
+            data_rows: itertools.chain[tuple[Any, ...]] = itertools.chain([second_row], rows_iter)
+        elif second_row is not None:
+            data_rows = itertools.chain([first_row, second_row], rows_iter)
+        else:
+            data_rows = itertools.chain([first_row])
 
         lines: list[str] = []
-        for row in all_rows[data_start:]:
+        for row in data_rows:
             if len(lines) >= _MAX_ROWS:
                 return "too_many_rows"
 
