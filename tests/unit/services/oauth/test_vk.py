@@ -1,4 +1,4 @@
-"""Tests for api/vk_oauth.py — VK ID OAuth 2.1 + PKCE service.
+"""Tests for services/oauth/vk.py — VK ID OAuth 2.1 + PKCE service.
 
 Covers: PKCE generation, HMAC state, code exchange, groups fetch,
 Redis storage, single-use nonce, error handling.
@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from api.vk_oauth import VKOAuthError, VKOAuthService, _generate_pkce
 from cache.keys import CacheKeys
+from services.oauth.vk import VKOAuthError, VKOAuthService, _generate_pkce
 
 # ---------------------------------------------------------------------------
 # Helpers

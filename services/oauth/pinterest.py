@@ -8,15 +8,13 @@ Source of truth:
 H10: State token is HMAC-protected (E30) AND single-use via Redis NX lock.
 """
 
-import hashlib
-import hmac
 import json
 
 import httpx
 import structlog
 
-from bot.exceptions import AppError
 from cache.client import RedisClient
+from services.oauth.state import OAuthStateError, parse_and_verify_state
 
 log = structlog.get_logger()
 
@@ -25,7 +23,7 @@ PINTEREST_AUTH_TTL = 1800  # 30 min (E20)
 _OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
 
 
-class PinterestOAuthError(AppError):
+class PinterestOAuthError(OAuthStateError):
     """Raised when Pinterest OAuth flow fails."""
 
     def __init__(
@@ -34,54 +32,6 @@ class PinterestOAuthError(AppError):
         user_message: str = "Не удалось подключить Pinterest",
     ) -> None:
         super().__init__(message=message, user_message=user_message)
-
-
-def build_state(user_id: int, nonce: str, encryption_key: str) -> str:
-    """Build state param: {user_id}_{nonce}_{hmac_hex}.
-
-    HMAC-SHA256(user_id + nonce, ENCRYPTION_KEY) prevents CSRF (E30).
-    """
-    payload = f"{user_id}|{nonce}"
-    mac = hmac.new(
-        encryption_key.encode(),
-        payload.encode(),
-        hashlib.sha256,
-    ).hexdigest()
-    return f"{payload}|{mac}"
-
-
-def parse_and_verify_state(
-    state: str,
-    encryption_key: str,
-) -> tuple[int, str]:
-    """Parse state param and verify HMAC. Returns (user_id, nonce).
-
-    State format: {user_id}|{nonce}|{hmac_hex}
-    Raises PinterestOAuthError on invalid/tampered state (E30).
-    """
-    parts = state.split("|", maxsplit=2)
-    expected_parts = 3
-    if len(parts) != expected_parts:
-        raise PinterestOAuthError("Invalid state format")
-
-    raw_user_id, nonce, received_mac = parts
-
-    try:
-        user_id = int(raw_user_id)
-    except ValueError as err:
-        raise PinterestOAuthError("Invalid user_id in state") from err
-
-    expected_mac = hmac.new(
-        encryption_key.encode(),
-        f"{user_id}|{nonce}".encode(),
-        hashlib.sha256,
-    ).hexdigest()
-
-    if not hmac.compare_digest(expected_mac, received_mac):
-        log.warning("pinterest_oauth_hmac_mismatch", user_id=user_id)
-        raise PinterestOAuthError("State HMAC verification failed (E30)")
-
-    return user_id, nonce
 
 
 class PinterestOAuthService:

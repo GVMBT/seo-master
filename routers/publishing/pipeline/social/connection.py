@@ -575,8 +575,8 @@ async def pipeline_start_connect_vk(
         await callback.answer("Проект не выбран.", show_alert=True)
         return
 
-    from api.vk_oauth import VKOAuthService
     from bot.config import get_settings
+    from services.oauth.vk import VKOAuthService
 
     settings = get_settings()
     base_url = (settings.railway_public_url or "").rstrip("/")

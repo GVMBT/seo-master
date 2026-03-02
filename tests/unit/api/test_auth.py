@@ -13,7 +13,7 @@ from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
 from api.auth import pinterest_callback, pinterest_redirect
-from api.auth_service import PinterestOAuthError
+from services.oauth.pinterest import PinterestOAuthError
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -16,6 +16,7 @@ Key facts (verified Feb 2026):
 """
 
 import base64
+import contextlib
 import hashlib
 import json
 import secrets
@@ -26,10 +27,10 @@ from typing import Any
 import httpx
 import structlog
 
-from api.auth_service import PinterestOAuthError, build_state, parse_and_verify_state
 from bot.exceptions import AppError
 from cache.client import RedisClient
 from cache.keys import VK_AUTH_TTL, CacheKeys
+from services.oauth.state import OAuthStateError, build_state, parse_and_verify_state
 
 log = structlog.get_logger()
 
@@ -135,7 +136,7 @@ class VKOAuthService:
         """
         try:
             user_id, nonce = parse_and_verify_state(state, self._encryption_key)
-        except PinterestOAuthError as exc:
+        except OAuthStateError as exc:
             raise VKOAuthError(str(exc)) from exc
 
         # H10: prevent replay attacks — state can only be used once
@@ -325,10 +326,8 @@ class VKOAuthService:
         meta = await self.get_meta(nonce)
         project_id: int | None = None
         if meta:
-            try:
+            with contextlib.suppress(ValueError, TypeError, KeyError):
                 project_id = int(meta["project_id"])
-            except (ValueError, TypeError, KeyError):
-                pass
 
         expires_in = int(result.get("expires_in") or 3600)
         expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()

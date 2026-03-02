@@ -12,8 +12,9 @@ from urllib.parse import quote, urlencode
 import structlog
 from aiohttp import web
 
-from api.auth_service import PinterestOAuthError, PinterestOAuthService, build_state
 from bot.config import get_settings
+from services.oauth.pinterest import PinterestOAuthError, PinterestOAuthService
+from services.oauth.state import build_state
 
 log = structlog.get_logger()
 

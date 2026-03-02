@@ -1,5 +1,6 @@
 """Dashboard, /start, /cancel, navigation callbacks, reply text dispatch."""
 
+import contextlib
 import html
 import json
 from typing import Any
@@ -11,7 +12,6 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from api.vk_oauth import VKDeepLinkResult, VKOAuthService
 from bot.assets import asset_photo, cache_file_id, edit_screen
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
@@ -38,6 +38,7 @@ from keyboards.pipeline import (
 from routers.publishing.pipeline._common import ArticlePipelineFSM
 from services.connections import ConnectionService
 from services.dashboard import DashboardService
+from services.oauth.vk import VKDeepLinkResult, VKOAuthService
 from services.users import UsersService
 
 log = structlog.get_logger()
@@ -344,10 +345,8 @@ async def vk_group_select_deeplink(
     meta = await vk_svc.get_meta(nonce)
     project_id: int | None = None
     if meta:
-        try:
+        with contextlib.suppress(ValueError, TypeError, KeyError):
             project_id = int(meta["project_id"])
-        except (ValueError, TypeError, KeyError):
-            pass
 
     if not project_id:
         await callback.answer("Данные сессии устарели.", show_alert=True)

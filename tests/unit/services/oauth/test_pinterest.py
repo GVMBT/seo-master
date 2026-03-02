@@ -1,4 +1,4 @@
-"""Tests for api/auth_service.py — Pinterest OAuth service.
+"""Tests for services/oauth/pinterest.py — Pinterest OAuth service.
 
 Covers: build_state, parse_and_verify_state (valid/invalid/tampered),
 handle_callback flow, _exchange_code, _store_tokens.
@@ -13,13 +13,12 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from api.auth_service import (
+from services.oauth.pinterest import (
     PINTEREST_AUTH_TTL,
     PinterestOAuthError,
     PinterestOAuthService,
-    build_state,
-    parse_and_verify_state,
 )
+from services.oauth.state import OAuthStateError, build_state, parse_and_verify_state
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -90,16 +89,16 @@ class TestParseAndVerifyState:
         assert nonce == "abc123def456"
 
     def test_invalid_format_too_few_parts(self) -> None:
-        with pytest.raises(PinterestOAuthError, match="Invalid state format"):
+        with pytest.raises(OAuthStateError, match="Invalid state format"):
             parse_and_verify_state("12345|nonce", _ENCRYPTION_KEY)
 
     def test_invalid_format_no_separator(self) -> None:
-        with pytest.raises(PinterestOAuthError, match="Invalid state format"):
+        with pytest.raises(OAuthStateError, match="Invalid state format"):
             parse_and_verify_state("garbage", _ENCRYPTION_KEY)
 
     def test_invalid_user_id_not_integer(self) -> None:
         """E30: tampered user_id."""
-        with pytest.raises(PinterestOAuthError, match="Invalid user_id"):
+        with pytest.raises(OAuthStateError, match="Invalid user_id"):
             parse_and_verify_state("abc|nonce|" + "0" * 64, _ENCRYPTION_KEY)
 
     def test_tampered_hmac(self) -> None:
@@ -107,12 +106,12 @@ class TestParseAndVerifyState:
         state = build_state(12345, "nonce", _ENCRYPTION_KEY)
         # Replace last char of HMAC
         tampered = state[:-1] + ("0" if state[-1] != "0" else "1")
-        with pytest.raises(PinterestOAuthError, match="HMAC"):
+        with pytest.raises(OAuthStateError, match="HMAC"):
             parse_and_verify_state(tampered, _ENCRYPTION_KEY)
 
     def test_wrong_encryption_key(self) -> None:
         state = build_state(12345, "nonce", _ENCRYPTION_KEY)
-        with pytest.raises(PinterestOAuthError, match="HMAC"):
+        with pytest.raises(OAuthStateError, match="HMAC"):
             parse_and_verify_state(state, "wrong-key")
 
     def test_tampered_user_id_hmac_mismatch(self) -> None:
@@ -120,7 +119,7 @@ class TestParseAndVerifyState:
         state = build_state(12345, "nonce", _ENCRYPTION_KEY)
         parts = state.split("|", maxsplit=2)
         tampered = f"99999|{parts[1]}|{parts[2]}"
-        with pytest.raises(PinterestOAuthError, match="HMAC"):
+        with pytest.raises(OAuthStateError, match="HMAC"):
             parse_and_verify_state(tampered, _ENCRYPTION_KEY)
 
 
@@ -144,6 +143,10 @@ class TestPinterestOAuthError:
 
         err = PinterestOAuthError()
         assert isinstance(err, AppError)
+
+    def test_is_oauth_state_error_subclass(self) -> None:
+        err = PinterestOAuthError()
+        assert isinstance(err, OAuthStateError)
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +268,7 @@ class TestHandleCallback:
             return httpx.Response(404)
 
         service = _make_service(handler)
-        with pytest.raises(PinterestOAuthError):
+        with pytest.raises(OAuthStateError):
             await service.handle_callback("code", "invalid_state")
 
     async def test_exchange_failure_propagates(self) -> None:

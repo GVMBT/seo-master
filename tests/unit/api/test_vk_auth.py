@@ -13,7 +13,7 @@ from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
 from api.vk_auth import vk_auth_callback, vk_auth_redirect
-from api.vk_oauth import VKOAuthError
+from services.oauth.vk import VKOAuthError
 
 # ---------------------------------------------------------------------------
 # Helpers
