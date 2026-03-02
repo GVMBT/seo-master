@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import FSInputFile, InputMediaPhoto
 
 if TYPE_CHECKING:
@@ -42,10 +44,23 @@ async def edit_screen(
     """Edit message to show photo screen (menu navigation).
 
     Uses edit_media to swap both image and caption in one call.
+    Falls back to delete+send_photo when the current message is text-only
+    (text→photo transition not supported by Telegram edit_media).
     Caches file_id from response for subsequent requests.
     """
     media = InputMediaPhoto(media=asset_photo(image), caption=text, parse_mode="HTML")
-    result = cast("Message", await msg.edit_media(media=media, reply_markup=reply_markup))
+    try:
+        result = cast("Message", await msg.edit_media(media=media, reply_markup=reply_markup))
+    except TelegramBadRequest as e:
+        if "there is no media in the message" not in str(e):
+            raise
+        # Text message — delete and resend as photo
+        with contextlib.suppress(TelegramBadRequest):
+            await msg.delete()
+        result = await msg.answer_photo(
+            photo=asset_photo(image), caption=text,
+            parse_mode="HTML", reply_markup=reply_markup,
+        )
     # Cache file_id from response for performance
     if result.photo:
         cache_file_id(image, result.photo[-1].file_id)

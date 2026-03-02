@@ -269,13 +269,13 @@ async def execute_connection_delete(
         # Reload connection list
         connections = await conn_svc.get_by_project(project_id)
         safe_name = html.escape(project.name)
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Подключение {conn.platform_type.capitalize()} ({safe_id}) удалено.\n\n<b>{safe_name}</b> — Подключения",
             reply_markup=connection_list_kb(connections, project_id),
         )
         log.info("connection_deleted", conn_id=conn_id, user_id=user.id)
     else:
-        await msg.edit_text("Ошибка удаления подключения.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Ошибка удаления подключения.", reply_markup=menu_kb())
 
     await callback.answer()
 
@@ -804,7 +804,7 @@ async def vk_select_group(
     # Rule: 1 project = max 1 VK connection
     existing_vk = await conn_svc.get_by_project_and_platform(project_id, "vk")
     if existing_vk:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "К проекту уже подключена VK-группа.\nДля другой группы создайте новый проект.",
         )
         await callback.answer()
@@ -825,7 +825,7 @@ async def vk_select_group(
     connections = await conn_svc.get_by_project(project_id)
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     safe_name = html.escape(project.name) if project else ""
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"VK-группа «{html.escape(group_name)}» подключена!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
     )

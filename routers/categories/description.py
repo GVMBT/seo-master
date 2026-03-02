@@ -16,7 +16,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import get_settings
 from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
 from db.client import SupabaseClient
 from db.models import User
@@ -63,7 +63,7 @@ async def _show_description_screen(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(category_id, user_id)
     if not category:
-        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
         return
 
     safe_name = html.escape(category.name)
@@ -75,7 +75,7 @@ async def _show_description_screen(
     else:
         text = f"<b>Описание</b> — {safe_name}\n\nОписание не заполнено. Добавьте для лучшего качества статей."
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         text,
         reply_markup=description_kb(category_id, has_description=has_description),
     )
@@ -155,7 +155,7 @@ async def start_generate(
     )
 
     safe_name = html.escape(getattr(category, "name", ""))
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Сгенерировать описание для «{safe_name}»?\nСтоимость: {COST_DESCRIPTION} токенов. Баланс: {balance}.",
         reply_markup=description_confirm_kb(cat_id, balance),
     )
@@ -189,7 +189,7 @@ async def confirm_generate(
     if not has_balance:
         balance = await token_service.get_balance(user.id)
         insufficient_msg = token_service.format_insufficient_msg(COST_DESCRIPTION, balance)
-        await msg.edit_text(insufficient_msg, reply_markup=menu_kb())
+        await safe_edit_text(msg, insufficient_msg, reply_markup=menu_kb())
         await state.clear()
         await callback.answer()
         return
@@ -199,7 +199,7 @@ async def confirm_generate(
     project_id = int(data["project_id"])
 
     # Show progress indicator before AI call
-    await msg.edit_text(f"{EMOJI_PROGRESS} Генерирую описание...")
+    await safe_edit_text(msg, f"{EMOJI_PROGRESS} Генерирую описание...")
     await callback.answer()
 
     # Generate description via AI
@@ -214,7 +214,7 @@ async def confirm_generate(
     except Exception:
         log.exception("description_generation_failed", cat_id=cat_id, user_id=user.id)
         await state.clear()
-        await msg.edit_text("\u26a0\ufe0f Ошибка генерации. Попробуйте ещё раз.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "\u26a0\ufe0f Ошибка генерации. Попробуйте ещё раз.", reply_markup=menu_kb())
         return
 
     # Charge tokens AFTER successful generation (charge-after-result)
@@ -237,7 +237,7 @@ async def confirm_generate(
 
     regen_count = int(data.get("regeneration_count", 0))
     safe_text = html.escape(generated_text)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Описание сгенерировано (списано {COST_DESCRIPTION} токенов):\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, regen_count),
     )
@@ -274,12 +274,12 @@ async def cancel_generate(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
-        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
         return
 
     safe_name = html.escape(category.name)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"<b>{safe_name}</b>",
         reply_markup=category_card_kb(cat_id, category.project_id),
     )
@@ -313,7 +313,7 @@ async def review_save(
     cat_svc = category_service_factory(db)
     result = await cat_svc.update_description(cat_id, user.id, generated_text)
     if not result:
-        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
         return
 
@@ -361,7 +361,7 @@ async def review_regenerate(
             return
 
     # Show progress indicator before AI call
-    await msg.edit_text(f"{EMOJI_PROGRESS} Генерирую описание...")
+    await safe_edit_text(msg, f"{EMOJI_PROGRESS} Генерирую описание...")
     await callback.answer()
 
     # Regenerate via AI
@@ -399,7 +399,7 @@ async def review_regenerate(
 
     safe_text = html.escape(generated_text)
     cost_note = f" (списано {COST_DESCRIPTION} токенов)" if regen_count > 2 else ""
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Описание перегенерировано{cost_note}:\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, regen_count),
     )
@@ -438,12 +438,12 @@ async def review_cancel(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
-        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
         return
 
     safe_name = html.escape(category.name)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"<b>{safe_name}</b>",
         reply_markup=category_card_kb(cat_id, category.project_id),
     )
@@ -484,7 +484,7 @@ async def start_manual(
     await state.set_state(DescriptionGenerateFSM.manual_input)
     await state.update_data(last_update_time=time.time(), cat_id=cat_id)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Введите описание категории (10\u20132000 символов):",
         reply_markup=cancel_kb(f"desc:{cat_id}:cancel"),
     )
@@ -589,12 +589,12 @@ async def cancel_manual_inline(
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if category:
         safe_name = html.escape(category.name)
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await msg.edit_text("Ввод описания отменён.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Ввод описания отменён.", reply_markup=menu_kb())
     await callback.answer()

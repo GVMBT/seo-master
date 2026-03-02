@@ -15,7 +15,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
 from db.client import SupabaseClient
 from db.models import Category, User
@@ -198,7 +198,7 @@ async def show_settings(
         lines.append(f"Изображения: {img_style or 'по умолчанию'} ({img_count} шт)")
 
     settings_dict = {**ts, **img}
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "\n".join(lines),
         reply_markup=content_settings_kb(category_id, settings_dict),
     )
@@ -246,7 +246,7 @@ async def text_length(
         settings_cat_id=cat_id,
     )
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Текущая длина: {current_min}–{current_max} слов.\n\n"
         "Введите <b>минимальную</b> длину статьи (500–10000 слов):",
         reply_markup=cancel_kb(f"cs:{cat_id}:cancel"),
@@ -367,7 +367,7 @@ async def text_style(
     ts = _get_text_settings(category)
     selected: list[str] = ts.get("styles", [])
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "\u270d\ufe0f Выберите стили текста (можно несколько):",
         reply_markup=text_style_kb(cat_id, selected),
     )
@@ -415,7 +415,7 @@ async def toggle_style(
     ts["styles"] = selected
     await cat_svc.update_text_settings(cat_id, user.id, ts)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "\u270d\ufe0f Выберите стили текста (можно несколько):",
         reply_markup=text_style_kb(cat_id, selected),
     )
@@ -453,7 +453,7 @@ async def save_styles(
     lines = [f"<b>Настройки контента</b> — {safe_name}\n"]
     lines.append(f"Стиль текста: {', '.join(selected) if selected else 'не выбран'}")
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "\n".join(lines),
         reply_markup=content_settings_kb(cat_id, {**ts, **img}),
     )
@@ -505,7 +505,7 @@ async def show_image_presets(
     else:
         text = "Выберите пресет изображений:"
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         text,
         reply_markup=image_presets_kb(cat_id, _IMAGE_PRESET_NAMES, current_preset, recommended, count),
     )
@@ -559,7 +559,7 @@ async def apply_preset(
     recommended = _recommend_preset(niche)
 
     desc = preset["desc"]
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Текущий пресет: <b>{html.escape(preset['name'])}</b>\n{html.escape(desc)}",
         reply_markup=image_presets_kb(cat_id, _IMAGE_PRESET_NAMES, preset["name"], recommended, preset["count"]),
     )
@@ -586,7 +586,7 @@ async def open_custom_settings(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Настройте изображения вручную:",
         reply_markup=image_custom_kb(cat_id),
     )
@@ -665,7 +665,7 @@ async def img_count(
     img = _get_image_settings(category)
     current = img.get("count", 4)  # default 4
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Выберите количество изображений на статью:",
         reply_markup=image_count_kb(cat_id, current),
     )
@@ -707,7 +707,7 @@ async def select_img_count(
 
     ts = _get_text_settings(category)
     safe_name = html.escape(category.name)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"<b>Настройки контента</b> — {safe_name}\n\nИзображений: {count}/статью",
         reply_markup=content_settings_kb(cat_id, {**ts, **img}),
     )
@@ -743,7 +743,7 @@ async def img_style(
     img = _get_image_settings(category)
     current = img.get("style")
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Выберите стиль изображений:",
         reply_markup=image_style_kb(cat_id, current),
     )
@@ -786,7 +786,7 @@ async def select_img_style(
 
     ts = _get_text_settings(category)
     safe_name = html.escape(category.name)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"<b>Настройки контента</b> — {safe_name}\n\nСтиль изображений: {style_name}",
         reply_markup=content_settings_kb(cat_id, {**ts, **img}),
     )
@@ -819,12 +819,12 @@ async def cancel_text_length_inline(
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if category:
         safe_name = html.escape(category.name)
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await msg.edit_text("Настройка отменена.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Настройка отменена.", reply_markup=menu_kb())
     await callback.answer()

@@ -641,7 +641,7 @@ async def broadcast_confirm(
     user_ids = await admin_svc.get_audience_ids(audience_key)
     total = len(user_ids)
 
-    await msg.edit_text(f"Рассылка... (0/{total})")
+    await safe_edit_text(msg, f"Рассылка... (0/{total})")
 
     sent = 0
     failed = 0
@@ -660,9 +660,9 @@ async def broadcast_confirm(
         # Progress update every N users (Telegram edit rate limit is acceptable to suppress)
         if i % _BROADCAST_PROGRESS_STEP == 0 and i < total:
             with contextlib.suppress(Exception):
-                await msg.edit_text(f"Рассылка... ({i}/{total})\nОтправлено: {sent}, ошибок: {failed}")
+                await safe_edit_text(msg, f"Рассылка... ({i}/{total})\nОтправлено: {sent}, ошибок: {failed}")
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"<b>Рассылка завершена</b>\n\nОтправлено: {sent}\nОшибок: {failed}",
         reply_markup=_BACK_TO_PANEL_KB,
     )

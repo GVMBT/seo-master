@@ -23,7 +23,7 @@ from aiogram.fsm.state import State
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from db.models import User
 from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
@@ -158,7 +158,7 @@ async def run_keyword_generation(
     async def _safe_edit(text: str) -> None:
         """Edit message, silently ignoring Telegram errors (expired message, etc.)."""
         try:
-            await msg.edit_text(text)
+            await safe_edit_text(msg, text)
         except Exception:
             log.debug(f"{log_prefix}.edit_failed", text=text[:50])
 
@@ -333,7 +333,7 @@ async def generate_description_ai(
 
     # Answer callback immediately so the button stops "loading"
     await callback.answer()
-    await msg.edit_text("Генерирую описание...")
+    await safe_edit_text(msg, "Генерирую описание...")
 
     # Debit-first: charge before generation, refund on failure
     try:
@@ -345,7 +345,7 @@ async def generate_description_ai(
         )
     except Exception:
         log.exception(f"{log_prefix}.description_charge_failed", user_id=user.id)
-        await msg.edit_text("Ошибка списания токенов.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Ошибка списания токенов.", reply_markup=menu_kb())
         return
 
     # Generate + save; refund on any failure
@@ -375,7 +375,7 @@ async def generate_description_ai(
             user_id=user.id,
             category_id=category_id,
         )
-        await msg.edit_text("Ошибка генерации описания. Токены возвращены.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Ошибка генерации описания. Токены возвращены.", reply_markup=menu_kb())
         return
 
     log.info(
@@ -425,7 +425,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Ключевые фразы\n\nВыберите способ добавления:",
             reply_markup=pipeline_keywords_options_kb(prefix=prefix),
         )
@@ -475,7 +475,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await state.set_state(fsm.readiness_keywords_geo)
             await state.update_data(kw_products=products, kw_mode="auto")
 
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 "В каком городе ваш бизнес?\n<i>Для точных SEO-фраз</i>",
                 reply_markup=pipeline_keywords_city_kb(prefix=prefix),
             )
@@ -497,7 +497,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             kw_cost=cost,
         )
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Автоподбор ключевых фраз\n\n"
             f"Тема: {html.escape(products)}\n"
             f"География: {html.escape(geography)}\n"
@@ -526,7 +526,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         await state.set_state(fsm.readiness_keywords_products)
         await state.update_data(kw_mode="configure")
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Какие товары или услуги продвигаете?\n"
             "<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>\n\n"
             "От 3 до 1000 символов.",
@@ -550,7 +550,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Загрузите TXT-файл с ключевыми фразами.\n"
             "Одна фраза на строку, максимум 500 фраз, до 1 МБ.\n\n"
             "Или отправьте фразы текстом (каждая с новой строки).",
@@ -788,7 +788,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
                 kw_cost=cost,
             )
 
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 f"Автоподбор ключевых фраз\n\n"
                 f"Тема: {html.escape(products)}\n"
                 f"География: {html.escape(city)}\n"
@@ -801,7 +801,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await state.set_state(fsm.readiness_keywords_qty)
             await state.update_data(kw_geography=city)
 
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 "Сколько ключевых фраз подобрать?",
                 reply_markup=pipeline_keywords_qty_kb(prefix=prefix),
             )
@@ -879,7 +879,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
 
         await state.update_data(kw_quantity=quantity, kw_cost=cost)
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Подбор ключевых фраз\n\n"
             f"Тема: {html.escape(products)}\n"
             f"География: {html.escape(geography)}\n"
@@ -953,7 +953,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             return
 
         await state.set_state(fsm.readiness_keywords_generating)
-        await msg.edit_text("Получаю реальные фразы из DataForSEO...")
+        await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
         await callback.answer()
 
         await run_keyword_generation(
@@ -1014,7 +1014,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Описание компании/категории\n\nAI напишет точнее с контекстом о вашей компании.",
             reply_markup=pipeline_description_options_kb(prefix=prefix),
         )
@@ -1062,7 +1062,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Введите описание компании/категории (10-2000 символов).\n\n"
             f"Чем подробнее -- тем точнее будут {cfg.description_hint}.",
             reply_markup=pipeline_back_to_checklist_kb(prefix=prefix),

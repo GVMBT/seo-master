@@ -142,12 +142,12 @@ async def execute_delete(
 
     if deleted and project:
         safe_name = html.escape(project.name)
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Проект «{safe_name}» удалён.",
             reply_markup=project_deleted_kb(),
         )
     else:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "\u26a0\ufe0f Не удалось удалить проект. Попробуйте позже.",
             reply_markup=project_deleted_kb(),
         )
