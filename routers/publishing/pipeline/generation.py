@@ -363,7 +363,7 @@ async def _progress_task(
         if done_event.is_set():
             return
         try:
-            await message.edit_text(_progress_text(title, _ARTICLE_STEPS, step_idx))
+            await safe_edit_text(message, _progress_text(title, _ARTICLE_STEPS, step_idx))
         except (TelegramBadRequest, TelegramRetryAfter):  # fmt: skip
             log.debug("progress_msg_edit_failed")
 
@@ -391,7 +391,7 @@ async def _run_generation(
     preview_only = fsm_data.get("preview_only", False)
 
     if not category_id or not project_id:
-        await message.edit_text("Данные сессии устарели. Начните заново.", reply_markup=menu_kb())
+        await safe_edit_text(message, "Данные сессии устарели. Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -400,7 +400,7 @@ async def _run_generation(
     keyword = await select_keyword(db, category_id)
     if not keyword:
         await try_refund(db, user, tokens_charged, "Нет ключевых фраз")
-        await message.edit_text(
+        await safe_edit_text(message, 
             "Нет доступных ключевых фраз. Добавьте их в категорию.",
             reply_markup=pipeline_generation_error_kb(),
         )
@@ -443,7 +443,7 @@ async def _run_generation(
         progress.cancel()
         log.exception("pipeline.generation_failed", user_id=user.id, error=str(exc))
         await try_refund(db, user, tokens_charged, "Ошибка генерации")
-        await message.edit_text(
+        await safe_edit_text(message, 
             "Ошибка генерации. Токены возвращены.\n\nПопробуйте ещё раз.",
             reply_markup=pipeline_generation_error_kb(),
         )
@@ -541,7 +541,7 @@ async def _run_generation(
             regen_cost=tokens_charged,
         )
 
-    await message.edit_text(preview_text, reply_markup=kb)
+    await safe_edit_text(message, preview_text, reply_markup=kb)
     await save_checkpoint(
         redis,
         user.id,
@@ -664,14 +664,14 @@ async def publish_article(
 
     await state.update_data(last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.publishing)
-    await msg.edit_text("Публикую на WordPress...")
+    await safe_edit_text(msg, "Публикую на WordPress...")
 
     try:
         # Load WP connection
         conn_svc = ConnectionService(db, http_client)
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 "WordPress-подключение не найдено. Проверьте настройки.",
                 reply_markup=menu_kb(),
             )
@@ -690,7 +690,7 @@ async def publish_article(
             log.exception("pipeline.publish_failed", preview_id=preview_id, error=str(exc))
             # Revert to draft on failure
             await previews_repo.update(preview_id, ArticlePreviewUpdate(status="draft"))
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 "Ошибка публикации на WordPress. Попробуйте снова.",
                 reply_markup=pipeline_preview_kb(
                     preview.telegraph_url,
@@ -730,7 +730,7 @@ async def publish_article(
             f"<b>{html.escape(preview.title or '')}</b>\n"
             f"Списано: {preview.tokens_charged or 0} ток. | Баланс: {balance} ток."
         )
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             result_text,
             reply_markup=pipeline_result_kb(result.post_url),
         )
@@ -918,7 +918,7 @@ async def cancel_refund(
 
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    await msg.edit_text("Статья отменена. Токены возвращены.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Статья отменена. Токены возвращены.", reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -1043,7 +1043,7 @@ async def connect_wp_publish(
         if project and project.website_url:
             await state.update_data(wp_url=project.website_url)
             await state.set_state(ArticlePipelineFSM.connect_wp_login)
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 f"Подключение WordPress\n\n"
                 f"Сайт: {html.escape(project.website_url)}\n\n"
                 f"Введите логин WordPress (имя пользователя).",
@@ -1052,7 +1052,7 @@ async def connect_wp_publish(
             return
 
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
     )
     await callback.answer()
@@ -1106,7 +1106,7 @@ async def _jump_to_category_selection(
     if not categories:
         from keyboards.inline import cancel_kb
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
@@ -1118,7 +1118,7 @@ async def _jump_to_category_selection(
 
         await show_readiness_check(callback, state, user, db, redis)
     else:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Статья (3/5) — Тема\n\nКакая тема?",
             reply_markup=pipeline_categories_kb(categories, project_id),
         )

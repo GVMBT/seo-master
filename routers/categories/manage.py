@@ -347,11 +347,13 @@ async def execute_category_delete(
             if remaining
             else category_list_empty_kb(category.project_id)
         )
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Категория «{safe_name}» удалена.",
             reply_markup=kb,
         )
     else:
-        await msg.edit_text("\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.", reply_markup=menu_kb())
+        await safe_edit_text(
+            msg, "\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.", reply_markup=menu_kb(),
+        )
 
     await callback.answer()

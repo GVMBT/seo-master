@@ -302,7 +302,7 @@ async def pipeline_add_connection(
         await callback.answer("Все платформы уже подключены.", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nВыберите платформу:",
         reply_markup=social_no_connections_kb(exclude_types=already_connected),
     )
@@ -329,7 +329,7 @@ async def pipeline_start_connect_tg(
         return
 
     await state.set_state(SocialPipelineFSM.connect_tg_channel)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Пост (2/{_TOTAL_STEPS}) — Подключение Телеграм\n\n"
         "Введите ID или ссылку на канал.\n"
         "<i>Примеры: @mychannel, t.me/mychannel, -1001234567890</i>",
@@ -466,7 +466,7 @@ async def pipeline_connect_tg_verify(
         try:
             admins = await temp_bot.get_chat_administrators(channel)
         except Exception:
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 "Не удалось получить список админов канала.\nПроверьте, что бот добавлен в канал.",
                 reply_markup=_tg_verify_retry_kb(),
             )
@@ -476,7 +476,7 @@ async def pipeline_connect_tg_verify(
         is_admin = any(admin.user.id == bot_info.id and getattr(admin, "can_post_messages", False) for admin in admins)
 
         if not is_admin:
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 "Бот не является администратором канала "
                 "или не имеет права «Публикация сообщений».\n"
                 "Добавьте бота и нажмите «Проверить снова».",
@@ -487,7 +487,7 @@ async def pipeline_connect_tg_verify(
 
     except Exception as exc:
         log.warning("pipeline.tg_bot_validation_failed", error=str(exc))
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Не удалось подключиться к боту. Проверьте токен.",
             reply_markup=_tg_verify_retry_kb(),
         )
@@ -517,7 +517,7 @@ async def pipeline_connect_tg_verify(
     )
 
     await state.update_data(connection_id=conn.id, platform_type="telegram")
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Телеграм-канал {html.escape(channel)} подключён!",
     )
 
@@ -556,7 +556,7 @@ async def pipeline_start_connect_vk(
         return
 
     await state.set_state(SocialPipelineFSM.connect_vk_token)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
         "Введите токен доступа VK с правами управления группой.\n"
         "<i>Получите на vk.com/dev → Мои приложения → Управление.</i>",
@@ -721,7 +721,7 @@ async def pipeline_select_vk_group(
     )
 
     await state.update_data(connection_id=conn.id, platform_type="vk")
-    await msg.edit_text(f"ВКонтакте: {html.escape(group_name)} подключено!")
+    await safe_edit_text(msg, f"ВКонтакте: {html.escape(group_name)} подключено!")
 
     from routers.publishing.pipeline.social.social import _show_category_step_msg
 
@@ -794,7 +794,7 @@ async def pipeline_start_connect_pinterest(
     )
 
     await state.set_state(SocialPipelineFSM.connect_pinterest_oauth)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Пост (2/{_TOTAL_STEPS}) — Подключение Pinterest\n\n"
         "Нажмите кнопку ниже для авторизации.\n"
         f"Ссылка действительна {PINTEREST_AUTH_TTL // 60} минут.",

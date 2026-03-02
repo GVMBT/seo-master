@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.validators import URL_RE
 from db.client import SupabaseClient
@@ -274,7 +274,7 @@ async def show_edit_screen(
         return
 
     text = _build_edit_text(project)
-    await msg.edit_text(text, reply_markup=project_edit_kb(project_id))
+    await safe_edit_text(msg, text, reply_markup=project_edit_kb(project_id))
     await callback.answer()
 
 
@@ -433,7 +433,7 @@ async def cancel_create(
         return
 
     await state.clear()
-    await msg.edit_text("Создание проекта отменено.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Создание проекта отменено.", reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -460,9 +460,9 @@ async def cancel_edit(
         project = await proj_svc.get_owned_project(int(project_id), user.id)
         if project:
             edit_text = _build_edit_text(project)
-            await msg.edit_text(edit_text, reply_markup=project_edit_kb(int(project_id)))
+            await safe_edit_text(msg, edit_text, reply_markup=project_edit_kb(int(project_id)))
             await callback.answer()
             return
 
-    await msg.edit_text("Редактирование отменено.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Редактирование отменено.", reply_markup=menu_kb())
     await callback.answer()

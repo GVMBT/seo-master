@@ -128,7 +128,7 @@ async def toggle_notification(
 
     text = "<b>\U0001f514 Уведомления</b>\n\nНажмите для переключения:"
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         text,
         reply_markup=notifications_kb(
             notify_publications=updated_user.notify_publications,
@@ -274,10 +274,10 @@ async def confirm_delete_account(
     )
 
     if result.success:
-        await msg.edit_text("Ваш аккаунт и все данные удалены.\n\nВы можете начать заново с /start")
+        await safe_edit_text(msg, "Ваш аккаунт и все данные удалены.\n\nВы можете начать заново с /start")
         log.info("delete_account_success", user_id=user.id)
     else:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Произошла ошибка при удалении аккаунта. Обратитесь в поддержку.",
             reply_markup=delete_account_cancelled_kb(),
         )
@@ -300,7 +300,7 @@ async def cancel_delete_account(
         await callback.answer()
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Удаление отменено.",
         reply_markup=delete_account_cancelled_kb(),
     )

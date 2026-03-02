@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from db.models import User
 from keyboards.inline import (
     _DAY_LABELS,
@@ -88,7 +88,7 @@ async def nav_scheduler(
         if not cats:
             await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
             return
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
             reply_markup=scheduler_cat_list_kb(cats, project.id),
         )
@@ -107,7 +107,7 @@ async def nav_scheduler(
             ]
         )
     rows.append([InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")])
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Планировщик</b>\n\nВыберите проект:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
     )
@@ -140,7 +140,7 @@ async def scheduler_entry(
         await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
         reply_markup=scheduler_cat_list_kb(cats, project_id),
     )
@@ -168,7 +168,7 @@ async def scheduler_articles_entry(
         await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
         reply_markup=scheduler_cat_list_kb(cats, project_id),
     )
@@ -201,7 +201,7 @@ async def scheduler_social_entry(
         await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Соцсети — Планировщик</b>\n\nВыберите категорию:",
         reply_markup=scheduler_social_cat_list_kb(cats, project_id),
     )
@@ -239,7 +239,7 @@ async def scheduler_category(
 
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_conn_list_kb(connections, schedules_map, cat_id, project_id),
     )
@@ -272,7 +272,7 @@ async def scheduler_conn_list_back(
     connections = await scheduler_service.get_project_connections(ctx.project.id, user.id)
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_conn_list_kb(connections or [], schedules_map, cat_id, ctx.project.id),
     )
@@ -315,7 +315,7 @@ async def scheduler_connection(
         text += f"Текущее расписание:\nДни: {days_str}\nВремя: {times_str}\nПостов/день: {existing.posts_per_day}\n\n"
     text += "Выберите вариант:"
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         text,
         reply_markup=scheduler_config_kb(
             cat_id,
@@ -371,7 +371,7 @@ async def scheduler_preset(
         await callback.answer("Категория или подключение не найдены", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Расписание установлено!\n\n"
         f"Подключение: {result.connection.identifier}\n"
         f"Режим: {preset[0]}\n"
@@ -413,7 +413,7 @@ async def scheduler_disable(
         await callback.answer("Категория не найдена", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Расписание отключено.",
         reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=False),
     )
@@ -463,7 +463,7 @@ async def scheduler_manual(
     )
     await state.set_state(ScheduleSetupFSM.select_days)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Настройка расписания</b>\n\nВыберите дни публикации:",
         reply_markup=schedule_days_kb(set()),
     )
@@ -521,7 +521,7 @@ async def schedule_days_done(callback: CallbackQuery, state: FSMContext) -> None
         return
 
     await state.set_state(ScheduleSetupFSM.select_count)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Настройка расписания</b>\n\nСколько постов в день?",
         reply_markup=schedule_count_kb(),
     )
@@ -545,7 +545,7 @@ async def schedule_count_select(callback: CallbackQuery, state: FSMContext) -> N
     await state.update_data(sched_count=count, sched_times=[])
     await state.set_state(ScheduleSetupFSM.select_times)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"<b>Настройка расписания</b>\n\nВыберите {count} временных слотов:",
         reply_markup=schedule_times_kb(set(), count),
     )
@@ -641,7 +641,7 @@ async def schedule_times_done(
     days_str = ", ".join(_DAY_LABELS.get(d, d) for d in selected_days)
     times_str = ", ".join(selected_times)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Расписание установлено!\n\n"
         f"Дни: {days_str}\n"
         f"Время: {times_str}\n"
@@ -689,7 +689,7 @@ async def scheduler_social_category(
 
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Соцсети — Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_social_conn_list_kb(social_conns, schedules_map, cat_id, project_id),
     )
@@ -717,7 +717,7 @@ async def scheduler_social_conn_list_back(
     social_conns = await scheduler_service.get_social_connections(ctx.project.id, user.id)
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "<b>Соцсети — Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_social_conn_list_kb(social_conns or [], schedules_map, cat_id, ctx.project.id),
     )
@@ -766,7 +766,7 @@ async def scheduler_social_connection(
         text += "\n"
     text += "Выберите вариант:"
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         text,
         reply_markup=scheduler_social_config_kb(
             cat_id,
@@ -814,7 +814,7 @@ async def scheduler_crosspost_config(
         "Стоимость: ~10 ток/пост за кросс-пост."
     )
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         text,
         reply_markup=scheduler_crosspost_kb(
             cat_id,
@@ -893,7 +893,7 @@ async def scheduler_crosspost_save(
 
     result_msg = f"Кросс-постинг сохранён: {result.count} платформ." if result.count else "Кросс-постинг отключён."
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         result_msg,
         reply_markup=scheduler_social_config_kb(
             cat_id,
@@ -929,10 +929,10 @@ async def schedule_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
 
     if cat_id and conn_id:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Настройка расписания отменена.",
             reply_markup=scheduler_config_kb(int(cat_id), int(conn_id), has_schedule=bool(has_schedule)),
         )
     else:
-        await msg.edit_text("Настройка расписания отменена.")
+        await safe_edit_text(msg, "Настройка расписания отменена.")
     await callback.answer()

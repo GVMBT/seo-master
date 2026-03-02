@@ -192,7 +192,7 @@ async def pipeline_projects_page(
     proj_svc = project_service_factory(db)
     projects = await proj_svc.list_by_user(user.id)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, page=page, pipeline_type="social"),
     )
@@ -220,7 +220,7 @@ async def pipeline_start_create_project(
 
     await state.set_state(SocialPipelineFSM.create_project_name)
     await state.update_data(last_update_time=time.time())
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Пост (1/{_TOTAL_STEPS}) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
@@ -388,7 +388,7 @@ async def _show_category_step(
     categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     if not categories:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nО чём будет пост? Назовите тему.",
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
@@ -409,7 +409,7 @@ async def _show_category_step(
         await show_social_readiness_check(callback, state, user, db, redis)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
@@ -535,7 +535,7 @@ async def pipeline_categories_page(
     cat_svc = category_service_factory(db)
     categories = await cat_svc.list_by_project(project_id, user.id) or []
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, page=page, pipeline_type="social"),
     )
@@ -595,5 +595,5 @@ async def pipeline_social_cancel(
     await clear_checkpoint(redis, user.id)
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text("Публикация отменена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Публикация отменена.", reply_markup=menu_kb())
     await callback.answer()

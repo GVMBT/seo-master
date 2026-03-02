@@ -277,7 +277,7 @@ async def readiness_prices_menu(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Добавить прайс-лист?\n\nВ статье будут реальные цены ваших товаров.",
         reply_markup=pipeline_prices_options_kb(),
     )
@@ -298,7 +298,7 @@ async def readiness_prices_text_start(
         await callback.answer()
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Введите прайс-лист текстом.\n"
         "Формат: Товар — Цена (каждый с новой строки).\n\n"
         "<i>Пример:\nКухня Прага — от 120 000 руб.\nШкаф-купе — от 45 000 руб.</i>",
@@ -380,7 +380,7 @@ async def readiness_prices_excel_start(
         await callback.answer()
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Загрузите Excel-файл (.xlsx) с прайсом.\n"
         "Колонки: A — Название, B — Цена, C — Описание (опц.).\n"
         "Максимум 1000 строк, 5 МБ.",
@@ -494,7 +494,7 @@ async def readiness_images_menu(callback: CallbackQuery, state: FSMContext) -> N
     data = await state.get_data()
     current_count = data.get("image_count", 4)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Изображения — сейчас: {current_count} AI\n\nВыберите количество:",
         reply_markup=pipeline_images_options_kb(current_count),
     )

@@ -192,7 +192,7 @@ async def pipeline_projects_page(
     proj_svc = project_service_factory(db)
     projects = await proj_svc.list_by_user(user.id)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, page=page),
     )
@@ -221,7 +221,7 @@ async def pipeline_start_create_project(
 
     await state.set_state(ArticlePipelineFSM.create_project_name)
     await state.update_data(last_update_time=time.time())
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Статья (1/5) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
@@ -502,7 +502,7 @@ async def pipeline_start_connect_wp(
         if project and project.website_url:
             await state.update_data(wp_url=project.website_url, last_update_time=time.time())
             await state.set_state(ArticlePipelineFSM.connect_wp_login)
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 f"Статья (2/5) — Подключение WordPress\n\n"
                 f"Сайт: {html.escape(project.website_url)}\n\n"
                 f"Введите логин WordPress (имя пользователя).",
@@ -512,7 +512,7 @@ async def pipeline_start_connect_wp(
 
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await state.update_data(last_update_time=time.time())
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Статья (2/5) — Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
     )
     await callback.answer()
@@ -676,7 +676,7 @@ async def pipeline_cancel_wp_subflow(
     project_name = data.get("project_name", "")
 
     if project_id:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
             reply_markup=pipeline_no_wp_kb(),
         )
@@ -691,7 +691,7 @@ async def pipeline_cancel_wp_subflow(
     else:
         await state.clear()
         await clear_checkpoint(redis, user.id)
-        await msg.edit_text("Публикация отменена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Публикация отменена.", reply_markup=menu_kb())
 
     await callback.answer()
 
@@ -980,5 +980,5 @@ async def pipeline_article_cancel(
     await clear_checkpoint(redis, user.id)
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text("Публикация отменена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Публикация отменена.", reply_markup=menu_kb())
     await callback.answer()

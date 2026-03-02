@@ -23,7 +23,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -122,7 +122,7 @@ async def show_social_readiness_check(
     project_name = data.get("project_name", "")
     connection_id = data.get("connection_id")
     if not category_id:
-        await msg.edit_text("Категория не выбрана. Начните заново.")
+        await safe_edit_text(msg, "Категория не выбрана. Начните заново.")
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -143,7 +143,7 @@ async def show_social_readiness_check(
 
     text = _build_social_checklist_text(report, data)
     kb = social_readiness_kb(report)
-    await msg.edit_text(text, reply_markup=kb)
+    await safe_edit_text(msg, text, reply_markup=kb)
     await state.set_state(SocialPipelineFSM.readiness_check)
     await save_checkpoint(
         redis,

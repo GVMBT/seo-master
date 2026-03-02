@@ -23,7 +23,7 @@ from aiogram.types import (
 from bot.config import get_settings
 from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from db.client import SupabaseClient
 from db.models import Category, User
 from db.repositories.categories import CategoriesRepository
@@ -157,7 +157,7 @@ async def show_keywords(
     clusters: list[dict[str, Any]] = category.keywords or []
     kb = keywords_summary_kb(category_id) if clusters else keywords_empty_kb(category_id)
 
-    await msg.edit_text(text, reply_markup=kb)
+    await safe_edit_text(msg, text, reply_markup=kb)
     await callback.answer()
 
 
@@ -204,7 +204,7 @@ async def start_generation(
             kw_project_id=project_id,
         )
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Найдены сохранённые ответы:\n"
             f"Товары/услуги: <i>{html.escape(saved_products)}</i>\n"
             f"География: <i>{html.escape(saved_geography)}</i>\n\n"
@@ -220,7 +220,7 @@ async def start_generation(
             kw_project_id=project_id,
         )
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
             reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
         )
@@ -254,7 +254,7 @@ async def start_fresh_generation(
         kw_project_id=project_id,
     )
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
         reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
     )
@@ -286,7 +286,7 @@ async def use_saved_answers(
         last_update_time=time.time(),
     )
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Сколько ключевых фраз подобрать?",
         reply_markup=keywords_quantity_kb(cat_id),
     )
@@ -393,7 +393,7 @@ async def select_quantity(
     products = data.get("kw_products", "")
     geography = data.get("kw_geography", "")
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Подбор ключевых фраз:\n"
         f"Товары: <i>{html.escape(products)}</i>\n"
         f"География: <i>{html.escape(geography)}</i>\n"
@@ -440,7 +440,7 @@ async def confirm_generation(
     if not has_balance:
         balance = await token_service.get_balance(user.id)
         insufficient_msg = token_service.format_insufficient_msg(cost, balance)
-        await msg.edit_text(insufficient_msg)
+        await safe_edit_text(msg, insufficient_msg)
         await state.clear()
         await callback.answer()
         return
@@ -496,12 +496,12 @@ async def cancel_generation(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await msg.edit_text("Категория не найдена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
         await callback.answer()
         return
 
     safe_name = html.escape(category.name)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"<b>{safe_name}</b>",
         reply_markup=category_card_kb(cat_id, category.project_id),
     )
@@ -541,7 +541,7 @@ async def _run_generation_pipeline(
 
         # Step 1: Fetch raw phrases from DataForSEO
         await state.set_state(KeywordGenerationFSM.fetching)
-        await msg.edit_text("Получаю реальные фразы из DataForSEO...")
+        await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
 
         raw_phrases = await kw_service.fetch_raw_phrases(
             products=products,
@@ -554,7 +554,7 @@ async def _run_generation_pipeline(
         # Step 2: AI clustering
         await state.set_state(KeywordGenerationFSM.clustering)
         if raw_phrases:
-            await msg.edit_text(f"Получено {len(raw_phrases)} фраз. Группирую по интенту...")
+            await safe_edit_text(msg, f"Получено {len(raw_phrases)} фраз. Группирую по интенту...")
             clusters = await kw_service.cluster_phrases(
                 raw_phrases=raw_phrases,
                 products=products,
@@ -564,7 +564,7 @@ async def _run_generation_pipeline(
                 user_id=user.id,
             )
         else:
-            await msg.edit_text(f"{EMOJI_PROGRESS} DataForSEO без данных. Генерирую фразы через AI...")
+            await safe_edit_text(msg, f"{EMOJI_PROGRESS} DataForSEO без данных. Генерирую фразы через AI...")
             clusters = await kw_service.generate_clusters_direct(
                 products=products,
                 geography=geography,
@@ -575,7 +575,7 @@ async def _run_generation_pipeline(
 
         # Step 3: Enrich with metrics
         await state.set_state(KeywordGenerationFSM.enriching)
-        await msg.edit_text(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
+        await safe_edit_text(msg, f"Создано {len(clusters)} кластеров. Обогащаю данными...")
 
         enriched = await kw_service.enrich_clusters(clusters)
 
@@ -615,7 +615,7 @@ async def _run_generation_pipeline(
             log.exception("keyword_charge_failed", cat_id=cat_id, user_id=user.id, cost=cost)
             cost_note = ""
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Готово! Добавлено:\n"
             f"Кластеров: {len(enriched)}\n"
             f"Фраз: {total_phrases}\n"
@@ -637,7 +637,7 @@ async def _run_generation_pipeline(
     except Exception:
         log.exception("keyword_pipeline_failed", cat_id=cat_id, user_id=user.id)
         await state.clear()
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Ошибка при подборе фраз. Попробуйте позже.",
             reply_markup=keywords_empty_kb(cat_id),
         )
@@ -679,7 +679,7 @@ async def start_upload(
         kw_project_id=project_id,
     )
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Загрузите текстовый файл (.txt) с ключевыми фразами.\n"
         "Каждая фраза на отдельной строке.\n\n"
         f"Максимум: {_MAX_PHRASES} фраз, {_MAX_FILE_SIZE // (1024 * 1024)} МБ.",
@@ -819,7 +819,7 @@ async def _run_upload_pipeline(
 
         # Step 2: Enrich
         await state.set_state(KeywordUploadFSM.enriching)
-        await progress_msg.edit_text(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
+        await safe_edit_text(progress_msg, f"Создано {len(clusters)} кластеров. Обогащаю данными...")
 
         enriched = await kw_service.enrich_clusters(clusters)
 
@@ -836,7 +836,7 @@ async def _run_upload_pipeline(
         total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
         total_volume = sum(c.get("total_volume", 0) for c in enriched)
 
-        await progress_msg.edit_text(
+        await safe_edit_text(progress_msg, 
             f"Готово! Загружено:\nКластеров: {len(enriched)}\nФраз: {total_phrases}\nОбщий объём: {total_volume:,}/мес",
             reply_markup=keywords_results_kb(cat_id),
         )
@@ -887,7 +887,7 @@ async def show_cluster_list(
         await callback.answer("Нет кластеров.", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Кластеры ({len(clusters)}):",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=1),
     )
@@ -916,7 +916,7 @@ async def paginate_clusters(
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Кластеры ({len(clusters)}):",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=page),
     )
@@ -988,7 +988,7 @@ async def show_cluster_detail(
     if len(text) > 4000:
         text = text[:4000] + "\n..."
 
-    await msg.edit_text(text, reply_markup=back_kb)
+    await safe_edit_text(msg, text, reply_markup=back_kb)
     await callback.answer()
 
 
@@ -1085,7 +1085,7 @@ async def show_delete_cluster_list(
         await callback.answer("Нет кластеров для удаления.", show_alert=True)
         return
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Выберите кластер для удаления:",
         reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=1),
     )
@@ -1114,7 +1114,7 @@ async def paginate_delete_clusters(
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         "Выберите кластер для удаления:",
         reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=page),
     )
@@ -1154,12 +1154,12 @@ async def delete_single_cluster(
     log.info("cluster_deleted", cat_id=cat_id, cluster=removed_name, user_id=user.id)
 
     if clusters:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Кластер «{html.escape(removed_name)}» удалён.\n\nВыберите кластер для удаления:",
             reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=1),
         )
     else:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"Кластер «{html.escape(removed_name)}» удалён. Фразы закончились.",
             reply_markup=keywords_empty_kb(cat_id),
         )
@@ -1194,7 +1194,7 @@ async def delete_all_ask(
     clusters: list[dict[str, Any]] = category.keywords or []
     total = sum(len(c.get("phrases", [])) for c in clusters)
 
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"Удалить все ключевые фразы ({total} фраз, {len(clusters)} кластеров)?\nЭто действие необратимо.",
         reply_markup=keywords_delete_all_confirm_kb(cat_id),
     )
@@ -1225,7 +1225,7 @@ async def delete_all_confirm(
     log.info("keywords_deleted_all", cat_id=cat_id, user_id=user.id)
 
     safe_name = html.escape(category.name)
-    await msg.edit_text(
+    await safe_edit_text(msg, 
         f"<b>Ключевые фразы</b> — {safe_name}\n\nВсе фразы удалены.",
         reply_markup=keywords_empty_kb(cat_id),
     )
@@ -1256,14 +1256,14 @@ async def cancel_generation_inline(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if category:
         safe_name = html.escape(category.name)
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await msg.edit_text("Подбор фраз отменён.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Подбор фраз отменён.", reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -1286,12 +1286,12 @@ async def cancel_upload_inline(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if category:
         safe_name = html.escape(category.name)
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await msg.edit_text("Загрузка отменена.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Загрузка отменена.", reply_markup=menu_kb())
     await callback.answer()

@@ -17,7 +17,7 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from cache.client import RedisClient
 from db.models import User
 from keyboards.pipeline import pipeline_exit_confirm_kb, social_exit_confirm_kb
@@ -115,7 +115,7 @@ async def exit_confirm(
     # Checkpoint survives in Redis — user can resume from Dashboard
     msg = safe_message(callback)
     if msg:
-        await msg.edit_text("Публикация приостановлена. Продолжить можно из /start.")
+        await safe_edit_text(msg, "Публикация приостановлена. Продолжить можно из /start.")
     await callback.answer()
     log.info("pipeline.exit_confirmed", user_id=user.id)
 

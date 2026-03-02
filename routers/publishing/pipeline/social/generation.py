@@ -26,7 +26,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import get_settings
 from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
@@ -103,7 +103,7 @@ async def show_social_confirm(
 
     text = _build_social_confirm_text(fsm_data, report, user)
     kb = _get_social_confirm_kb(report, user)
-    await msg.edit_text(text, reply_markup=kb)
+    await safe_edit_text(msg, text, reply_markup=kb)
     await state.set_state(SocialPipelineFSM.confirm_cost)
     await save_checkpoint(
         redis,
@@ -254,7 +254,7 @@ async def confirm_social_generate(
     await state.update_data(tokens_charged=cost, regen_count=0, last_update_time=time.time())
 
     await state.set_state(SocialPipelineFSM.generating)
-    await msg.edit_text(_social_progress_text(_SOCIAL_STEPS, 0))
+    await safe_edit_text(msg, _social_progress_text(_SOCIAL_STEPS, 0))
     await callback.answer()
 
     # Run generation
@@ -311,7 +311,7 @@ async def _run_social_generation(
     platform_type = fsm_data.get("platform_type", "")
 
     if not category_id or not project_id or not connection_id:
-        await message.edit_text("Данные сессии устарели. Начните заново.", reply_markup=menu_kb())
+        await safe_edit_text(message, "Данные сессии устарели. Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -320,7 +320,7 @@ async def _run_social_generation(
     keyword = await select_keyword(db, category_id)
     if not keyword:
         await try_refund(db, user, cost, "Нет ключевых фраз")
-        await message.edit_text(
+        await safe_edit_text(message, 
             "Нет доступных ключевых фраз. Добавьте их в категорию.",
             reply_markup=menu_kb(),
         )
@@ -330,7 +330,7 @@ async def _run_social_generation(
     try:
         # Update progress: step 1 done, step 2 active
         try:
-            await message.edit_text(_social_progress_text(_SOCIAL_STEPS, 1))
+            await safe_edit_text(message, _social_progress_text(_SOCIAL_STEPS, 1))
         except (TelegramBadRequest, TelegramRetryAfter):  # fmt: skip
             log.debug("social_progress_edit_failed")
 
@@ -370,7 +370,7 @@ async def _run_social_generation(
 
         review_text = _build_review_text(post_text, hashtags, keyword, tokens_charged)
 
-        await message.edit_text(
+        await safe_edit_text(message, 
             review_text,
             reply_markup=social_review_kb(regen_count=regen_count, regen_cost=cost),
         )
@@ -396,7 +396,7 @@ async def _run_social_generation(
     except Exception as exc:
         log.exception("pipeline.social.generation_failed", user_id=user.id, error=str(exc))
         await try_refund(db, user, cost, "Ошибка генерации поста")
-        await message.edit_text(
+        await safe_edit_text(message, 
             "Ошибка генерации поста. Токены возвращены.\n\nПопробуйте ещё раз.",
             reply_markup=menu_kb(),
         )
@@ -467,14 +467,14 @@ async def publish_social_post(
         return
 
     await state.set_state(SocialPipelineFSM.publishing)
-    await msg.edit_text("Публикую пост...")
+    await safe_edit_text(msg, "Публикую пост...")
 
     try:
         # Load connection
         conn_svc = ConnectionService(db, http_client)
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 "Подключение не найдено. Проверьте настройки.",
                 reply_markup=menu_kb(),
             )
@@ -489,7 +489,7 @@ async def publish_social_post(
                 connection_project_id=connection.project_id,
                 expected_project_id=project_id,
             )
-            await msg.edit_text("Доступ запрещён.", reply_markup=menu_kb())
+            await safe_edit_text(msg, "Доступ запрещён.", reply_markup=menu_kb())
             await callback.answer()
             return
 
@@ -507,7 +507,7 @@ async def publish_social_post(
             )
         except Exception as exc:
             log.exception("pipeline.social.publish_failed", error=str(exc))
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 "Ошибка публикации. Попробуйте снова.",
                 reply_markup=social_review_kb(
                     regen_count=data.get("regen_count", 0),
@@ -519,7 +519,7 @@ async def publish_social_post(
             return
 
         if not pub_result.success:
-            await msg.edit_text(
+            await safe_edit_text(msg, 
                 f"Ошибка публикации: {pub_result.error or 'неизвестная ошибка'}",
                 reply_markup=social_review_kb(
                     regen_count=data.get("regen_count", 0),
@@ -570,7 +570,7 @@ async def publish_social_post(
             f"Ключевая фраза: {html.escape(keyword)}\n"
             f"Списано: {tokens_charged} ток. | Баланс: {balance} ток."
         )
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             result_text,
             reply_markup=social_result_kb(pub_result.post_url, crosspost_conns),
         )
@@ -654,7 +654,7 @@ async def regenerate_social(
         last_update_time=time.time(),
     )
     await state.set_state(SocialPipelineFSM.regenerating)
-    await msg.edit_text(_social_progress_text(_SOCIAL_STEPS, 0))
+    await safe_edit_text(msg, _social_progress_text(_SOCIAL_STEPS, 0))
     await callback.answer()
 
     log.info(
@@ -704,7 +704,7 @@ async def cancel_refund_social(
 
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    await msg.edit_text("Пост отменён. Токены возвращены.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Пост отменён. Токены возвращены.", reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -761,7 +761,7 @@ async def more_posts_social(
     if not categories:
         from keyboards.inline import cancel_kb
 
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Пост (3/5) -- Тема\n\nО чём будет пост? Назовите тему.",
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
@@ -773,7 +773,7 @@ async def more_posts_social(
 
         await show_social_readiness_check(callback, state, user, db, redis)
     else:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             "Пост (3/5) -- Тема\n\nКакая тема?",
             reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
         )

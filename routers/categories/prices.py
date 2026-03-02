@@ -13,7 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_message
+from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
 from db.client import SupabaseClient
 from db.models import User
@@ -115,7 +115,7 @@ async def _show_prices_screen(
             f"<b>Цены \u2014 {safe_name}</b>\n\nПрайс-лист не загружен. Добавьте \u2014 в статьях будут реальные цены."
         )
 
-    await message.edit_text(text, reply_markup=prices_kb(category_id, has_prices=bool(prices)))
+    await safe_edit_text(message, text, reply_markup=prices_kb(category_id, has_prices=bool(prices)))
 
 
 # ---------------------------------------------------------------------------
@@ -501,12 +501,12 @@ async def cancel_prices_inline(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if category:
-        await msg.edit_text(
+        await safe_edit_text(msg, 
             f"<b>{html.escape(category.name)}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
         await callback.answer()
         return
 
-    await msg.edit_text("Ввод цен отменён.", reply_markup=menu_kb())
+    await safe_edit_text(msg, "Ввод цен отменён.", reply_markup=menu_kb())
     await callback.answer()
