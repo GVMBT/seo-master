@@ -28,6 +28,10 @@ class RedisClient:
         """Set key-value with optional TTL (ex) and NX flag."""
         return await self._redis.set(key, value, ex=ex, nx=nx)
 
+    async def getdel(self, key: str) -> str | None:
+        """Atomically get and delete a key (Redis GETDEL)."""
+        return await self._redis.getdel(key)
+
     async def delete(self, *keys: str) -> int:
         return await self._redis.delete(*keys)
 

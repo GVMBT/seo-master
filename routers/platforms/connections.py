@@ -3,7 +3,6 @@
 import html
 import secrets
 import time
-from typing import Any
 
 import httpx
 import structlog
@@ -33,7 +32,6 @@ from keyboards.inline import (
     connection_list_kb,
     connection_manage_kb,
     menu_kb,
-    vk_group_select_kb,
 )
 from services.connections import ConnectionService
 from services.scheduler import SchedulerService
@@ -59,7 +57,7 @@ class ConnectTelegramFSM(StatesGroup):
 
 
 class ConnectVKFSM(StatesGroup):
-    token = State()
+    oauth_callback = State()
     select_group = State()
 
 
@@ -664,8 +662,9 @@ async def start_vk_connect(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     project_service_factory: ProjectServiceFactory,
+    redis: RedisClient,
 ) -> None:
-    """Start VK connection wizard."""
+    """Start VK OAuth connection wizard (VK ID OAuth 2.1 + PKCE)."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -691,145 +690,49 @@ async def start_vk_connect(
     if interrupted:
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
-    await state.set_state(ConnectVKFSM.token)
-    await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
+    # Delegate nonce + meta + URL to VKOAuthService (CR-118: thin router)
+    from api.vk_oauth import VKOAuthService
+
+    settings = get_settings()
+    base_url = (settings.railway_public_url or "").rstrip("/")
+    if not base_url:
+        await msg.answer("Ошибка конфигурации сервера. Попробуйте позже.")
+        return
+
+    vk_svc = VKOAuthService(
+        http_client=http_client,
+        redis=redis,
+        encryption_key=settings.encryption_key.get_secret_value(),
+        vk_app_id=settings.vk_app_id,
+        redirect_uri=f"{base_url}/api/auth/vk/callback",
+    )
+    nonce = vk_svc.generate_nonce()
+    await vk_svc.store_meta(nonce, project_id)
+    oauth_url = vk_svc.build_oauth_url(user.id, nonce)
+
+    await state.set_state(ConnectVKFSM.oauth_callback)
+    await state.update_data(
+        last_update_time=time.time(),
+        connect_project_id=project_id,
+        vk_nonce=nonce,
+    )
 
     await msg.answer(
         "Подключение VK\n\n"
-        "Получите токен доступа:\n"
-        "1. Откройте vkhost.github.io/vk-token\n"
-        "2. Разрешите доступ\n"
-        "3. Скопируйте токен из URL\n\n"
-        "Отправьте токен сюда.",
-        reply_markup=cancel_kb(f"conn:{project_id}:vk_cancel"),
-    )
-    await callback.answer()
-
-
-@router.message(ConnectVKFSM.token, F.text)
-async def vk_process_token(
-    message: Message,
-    state: FSMContext,
-    db: SupabaseClient,
-    http_client: httpx.AsyncClient,
-) -> None:
-    """VK step 1: validate token and show group selection."""
-    text = (message.text or "").strip()
-
-    if text == "Отмена":
-        await state.clear()
-        await message.answer("Подключение отменено.", reply_markup=menu_kb())
-        return
-
-    # Delete message with token for security (after cancel check)
-    try:
-        await message.delete()
-    except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound) as exc:
-        log.warning("failed_to_delete_vk_token_message", reason=str(exc))
-
-    if len(text) < 20:
-        await message.answer("Токен слишком короткий. Попробуйте ещё раз.")
-        return
-
-    # Validate VK token + fetch groups via service
-    conn_svc = ConnectionService(db, http_client)
-    error, groups = await conn_svc.validate_vk_token(text)
-    if error:
-        if "нет групп" in error.lower():
-            fsm_data = await state.get_data()
-            project_id = int(fsm_data["connect_project_id"])
-            await state.clear()
-            await message.answer(
-                error,
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="К подключениям",
-                                callback_data=f"project:{project_id}:connections",
-                            )
-                        ],
-                    ]
-                ),
-            )
-        else:
-            await message.answer(error + "\n\nПопробуйте ещё раз или нажмите Отмена.")
-        return
-
-    fsm_data = await state.get_data()
-    project_id = int(fsm_data["connect_project_id"])
-    # Store only id+name to minimize Redis FSM data size (I6)
-    compact_groups = [{"id": g["id"], "name": g.get("name", "")} for g in groups]
-    await state.update_data(vk_token=text, vk_groups=compact_groups)
-    await state.set_state(ConnectVKFSM.select_group)
-    await message.answer(
-        "Выберите группу для публикации:",
-        reply_markup=vk_group_select_kb(groups, project_id),
-    )
-
-
-@router.callback_query(ConnectVKFSM.select_group, F.data.regexp(r"^vk:group:\d+:select$"))
-async def vk_select_group(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    http_client: httpx.AsyncClient,
-    project_service_factory: ProjectServiceFactory,
-) -> None:
-    """VK step 2: group selected — create connection."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    group_id = int(callback.data.split(":")[2])  # type: ignore[union-attr]
-    data = await state.get_data()
-    vk_token = data["vk_token"]
-    groups: list[dict[str, Any]] = data.get("vk_groups", [])
-    project_id = int(data["connect_project_id"])
-
-    # Find selected group name
-    group_name = str(group_id)
-    for g in groups:
-        if g.get("id") == group_id:
-            group_name = g.get("name", str(group_id))
-            break
-
-    await state.clear()
-
-    conn_svc = ConnectionService(db, http_client)
-    identifier = f"club{group_id}"
-
-    # Rule: 1 project = max 1 VK connection
-    existing_vk = await conn_svc.get_by_project_and_platform(project_id, "vk")
-    if existing_vk:
-        await safe_edit_text(msg, 
-            "К проекту уже подключена VK-группа.\nДля другой группы создайте новый проект.",
-        )
-        await callback.answer()
-        return
-
-    conn = await conn_svc.create(
-        PlatformConnectionCreate(
-            project_id=project_id,
-            platform_type="vk",
-            identifier=identifier,
-            metadata={"group_name": group_name},
+        "Нажмите кнопку ниже, чтобы авторизоваться через VK ID.\n"
+        "После авторизации вы будете перенаправлены обратно в бот.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Авторизоваться в VK", url=oauth_url)],
+                [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
+            ]
         ),
-        raw_credentials={"access_token": vk_token, "group_id": str(group_id)},
-    )
-
-    log.info("vk_connected", conn_id=conn.id, project_id=project_id, group_id=group_id)
-
-    connections = await conn_svc.get_by_project(project_id)
-    project = await project_service_factory(db).get_owned_project(project_id, user.id)
-    safe_name = html.escape(project.name) if project else ""
-    await safe_edit_text(msg, 
-        f"VK-группа «{html.escape(group_name)}» подключена!\n\n<b>{safe_name}</b> — Подключения",
-        reply_markup=connection_list_kb(connections, project_id),
     )
     await callback.answer()
+
+    # NOTE: VK group selection after deep-link is handled in routers/start.py
+    # (vk_group_select_deeplink callback). ConnectVKFSM.select_group is kept
+    # for FSM state tracking but the handler is via deep-link flow.
 
 
 # ---------------------------------------------------------------------------
@@ -876,7 +779,10 @@ async def start_pinterest_connect(
     # Generate nonce for OAuth
     nonce = secrets.token_urlsafe(16)
     settings = get_settings()
-    base_url = settings.railway_public_url.rstrip("/")
+    base_url = (settings.railway_public_url or "").rstrip("/")
+    if not base_url:
+        await msg.answer("Ошибка конфигурации сервера. Попробуйте позже.")
+        return
     oauth_url = f"{base_url}/api/auth/pinterest?user_id={user.id}&nonce={nonce}"
 
     # Store nonce → project_id mapping in Redis (10 min TTL)

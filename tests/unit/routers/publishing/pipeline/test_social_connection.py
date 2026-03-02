@@ -23,9 +23,7 @@ from routers.publishing.pipeline.social.connection import (
     pipeline_connect_tg_channel,
     pipeline_connect_tg_token,
     pipeline_connect_tg_verify,
-    pipeline_connect_vk_token,
     pipeline_select_connection,
-    pipeline_select_vk_group,
     pipeline_start_connect_pinterest,
     pipeline_start_connect_tg,
     pipeline_start_connect_vk,
@@ -553,205 +551,54 @@ class TestTGInlineVerify:
 # ---------------------------------------------------------------------------
 
 
-class TestVKInlineConnect:
-    async def test_start_sets_state(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        await pipeline_start_connect_vk(mock_callback, mock_state)
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_token)
-
-    async def test_short_token_rejected(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        mock_message.text = "short"
-        mock_message.delete = AsyncMock()
-        await pipeline_connect_vk_token(
-            mock_message,
-            mock_state,
-            user,
-            MagicMock(),
-            mock_redis,
-            _mock_http_client(),
-        )
-        mock_message.answer.assert_awaited_once()
-        assert "короткий" in mock_message.answer.call_args[0][0]
-
-    async def test_invalid_vk_token(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        mock_message.text = "a" * 30
-        mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "T"})
-        _, svc_patch = _mock_conn_svc(
-            validate_vk_result=("Недействительный токен.", []),
-            by_project_platform=[],
-        )
-        with svc_patch:
-            await pipeline_connect_vk_token(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                mock_redis,
-                _mock_http_client(),
-            )
-        # Error message shown
-        mock_message.answer.assert_awaited()
-        calls = mock_message.answer.call_args_list
-        assert any("Недействительный" in str(c) for c in calls)
-
-    async def test_single_group_auto_creates(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        mock_message.text = "a" * 30
-        mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "T"})
-        groups = [{"id": 100, "name": "My Group"}]
-        created = _make_social_conn(id=20, platform_type="vk", identifier="club100")
-        _, svc_patch = _mock_conn_svc(
-            validate_vk_result=(None, groups),
-            by_project_platform=[],
-            created_conn=created,
-        )
-        with svc_patch, _patch_category_step_msg():
-            await pipeline_connect_vk_token(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                mock_redis,
-                _mock_http_client(),
-            )
-
-        mock_state.update_data.assert_any_await(
-            connection_id=20, platform_type="vk", connection_identifier="club100",
-        )
-
-    async def test_multiple_groups_shows_picker(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        mock_message.text = "a" * 30
-        mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "T"})
-        groups = [{"id": 100, "name": "G1"}, {"id": 200, "name": "G2"}]
-        _, svc_patch = _mock_conn_svc(
-            validate_vk_result=(None, groups),
-            by_project_platform=[],
-        )
-        with svc_patch:
-            await pipeline_connect_vk_token(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                mock_redis,
-                _mock_http_client(),
-            )
-
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_group)
-
-    async def test_vk_token_message_deleted(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        mock_message.text = "a" * 30
-        mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "T"})
-        _, svc_patch = _mock_conn_svc(
-            validate_vk_result=("err", []),
-            by_project_platform=[],
-        )
-        with svc_patch:
-            await pipeline_connect_vk_token(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                mock_redis,
-                _mock_http_client(),
-            )
-        mock_message.delete.assert_awaited_once()
-
-    async def test_duplicate_vk_per_project(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        mock_message.text = "a" * 30
-        mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(return_value={"project_id": 1, "project_name": "T"})
-        existing = _make_social_conn(platform_type="vk")
-        _, svc_patch = _mock_conn_svc(by_project_platform=[existing])
-        with svc_patch:
-            await pipeline_connect_vk_token(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                mock_redis,
-                _mock_http_client(),
-            )
-        mock_message.answer.assert_awaited()
-        calls = mock_message.answer.call_args_list
-        assert any("уже есть" in str(c) for c in calls)
-
-
-class TestVKGroupSelect:
-    async def test_select_group_creates_connection(
+class TestVKOAuthConnect:
+    async def test_start_sets_state_and_shows_url(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
         mock_redis: MagicMock,
         user: Any,
     ) -> None:
-        mock_callback.data = "pipeline:social:vk_group:100"
-        groups = [{"id": 100, "name": "My Group"}]
-        created = _make_social_conn(id=25, platform_type="vk")
-        mock_state.get_data = AsyncMock(
-            return_value={
-                "vk_groups": groups,
-                "vk_token": "tok",
-                "project_id": 1,
-                "project_name": "T",
-            }
-        )
-        _, svc_patch = _mock_conn_svc(created_conn=created)
-        with svc_patch, _patch_category_step_msg():
-            await pipeline_select_vk_group(
+        mock_state.get_data = AsyncMock(return_value={"project_id": 1})
+        mock_encryption_key = MagicMock()
+        mock_encryption_key.get_secret_value.return_value = "test-encryption-key"
+        with patch("bot.config.get_settings") as settings_mock:
+            settings_mock.return_value = MagicMock(
+                railway_public_url="https://bot.example.com",
+                encryption_key=mock_encryption_key,
+                vk_app_id=12345,
+            )
+            await pipeline_start_connect_vk(
                 mock_callback,
                 mock_state,
                 user,
-                MagicMock(),
                 mock_redis,
                 _mock_http_client(),
             )
 
-        mock_state.update_data.assert_any_await(
-            connection_id=25, platform_type="vk", connection_identifier="club100",
+        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_token)
+        mock_redis.set.assert_awaited_once()
+        # Check nonce stored in Redis with vk_oauth_meta: prefix
+        redis_key = mock_redis.set.call_args[0][0]
+        assert "vk_oauth_meta:" in redis_key
+
+    async def test_no_project_shows_alert(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        mock_state.get_data = AsyncMock(return_value={})
+        await pipeline_start_connect_vk(
+            mock_callback,
+            mock_state,
+            user,
+            mock_redis,
+            _mock_http_client(),
         )
+        mock_callback.answer.assert_awaited()
+        assert "не выбран" in mock_callback.answer.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------
