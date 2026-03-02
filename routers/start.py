@@ -33,14 +33,11 @@ from keyboards.pipeline import (
     pipeline_projects_kb,
 )
 from routers.publishing.pipeline._common import ArticlePipelineFSM
+from services.dashboard import DashboardService
 from services.users import UsersService
 
 log = structlog.get_logger()
 router = Router()
-
-# Average article cost for "~N articles" estimate (UX_PIPELINE.md section 2.5)
-_AVG_ARTICLE_COST = 320
-
 
 def _parse_referrer_id(arg: str) -> int | None:
     """Extract numeric referrer_id from deep link arg like 'referrer_12345'."""
@@ -158,47 +155,6 @@ async def _handle_pinterest_deep_link(
 # ---------------------------------------------------------------------------
 
 
-def _build_dashboard_text(
-    user: User,
-    is_new_user: bool,
-    project_count: int,
-    schedule_count: int,
-) -> str:
-    """Build Dashboard text based on user state (UX_PIPELINE.md section 2.1-2.3, 2.7)."""
-    name = html.escape(user.first_name or "")
-    balance = user.balance
-
-    # Balance warning overrides (section 2.7)
-    if balance < 0:
-        return (
-            f"\u26a0\ufe0f Баланс: {balance} токенов\n"
-            f"\u26a0\ufe0f Долг {abs(balance)} токенов будет списан при следующей покупке.\n"
-            "Для генерации контента пополните баланс."
-        )
-    if balance == 0:
-        return "\U0001f4b0 Баланс: 0 токенов\nДля генерации контента нужно пополнить баланс."
-
-    if is_new_user and project_count == 0:
-        return (
-            f"Привет{', ' + name if name else ''}! "
-            "Я помогу создать и опубликовать SEO-контент.\n"
-            f"Вам начислено {balance} токенов (~{balance // _AVG_ARTICLE_COST} статей на сайт).\n\n"
-            "Что хотите сделать?"
-        )
-    if project_count > 0:
-        articles_estimate = balance // _AVG_ARTICLE_COST
-        lines = [f"\U0001f4b0 Баланс: {balance:,} токенов".replace(",", " ")]
-        lines.append(f"\U0001f4c1 Проектов: {project_count} | \U0001f4c5 Расписаний: {schedule_count}")
-        lines.append(f"Хватит на ~{articles_estimate} статей")
-        return "\n".join(lines)
-
-    # Returning user, 0 projects
-    return (
-        f"\U0001f4b0 Баланс: {balance:,} токенов\n".replace(",", " ") + "У вас пока нет проектов.\n"
-        "Создайте первый \u2014 это займёт 30 секунд."
-    )
-
-
 async def _build_dashboard(
     user: User,
     is_new_user: bool,
@@ -210,7 +166,7 @@ async def _build_dashboard(
     dash_svc = dashboard_service_factory(db)
     data = await dash_svc.get_dashboard_data(user.id)
 
-    text = _build_dashboard_text(user, is_new_user, data.project_count, data.schedule_count)
+    text = DashboardService.build_text(user.first_name or "", user.balance, is_new_user, data)
 
     # Check pipeline checkpoint (section 2.6)
     checkpoint_text = await _get_checkpoint_text(redis, user.id)
@@ -531,7 +487,10 @@ async def _route_to_step(
 
     # Fallback: show dashboard
     log.warning("pipeline.resume_unknown_step", step=step, user_id=user.id)
-    text, kb = await _build_dashboard(user, False, db, redis, dashboard_service_factory)
+    text, kb = await _build_dashboard(
+        user, is_new_user=False, db=db, redis=redis,
+        dashboard_service_factory=dashboard_service_factory,
+    )
     await edit_screen(msg, "welcome.png", text, reply_markup=kb)
 
 

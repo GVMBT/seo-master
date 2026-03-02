@@ -1562,12 +1562,37 @@ def schedule_times_kb(selected: set[str], required: int) -> InlineKeyboardMarkup
 def admin_panel_kb() -> InlineKeyboardMarkup:
     """Admin panel main keyboard."""
     rows = [
-        [InlineKeyboardButton(text="Мониторинг", callback_data="admin:monitoring")],
+        [InlineKeyboardButton(text="Статус API", callback_data="admin:api_status")],
         [InlineKeyboardButton(text="Просмотр пользователя", callback_data="admin:user_lookup")],
         [InlineKeyboardButton(text="Рассылка", callback_data="admin:broadcast")],
         [InlineKeyboardButton(text="Затраты API", callback_data="admin:api_costs")],
         [InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")],
     ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def user_actions_kb(user_id: int, *, is_blocked: bool) -> InlineKeyboardMarkup:
+    """User management action buttons for admin user card."""
+    rows = [
+        [
+            InlineKeyboardButton(text="Начислить", callback_data=f"admin:user:{user_id}:credit"),
+            InlineKeyboardButton(text="Списать", callback_data=f"admin:user:{user_id}:debit"),
+        ],
+    ]
+    if is_blocked:
+        rows.append(
+            [InlineKeyboardButton(text="Разблокировать", callback_data=f"admin:user:{user_id}:unblock")],
+        )
+    else:
+        rows.append(
+            [InlineKeyboardButton(text="Заблокировать", callback_data=f"admin:user:{user_id}:block")],
+        )
+    rows.append(
+        [InlineKeyboardButton(text="Активность", callback_data=f"admin:user:{user_id}:activity")],
+    )
+    rows.append(
+        [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

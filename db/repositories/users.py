@@ -226,9 +226,15 @@ class UsersRepository(BaseRepository):
         return [User(**row) for row in self._rows(resp)]
 
     async def get_active_users(self, days: int = 30) -> list[User]:
-        """Get users active within the last N days."""
+        """Get users active within the last N days (excludes blocked)."""
         cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
-        resp = await self._table(_TABLE).select("*").gte("last_activity", cutoff).execute()
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .gte("last_activity", cutoff)
+            .neq("role", "blocked")
+            .execute()
+        )
         return [User(**row) for row in self._rows(resp)]
 
     async def count_all(self) -> int:
@@ -291,8 +297,8 @@ class UsersRepository(BaseRepository):
             resp = await self._db.table("payments").select("user_id").eq("status", "completed").execute()
             rows = self._rows(resp)
             return sorted({int(row["user_id"]) for row in rows})
-        # "all"
-        resp = await self._table(_TABLE).select("id").execute()
+        # "all" (excludes blocked)
+        resp = await self._table(_TABLE).select("id").neq("role", "blocked").execute()
         return [int(row["id"]) for row in self._rows(resp)]
 
     async def anonymize_financial_records(self, user_id: int) -> tuple[int, int]:

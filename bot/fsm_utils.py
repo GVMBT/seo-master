@@ -19,6 +19,7 @@ _FSM_NAMES: dict[str, str] = {
     "ContentSettingsFSM": "настройка контента",
     "BroadcastFSM": "рассылка сообщений",
     "UserLookupFSM": "просмотр пользователя",
+    "BalanceAdjustFSM": "корректировка баланса",
     "ArticlePipelineFSM": "создание статьи (pipeline)",
     "SocialPipelineFSM": "публикация поста (pipeline)",
 }
