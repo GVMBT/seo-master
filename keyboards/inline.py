@@ -19,7 +19,7 @@ def menu_kb() -> InlineKeyboardMarkup:
     """Single-button keyboard to return to dashboard. Use for dead-end messages."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="\U0001f4cb \u041c\u0435\u043d\u044e", callback_data="nav:dashboard")],
+            [InlineKeyboardButton(text="Меню", callback_data="nav:dashboard")],
         ]
     )
 
@@ -118,15 +118,15 @@ def dashboard_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="\U0001f4c1 Мои проекты",
+                text="Мои проекты",
                 callback_data="nav:projects",
             ),
             InlineKeyboardButton(
-                text="\U0001f464 Профиль",
+                text="Профиль",
                 callback_data="nav:profile",
             ),
             InlineKeyboardButton(
-                text="\U0001f4b0 Токены",
+                text="Токены",
                 callback_data="nav:tokens",
             ),
         ]
@@ -136,7 +136,7 @@ def dashboard_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="\U0001f6e1 Админка",
+                    text="Админка",
                     callback_data="admin:panel",
                 ),
             ]
@@ -194,7 +194,7 @@ def project_list_kb(projects: list[Project], page: int = 1) -> InlineKeyboardMar
     )
     kb.inline_keyboard.append(
         [
-            InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard"),
+            InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard"),
         ]
     )
     return kb
@@ -211,7 +211,7 @@ def project_list_empty_kb() -> InlineKeyboardMarkup:
                     style=ButtonStyle.SUCCESS,
                 ),
             ],
-            [InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")],
+            [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
         ]
     )
 
@@ -330,7 +330,7 @@ def project_deleted_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="\u2b05\ufe0f К проектам", callback_data="nav:projects"),
-                InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard"),
+                InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard"),
             ],
         ]
     )
@@ -346,7 +346,7 @@ def project_created_kb(project_id: int) -> InlineKeyboardMarkup:
                     callback_data=f"project:{project_id}:card",
                     style=ButtonStyle.SUCCESS,
                 ),
-                InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard"),
+                InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard"),
             ],
         ]
     )
@@ -486,7 +486,7 @@ def connection_list_kb(connections: list[PlatformConnection], project_id: int) -
 
     for conn in connections:
         icon = _PLATFORM_ICONS.get(conn.platform_type, conn.platform_type)
-        status = "\U0001f7e2" if conn.status == "active" else "\U0001f534"
+        status = "\u2713" if conn.status == "active" else "\u2717"
         text = f"{status} {icon}: {conn.identifier}"
         rows.append([InlineKeyboardButton(text=text, callback_data=f"conn:{conn.id}:manage")])
 
@@ -1094,7 +1094,7 @@ def profile_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Политика", callback_data="profile:privacy"),
             InlineKeyboardButton(text="Оферта", callback_data="profile:terms"),
         ],
-        [InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1170,7 +1170,7 @@ def tariffs_kb() -> InlineKeyboardMarkup:
         if style:
             btn.style = style
         rows.append([btn])
-    rows.append([InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")])
+    rows.append([InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -1566,7 +1566,7 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Просмотр пользователя", callback_data="admin:user_lookup")],
         [InlineKeyboardButton(text="Рассылка", callback_data="admin:broadcast")],
         [InlineKeyboardButton(text="Затраты API", callback_data="admin:api_costs")],
-        [InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

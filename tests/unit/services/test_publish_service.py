@@ -388,7 +388,7 @@ async def test_refund_on_generation_error(
     mock_cm_cls: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """Error after charge triggers refund + error log."""
+    """Error during generation: no charge, no refund needed (charge-after-result)."""
     svc = _make_service()
     svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule())
     svc._users.get_by_id = AsyncMock(return_value=_make_user())
@@ -409,7 +409,9 @@ async def test_refund_on_generation_error(
 
     result = await svc.execute(_make_payload())
     assert result.status == "error"
-    svc._tokens.refund.assert_called_once()
+    # charge-after-result: no charge was made, so no refund needed
+    svc._tokens.charge.assert_not_called()
+    svc._tokens.refund.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -627,7 +629,7 @@ async def test_cross_post_adaptation_error_refunds_and_continues(
     mock_social_cls: MagicMock,
     mock_validator_cls: MagicMock,
 ) -> None:
-    """Adaptation error for a cross-post target refunds tokens and continues."""
+    """Adaptation error for cross-post: no charge, no refund (charge-after-result)."""
     svc = _make_service()
     svc._users.get_by_id = AsyncMock(return_value=_make_user())
     svc._categories.get_by_id = AsyncMock(return_value=_make_category())
@@ -676,8 +678,8 @@ async def test_cross_post_adaptation_error_refunds_and_continues(
     assert "AI service down" in (result.cross_post_results[0].error or "")
     # Second: success
     assert result.cross_post_results[1].status == "ok"
-    # Refund was called for the failed cross-post
-    svc._tokens.refund.assert_awaited_once()
+    # No refund needed — charge-after-result: failed cross-post was never charged
+    svc._tokens.refund.assert_not_awaited()
 
 
 @patch("services.publish.get_settings")

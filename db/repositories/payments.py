@@ -26,7 +26,7 @@ class PaymentsRepository(BaseRepository):
 
     async def update(self, payment_id: int, data: PaymentUpdate) -> Payment | None:
         """Partial update of payment."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return None
         resp = await self._table(_PAYMENTS_TABLE).update(payload).eq("id", payment_id).execute()

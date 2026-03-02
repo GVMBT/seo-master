@@ -170,10 +170,9 @@ class AdminService:
             if resp.status_code == 200:
                 openrouter_ok = True
                 data = resp.json().get("data", {})
-                limit = data.get("limit")
-                usage = data.get("usage", 0)
-                if limit is not None:
-                    openrouter_credits = round(limit - usage, 2)
+                remaining = data.get("limit_remaining")
+                if remaining is not None:
+                    openrouter_credits = round(float(remaining), 2)
         except Exception:
             log.warning("admin_api_status_openrouter_failed", exc_info=True)
 
@@ -190,7 +189,7 @@ class AdminService:
 
             active_schedules = await asyncio.to_thread(_qstash_check)
             qstash_ok = True
-        except Exception:  # noqa: BLE001 — health check, any failure = service down
+        except Exception:
             log.warning("admin_api_status_qstash_failed", exc_info=True)
             with contextlib.suppress(Exception):
                 active_schedules = await self._schedules.count_active()

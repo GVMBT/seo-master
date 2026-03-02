@@ -43,6 +43,7 @@ user: |
   4. Убери слова-штампы (широкий ассортимент, индивидуальный подход, и т.д.)
   5. Название компании — максимум 3 раза (вступление, один раздел, заключение)
   6. Главная фраза: 2-3 точных вхождения + синонимы. Дословное повторение >3 раз — keyword stuffing.
+  7. ОБЪЁМ: строго <<words_min>>-<<words_max>> слов. Если статья длиннее — сокращай, убирая воду и повторы. Если короче — дополняй конкретикой.
 
   Формат ответа — JSON:
   {
@@ -92,6 +93,12 @@ variables:
   - name: current_research
     required: false
     default: ""
+  - name: words_min
+    required: true
+    default: 1500
+  - name: words_max
+    required: true
+    default: 2500
   - name: language
     required: true
     default: "ru"

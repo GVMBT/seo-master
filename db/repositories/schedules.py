@@ -64,7 +64,7 @@ class SchedulesRepository(BaseRepository):
 
     async def update(self, schedule_id: int, data: PlatformScheduleUpdate) -> PlatformSchedule | None:
         """Partial update."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return await self.get_by_id(schedule_id)
         resp = await self._table(_TABLE).update(payload).eq("id", schedule_id).execute()

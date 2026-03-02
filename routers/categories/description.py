@@ -198,14 +198,6 @@ async def confirm_generate(
     cat_id = int(data["cat_id"])
     project_id = int(data["project_id"])
 
-    # Charge tokens
-    new_balance = await token_service.charge(
-        user_id=user.id,
-        amount=COST_DESCRIPTION,
-        operation_type="description",
-        description=f"Генерация описания (категория #{cat_id})",
-    )
-
     # Show progress indicator before AI call
     await msg.edit_text(f"{EMOJI_PROGRESS} Генерирую описание...")
     await callback.answer()
@@ -221,15 +213,17 @@ async def confirm_generate(
         generated_text = result.content if isinstance(result.content, str) else str(result.content)
     except Exception:
         log.exception("description_generation_failed", cat_id=cat_id, user_id=user.id)
-        await token_service.refund(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            reason="refund",
-            description=f"Возврат за описание (ошибка генерации, категория #{cat_id})",
-        )
         await state.clear()
-        await msg.edit_text("\u26a0\ufe0f Ошибка генерации. Токены возвращены на баланс.", reply_markup=menu_kb())
+        await msg.edit_text("\u26a0\ufe0f Ошибка генерации. Попробуйте ещё раз.", reply_markup=menu_kb())
         return
+
+    # Charge tokens AFTER successful generation (charge-after-result)
+    await token_service.charge(
+        user_id=user.id,
+        amount=COST_DESCRIPTION,
+        operation_type="description",
+        description=f"Генерация описания (категория #{cat_id})",
+    )
 
     # Move to review state
     await state.set_state(DescriptionGenerateFSM.review)
@@ -248,7 +242,6 @@ async def confirm_generate(
         "description_generated",
         cat_id=cat_id,
         user_id=user.id,
-        balance=new_balance,
     )
 
 
@@ -353,7 +346,7 @@ async def review_regenerate(
     settings = get_settings()
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
 
-    # After 2 free regenerations, charge again (E10)
+    # After 2 free regenerations, check balance (E10)
     if regen_count >= 2:
         has_balance = await token_service.check_balance(user.id, COST_DESCRIPTION)
         if not has_balance:
@@ -363,13 +356,6 @@ async def review_regenerate(
                 show_alert=True,
             )
             return
-
-        await token_service.charge(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            operation_type="description",
-            description=f"Перегенерация описания (категория #{cat_id}, попытка {regen_count + 1})",
-        )
 
     # Show progress indicator before AI call
     await msg.edit_text(f"{EMOJI_PROGRESS} Генерирую описание...")
@@ -386,15 +372,17 @@ async def review_regenerate(
         generated_text = result.content if isinstance(result.content, str) else str(result.content)
     except Exception:
         log.exception("description_regen_failed", cat_id=cat_id, user_id=user.id)
-        if regen_count >= 2:
-            await token_service.refund(
-                user_id=user.id,
-                amount=COST_DESCRIPTION,
-                reason="refund",
-                description=f"Возврат за перегенерацию описания (категория #{cat_id})",
-            )
         await callback.answer("Ошибка генерации. Попробуйте ещё раз.", show_alert=True)
         return
+
+    # Charge AFTER successful regeneration (charge-after-result, E10)
+    if regen_count >= 2:
+        await token_service.charge(
+            user_id=user.id,
+            amount=COST_DESCRIPTION,
+            operation_type="description",
+            description=f"Перегенерация описания (категория #{cat_id}, попытка {regen_count + 1})",
+        )
 
     regen_count += 1
     await state.update_data(

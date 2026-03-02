@@ -418,7 +418,7 @@ async def confirm_generation(
     ai_orchestrator: Any,
     dataforseo_client: Any,
 ) -> None:
-    """Confirm: E01 balance check → charge → run pipeline."""
+    """Confirm: E01 balance check → run pipeline → charge on success."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -435,7 +435,7 @@ async def confirm_generation(
     settings = get_settings()
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
 
-    # E01: balance check
+    # E01: balance check (fail-fast, actual charge after success)
     has_balance = await token_service.check_balance(user.id, cost)
     if not has_balance:
         balance = await token_service.get_balance(user.id)
@@ -444,14 +444,6 @@ async def confirm_generation(
         await state.clear()
         await callback.answer()
         return
-
-    # Charge tokens
-    new_balance = await token_service.charge(
-        user_id=user.id,
-        amount=cost,
-        operation_type="keywords",
-        description=f"Подбор ключевых фраз ({quantity} шт., категория #{cat_id})",
-    )
 
     # Save answers for future reuse
     saved_answers = {f"kw_products_{cat_id}": products, f"kw_geography_{cat_id}": geography}
@@ -481,7 +473,6 @@ async def confirm_generation(
         cat_id=cat_id,
         user_id=user.id,
         quantity=quantity,
-        balance=new_balance,
     )
 
 
@@ -611,6 +602,14 @@ async def _run_generation_pipeline(
                 "менее надёжными. Попробуйте более конкретные товары/услуги."
             )
 
+        # Charge tokens AFTER successful generation + save
+        await token_service.charge(
+            user_id=user.id,
+            amount=cost,
+            operation_type="keywords",
+            description=f"Подбор ключевых фраз ({quantity} шт., категория #{cat_id})",
+        )
+
         await msg.edit_text(
             f"Готово! Добавлено:\n"
             f"Кластеров: {len(enriched)}\n"
@@ -633,16 +632,9 @@ async def _run_generation_pipeline(
 
     except Exception:
         log.exception("keyword_pipeline_failed", cat_id=cat_id, user_id=user.id)
-        # Refund on error
-        await token_service.refund(
-            user_id=user.id,
-            amount=cost,
-            reason="refund",
-            description=f"Возврат за подбор фраз (ошибка, категория #{cat_id})",
-        )
         await state.clear()
         await msg.edit_text(
-            "Ошибка при подборе фраз. Токены возвращены.\nПопробуйте позже.",
+            "Ошибка при подборе фраз. Попробуйте позже.",
             reply_markup=keywords_empty_kb(cat_id),
         )
 
