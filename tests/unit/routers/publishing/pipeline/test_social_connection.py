@@ -150,7 +150,9 @@ class TestShowConnectionStep:
                 http_client=_mock_http_client(),
             )
 
-        mock_state.update_data.assert_any_await(connection_id=5, platform_type="telegram")
+        mock_state.update_data.assert_any_await(
+            connection_id=5, platform_type="telegram", connection_identifier="@testchannel",
+        )
         cat_mock.assert_awaited_once()
 
     async def test_multiple_connections_shows_list(
@@ -207,7 +209,9 @@ class TestSelectConnection:
                 _mock_http_client(),
             )
 
-        mock_state.update_data.assert_any_await(connection_id=7, platform_type="telegram")
+        mock_state.update_data.assert_any_await(
+            connection_id=7, platform_type="telegram", connection_identifier="@testchannel",
+        )
         cat_mock.assert_awaited_once()
 
     async def test_wrong_project_shows_alert(
@@ -464,7 +468,9 @@ class TestTGInlineVerify:
                 _mock_http_client(),
             )
 
-        mock_state.update_data.assert_any_await(connection_id=10, platform_type="telegram")
+        mock_state.update_data.assert_any_await(
+            connection_id=10, platform_type="telegram", connection_identifier="@test",
+        )
         mock_bot.session.close.assert_awaited_once()
 
     async def test_bot_not_admin(
@@ -631,7 +637,9 @@ class TestVKInlineConnect:
                 _mock_http_client(),
             )
 
-        mock_state.update_data.assert_any_await(connection_id=20, platform_type="vk")
+        mock_state.update_data.assert_any_await(
+            connection_id=20, platform_type="vk", connection_identifier="club100",
+        )
 
     async def test_multiple_groups_shows_picker(
         self,
@@ -741,7 +749,9 @@ class TestVKGroupSelect:
                 _mock_http_client(),
             )
 
-        mock_state.update_data.assert_any_await(connection_id=25, platform_type="vk")
+        mock_state.update_data.assert_any_await(
+            connection_id=25, platform_type="vk", connection_identifier="club100",
+        )
 
 
 # ---------------------------------------------------------------------------

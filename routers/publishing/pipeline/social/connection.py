@@ -105,7 +105,10 @@ async def _show_connection_step(
 
     if len(social_conns) == 1:
         conn = social_conns[0]
-        await state.update_data(connection_id=conn.id, platform_type=conn.platform_type)
+        await state.update_data(
+            connection_id=conn.id, platform_type=conn.platform_type,
+            connection_identifier=conn.identifier,
+        )
         await _show_category_step(
             callback,
             state,
@@ -168,7 +171,10 @@ async def _show_connection_step_msg(
 
     if len(social_conns) == 1:
         conn = social_conns[0]
-        await state.update_data(connection_id=conn.id, platform_type=conn.platform_type)
+        await state.update_data(
+            connection_id=conn.id, platform_type=conn.platform_type,
+            connection_identifier=conn.identifier,
+        )
         await _show_category_step_msg(
             message,
             state,
@@ -240,7 +246,10 @@ async def pipeline_select_connection(
         return
 
     project_name = data.get("project_name", "")
-    await state.update_data(connection_id=conn.id, platform_type=conn.platform_type)
+    await state.update_data(
+        connection_id=conn.id, platform_type=conn.platform_type,
+        connection_identifier=conn.identifier,
+    )
     await save_checkpoint(
         redis,
         user.id,
@@ -506,7 +515,7 @@ async def pipeline_connect_tg_verify(
             identifier=channel,
             metadata={"bot_username": bot_info.username or ""},
         ),
-        raw_credentials={"bot_token": token},
+        raw_credentials={"bot_token": token, "channel_id": channel},
     )
 
     log.info(
@@ -516,7 +525,10 @@ async def pipeline_connect_tg_verify(
         user_id=user.id,
     )
 
-    await state.update_data(connection_id=conn.id, platform_type="telegram")
+    await state.update_data(
+        connection_id=conn.id, platform_type="telegram",
+        connection_identifier=channel,
+    )
     await safe_edit_text(msg, 
         f"Телеграм-канал {html.escape(channel)} подключён!",
     )
@@ -629,7 +641,7 @@ async def pipeline_connect_vk_token(
                 identifier=f"club{group_id}",
                 metadata={"group_name": group_name},
             ),
-            raw_credentials={"access_token": text},
+            raw_credentials={"access_token": text, "group_id": str(group_id)},
         )
         log.info(
             "pipeline.social.vk_connected",
@@ -637,7 +649,10 @@ async def pipeline_connect_vk_token(
             group_id=group_id,
             user_id=user.id,
         )
-        await state.update_data(connection_id=conn.id, platform_type="vk")
+        await state.update_data(
+            connection_id=conn.id, platform_type="vk",
+            connection_identifier=f"club{group_id}",
+        )
         await message.answer(f"ВКонтакте: {html.escape(group_name)} подключено!")
 
         from routers.publishing.pipeline.social.social import _show_category_step_msg
@@ -710,7 +725,7 @@ async def pipeline_select_vk_group(
             identifier=f"club{group_id}",
             metadata={"group_name": group_name},
         ),
-        raw_credentials={"access_token": token},
+        raw_credentials={"access_token": token, "group_id": str(group_id)},
     )
 
     log.info(
@@ -720,7 +735,10 @@ async def pipeline_select_vk_group(
         user_id=user.id,
     )
 
-    await state.update_data(connection_id=conn.id, platform_type="vk")
+    await state.update_data(
+        connection_id=conn.id, platform_type="vk",
+        connection_identifier=f"club{group_id}",
+    )
     await safe_edit_text(msg, f"ВКонтакте: {html.escape(group_name)} подключено!")
 
     from routers.publishing.pipeline.social.social import _show_category_step_msg

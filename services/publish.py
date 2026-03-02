@@ -648,6 +648,13 @@ class PublishService:
         # Social post content is a dict {text, hashtags, pin_title} — extract text
         content = result.content.get("text", "") if isinstance(result.content, dict) else result.content
 
+        # Append hashtags for VK/Telegram (not for Pinterest which uses pin_title)
+        if isinstance(result.content, dict) and connection.platform_type in ("vk", "telegram"):
+            hashtags = result.content.get("hashtags", [])
+            if hashtags:
+                tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
+                content = f"{content}\n\n{tags_str}"
+
         # Validate content before publishing (placeholder detection + platform limits)
         from services.ai.content_validator import ContentValidator
 
@@ -661,12 +668,18 @@ class PublishService:
             connection.platform_type
         )  # type: ignore[assignment]
 
+        # Build metadata for Pinterest (board_id, pin_title)
+        metadata: dict[str, str] = {}
+        if connection.platform_type == "pinterest" and isinstance(result.content, dict):
+            metadata["pin_title"] = result.content.get("pin_title", "")[:100]
+
         pub_result = await publisher.publish(
             PublishRequest(
                 connection=connection,
                 content=content,
                 content_type=ct,
                 category=category,
+                metadata=metadata,
             )
         )
 
@@ -736,6 +749,13 @@ class PublishService:
                 if isinstance(adapted.content, dict):
                     adapted_text = adapted.content.get("text", "")
 
+                # Append hashtags for VK/Telegram
+                if isinstance(adapted.content, dict) and conn.platform_type in ("vk", "telegram"):
+                    hashtags = adapted.content.get("hashtags", [])
+                    if hashtags:
+                        tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
+                        adapted_text = f"{adapted_text}\n\n{tags_str}"
+
                 publisher = self._get_publisher(conn.platform_type)
                 from services.ai.content_validator import ContentValidator
 
@@ -747,12 +767,19 @@ class PublishService:
                 ct: Literal["html", "telegram_html", "plain_text", "pin_text"] = self._get_content_type(
                     conn.platform_type
                 )  # type: ignore[assignment]
+
+                # Build metadata for Pinterest
+                xp_metadata: dict[str, str] = {}
+                if conn.platform_type == "pinterest" and isinstance(adapted.content, dict):
+                    xp_metadata["pin_title"] = adapted.content.get("pin_title", "")[:100]
+
                 pub_result = await publisher.publish(
                     PublishRequest(
                         connection=conn,
                         content=adapted_text,
                         content_type=ct,
                         category=category,
+                        metadata=xp_metadata,
                     )
                 )
 
