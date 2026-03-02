@@ -391,9 +391,10 @@ CREATE INDEX idx_connections_project ON platform_connections(project_id);
 {"channel_id": "-100123456", "channel_username": "@channel",
  "bot_token": "123:ABC...", "identifier": "-100123456"}
 
-// VK:
-{"group_id": "-123456", "group_name": "Группа", "access_token": "vk1.a.XXX",
- "identifier": "-123456"}
+// VK (OAuth 2.1 PKCE):
+{"access_token": "vk1.a.XXX", "refresh_token": "vk1.a.YYY",
+ "expires_at": "2026-03-03T12:00:00+00:00", "device_id": "...",
+ "group_id": "123456", "identifier": "club123456"}
 
 // Pinterest:
 {"access_token": "pina_...", "refresh_token": "pinr_...", "expires_at": "2026-03-14T00:00:00Z",

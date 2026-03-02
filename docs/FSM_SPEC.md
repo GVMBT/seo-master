@@ -51,7 +51,7 @@ class ConnectTelegramFSM(StatesGroup):
     token = State()          # Токен бота
 
 class ConnectVKFSM(StatesGroup):
-    token = State()          # VK-токен
+    oauth_callback = State() # Ожидание OAuth 2.1 PKCE (id.vk.com)
     select_group = State()   # Выбор группы из списка
 
 class ConnectPinterestFSM(StatesGroup):
@@ -128,7 +128,7 @@ class SocialPipelineFSM(StatesGroup):
     connect_tg_channel = State()   # Inline: подключение Telegram — ссылка на канал (@channel / t.me/)
     connect_tg_token = State()     # Inline: подключение Telegram — токен бота
     connect_tg_verify = State()    # Inline: подключение Telegram — верификация (бот = админ канала)
-    connect_vk_token = State()     # Inline: подключение VK — токен
+    connect_vk_oauth = State()     # Inline: подключение VK — OAuth 2.1 PKCE
     connect_vk_group = State()     # Inline: подключение VK — выбор группы
     connect_pinterest_oauth = State()  # Inline: подключение Pinterest — OAuth редирект
     connect_pinterest_board = State()  # Inline: подключение Pinterest — выбор доски
@@ -288,8 +288,8 @@ url ──[валидный URL]──► login ──[текст]──► pass
 # Telegram:
 channel ──[@channel]──► token ──[bot_id:hash, getMe OK]──► validate (бот = админ канала) ──► CLEAR_STATE + сохранение
 
-# VK:
-token ──[VK token]──► select_group ──[выбор одной группы]──► CLEAR_STATE + сохранение
+# VK (OAuth 2.1 PKCE):
+oauth_callback ──[отправка ссылки id.vk.com]──► (ожидание /start vk_auth_{nonce}) ──► select_group ──► CLEAR_STATE + сохранение
 ```
 
 ### ConnectPinterestFSM (OAuth)
@@ -416,7 +416,7 @@ select_project ──[выбрал]──► select_connection ──[подкл
 create_project_name          [Подключить TG] → connect_tg_channel create_category_name        confirm_cost ──[Да]──► generating ──[OK]──► review
   → _company → _spec           → connect_tg_token                   → select_category            │                       │                │
   → _url → select_project        → connect_tg_verify                (автовозврат)                [Отмена]              [Ошибка]          ├──[Опубликовать]──► publishing ──► CLEAR_STATE + результат
-  (автовозврат)              [Подключить VK] → connect_vk_token                                  ▼                       ▼                ├──[Перегенерировать]──► regenerating ──► review
+  (автовозврат)              [Подключить VK] → connect_vk_oauth                                  ▼                       ▼                ├──[Перегенерировать]──► regenerating ──► review
                                → connect_vk_group                                             CLEAR_STATE          CLEAR_STATE            [Отмена]──► CLEAR_STATE + refund
                              [Подключить Pin] → connect_pinterest                                                   + refund
                                _oauth → _board                                                                                           (на экране результата)
