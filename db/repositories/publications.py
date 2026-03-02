@@ -32,6 +32,20 @@ class PublicationsRepository(BaseRepository):
         )
         return [PublicationLog(**row) for row in self._rows(resp)]
 
+    async def get_last_successful(self, user_id: int) -> PublicationLog | None:
+        """Get the most recent successful publication for a user."""
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "success")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows: list[dict[str, Any]] = self._rows(resp)
+        return PublicationLog(**rows[0]) if rows else None
+
     async def get_by_project(self, project_id: int, limit: int = 20, offset: int = 0) -> list[PublicationLog]:
         """Get publication logs for a project, newest first."""
         resp = (
@@ -196,6 +210,16 @@ class PublicationsRepository(BaseRepository):
         # Fallback: first keyword from sorted list
         first_phrase = sorted_kw[0].get("phrase", "") if sorted_kw else None
         return first_phrase or None, low_pool_warning
+
+    async def count_by_user(self, user_id: int) -> int:
+        """Count total publications for a user."""
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return self._count(resp)
 
     async def count_recent(self, days: int = 7) -> int:
         """Count successful publications in the last N days (admin stats)."""

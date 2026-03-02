@@ -33,15 +33,11 @@ from keyboards.pipeline import (
     pipeline_projects_kb,
 )
 from routers.publishing.pipeline._common import ArticlePipelineFSM
-from services.dashboard import DashboardData
+from services.dashboard import DashboardService
 from services.users import UsersService
 
 log = structlog.get_logger()
 router = Router()
-
-# Average article cost for "~N articles" estimate (UX_PIPELINE.md section 2.5)
-_AVG_ARTICLE_COST = 320
-
 
 def _parse_referrer_id(arg: str) -> int | None:
     """Extract numeric referrer_id from deep link arg like 'referrer_12345'."""
@@ -159,81 +155,6 @@ async def _handle_pinterest_deep_link(
 # ---------------------------------------------------------------------------
 
 
-def _format_balance(balance: int) -> str:
-    """Format balance with space-separated thousands."""
-    return f"{balance:,}".replace(",", " ")
-
-
-def _build_dashboard_text(
-    user: User,
-    is_new_user: bool,
-    data: DashboardData,
-) -> str:
-    """Build Dashboard text based on user state (UX_PIPELINE.md section 2.1-2.3, 2.7)."""
-    name = html.escape(user.first_name or "")
-    balance = user.balance
-
-    # Balance warning overrides (section 2.7)
-    if balance < 0:
-        return (
-            f"\u26a0\ufe0f <b>Баланс: {balance} токенов</b>\n\n"
-            f"Долг {abs(balance)} токенов будет списан при следующей покупке.\n"
-            "Для генерации контента пополните баланс."
-        )
-    if balance == 0:
-        return (
-            "\U0001f4b0 <b>Баланс: 0 токенов</b>\n\n"
-            "Для генерации контента нужно пополнить баланс."
-        )
-
-    if is_new_user and data.project_count == 0:
-        articles_est = balance // _AVG_ARTICLE_COST
-        return (
-            f"Привет{', ' + name if name else ''}! "
-            "Я помогу создать и опубликовать SEO-контент.\n\n"
-            f"\U0001f4b0 <b>Баланс: {_format_balance(balance)} токенов</b> (~{articles_est} статей)\n\n"
-            "Что хотите сделать?"
-        )
-
-    articles_est = balance // _AVG_ARTICLE_COST
-    lines: list[str] = []
-
-    # Balance line
-    lines.append(f"\U0001f4b0 <b>Баланс: {_format_balance(balance)} токенов</b> (~{articles_est} статей)")
-    lines.append("")
-
-    if data.project_count > 0:
-        # Stats block
-        lines.append(
-            f"\U0001f4c1 Проектов: {data.project_count}"
-            f"  \u00b7  \U0001f4c5 Расписаний: {data.schedule_count}"
-        )
-        if data.total_publications > 0:
-            lines.append(f"\U0001f4ca Публикаций: {data.total_publications}")
-
-        # Last publication
-        if data.last_publication and data.last_publication.keyword:
-            lp = data.last_publication
-            label = "статья" if lp.content_type == "article" else "пост"
-            date_str = lp.created_at.strftime("%d.%m") if lp.created_at else ""
-            kw_short = html.escape(lp.keyword[:40] + "\u2026" if len(lp.keyword) > 40 else lp.keyword)
-            lines.append(f"\U0001f4dd {label.capitalize()}: \u00ab{kw_short}\u00bb \u2014 {date_str}")
-
-        # Forecast
-        if data.tokens_per_week > 0:
-            lines.append("")
-            lines.append(
-                f"\u23f0 Расход: ~{_format_balance(data.tokens_per_week)}/нед"
-                f"  \u00b7  ~{_format_balance(data.tokens_per_month)}/мес"
-            )
-    else:
-        # Returning user, 0 projects
-        lines.append("У вас пока нет проектов.")
-        lines.append("Создайте первый \u2014 это займёт 30 секунд.")
-
-    return "\n".join(lines)
-
-
 async def _build_dashboard(
     user: User,
     is_new_user: bool,
@@ -245,7 +166,7 @@ async def _build_dashboard(
     dash_svc = dashboard_service_factory(db)
     data = await dash_svc.get_dashboard_data(user.id)
 
-    text = _build_dashboard_text(user, is_new_user, data)
+    text = DashboardService.build_text(user.first_name or "", user.balance, is_new_user, data)
 
     # Check pipeline checkpoint (section 2.6)
     checkpoint_text = await _get_checkpoint_text(redis, user.id)
