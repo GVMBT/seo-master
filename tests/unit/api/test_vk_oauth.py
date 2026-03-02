@@ -215,26 +215,26 @@ class TestHandleCallback:
 
 
 class TestGetOAuthResult:
-    async def test_returns_and_deletes(self) -> None:
+    async def test_returns_and_deletes_atomically(self) -> None:
         result = {"access_token": "tok", "groups": [{"id": 1, "name": "G"}]}
         service, redis = _make_service()
-        redis.get = AsyncMock(return_value=json.dumps(result))
+        redis.getdel = AsyncMock(return_value=json.dumps(result))
 
         data = await service.get_oauth_result("nonce123")
         assert data is not None
         assert data["access_token"] == "tok"
-        redis.delete.assert_called_once_with(CacheKeys.vk_oauth("nonce123"))
+        redis.getdel.assert_called_once_with(CacheKeys.vk_oauth("nonce123"))
 
     async def test_returns_none_when_missing(self) -> None:
         service, redis = _make_service()
-        redis.get = AsyncMock(return_value=None)
+        redis.getdel = AsyncMock(return_value=None)
 
         data = await service.get_oauth_result("missing")
         assert data is None
 
     async def test_returns_none_on_invalid_json(self) -> None:
         service, redis = _make_service()
-        redis.get = AsyncMock(return_value="not-json")
+        redis.getdel = AsyncMock(return_value="not-json")
 
         data = await service.get_oauth_result("bad")
         assert data is None

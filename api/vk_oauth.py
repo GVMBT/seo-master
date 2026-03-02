@@ -156,12 +156,11 @@ class VKOAuthService:
         return user_id, nonce
 
     async def get_oauth_result(self, nonce: str) -> dict[str, object] | None:
-        """Read and delete OAuth result from Redis (single-use)."""
+        """Atomically read and delete OAuth result from Redis (single-use)."""
         key = CacheKeys.vk_oauth(nonce)
-        raw = await self._redis.get(key)
+        raw = await self._redis.getdel(key)
         if not raw:
             return None
-        await self._redis.delete(key)
         try:
             result: dict[str, object] = json.loads(raw)
             return result

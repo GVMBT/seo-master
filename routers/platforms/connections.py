@@ -694,7 +694,10 @@ async def start_vk_connect(
     # Generate OAuth URL with PKCE
     nonce = secrets.token_urlsafe(16)
     settings = get_settings()
-    base_url = settings.railway_public_url.rstrip("/")
+    base_url = (settings.railway_public_url or "").rstrip("/")
+    if not base_url:
+        await msg.answer("Ошибка конфигурации сервера. Попробуйте позже.")
+        return
     oauth_url = f"{base_url}/api/auth/vk?user_id={user.id}&nonce={nonce}"
 
     # Store nonce → project_id mapping in Redis (30 min TTL)
@@ -774,7 +777,10 @@ async def start_pinterest_connect(
     # Generate nonce for OAuth
     nonce = secrets.token_urlsafe(16)
     settings = get_settings()
-    base_url = settings.railway_public_url.rstrip("/")
+    base_url = (settings.railway_public_url or "").rstrip("/")
+    if not base_url:
+        await msg.answer("Ошибка конфигурации сервера. Попробуйте позже.")
+        return
     oauth_url = f"{base_url}/api/auth/pinterest?user_id={user.id}&nonce={nonce}"
 
     # Store nonce → project_id mapping in Redis (10 min TTL)

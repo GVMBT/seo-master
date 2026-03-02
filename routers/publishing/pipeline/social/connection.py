@@ -589,7 +589,11 @@ async def pipeline_start_connect_vk(
     from bot.config import get_settings
 
     settings = get_settings()
-    base_url = settings.railway_public_url.rstrip("/")
+    base_url = (settings.railway_public_url or "").rstrip("/")
+    if not base_url:
+        log.error("vk_oauth_base_url_missing")
+        await safe_edit_text(msg, "Ошибка конфигурации сервера. Попробуйте позже.")
+        return
     oauth_url = f"{base_url}/api/auth/vk?user_id={user.id}&nonce={nonce}"
 
     kb = InlineKeyboardMarkup(

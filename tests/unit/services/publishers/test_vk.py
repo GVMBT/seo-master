@@ -236,8 +236,8 @@ class TestTokenRefresh:
         token = await pub._maybe_refresh_token(creds)
         assert token == "refreshed"
 
-    async def test_refresh_http_error_propagates(self) -> None:
-        """HTTP error during refresh should raise."""
+    async def test_refresh_http_error_falls_back_to_current_token(self) -> None:
+        """HTTP error during refresh should fallback to current token."""
         async def handler(request: httpx.Request) -> httpx.Response:
             if "oauth2/auth" in str(request.url):
                 return httpx.Response(401, json={"error": "invalid_grant"})
@@ -251,8 +251,8 @@ class TestTokenRefresh:
             "device_id": "d",
             "group_id": "1",
         }
-        with pytest.raises(httpx.HTTPStatusError):
-            await pub._maybe_refresh_token(creds)
+        token = await pub._maybe_refresh_token(creds)
+        assert token == "old"  # Fallback to current token
 
 
 # ---------------------------------------------------------------------------

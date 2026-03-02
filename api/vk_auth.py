@@ -6,6 +6,7 @@ Source of truth:
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 """
 
+import html
 import secrets
 from urllib.parse import quote
 
@@ -21,7 +22,8 @@ log = structlog.get_logger()
 def _build_vk_oauth_service(request: web.Request) -> VKOAuthService:
     """Build VKOAuthService from app context."""
     settings = get_settings()
-    redirect_uri = f"{settings.railway_public_url.rstrip('/')}/api/auth/vk/callback"
+    base_url = (settings.railway_public_url or "").rstrip("/")
+    redirect_uri = f"{base_url}/api/auth/vk/callback"
     return VKOAuthService(
         http_client=request.app["http_client"],
         redis=request.app["redis"],
@@ -57,10 +59,11 @@ async def vk_auth_callback(request: web.Request) -> web.Response:
     if error:
         error_desc = request.query.get("error_description", "Authorization denied")
         log.warning("vk_oauth_user_denied", error=error, description=error_desc)
+        safe_desc = html.escape(error_desc, quote=True)
         return web.Response(
             status=200,
             content_type="text/html",
-            text=f"<h3>Авторизация отменена</h3><p>{error_desc}</p>"
+            text=f"<h3>Авторизация отменена</h3><p>{safe_desc}</p>"
             "<p>Вернитесь в бот и попробуйте снова.</p>",
         )
 

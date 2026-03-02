@@ -57,18 +57,22 @@ class VKPublisher(BasePublisher):
 
     async def _maybe_refresh_token(self, creds: dict[str, Any]) -> str:
         """Return a valid access_token, refreshing if expires_at < now + 5 min."""
-        expires_at_raw = creds.get("expires_at")
-        if expires_at_raw is not None:
-            expires_at = (
-                datetime.fromisoformat(expires_at_raw)
-                if isinstance(expires_at_raw, str)
-                else expires_at_raw
-            )
-            # Ensure timezone-aware comparison
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=UTC)
-            if expires_at > datetime.now(UTC) + _REFRESH_THRESHOLD:
-                return str(creds["access_token"])
+        try:
+            expires_at_raw = creds.get("expires_at")
+            if expires_at_raw is not None:
+                expires_at = (
+                    datetime.fromisoformat(expires_at_raw)
+                    if isinstance(expires_at_raw, str)
+                    else expires_at_raw
+                )
+                # Ensure timezone-aware comparison
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=UTC)
+                if expires_at > datetime.now(UTC) + _REFRESH_THRESHOLD:
+                    return str(creds["access_token"])
+        except (ValueError, TypeError, AttributeError):
+            log.warning("vk_expires_at_parse_error", expires_at=creds.get("expires_at"))
+            # Can't determine expiry — attempt refresh if possible
 
         # No expires_at or token expiring soon — try refresh
         refresh_token = creds.get("refresh_token")
@@ -76,7 +80,12 @@ class VKPublisher(BasePublisher):
             # Legacy connection without refresh_token — use current token as-is
             return str(creds["access_token"])
 
-        return await self._refresh_token(creds)
+        try:
+            return await self._refresh_token(creds)
+        except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
+            log.warning("vk_token_refresh_failed", error=str(exc))
+            # Fallback to current token — may be expired but worth trying
+            return str(creds["access_token"])
 
     async def _refresh_token(self, creds: dict[str, Any]) -> str:
         """POST https://id.vk.com/oauth2/auth (refresh_token grant)."""
