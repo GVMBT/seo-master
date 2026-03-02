@@ -109,3 +109,15 @@ variables:
     default: "ru"
 $YAML$
 WHERE task_type = 'article_critique' AND version = 'v1';
+
+-- Verify the update affected exactly 1 row
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM prompt_versions
+        WHERE task_type = 'article_critique' AND version = 'v1'
+          AND prompt_yaml LIKE '%words_min%'
+    ) THEN
+        RAISE EXCEPTION 'Migration failed: article_critique/v1 prompt not updated (row may not exist — run seed_prompts.py first)';
+    END IF;
+END $$;
