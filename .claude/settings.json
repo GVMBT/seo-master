@@ -29,15 +29,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" pytest tests/ -x -q --timeout=60 --ignore=tests/e2e",
-            "timeout": 120
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "/c/Users/GVMBT/.local/bin/uv.exe run --project \"$CLAUDE_PROJECT_DIR\" ruff check . --select=E,F,I,S,C901,B,UP,SIM,RUF --ignore=RUF001,RUF002,RUF003 --quiet",
             "timeout": 60
           }

@@ -907,7 +907,7 @@ class TelegramPublisher(BasePublisher):
 
 ```python
 class VKPublisher(BasePublisher):
-    """VK API v5.199. Прямой токен, одна группа per connection."""
+    """VK API v5.199. OAuth 2.1 PKCE (id.vk.com), одна группа per connection."""
     VK_API = "https://api.vk.ru/method"
     VK_VERSION = "5.199"
 

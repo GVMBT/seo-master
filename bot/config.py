@@ -44,7 +44,8 @@ class Settings(BaseSettings):
     pinterest_app_id: str = ""
     pinterest_app_secret: SecretStr = SecretStr("")
     vk_app_id: int = 0
-    vk_app_secret: SecretStr = SecretStr("")
+    vk_secure_key: SecretStr = SecretStr("")
+    vk_service_key: SecretStr = SecretStr("")
     health_check_token: SecretStr = SecretStr("")
     usd_rub_rate: float = 92.5
 
