@@ -190,7 +190,7 @@ class AdminService:
 
             active_schedules = await asyncio.to_thread(_qstash_check)
             qstash_ok = True
-        except Exception:
+        except Exception:  # noqa: BLE001 — health check, any failure = service down
             log.warning("admin_api_status_qstash_failed", exc_info=True)
             with contextlib.suppress(Exception):
                 active_schedules = await self._schedules.count_active()
@@ -248,6 +248,9 @@ class AdminService:
         redis: RedisClient,
     ) -> str:
         """Change user role with safety checks. Returns new role."""
+        _ALLOWED_ROLES = {"user", "blocked"}
+        if new_role not in _ALLOWED_ROLES:
+            raise AppError(f"Недопустимая роль: {new_role}")
         if target_id in admin_ids:
             raise AppError("Нельзя менять роль администратора")
 
@@ -271,6 +274,8 @@ class AdminService:
         redis: RedisClient,
     ) -> BalanceAdjustResult:
         """Credit or debit user balance with audit trail."""
+        if amount <= 0:
+            raise AppError("Сумма должна быть положительным числом")
         user = await self._users.get_by_id(target_id)
         if user is None:
             raise AppError("Пользователь не найден")

@@ -1571,7 +1571,7 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def user_actions_kb(user_id: int, is_blocked: bool) -> InlineKeyboardMarkup:
+def user_actions_kb(user_id: int, *, is_blocked: bool) -> InlineKeyboardMarkup:
     """User management action buttons for admin user card."""
     rows = [
         [

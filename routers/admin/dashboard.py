@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import html
 
 import httpx
 import structlog
@@ -17,6 +18,7 @@ from aiogram.types import (
 
 from bot.assets import edit_screen
 from bot.config import get_settings
+from bot.exceptions import AppError
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import AdminServiceFactory
@@ -201,15 +203,15 @@ async def admin_api_costs(
 def _format_user_card(card: UserCard) -> str:
     """Format user card text for display."""
     name_parts = [p for p in (card.first_name, card.last_name) if p]
-    name = " ".join(name_parts) or "\u2014"
-    uname = f"@{card.username}" if card.username else "\u2014"
+    name = html.escape(" ".join(name_parts)) or "\u2014"
+    uname = f"@{html.escape(card.username)}" if card.username else "\u2014"
     activity = card.last_activity[:10] if card.last_activity else "\u2014"
 
     return (
         f"<b>Пользователь #{card.user_id}</b>\n\n"
         f"Имя: {name}\n"
         f"Username: {uname}\n"
-        f"Роль: {card.role}\n"
+        f"Роль: {html.escape(card.role)}\n"
         f"Баланс: {card.balance} токенов\n"
         f"Проектов: {card.projects_count}\n"
         f"Публикаций: {card.publications_count}\n"
@@ -272,7 +274,7 @@ async def user_lookup_input(
         return
 
     text = _format_user_card(card)
-    await message.answer(text, reply_markup=user_actions_kb(card.user_id, card.role == "blocked"))
+    await message.answer(text, reply_markup=user_actions_kb(card.user_id, is_blocked=card.role == "blocked"))
 
 
 # ---------------------------------------------------------------------------
@@ -408,8 +410,12 @@ async def user_block_toggle(
 
     try:
         await admin_svc.change_user_role(target_id, new_role, admin_ids, redis)
-    except Exception as exc:
+    except AppError as exc:
         await callback.answer(str(exc), show_alert=True)
+        return
+    except Exception:
+        log.exception("admin_block_unblock_failed", target_id=target_id)
+        await callback.answer("Ошибка при смене роли", show_alert=True)
         return
 
     verb = "заблокирован" if action == "block" else "разблокирован"
@@ -419,7 +425,7 @@ async def user_block_toggle(
     card = await admin_svc.lookup_user(user_id=target_id)
     if card:
         text = _format_user_card(card)
-        await safe_edit_text(msg, text, reply_markup=user_actions_kb(card.user_id, card.role == "blocked"))
+        await safe_edit_text(msg, text, reply_markup=user_actions_kb(card.user_id, is_blocked=card.role == "blocked"))
 
 
 # ---------------------------------------------------------------------------
@@ -479,10 +485,11 @@ async def user_activity(
 async def user_card_reload(
     callback: CallbackQuery,
     user: User,
+    state: FSMContext,
     db: SupabaseClient,
     admin_service_factory: AdminServiceFactory,
 ) -> None:
-    """Reload and show user card."""
+    """Reload and show user card (also serves as cancel target for FSMs)."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
@@ -491,6 +498,7 @@ async def user_card_reload(
         await callback.answer()
         return
 
+    await state.clear()
     target_id = int(str(callback.data).split(":")[2])
     admin_svc = admin_service_factory(db)
     card = await admin_svc.lookup_user(user_id=target_id)
@@ -501,7 +509,7 @@ async def user_card_reload(
         return
 
     text = _format_user_card(card)
-    await safe_edit_text(msg, text, reply_markup=user_actions_kb(card.user_id, card.role == "blocked"))
+    await safe_edit_text(msg, text, reply_markup=user_actions_kb(card.user_id, is_blocked=card.role == "blocked"))
     await callback.answer()
 
 
