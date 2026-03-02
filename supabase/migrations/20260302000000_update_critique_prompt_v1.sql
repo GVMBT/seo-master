@@ -1,0 +1,111 @@
+-- Update article_critique/v1 prompt: add words_min/words_max length constraint
+-- This ensures AI respects user-set article length during the critique/rewrite step.
+
+UPDATE prompt_versions
+SET prompt_yaml = $YAML$
+meta:
+  task_type: article_critique
+  version: v1
+  model_tier: budget
+  max_tokens: 16000
+  temperature: 0.3
+
+system: |
+  Ты — SEO-редактор. Анализируй и улучшай статьи на <<language>>.
+  Компания: <<company_name>> (<<specialization>>).
+  <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if category_description %>Направление/продукт: <<category_description>>. Контент ДОЛЖЕН быть про этот конкретный продукт/направление.<% endif %>
+  <% if experience %>Опыт: <<experience>>.<% endif %>
+  <% if website_url %>Сайт: <<website_url>>.<% endif %>
+
+user: |
+  Проанализируй статью и перепиши её, исправив слабые места.
+
+  Главная фраза кластера: "<<main_phrase>>"
+  Дополнительные фразы: <<secondary_phrases>>
+
+  <QUALITY_ISSUES>
+  <<quality_issues>>
+  </QUALITY_ISSUES>
+
+  <CURRENT_ARTICLE>
+  <<current_markdown>>
+  </CURRENT_ARTICLE>
+
+  <VERIFIED_DATA>
+  <% if prices_excerpt %>Цены компании: <<prices_excerpt>><% else %>Цены не предоставлены — не упоминай конкретные суммы.<% endif %>
+  Преимущества: <<advantages>>
+  </VERIFIED_DATA>
+
+  <% if current_research %>
+  <<current_research>>
+  <% endif %>
+
+  Задачи:
+  1. Исправь все проблемы из QUALITY_ISSUES
+  2. Сохрани структуру (H2, H3, FAQ). content_markdown НЕ содержит # H1 — заголовок в поле title.
+  3. НЕ выдумывай кейсы, цифры, ROI, статистику — используй ТОЛЬКО данные из VERIFIED_DATA и system prompt
+  4. Убери слова-штампы (широкий ассортимент, индивидуальный подход, и т.д.)
+  5. Название компании — максимум 3 раза (вступление, один раздел, заключение)
+  6. Главная фраза: 2-3 точных вхождения + синонимы. Дословное повторение >3 раз — keyword stuffing.
+  7. ОБЪЁМ: строго <<words_min>>-<<words_max>> слов. Если статья длиннее — сокращай, убирая воду и повторы. Если короче — дополняй конкретикой.
+
+  Формат ответа — JSON:
+  {
+    "title": "...",
+    "meta_description": "... (до 160 символов)",
+    "content_markdown": "... (исправленный полный Markdown)",
+    "faq_schema": [{"question": "...", "answer": "..."}],
+    "images_meta": [
+      {"alt": "...", "filename": "...", "figcaption": "..."},
+      ...
+    ],
+    "changes_summary": "Краткое описание что исправлено"
+  }
+
+variables:
+  - name: main_phrase
+    required: true
+  - name: secondary_phrases
+    required: false
+    default: ""
+  - name: quality_issues
+    required: true
+  - name: current_markdown
+    required: true
+  - name: prices_excerpt
+    required: false
+    default: ""
+  - name: advantages
+    required: false
+    default: ""
+  - name: company_name
+    required: true
+  - name: specialization
+    required: true
+  - name: company_description
+    required: false
+    default: ""
+  - name: category_description
+    required: false
+    default: ""
+  - name: experience
+    required: false
+    default: ""
+  - name: website_url
+    required: false
+    default: ""
+  - name: current_research
+    required: false
+    default: ""
+  - name: words_min
+    required: true
+    default: 1500
+  - name: words_max
+    required: true
+    default: 2500
+  - name: language
+    required: true
+    default: "ru"
+$YAML$
+WHERE task_type = 'article_critique' AND version = 'v1';
