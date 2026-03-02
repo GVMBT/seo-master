@@ -561,8 +561,9 @@ async def pipeline_start_connect_vk(
     state: FSMContext,
     user: User,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
-    """Start VK OAuth connection — generate nonce, show URL button."""
+    """Start VK OAuth connection — delegates nonce/meta/URL to VKOAuthService."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -574,18 +575,7 @@ async def pipeline_start_connect_vk(
         await callback.answer("Проект не выбран.", show_alert=True)
         return
 
-    import json
-
-    nonce = secrets.token_urlsafe(16)
-
-    # Store nonce → project_id + pipeline context
-    nonce_data = {
-        "project_id": project_id,
-        "user_id": user.id,
-        "from_pipeline": True,
-    }
-    await redis.set(f"vk_oauth_meta:{nonce}", json.dumps(nonce_data), ex=1800)
-
+    from api.vk_oauth import VKOAuthService
     from bot.config import get_settings
 
     settings = get_settings()
@@ -594,7 +584,17 @@ async def pipeline_start_connect_vk(
         log.error("vk_oauth_base_url_missing")
         await safe_edit_text(msg, "Ошибка конфигурации сервера. Попробуйте позже.")
         return
-    oauth_url = f"{base_url}/api/auth/vk?user_id={user.id}&nonce={nonce}"
+
+    vk_svc = VKOAuthService(
+        http_client=http_client,
+        redis=redis,
+        encryption_key=settings.encryption_key.get_secret_value(),
+        vk_app_id=settings.vk_app_id,
+        redirect_uri=f"{base_url}/api/auth/vk/callback",
+    )
+    nonce = vk_svc.generate_nonce()
+    await vk_svc.store_meta(nonce, project_id, extra={"user_id": user.id, "from_pipeline": True})
+    oauth_url = vk_svc.build_oauth_url(user.id, nonce)
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[

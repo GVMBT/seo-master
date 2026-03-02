@@ -154,6 +154,36 @@ class ConnectionService:
         """Create connection with encrypted credentials."""
         return await self._repo.create(data, raw_credentials)
 
+    async def create_vk_from_oauth(
+        self,
+        project_id: int,
+        group_id: str,
+        group_name: str,
+        access_token: str,
+        refresh_token: str,
+        expires_at: str,
+        device_id: str,
+    ) -> PlatformConnection:
+        """Create VK connection from OAuth result.
+
+        Extracted from router deep-link logic to keep routers thin (CR-118).
+        """
+        return await self._repo.create(
+            PlatformConnectionCreate(
+                project_id=project_id,
+                platform_type="vk",
+                identifier=f"club{group_id}",
+                metadata={"group_name": group_name},
+            ),
+            raw_credentials={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "device_id": device_id,
+                "group_id": group_id,
+            },
+        )
+
     async def cleanup_cross_post_refs(self, connection_id: int) -> None:
         """Remove deleted connection from cross_post_connection_ids arrays."""
         from db.repositories.schedules import SchedulesRepository

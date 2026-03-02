@@ -560,13 +560,20 @@ class TestVKOAuthConnect:
         user: Any,
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
+        mock_encryption_key = MagicMock()
+        mock_encryption_key.get_secret_value.return_value = "test-encryption-key"
         with patch("bot.config.get_settings") as settings_mock:
-            settings_mock.return_value = MagicMock(railway_public_url="https://bot.example.com")
+            settings_mock.return_value = MagicMock(
+                railway_public_url="https://bot.example.com",
+                encryption_key=mock_encryption_key,
+                vk_app_id=12345,
+            )
             await pipeline_start_connect_vk(
                 mock_callback,
                 mock_state,
                 user,
                 mock_redis,
+                _mock_http_client(),
             )
 
         mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_token)
@@ -588,6 +595,7 @@ class TestVKOAuthConnect:
             mock_state,
             user,
             mock_redis,
+            _mock_http_client(),
         )
         mock_callback.answer.assert_awaited()
         assert "не выбран" in mock_callback.answer.call_args[0][0]

@@ -57,6 +57,10 @@ class CacheKeys:
         return f"vk_oauth:{nonce}"
 
     @staticmethod
+    def vk_oauth_meta(nonce: str) -> str:
+        return f"vk_oauth_meta:{nonce}"
+
+    @staticmethod
     def rate_limit(user_id: int, action: str) -> str:
         return f"rate:{user_id}:{action}"
 

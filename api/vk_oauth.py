@@ -19,6 +19,9 @@ import base64
 import hashlib
 import json
 import secrets
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import structlog
@@ -47,6 +50,19 @@ class VKOAuthError(AppError):
         user_message: str = "Не удалось подключить VK",
     ) -> None:
         super().__init__(message=message, user_message=user_message)
+
+
+@dataclass
+class VKDeepLinkResult:
+    """Result of processing a VK OAuth deep-link."""
+
+    groups: list[dict[str, Any]] = field(default_factory=list)
+    project_id: int | None = None
+    access_token: str = ""
+    refresh_token: str = ""
+    expires_at: str = ""
+    device_id: str = ""
+    raw_result: dict[str, Any] = field(default_factory=dict)
 
 
 def _generate_pkce() -> tuple[str, str]:
@@ -253,3 +269,112 @@ class VKOAuthService:
             json.dumps(result),
             ex=VK_AUTH_TTL,
         )
+
+    # ------------------------------------------------------------------
+    # Meta storage (nonce → project_id, used by toolbox & pipeline)
+    # ------------------------------------------------------------------
+
+    async def store_meta(
+        self,
+        nonce: str,
+        project_id: int,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Store nonce → project_id mapping in Redis (30 min TTL)."""
+        data: dict[str, Any] = {"project_id": project_id}
+        if extra:
+            data.update(extra)
+        await self._redis.set(
+            CacheKeys.vk_oauth_meta(nonce),
+            json.dumps(data),
+            ex=VK_AUTH_TTL,
+        )
+
+    async def get_meta(self, nonce: str) -> dict[str, Any] | None:
+        """Read meta (project_id etc.) from Redis. Returns None if missing."""
+        raw = await self._redis.get(CacheKeys.vk_oauth_meta(nonce))
+        if not raw:
+            return None
+        try:
+            meta: dict[str, Any] = json.loads(raw)
+            return meta
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    async def cleanup_meta(self, nonce: str) -> None:
+        """Delete meta key from Redis."""
+        await self._redis.delete(CacheKeys.vk_oauth_meta(nonce))
+
+    # ------------------------------------------------------------------
+    # Deep-link processing (replaces business logic from routers/start.py)
+    # ------------------------------------------------------------------
+
+    async def process_deep_link(self, nonce: str) -> VKDeepLinkResult | None:
+        """Process VK OAuth deep-link — read result + meta, compute expires_at.
+
+        Returns VKDeepLinkResult with all data needed by the router to show UI,
+        or None if the OAuth result is missing/expired.
+        """
+        result: dict[str, Any] | None = await self.get_oauth_result(nonce)  # type: ignore[assignment]
+        if not result:
+            return None
+
+        groups: list[dict[str, Any]] = result.get("groups") or []
+
+        # Read project_id from meta
+        meta = await self.get_meta(nonce)
+        project_id: int | None = None
+        if meta:
+            try:
+                project_id = int(meta["project_id"])
+            except (ValueError, TypeError, KeyError):
+                pass
+
+        expires_in = int(result.get("expires_in") or 3600)
+        expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+
+        return VKDeepLinkResult(
+            groups=groups,
+            project_id=project_id,
+            access_token=str(result.get("access_token", "")),
+            refresh_token=str(result.get("refresh_token", "")),
+            expires_at=expires_at,
+            device_id=str(result.get("device_id", "")),
+            raw_result=result,
+        )
+
+    async def restore_result_for_group_select(
+        self,
+        nonce: str,
+        result: dict[str, Any],
+    ) -> None:
+        """Re-store OAuth result in Redis for multi-group selection flow (10 min TTL)."""
+        await self._redis.set(CacheKeys.vk_oauth(nonce), json.dumps(result), ex=600)
+
+    async def get_stored_result(self, nonce: str) -> dict[str, Any] | None:
+        """Read stored OAuth result (for group selection callback)."""
+        raw = await self._redis.get(CacheKeys.vk_oauth(nonce))
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)  # type: ignore[no-any-return]
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    async def cleanup(self, nonce: str) -> None:
+        """Clean up all Redis keys for a completed OAuth flow."""
+        await self._redis.delete(CacheKeys.vk_oauth(nonce))
+        await self.cleanup_meta(nonce)
+
+    def generate_nonce(self) -> str:
+        """Generate a cryptographic nonce for OAuth flow."""
+        return secrets.token_urlsafe(16)
+
+    def build_oauth_url(self, user_id: int, nonce: str) -> str:
+        """Build the redirect URL: /api/auth/vk?user_id=...&nonce=...
+
+        Requires self._redirect_uri to be set (includes base_url).
+        """
+        # Extract base_url from redirect_uri (remove /api/auth/vk/callback)
+        base_url = self._redirect_uri.rsplit("/api/auth/vk/callback", 1)[0]
+        return f"{base_url}/api/auth/vk?user_id={user_id}&nonce={nonce}"

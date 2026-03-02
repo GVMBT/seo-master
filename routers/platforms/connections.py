@@ -1,7 +1,6 @@
 """Connection list, manage, delete + 4 connection wizard FSMs."""
 
 import html
-import json
 import secrets
 import time
 
@@ -691,21 +690,25 @@ async def start_vk_connect(
     if interrupted:
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
-    # Generate OAuth URL with PKCE
-    nonce = secrets.token_urlsafe(16)
+    # Delegate nonce + meta + URL to VKOAuthService (CR-118: thin router)
+    from api.vk_oauth import VKOAuthService
+
     settings = get_settings()
     base_url = (settings.railway_public_url or "").rstrip("/")
     if not base_url:
         await msg.answer("Ошибка конфигурации сервера. Попробуйте позже.")
         return
-    oauth_url = f"{base_url}/api/auth/vk?user_id={user.id}&nonce={nonce}"
 
-    # Store nonce → project_id mapping in Redis (30 min TTL)
-    await redis.set(
-        f"vk_oauth_meta:{nonce}",
-        json.dumps({"project_id": project_id}),
-        ex=1800,
+    vk_svc = VKOAuthService(
+        http_client=http_client,
+        redis=redis,
+        encryption_key=settings.encryption_key.get_secret_value(),
+        vk_app_id=settings.vk_app_id,
+        redirect_uri=f"{base_url}/api/auth/vk/callback",
     )
+    nonce = vk_svc.generate_nonce()
+    await vk_svc.store_meta(nonce, project_id)
+    oauth_url = vk_svc.build_oauth_url(user.id, nonce)
 
     await state.set_state(ConnectVKFSM.oauth_callback)
     await state.update_data(
@@ -726,7 +729,6 @@ async def start_vk_connect(
         ),
     )
     await callback.answer()
-
 
     # NOTE: VK group selection after deep-link is handled in routers/start.py
     # (vk_group_select_deeplink callback). ConnectVKFSM.select_group is kept
