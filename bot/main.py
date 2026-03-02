@@ -428,10 +428,17 @@ def create_app() -> web.Application:
     app["yookassa_service"] = yookassa_service
     app["scheduler_service"] = scheduler_service
 
-    # Pinterest OAuth callback (needed for ConnectPinterestFSM)
-    from api.auth import pinterest_callback
+    # Pinterest OAuth redirect + callback (needed for ConnectPinterestFSM)
+    from api.auth import pinterest_callback, pinterest_redirect
 
+    app.router.add_get("/api/auth/pinterest", pinterest_redirect)
     app.router.add_get("/api/auth/pinterest/callback", pinterest_callback)
+
+    # VK ID OAuth 2.1 + PKCE (redirect + callback)
+    from api.vk_auth import vk_auth_callback, vk_auth_redirect
+
+    app.router.add_get("/api/auth/vk", vk_auth_redirect)
+    app.router.add_get("/api/auth/vk/callback", vk_auth_callback)
 
     # YooKassa webhook + renewal (Phase 8 + Phase 10)
     from api.renew import renew_handler

@@ -18,6 +18,7 @@ from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
 from db.models import PlatformConnection, PlatformConnectionCreate
 from db.repositories.connections import ConnectionsRepository
+from services.publishers.vk import VK_API_URL, VK_API_VERSION
 
 log = structlog.get_logger()
 
@@ -74,8 +75,8 @@ class ConnectionService:
         # Step 1: validate token via users.get (POST to keep token out of URL logs)
         try:
             resp = await self._http.post(
-                "https://api.vk.ru/method/users.get",
-                data={"access_token": token, "v": "5.199"},
+                f"{VK_API_URL}/users.get",
+                data={"access_token": token, "v": VK_API_VERSION},
                 timeout=10.0,
             )
             data = resp.json()
@@ -87,10 +88,10 @@ class ConnectionService:
         # Step 2: get user's groups (POST to keep token out of URL logs)
         try:
             resp = await self._http.post(
-                "https://api.vk.ru/method/groups.get",
+                f"{VK_API_URL}/groups.get",
                 data={
                     "access_token": token,
-                    "v": "5.199",
+                    "v": VK_API_VERSION,
                     "filter": "admin,editor",
                     "extended": "1",
                     "count": "50",
@@ -152,6 +153,36 @@ class ConnectionService:
     ) -> PlatformConnection:
         """Create connection with encrypted credentials."""
         return await self._repo.create(data, raw_credentials)
+
+    async def create_vk_from_oauth(
+        self,
+        project_id: int,
+        group_id: str,
+        group_name: str,
+        access_token: str,
+        refresh_token: str,
+        expires_at: str,
+        device_id: str,
+    ) -> PlatformConnection:
+        """Create VK connection from OAuth result.
+
+        Extracted from router deep-link logic to keep routers thin (CR-118).
+        """
+        return await self._repo.create(
+            PlatformConnectionCreate(
+                project_id=project_id,
+                platform_type="vk",
+                identifier=f"club{group_id}",
+                metadata={"group_name": group_name},
+            ),
+            raw_credentials={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "device_id": device_id,
+                "group_id": group_id,
+            },
+        )
 
     async def cleanup_cross_post_refs(self, connection_id: int) -> None:
         """Remove deleted connection from cross_post_connection_ids arrays."""

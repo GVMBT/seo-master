@@ -9,6 +9,7 @@ RENEW_LOCK_TTL = 3600  # 1 hour (API_CONTRACTS.md §2.5)
 BRANDING_TTL = 604800  # 7 days
 SERPER_TTL = 86400  # 24 hours
 PINTEREST_AUTH_TTL = 1800  # 30 minutes
+VK_AUTH_TTL = 1800  # 30 minutes
 RATE_LIMIT_WINDOW = 3600  # 1 hour (default for per-action rate limits)
 PROMPT_CACHE_TTL = 3600  # 1 hour (prompts change only on sync_prompts CLI)
 USER_CACHE_TTL = 300  # 5 minutes (AuthMiddleware user cache)
@@ -46,6 +47,18 @@ class CacheKeys:
     @staticmethod
     def pinterest_oauth(nonce: str) -> str:
         return f"pinterest_oauth:{nonce}"
+
+    @staticmethod
+    def vk_auth(nonce: str) -> str:
+        return f"vk_auth:{nonce}"
+
+    @staticmethod
+    def vk_oauth(nonce: str) -> str:
+        return f"vk_oauth:{nonce}"
+
+    @staticmethod
+    def vk_oauth_meta(nonce: str) -> str:
+        return f"vk_oauth_meta:{nonce}"
 
     @staticmethod
     def rate_limit(user_id: int, action: str) -> str:

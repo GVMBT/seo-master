@@ -152,14 +152,37 @@ class PinterestPublisher(BasePublisher):
             log.error("pinterest_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
 
+    async def _get_default_board(self, token: str) -> str | None:
+        """Fetch user's first board from Pinterest API v5."""
+        try:
+            resp = await self._client.get(
+                f"{_BASE_URL}/boards",
+                headers=self._headers(token),
+                params={"page_size": 1},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                items = resp.json().get("items", [])
+                if items:
+                    return str(items[0]["id"])
+        except httpx.HTTPError:
+            log.warning("pinterest_get_boards_failed", exc_info=True)
+        return None
+
     async def _do_publish(
         self,
         request: PublishRequest,
         token: str,
     ) -> PublishResult:
         """Execute the actual Pinterest publish flow (called inside retry_with_backoff)."""
+        board_id = request.metadata.get("board_id")
+        if not board_id:
+            board_id = await self._get_default_board(token)
+        if not board_id:
+            return PublishResult(success=False, error="No board_id and no boards found on account")
+
         pin_data: dict[str, Any] = {
-            "board_id": request.metadata["board_id"],
+            "board_id": board_id,
             "title": request.metadata.get("pin_title", "")[:_TITLE_LIMIT],
             "description": request.content[:_DESCRIPTION_LIMIT],
             "media_source": {

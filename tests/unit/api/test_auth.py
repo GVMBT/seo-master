@@ -1,7 +1,7 @@
-"""Tests for api/auth.py — Pinterest OAuth callback aiohttp handler.
+"""Tests for api/auth.py — Pinterest OAuth redirect + callback aiohttp handlers.
 
-Covers: valid request + redirect, missing code/state -> 400,
-OAuth error -> 403, deep_link construction.
+Covers: redirect -> Pinterest authorize URL, valid callback + redirect,
+missing code/state -> 400, OAuth error -> 403, deep_link construction.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
-from api.auth import pinterest_callback
+from api.auth import pinterest_callback, pinterest_redirect
 from api.auth_service import PinterestOAuthError
 
 # ---------------------------------------------------------------------------
@@ -133,3 +133,90 @@ class TestPinterestCallback:
             await pinterest_callback(request)
 
         assert "unique_nonce" in exc_info.value.location
+
+
+# ---------------------------------------------------------------------------
+# Pinterest redirect tests
+# ---------------------------------------------------------------------------
+
+
+def _make_redirect_request(
+    user_id: str = "",
+    nonce: str = "",
+) -> web.Request:
+    """Create a mock aiohttp request for /api/auth/pinterest redirect."""
+    query_parts = []
+    if user_id:
+        query_parts.append(f"user_id={user_id}")
+    if nonce:
+        query_parts.append(f"nonce={nonce}")
+    query_string = "&".join(query_parts)
+
+    app = MagicMock()
+    return make_mocked_request(
+        "GET",
+        f"/api/auth/pinterest?{query_string}",
+        app=app,
+    )
+
+
+class TestPinterestRedirect:
+    async def test_missing_user_id_returns_400(self) -> None:
+        request = _make_redirect_request(user_id="", nonce="abc")
+        response = await pinterest_redirect(request)
+        assert response.status == 400
+        assert "Missing" in response.text
+
+    async def test_missing_nonce_returns_400(self) -> None:
+        request = _make_redirect_request(user_id="123", nonce="")
+        response = await pinterest_redirect(request)
+        assert response.status == 400
+        assert "Missing" in response.text
+
+    async def test_invalid_user_id_returns_400(self) -> None:
+        request = _make_redirect_request(user_id="not_a_number", nonce="abc")
+        response = await pinterest_redirect(request)
+        assert response.status == 400
+        assert "Invalid" in response.text
+
+    async def test_success_redirects_to_pinterest(self) -> None:
+        request = _make_redirect_request(user_id="12345", nonce="test_nonce")
+
+        with (
+            patch("api.auth.get_settings", return_value=_mock_settings()),
+            pytest.raises(web.HTTPFound) as exc_info,
+        ):
+            await pinterest_redirect(request)
+
+        location = exc_info.value.location
+        assert "pinterest.com/oauth" in location
+        assert "response_type=code" in location
+        assert "client_id=test_app" in location
+        assert "scope=" in location
+
+    async def test_redirect_contains_hmac_state(self) -> None:
+        request = _make_redirect_request(user_id="12345", nonce="test_nonce")
+
+        with (
+            patch("api.auth.get_settings", return_value=_mock_settings()),
+            pytest.raises(web.HTTPFound) as exc_info,
+        ):
+            await pinterest_redirect(request)
+
+        location = exc_info.value.location
+        # State should contain user_id|nonce|hmac separated by url-encoded pipes
+        assert "state=" in location
+
+    async def test_redirect_contains_callback_uri(self) -> None:
+        request = _make_redirect_request(user_id="12345", nonce="test_nonce")
+
+        with (
+            patch("api.auth.get_settings", return_value=_mock_settings()),
+            pytest.raises(web.HTTPFound) as exc_info,
+        ):
+            await pinterest_redirect(request)
+
+        location = exc_info.value.location
+        assert "redirect_uri=" in location
+        assert "pinterest" in location
+        assert "callback" in location

@@ -449,6 +449,7 @@ async def publish_social_post(
     data = await state.get_data()
     connection_id = data.get("connection_id")
     generated_text = data.get("generated_text", "")
+    generated_hashtags: list[str] = data.get("generated_hashtags", [])
     tokens_charged = data.get("tokens_charged", 0)
     keyword = data.get("generated_keyword", "")
     platform_type = data.get("platform_type", "")
@@ -497,12 +498,24 @@ async def publish_social_post(
         publisher = _get_publisher(platform_type, http_client)
         content_type = _get_content_type(platform_type)
 
+        # Append hashtags for VK/Telegram
+        publish_text = generated_text
+        if generated_hashtags and platform_type in ("vk", "telegram"):
+            tags_str = " ".join(f"#{h.lstrip('#')}" for h in generated_hashtags)
+            publish_text = f"{generated_text}\n\n{tags_str}"
+
+        # Pinterest metadata
+        pub_metadata: dict[str, Any] = {}
+        if platform_type == "pinterest":
+            pub_metadata["pin_title"] = keyword[:100]
+
         try:
             pub_result: PublishResult = await publisher.publish(
                 PublishRequest(
                     connection=connection,
-                    content=generated_text,
+                    content=publish_text,
                     content_type=content_type,
+                    metadata=pub_metadata,
                 )
             )
         except Exception as exc:
@@ -822,3 +835,17 @@ def _get_content_type(platform_type: str) -> Literal["html", "telegram_html", "p
         "pinterest": "pin_text",
     }
     return content_types.get(platform_type, "plain_text")
+
+
+# ---------------------------------------------------------------------------
+# Cross-post stub (TODO F6.4)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.startswith("pipeline:crosspost:"))
+async def crosspost_stub(callback: CallbackQuery) -> None:
+    """Stub handler for cross-post buttons until F6.4 is implemented."""
+    await callback.answer(
+        "Кросс-постинг будет доступен в следующем обновлении.",  # noqa: RUF001
+        show_alert=True,
+    )

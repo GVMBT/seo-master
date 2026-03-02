@@ -2,13 +2,16 @@
 
 import html
 import json
+from typing import Any
 
+import httpx
 import structlog
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from api.vk_oauth import VKDeepLinkResult, VKOAuthService
 from bot.assets import asset_photo, cache_file_id, edit_screen
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
@@ -19,7 +22,7 @@ from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
-from db.models import PlatformConnectionCreate, User
+from db.models import PlatformConnectionCreate, Project, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
@@ -33,6 +36,7 @@ from keyboards.pipeline import (
     pipeline_projects_kb,
 )
 from routers.publishing.pipeline._common import ArticlePipelineFSM
+from services.connections import ConnectionService
 from services.dashboard import DashboardService
 from services.users import UsersService
 
@@ -151,6 +155,257 @@ async def _handle_pinterest_deep_link(
 
 
 # ---------------------------------------------------------------------------
+# VK OAuth deep-link handler (thin — delegates to VKOAuthService + ConnectionService)
+# ---------------------------------------------------------------------------
+
+
+def _build_vk_oauth_service(
+    http_client: httpx.AsyncClient,
+    redis: RedisClient,
+) -> VKOAuthService:
+    """Build VKOAuthService from settings."""
+    settings = get_settings()
+    base_url = (settings.railway_public_url or "").rstrip("/")
+    redirect_uri = f"{base_url}/api/auth/vk/callback"
+    return VKOAuthService(
+        http_client=http_client,
+        redis=redis,
+        encryption_key=settings.encryption_key.get_secret_value(),
+        vk_app_id=settings.vk_app_id,
+        redirect_uri=redirect_uri,
+    )
+
+
+async def _handle_vk_deep_link(
+    message: Message,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    nonce: str,
+) -> None:
+    """Handle VK OAuth deep-link — thin router, delegates to VKOAuthService."""
+    vk_svc = _build_vk_oauth_service(http_client, redis)
+    dl: VKDeepLinkResult | None = await vk_svc.process_deep_link(nonce)
+
+    if not dl:
+        log.warning("vk_deep_link_no_result", nonce=nonce, user_id=user.id)
+        await message.answer(
+            "Авторизация VK не найдена или истекла. Попробуйте ещё раз.",
+            reply_markup=menu_kb(),
+        )
+        return
+
+    if not dl.groups:
+        await vk_svc.cleanup_meta(nonce)
+        await message.answer(
+            "У вас нет групп VK, в которых вы администратор или редактор.",
+            reply_markup=menu_kb(),
+        )
+        return
+
+    if not dl.project_id:
+        await message.answer(
+            "Данные сессии VK не найдены. Попробуйте подключить VK заново.",
+            reply_markup=menu_kb(),
+        )
+        return
+
+    projects_repo = ProjectsRepository(db)
+    project = await projects_repo.get_by_id(dl.project_id)
+    if not project or project.user_id != user.id:
+        log.warning("vk_deep_link_wrong_owner", project_id=dl.project_id, user_id=user.id)
+        await vk_svc.cleanup_meta(nonce)
+        await message.answer("Проект не найден.", reply_markup=menu_kb())
+        return
+
+    if len(dl.groups) == 1:
+        group = dl.groups[0]
+        await _create_vk_connection(message, user, db, http_client, project, dl, group)
+        await vk_svc.cleanup_meta(nonce)
+        return
+
+    # Multiple groups — store result back and show picker
+    await vk_svc.restore_result_for_group_select(nonce, dl.raw_result)
+    await _show_vk_group_picker(message, project, dl.groups, nonce)
+
+
+async def _show_vk_group_picker(
+    message: Message,
+    project: Project,
+    groups: list[dict[str, Any]],
+    nonce: str,
+) -> None:
+    """Show group selection keyboard for multi-group VK OAuth flow."""
+    buttons = [
+        [InlineKeyboardButton(
+            text=html.escape(g.get("name", f"Группа {g['id']}"))[:40],
+            callback_data=f"vk_auth:{nonce}:{g['id']}",
+        )]
+        for g in groups[:10]
+    ]
+    buttons.append([InlineKeyboardButton(text="Отмена", callback_data="nav:dashboard")])
+
+    await message.answer(
+        f"VK-авторизация успешна!\n\n"
+        f"Выберите группу для подключения к проекту «{html.escape(project.name)}»:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+
+
+async def _create_vk_connection(
+    message: Message,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+    project: Project,
+    dl: VKDeepLinkResult,
+    group: dict[str, Any],
+) -> None:
+    """Create VK connection from OAuth result — delegates to ConnectionService."""
+    group_id = str(group["id"])
+    group_name = group.get("name", f"Группа {group_id}")
+    conn_svc = ConnectionService(db, http_client)
+
+    try:
+        conn = await conn_svc.create_vk_from_oauth(
+            project_id=project.id,
+            group_id=group_id,
+            group_name=group_name,
+            access_token=dl.access_token,
+            refresh_token=dl.refresh_token,
+            expires_at=dl.expires_at,
+            device_id=dl.device_id,
+        )
+    except Exception:
+        log.exception("vk_create_connection_failed", project_id=project.id, user_id=user.id)
+        await message.answer(
+            "Не удалось создать подключение VK. Возможно, оно уже существует.",
+            reply_markup=menu_kb(),
+        )
+        return
+
+    safe_name = html.escape(project.name)
+    await message.answer(
+        f"VK-группа «{html.escape(group_name)}» подключена к проекту «{safe_name}»!",
+        reply_markup=menu_kb(),
+    )
+    log.info(
+        "vk_connected_via_deeplink",
+        connection_id=conn.id,
+        project_id=project.id,
+        group_id=group_id,
+        user_id=user.id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# VK group selection callback (from deep-link multi-group flow)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^vk_auth:[^:]+:\d+$"))
+async def vk_group_select_deeplink(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Handle VK group selection from deep-link flow — thin, delegates to services."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    if not callback.data:
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")
+    nonce = parts[1]
+    group_id = int(parts[2])
+
+    vk_svc = _build_vk_oauth_service(http_client, redis)
+
+    # Read stored result
+    result = await vk_svc.get_stored_result(nonce)
+    if not result:
+        await callback.answer("Сессия авторизации истекла.", show_alert=True)
+        return
+
+    groups: list[dict[str, Any]] = result.get("groups") or []
+    group = next((g for g in groups if g["id"] == group_id), None)
+    if not group:
+        await callback.answer("Группа не найдена.", show_alert=True)
+        return
+
+    # Read project from meta
+    meta = await vk_svc.get_meta(nonce)
+    project_id: int | None = None
+    if meta:
+        try:
+            project_id = int(meta["project_id"])
+        except (ValueError, TypeError, KeyError):
+            pass
+
+    if not project_id:
+        await callback.answer("Данные сессии устарели.", show_alert=True)
+        return
+
+    projects_repo = ProjectsRepository(db)
+    project = await projects_repo.get_by_id(project_id)
+    if not project or project.user_id != user.id:
+        await callback.answer("Проект не найден.", show_alert=True)
+        return
+
+    from datetime import UTC, datetime, timedelta
+
+    expires_in = int(result.get("expires_in") or 3600)
+    expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+
+    conn_svc = ConnectionService(db, http_client)
+    group_id_str = str(group["id"])
+    group_name = group.get("name", f"Группа {group_id_str}")
+
+    try:
+        conn = await conn_svc.create_vk_from_oauth(
+            project_id=project.id,
+            group_id=group_id_str,
+            group_name=group_name,
+            access_token=str(result.get("access_token", "")),
+            refresh_token=str(result.get("refresh_token", "")),
+            expires_at=expires_at,
+            device_id=str(result.get("device_id", "")),
+        )
+    except Exception:
+        log.exception("vk_create_connection_failed", project_id=project.id, user_id=user.id)
+        await msg.answer(
+            "Не удалось создать подключение VK. Возможно, оно уже существует.",
+            reply_markup=menu_kb(),
+        )
+        await callback.answer()
+        return
+
+    safe_name = html.escape(project.name)
+    await msg.answer(
+        f"VK-группа «{html.escape(group_name)}» подключена к проекту «{safe_name}»!",
+        reply_markup=menu_kb(),
+    )
+    log.info(
+        "vk_connected_via_deeplink",
+        connection_id=conn.id,
+        project_id=project.id,
+        group_id=group_id_str,
+        user_id=user.id,
+    )
+
+    # Cleanup
+    await vk_svc.cleanup(nonce)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
 # Dashboard builder
 # ---------------------------------------------------------------------------
 
@@ -216,6 +471,7 @@ async def cmd_start(
     is_new_user: bool,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
     dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Handle /start command — show Dashboard."""
@@ -235,6 +491,9 @@ async def cmd_start(
     elif args.startswith("pinterest_auth_"):
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, user, db, redis, nonce)
+    elif args.startswith("vk_auth_"):
+        nonce = args.removeprefix("vk_auth_")
+        await _handle_vk_deep_link(message, user, db, redis, http_client, nonce)
 
     # Consent gate: must accept terms before accessing dashboard (C7/H30)
     if user.accepted_terms_at is None:

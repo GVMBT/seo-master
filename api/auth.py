@@ -1,21 +1,50 @@
-"""Pinterest OAuth callback handler (aiohttp.web).
+"""Pinterest OAuth redirect + callback handlers (aiohttp.web).
 
-Thin handler — all logic delegated to PinterestOAuthService.
+Thin handlers — all logic delegated to PinterestOAuthService.
 Source of truth:
 - docs/ARCHITECTURE.md section 2.3 (aiohttp routes)
 - docs/FSM_SPEC.md section 1 (ConnectPinterestFSM)
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 """
 
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import structlog
 from aiohttp import web
 
-from api.auth_service import PinterestOAuthError, PinterestOAuthService
+from api.auth_service import PinterestOAuthError, PinterestOAuthService, build_state
 from bot.config import get_settings
 
 log = structlog.get_logger()
+
+_PINTEREST_AUTHORIZE_URL = "https://www.pinterest.com/oauth/"
+_PINTEREST_SCOPES = "boards:read,pins:read,pins:write"
+
+
+async def pinterest_redirect(request: web.Request) -> web.Response:
+    """GET /api/auth/pinterest?user_id=123&nonce=abc — redirect to Pinterest OAuth."""
+    user_id_raw = request.query.get("user_id", "")
+    nonce = request.query.get("nonce", "")
+    if not user_id_raw or not nonce:
+        return web.Response(status=400, text="Missing user_id or nonce")
+
+    try:
+        user_id = int(user_id_raw)
+    except ValueError:
+        return web.Response(status=400, text="Invalid user_id")
+
+    settings = get_settings()
+    state = build_state(user_id, nonce, settings.encryption_key.get_secret_value())
+    redirect_uri = f"{settings.railway_public_url}/api/auth/pinterest/callback"
+
+    params = urlencode({
+        "response_type": "code",
+        "client_id": settings.pinterest_app_id,
+        "redirect_uri": redirect_uri,
+        "scope": _PINTEREST_SCOPES,
+        "state": state,
+    })
+    raise web.HTTPFound(location=f"{_PINTEREST_AUTHORIZE_URL}?{params}")
 
 
 async def pinterest_callback(request: web.Request) -> web.Response:
