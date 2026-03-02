@@ -285,7 +285,7 @@ class TestGetApiStatus:
         http_client = MagicMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"data": {"limit": 200.0, "usage": 72.5}}
+        mock_resp.json.return_value = {"data": {"limit_remaining": 127.5}}
         http_client.get = AsyncMock(return_value=mock_resp)
 
         svc._schedules.count_active = AsyncMock(return_value=5)

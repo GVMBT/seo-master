@@ -15,7 +15,6 @@ from dataclasses import field as dataclasses_field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
-import sentry_sdk
 import structlog
 
 from api.models import PublishPayload
@@ -204,28 +203,7 @@ class PublishService:
                 notify=user.notify_publications,
             )
 
-        # 8. Charge tokens
-        try:
-            await self._tokens.charge(
-                user_id, estimated_cost, f"auto_{content_type}", description=f"Auto-publish: {keyword}"
-            )
-        except InsufficientBalanceError:
-            return PublishOutcome(
-                status="error",
-                reason="insufficient_balance",
-                user_id=user_id,
-                notify=user.notify_publications,
-            )
-        except Exception:
-            log.exception("publish_charge_failed", user_id=user_id)
-            return PublishOutcome(
-                status="error",
-                reason="charge_failed",
-                user_id=user_id,
-                notify=user.notify_publications,
-            )
-
-        # 9-10. Generate, publish, log, cross-post (with refund on error)
+        # 8-9. Generate, publish, charge on success (charge-after-result)
         return await self._publish_and_log(
             payload=payload,
             user=user,
@@ -250,8 +228,10 @@ class PublishService:
         schedule: Any,
         cluster: dict[str, Any] | None = None,
     ) -> PublishOutcome:
-        """Generate content, publish, log result, and execute cross-posts."""
+        """Generate content, publish, then charge on success (charge-after-result)."""
         user_id = payload.user_id
+        charged = False
+        actual_cost = 0
         try:
             gen_result, pub_result, failed_images = await self._generate_and_publish(
                 user_id=user_id,
@@ -264,14 +244,24 @@ class PublishService:
                 cluster=cluster,
             )
 
-            # E34: refund for failed images (30 tokens per image)
+            # E34: deduct cost for failed images (30 tokens per image)
+            actual_cost = estimated_cost
             if failed_images > 0:
-                image_refund = failed_images * 30
-                try:
-                    await self._tokens.refund(user_id, image_refund, reason="failed_images")
-                    log.info("image_refund", user_id=user_id, failed=failed_images, refund=image_refund)
-                except Exception:
-                    log.warning("image_refund_failed", user_id=user_id, amount=image_refund)
+                actual_cost -= failed_images * 30
+                log.info("image_cost_reduced", user_id=user_id, failed=failed_images, actual_cost=actual_cost)
+            actual_cost = max(actual_cost, 0)
+
+            # Charge tokens AFTER successful generation + publish
+            charged = False
+            try:
+                await self._tokens.charge(
+                    user_id, actual_cost, f"auto_{content_type}", description=f"Auto-publish: {keyword}"
+                )
+                charged = True
+            except InsufficientBalanceError:
+                log.warning("charge_after_publish_insufficient", user_id=user_id, cost=actual_cost)
+            except Exception:
+                log.exception("charge_after_publish_failed", user_id=user_id, cost=actual_cost)
 
             # Log publication
             images_count = 0
@@ -287,7 +277,7 @@ class PublishService:
                     connection_id=payload.connection_id,
                     keyword=keyword,
                     content_type=content_type,
-                    tokens_spent=estimated_cost,
+                    tokens_spent=actual_cost if charged else 0,
                     images_count=images_count,
                     status="success",
                     post_url=pub_result.post_url or "",
@@ -323,7 +313,7 @@ class PublishService:
                         category_id=payload.category_id,
                     )
 
-            total_cost = estimated_cost + sum(cr.tokens_spent for cr in cross_results if cr.tokens_spent)
+            total_cost = actual_cost + sum(cr.tokens_spent for cr in cross_results if cr.tokens_spent)
             return PublishOutcome(
                 status="ok",
                 keyword=keyword,
@@ -336,11 +326,18 @@ class PublishService:
 
         except Exception as exc:
             log.exception("publish_generation_failed", user_id=user_id, keyword=keyword)
-            try:
-                await self._tokens.refund(user_id, estimated_cost, reason="auto_publish_error")
-            except Exception as refund_exc:
-                log.critical("refund_failed_after_charge", user_id=user_id, amount=estimated_cost)
-                sentry_sdk.capture_exception(refund_exc)
+
+            # Refund if charge was already made (post-charge failure)
+            if charged and actual_cost > 0:
+                try:
+                    await self._tokens.refund(
+                        user_id=user_id,
+                        amount=actual_cost,
+                        reason="refund",
+                        description=f"Refund auto-publish error: {keyword}",
+                    )
+                except Exception:
+                    log.exception("publish_refund_failed", user_id=user_id, cost=actual_cost)
 
             await self._publications.create_log(
                 PublicationLogCreate(
@@ -726,19 +723,6 @@ class PublishService:
                 break  # stop remaining cross-posts
 
             try:
-                await self._tokens.charge(user_id, cost, "cross_post", description=f"Cross-post: {keyword}")
-            except InsufficientBalanceError:
-                results.append(
-                    CrossPostResult(
-                        connection_id=conn_id,
-                        platform=conn.platform_type,
-                        status="error",
-                        error="charge_failed",
-                    )
-                )
-                break
-
-            try:
                 adapted = await social_service.adapt_for_platform(
                     original_text=lead_text,
                     source_platform=lead_platform,
@@ -775,6 +759,12 @@ class PublishService:
                 if not pub_result.success:
                     raise RuntimeError(f"Publish failed: {pub_result.error}")
 
+                # Charge AFTER successful cross-post (charge-after-result)
+                try:
+                    await self._tokens.charge(user_id, cost, "cross_post", description=f"Cross-post: {keyword}")
+                except Exception:
+                    log.warning("cross_post_charge_failed", user_id=user_id, conn_id=conn_id, cost=cost)
+
                 # Log cross-post publication
                 await self._publications.create_log(
                     PublicationLogCreate(
@@ -802,12 +792,8 @@ class PublishService:
                 )
 
             except Exception as exc:
+                # No charge was made — no refund needed (charge-after-result)
                 log.exception("cross_post_failed", conn_id=conn_id, keyword=keyword)
-                try:
-                    await self._tokens.refund(user_id, cost, reason="cross_post_error")
-                except Exception as refund_exc:
-                    log.critical("cross_post_refund_failed", user_id=user_id, conn_id=conn_id)
-                    sentry_sdk.capture_exception(refund_exc)
 
                 await self._publications.create_log(
                     PublicationLogCreate(
