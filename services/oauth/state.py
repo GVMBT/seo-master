@@ -29,7 +29,7 @@ class OAuthStateError(AppError):
 
 
 def build_state(user_id: int, nonce: str, encryption_key: str) -> str:
-    """Build state param: {user_id}_{nonce}_{hmac_hex}.
+    """Build state param: {user_id}|{nonce}|{hmac_hex}.
 
     HMAC-SHA256(user_id + nonce, ENCRYPTION_KEY) prevents CSRF (E30).
     """
