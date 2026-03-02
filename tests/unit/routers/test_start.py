@@ -114,6 +114,7 @@ class TestReferralLinking:
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
+                http_client=MagicMock(),
             )
 
         mock_svc_cls.assert_called_once_with(mock_db)
@@ -150,6 +151,7 @@ class TestReferralLinking:
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
+                http_client=MagicMock(),
             )
 
         mock_svc_cls.assert_not_called()
@@ -180,6 +182,7 @@ class TestReferralLinking:
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
+                http_client=MagicMock(),
             )
 
         # _parse_referrer_id returns None for "abc", so UsersService is not called
@@ -211,6 +214,7 @@ class TestReferralLinking:
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
+                http_client=MagicMock(),
             )
 
         mock_svc_cls.assert_not_called()
@@ -249,6 +253,7 @@ class TestConsentGate:
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
+                http_client=MagicMock(),
             )
 
         # Dashboard should NOT be called
@@ -287,6 +292,7 @@ class TestConsentGate:
                 db=mock_db,
                 redis=mock_redis,
                 dashboard_service_factory=MagicMock(),
+                http_client=MagicMock(),
             )
 
         # Single message with dashboard text + inline keyboard

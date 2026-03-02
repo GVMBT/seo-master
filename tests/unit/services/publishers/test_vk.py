@@ -1,12 +1,14 @@
 """Tests for services/publishers/vk.py — VK API v5.199 publisher.
 
 Covers: validate_connection, publish (3-step photo upload + wall.post),
-delete_post, _check_vk_response, E08 (VK token revoked).
+delete_post, _check_vk_response, E08 (VK token revoked),
+_maybe_refresh_token, _refresh_token (OAuth 2.1 token refresh).
 All VK API calls use POST with form data (not GET with URL params).
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs
 
 import httpx
@@ -14,7 +16,7 @@ import pytest
 
 from db.models import PlatformConnection
 from services.publishers.base import PublishRequest
-from services.publishers.vk import _VK_TEXT_LIMIT, _VK_VERSION, VKPublisher
+from services.publishers.vk import _VK_TEXT_LIMIT, VK_API_VERSION, VKPublisher
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,6 +31,9 @@ def _make_connection(**overrides: object) -> PlatformConnection:
         "identifier": "My Group",
         "credentials": {
             "access_token": "vk1.a.test_token_123",
+            "refresh_token": "vk1.a.refresh_token_abc",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "device_id": "device123",
             "group_id": "12345",
         },
     }
@@ -36,10 +41,28 @@ def _make_connection(**overrides: object) -> PlatformConnection:
     return PlatformConnection(**defaults)
 
 
-def _make_publisher(handler: object) -> VKPublisher:
+def _make_legacy_connection() -> PlatformConnection:
+    """Connection without refresh_token (legacy Implicit Flow)."""
+    return PlatformConnection(
+        id=2,
+        project_id=1,
+        platform_type="vk",
+        identifier="Legacy Group",
+        credentials={
+            "access_token": "legacy_token",
+            "group_id": "12345",
+        },
+    )
+
+
+def _make_publisher(handler: object, vk_app_id: int = 12345, on_token_refresh: object = None) -> VKPublisher:
     transport = httpx.MockTransport(handler)  # type: ignore[arg-type]
     client = httpx.AsyncClient(transport=transport)
-    return VKPublisher(http_client=client)
+    return VKPublisher(
+        http_client=client,
+        vk_app_id=vk_app_id,
+        on_token_refresh=on_token_refresh,  # type: ignore[arg-type]
+    )
 
 
 def _parse_form_data(request: httpx.Request) -> dict[str, str]:
@@ -76,6 +99,163 @@ class TestCheckVkResponse:
 
 
 # ---------------------------------------------------------------------------
+# _maybe_refresh_token / _refresh_token
+# ---------------------------------------------------------------------------
+
+
+class TestTokenRefresh:
+    async def test_valid_token_returns_existing(self) -> None:
+        """Token not expiring soon — return current access_token."""
+        async def handler(request: httpx.Request) -> httpx.Response:
+            pytest.fail("Should not make HTTP call for valid token")
+
+        pub = _make_publisher(handler)
+        conn = _make_connection()
+        token = await pub._maybe_refresh_token(conn.credentials)
+        assert token == "vk1.a.test_token_123"
+
+    async def test_expired_token_triggers_refresh(self) -> None:
+        """Token expired — should refresh."""
+        refresh_called = False
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal refresh_called
+            if "oauth2/auth" in str(request.url):
+                refresh_called = True
+                form = _parse_form_data(request)
+                assert form["grant_type"] == "refresh_token"
+                assert form["refresh_token"] == "vk1.a.refresh_token_abc"
+                assert form["client_id"] == "12345"
+                assert form["device_id"] == "device123"
+                return httpx.Response(200, json={
+                    "access_token": "new_token",
+                    "refresh_token": "new_refresh",
+                    "expires_in": 3600,
+                })
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        creds = {
+            "access_token": "old_token",
+            "refresh_token": "vk1.a.refresh_token_abc",
+            "expires_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+            "device_id": "device123",
+            "group_id": "12345",
+        }
+        token = await pub._maybe_refresh_token(creds)
+        assert token == "new_token"
+        assert refresh_called
+
+    async def test_token_expiring_soon_triggers_refresh(self) -> None:
+        """Token expires in < 5 minutes — should refresh."""
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "oauth2/auth" in str(request.url):
+                return httpx.Response(200, json={
+                    "access_token": "refreshed_token",
+                    "refresh_token": "new_refresh",
+                    "expires_in": 3600,
+                })
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        creds = {
+            "access_token": "old_token",
+            "refresh_token": "some_refresh",
+            "expires_at": (datetime.now(UTC) + timedelta(minutes=2)).isoformat(),
+            "device_id": "dev123",
+            "group_id": "12345",
+        }
+        token = await pub._maybe_refresh_token(creds)
+        assert token == "refreshed_token"
+
+    async def test_legacy_connection_without_refresh_token(self) -> None:
+        """Legacy connection without refresh_token — return current token as-is."""
+        async def handler(request: httpx.Request) -> httpx.Response:
+            pytest.fail("Should not make HTTP call for legacy connection")
+
+        pub = _make_publisher(handler)
+        conn = _make_legacy_connection()
+        token = await pub._maybe_refresh_token(conn.credentials)
+        assert token == "legacy_token"
+
+    async def test_on_token_refresh_callback_called(self) -> None:
+        """on_token_refresh callback is called with old and new credentials."""
+        callback_called = False
+        old_creds_received: dict = {}
+        new_creds_received: dict = {}
+
+        async def token_callback(old_creds: dict, new_creds: dict) -> None:
+            nonlocal callback_called, old_creds_received, new_creds_received
+            callback_called = True
+            old_creds_received = old_creds
+            new_creds_received = new_creds
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "oauth2/auth" in str(request.url):
+                return httpx.Response(200, json={
+                    "access_token": "new_access",
+                    "refresh_token": "new_refresh",
+                    "expires_in": 3600,
+                })
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler, on_token_refresh=token_callback)
+        creds = {
+            "access_token": "old",
+            "refresh_token": "old_refresh",
+            "expires_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+            "device_id": "dev",
+            "group_id": "123",
+        }
+        await pub._maybe_refresh_token(creds)
+        assert callback_called
+        assert old_creds_received["access_token"] == "old"
+        assert new_creds_received["access_token"] == "new_access"
+        assert new_creds_received["refresh_token"] == "new_refresh"
+        assert "expires_at" in new_creds_received
+        assert new_creds_received["device_id"] == "dev"
+        assert new_creds_received["group_id"] == "123"
+
+    async def test_no_expires_at_with_refresh_token_triggers_refresh(self) -> None:
+        """No expires_at but has refresh_token — try refresh."""
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "oauth2/auth" in str(request.url):
+                return httpx.Response(200, json={
+                    "access_token": "refreshed",
+                    "expires_in": 3600,
+                })
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        creds = {
+            "access_token": "old",
+            "refresh_token": "rf",
+            "device_id": "d",
+            "group_id": "1",
+        }
+        token = await pub._maybe_refresh_token(creds)
+        assert token == "refreshed"
+
+    async def test_refresh_http_error_propagates(self) -> None:
+        """HTTP error during refresh should raise."""
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "oauth2/auth" in str(request.url):
+                return httpx.Response(401, json={"error": "invalid_grant"})
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        creds = {
+            "access_token": "old",
+            "refresh_token": "rf",
+            "expires_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+            "device_id": "d",
+            "group_id": "1",
+        }
+        with pytest.raises(httpx.HTTPStatusError):
+            await pub._maybe_refresh_token(creds)
+
+
+# ---------------------------------------------------------------------------
 # validate_connection
 # ---------------------------------------------------------------------------
 
@@ -83,10 +263,12 @@ class TestCheckVkResponse:
 class TestValidateConnection:
     async def test_success_returns_true(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
+            if "oauth2/auth" in str(request.url):
+                return httpx.Response(404)  # shouldn't be called — token is valid
             assert "groups.getById" in str(request.url)
             assert request.method == "POST"
             form = _parse_form_data(request)
-            assert form["v"] == _VK_VERSION
+            assert form["v"] == VK_API_VERSION
             return httpx.Response(200, json={"response": [{"id": 12345, "name": "Group"}]})
 
         pub = _make_publisher(handler)
@@ -119,10 +301,11 @@ class TestValidateConnection:
         captured_form: dict = {}
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            captured_form.update(_parse_form_data(request))
-            # Verify token is NOT in URL params
-            assert "access_token" not in str(request.url.params)
-            return httpx.Response(200, json={"response": [{"id": 12345}]})
+            if "groups.getById" in str(request.url):
+                captured_form.update(_parse_form_data(request))
+                assert "access_token" not in str(request.url.params)
+                return httpx.Response(200, json={"response": [{"id": 12345}]})
+            return httpx.Response(404)
 
         pub = _make_publisher(handler)
         conn = _make_connection()
@@ -187,7 +370,6 @@ class TestPublish:
                 )
             if "upload.vk.com/upload" in url:
                 call_sequence.append("upload")
-                # Upload step already uses POST — this is fine
                 return httpx.Response(
                     200,
                     json={"photo": "photo_data", "server": 1, "hash": "abc123"},

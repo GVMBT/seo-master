@@ -18,6 +18,7 @@ from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
 from db.models import PlatformConnection, PlatformConnectionCreate
 from db.repositories.connections import ConnectionsRepository
+from services.publishers.vk import VK_API_URL, VK_API_VERSION
 
 log = structlog.get_logger()
 
@@ -74,8 +75,8 @@ class ConnectionService:
         # Step 1: validate token via users.get (POST to keep token out of URL logs)
         try:
             resp = await self._http.post(
-                "https://api.vk.ru/method/users.get",
-                data={"access_token": token, "v": "5.199"},
+                f"{VK_API_URL}/users.get",
+                data={"access_token": token, "v": VK_API_VERSION},
                 timeout=10.0,
             )
             data = resp.json()
@@ -87,10 +88,10 @@ class ConnectionService:
         # Step 2: get user's groups (POST to keep token out of URL logs)
         try:
             resp = await self._http.post(
-                "https://api.vk.ru/method/groups.get",
+                f"{VK_API_URL}/groups.get",
                 data={
                     "access_token": token,
-                    "v": "5.199",
+                    "v": VK_API_VERSION,
                     "filter": "admin,editor",
                     "extended": "1",
                     "count": "50",

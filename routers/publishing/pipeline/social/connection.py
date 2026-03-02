@@ -39,7 +39,6 @@ from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     social_connections_kb,
     social_no_connections_kb,
-    vk_group_select_pipeline_kb,
 )
 from routers.publishing.pipeline._common import (
     SocialPipelineFSM,
@@ -560,199 +559,59 @@ async def pipeline_connect_tg_verify(
 async def pipeline_start_connect_vk(
     callback: CallbackQuery,
     state: FSMContext,
+    user: User,
+    redis: RedisClient,
 ) -> None:
-    """Start inline VK connection — ask for access token."""
+    """Start VK OAuth connection — generate nonce, show URL button."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
         return
+
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    if not project_id:
+        await callback.answer("Проект не выбран.", show_alert=True)
+        return
+
+    import json
+
+    nonce = secrets.token_urlsafe(16)
+
+    # Store nonce → project_id + pipeline context
+    nonce_data = {
+        "project_id": project_id,
+        "user_id": user.id,
+        "from_pipeline": True,
+    }
+    await redis.set(f"vk_oauth_meta:{nonce}", json.dumps(nonce_data), ex=1800)
+
+    from bot.config import get_settings
+
+    settings = get_settings()
+    base_url = settings.railway_public_url.rstrip("/")
+    oauth_url = f"{base_url}/api/auth/vk?user_id={user.id}&nonce={nonce}"
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Авторизоваться в VK", url=oauth_url)],
+            [InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")],
+        ]
+    )
 
     await state.set_state(SocialPipelineFSM.connect_vk_token)
-    await safe_edit_text(msg, 
-        f"Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
-        "Введите токен доступа VK с правами управления группой.\n"
-        "<i>Получите на vk.com/dev → Мои приложения → Управление.</i>",
-        reply_markup=cancel_kb("pipeline:social:cancel"),
-    )
-    await callback.answer()
-
-
-@router.message(SocialPipelineFSM.connect_vk_token, F.text)
-async def pipeline_connect_vk_token(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    http_client: httpx.AsyncClient,
-) -> None:
-    """VK inline step 1: validate token, fetch groups."""
-    text = (message.text or "").strip()
-
-    # Delete message containing token (security)
-    try:
-        await message.delete()
-    except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound) as exc:
-        log.warning("pipeline.failed_to_delete_vk_token", reason=str(exc))
-
-    if len(text) < 20:
-        await message.answer(
-            "Токен слишком короткий. Пришлите корректный токен VK.",
-            reply_markup=cancel_kb("pipeline:social:cancel"),
-        )
-        return
-
-    data = await state.get_data()
-    project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
-    if not project_id:
-        await message.answer("Проект не выбран. Начните заново.", reply_markup=menu_kb())
-        return
-
-    # Check 1 VK per project limit
-    conn_svc = ConnectionService(db, http_client)
-    existing = await conn_svc.get_by_project_and_platform(project_id, "vk")
-    if existing:
-        await message.answer(
-            "У этого проекта уже есть VK-подключение. Удалите текущее, чтобы подключить другое.",
-            reply_markup=cancel_kb("pipeline:social:cancel"),
-        )
-        return
-
-    error, groups = await conn_svc.validate_vk_token(text)
-    if error:
-        await message.answer(
-            f"{error}",
-            reply_markup=cancel_kb("pipeline:social:cancel"),
-        )
-        return
-
-    await state.update_data(vk_token=text)
-
-    if len(groups) == 1:
-        # Auto-select single group
-        group = groups[0]
-        group_id = group["id"]
-        group_name = group.get("name", f"Группа {group_id}")
-        conn = await conn_svc.create(
-            PlatformConnectionCreate(
-                project_id=project_id,
-                platform_type="vk",
-                identifier=f"club{group_id}",
-                metadata={"group_name": group_name},
-            ),
-            raw_credentials={"access_token": text, "group_id": str(group_id)},
-        )
-        log.info(
-            "pipeline.social.vk_connected",
-            connection_id=conn.id,
-            group_id=group_id,
-            user_id=user.id,
-        )
-        await state.update_data(
-            connection_id=conn.id, platform_type="vk",
-            connection_identifier=f"club{group_id}",
-        )
-        await message.answer(f"ВКонтакте: {html.escape(group_name)} подключено!")
-
-        from routers.publishing.pipeline.social.social import _show_category_step_msg
-
-        await _show_category_step_msg(
-            message,
-            state,
-            user,
-            db=db,
-            redis=redis,
-            project_id=project_id,
-            project_name=project_name,
-        )
-        return
-
-    # Multiple groups — show picker
-    await state.update_data(vk_groups=groups)
-    await state.set_state(SocialPipelineFSM.connect_vk_group)
-    await message.answer(
-        "Токен принят. Выберите группу для публикации:",
-        reply_markup=vk_group_select_pipeline_kb(groups),
-    )
-
-
-@router.callback_query(
-    SocialPipelineFSM.connect_vk_group,
-    F.data.regexp(r"^pipeline:social:vk_group:\d+$"),
-)
-async def pipeline_select_vk_group(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    http_client: httpx.AsyncClient,
-) -> None:
-    """VK inline step 2: select group from list."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    if not callback.data:
-        await callback.answer()
-        return
-
-    group_id = int(callback.data.split(":")[-1])
-    data = await state.get_data()
-    groups = data.get("vk_groups", [])
-    token = data.get("vk_token", "")
-    project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
-
-    if not project_id or not token:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
-        return
-
-    group = next((g for g in groups if g["id"] == group_id), None)
-    if group is None:
-        await callback.answer("Группа не найдена.", show_alert=True)
-        return
-
-    group_name = group.get("name", f"Группа {group_id}")
-
-    conn_svc = ConnectionService(db, http_client)
-    conn = await conn_svc.create(
-        PlatformConnectionCreate(
-            project_id=project_id,
-            platform_type="vk",
-            identifier=f"club{group_id}",
-            metadata={"group_name": group_name},
-        ),
-        raw_credentials={"access_token": token, "group_id": str(group_id)},
-    )
-
-    log.info(
-        "pipeline.social.vk_connected",
-        connection_id=conn.id,
-        group_id=group_id,
-        user_id=user.id,
-    )
-
-    await state.update_data(
-        connection_id=conn.id, platform_type="vk",
-        connection_identifier=f"club{group_id}",
-    )
-    await safe_edit_text(msg, f"ВКонтакте: {html.escape(group_name)} подключено!")
-
-    from routers.publishing.pipeline.social.social import _show_category_step_msg
-
-    await _show_category_step_msg(
+    await safe_edit_text(
         msg,
-        state,
-        user,
-        db=db,
-        redis=redis,
-        project_id=project_id,
-        project_name=project_name,
+        f"Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
+        "Нажмите кнопку ниже для авторизации через VK ID.\n"
+        "Ссылка действительна 30 минут.",
+        reply_markup=kb,
     )
     await callback.answer()
+
+    # NOTE: After OAuth, user returns via deep-link /start vk_auth_{nonce},
+    # which is handled in routers/start.py. The pipeline flow continues
+    # after the connection is created via the deep-link handler.
 
 
 # ---------------------------------------------------------------------------
