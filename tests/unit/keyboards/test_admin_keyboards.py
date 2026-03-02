@@ -42,8 +42,10 @@ class TestUserActionsKb:
         kb = user_actions_kb(123, is_blocked=True)
         flat = [btn for row in kb.inline_keyboard for btn in row]
         texts = [btn.text for btn in flat]
+        cbs = [btn.callback_data for btn in flat]
         assert "Разблокировать" in texts
         assert "Заблокировать" not in texts
+        assert "admin:user:123:unblock" in cbs
 
     def test_callback_data_contains_user_id(self) -> None:
         kb = user_actions_kb(456, is_blocked=False)

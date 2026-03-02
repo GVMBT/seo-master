@@ -230,6 +230,8 @@ class PublishService:
     ) -> PublishOutcome:
         """Generate content, publish, then charge on success (charge-after-result)."""
         user_id = payload.user_id
+        charged = False
+        actual_cost = 0
         try:
             gen_result, pub_result, failed_images = await self._generate_and_publish(
                 user_id=user_id,
@@ -250,10 +252,12 @@ class PublishService:
             actual_cost = max(actual_cost, 0)
 
             # Charge tokens AFTER successful generation + publish
+            charged = False
             try:
                 await self._tokens.charge(
                     user_id, actual_cost, f"auto_{content_type}", description=f"Auto-publish: {keyword}"
                 )
+                charged = True
             except InsufficientBalanceError:
                 log.warning("charge_after_publish_insufficient", user_id=user_id, cost=actual_cost)
             except Exception:
@@ -273,7 +277,7 @@ class PublishService:
                     connection_id=payload.connection_id,
                     keyword=keyword,
                     content_type=content_type,
-                    tokens_spent=actual_cost,
+                    tokens_spent=actual_cost if charged else 0,
                     images_count=images_count,
                     status="success",
                     post_url=pub_result.post_url or "",
@@ -321,8 +325,19 @@ class PublishService:
             )
 
         except Exception as exc:
-            # No charge was made — no refund needed (charge-after-result pattern)
             log.exception("publish_generation_failed", user_id=user_id, keyword=keyword)
+
+            # Refund if charge was already made (post-charge failure)
+            if charged and actual_cost > 0:
+                try:
+                    await self._tokens.refund(
+                        user_id=user_id,
+                        amount=actual_cost,
+                        reason="refund",
+                        description=f"Refund auto-publish error: {keyword}",
+                    )
+                except Exception:
+                    log.exception("publish_refund_failed", user_id=user_id, cost=actual_cost)
 
             await self._publications.create_log(
                 PublicationLogCreate(

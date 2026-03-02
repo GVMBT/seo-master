@@ -218,12 +218,15 @@ async def confirm_generate(
         return
 
     # Charge tokens AFTER successful generation (charge-after-result)
-    await token_service.charge(
-        user_id=user.id,
-        amount=COST_DESCRIPTION,
-        operation_type="description",
-        description=f"Генерация описания (категория #{cat_id})",
-    )
+    try:
+        await token_service.charge(
+            user_id=user.id,
+            amount=COST_DESCRIPTION,
+            operation_type="description",
+            description=f"Генерация описания (категория #{cat_id})",
+        )
+    except Exception:
+        log.exception("description_charge_failed", cat_id=cat_id, user_id=user.id)
 
     # Move to review state
     await state.set_state(DescriptionGenerateFSM.review)
@@ -377,12 +380,15 @@ async def review_regenerate(
 
     # Charge AFTER successful regeneration (charge-after-result, E10)
     if regen_count >= 2:
-        await token_service.charge(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            operation_type="description",
-            description=f"Перегенерация описания (категория #{cat_id}, попытка {regen_count + 1})",
-        )
+        try:
+            await token_service.charge(
+                user_id=user.id,
+                amount=COST_DESCRIPTION,
+                operation_type="description",
+                description=f"Перегенерация описания (категория #{cat_id}, попытка {regen_count + 1})",
+            )
+        except Exception:
+            log.exception("description_regen_charge_failed", cat_id=cat_id, user_id=user.id)
 
     regen_count += 1
     await state.update_data(

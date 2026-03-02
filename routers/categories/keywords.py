@@ -603,19 +603,23 @@ async def _run_generation_pipeline(
             )
 
         # Charge tokens AFTER successful generation + save
-        await token_service.charge(
-            user_id=user.id,
-            amount=cost,
-            operation_type="keywords",
-            description=f"Подбор ключевых фраз ({quantity} шт., категория #{cat_id})",
-        )
+        try:
+            await token_service.charge(
+                user_id=user.id,
+                amount=cost,
+                operation_type="keywords",
+                description=f"Подбор ключевых фраз ({quantity} шт., категория #{cat_id})",
+            )
+            cost_note = f"\n\nСписано {cost} токенов."
+        except Exception:
+            log.exception("keyword_charge_failed", cat_id=cat_id, user_id=user.id, cost=cost)
+            cost_note = ""
 
         await msg.edit_text(
             f"Готово! Добавлено:\n"
             f"Кластеров: {len(enriched)}\n"
             f"Фраз: {total_phrases}\n"
-            f"Общий объём: {total_volume:,}/мес\n\n"
-            f"Списано {cost} токенов.{quality_note}",
+            f"Общий объём: {total_volume:,}/мес{cost_note}{quality_note}",
             reply_markup=keywords_results_kb(cat_id),
         )
         # Use set_state(None) instead of clear() to preserve saved answers
