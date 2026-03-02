@@ -487,7 +487,10 @@ async def _route_to_step(
 
     # Fallback: show dashboard
     log.warning("pipeline.resume_unknown_step", step=step, user_id=user.id)
-    text, kb = await _build_dashboard(user, False, db, redis, dashboard_service_factory)
+    text, kb = await _build_dashboard(
+        user, is_new_user=False, db=db, redis=redis,
+        dashboard_service_factory=dashboard_service_factory,
+    )
     await edit_screen(msg, "welcome.png", text, reply_markup=kb)
 
 

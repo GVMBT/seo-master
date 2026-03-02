@@ -54,6 +54,9 @@ class AuthMiddleware(BaseMiddleware):
         cached = await redis.get(cache_key)
         if cached is not None:
             user = User(**json.loads(cached))
+            if user.role == "blocked" and user.id not in self._admin_ids:
+                await self._send_blocked(event)
+                return None
             data["user"] = user
             data["is_new_user"] = False
             data["is_admin"] = user.id in self._admin_ids
@@ -78,6 +81,11 @@ class AuthMiddleware(BaseMiddleware):
             user = user.model_copy(update={"role": "admin"})
             log.info("admin_auto_promoted", user_id=user.id)
 
+        # Block check (after auto-promote so admins in ADMIN_IDS can never be blocked)
+        if user.role == "blocked" and user.id not in self._admin_ids:
+            await self._send_blocked(event)
+            return None
+
         # Cache user in Redis (5 min TTL)
         await redis.set(
             cache_key,
@@ -89,6 +97,15 @@ class AuthMiddleware(BaseMiddleware):
         data["is_new_user"] = is_new
         data["is_admin"] = user.id in self._admin_ids
         return await handler(event, data)
+
+    @staticmethod
+    async def _send_blocked(event: TelegramObject) -> None:
+        """Notify blocked user and drop the event."""
+        text = "Ваш аккаунт заблокирован."
+        if isinstance(event, Message):
+            await event.answer(text)
+        elif isinstance(event, CallbackQuery):
+            await event.answer(text, show_alert=True)
 
 
 class FSMInactivityMiddleware(BaseMiddleware):

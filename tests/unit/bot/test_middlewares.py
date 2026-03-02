@@ -196,6 +196,52 @@ class TestAuthMiddleware:
         assert result == "handler_result"
         assert "user" not in data
 
+    async def test_blocked_user_cached_path_drops_event(self) -> None:
+        """Blocked user from cache should not reach the handler."""
+        mw = AuthMiddleware(admin_ids=[999])
+        handler = _make_handler()
+        cached_json = json.dumps({"id": 123, "balance": 0, "role": "blocked"})
+        redis = _make_mock_redis(cached_user=cached_json)
+        event = MagicMock()
+        event.answer = AsyncMock()
+        data: dict = {"event_from_user": _make_tg_user(123), "db": MagicMock(), "redis": redis}
+
+        result = await mw(handler, event, data)
+
+        assert result is None
+        handler.assert_not_called()
+
+    async def test_blocked_user_db_path_drops_event(self, mock_user: MagicMock) -> None:
+        """Blocked user from DB should not reach the handler."""
+        mock_user.role = "blocked"
+        mock_user.id = 123
+        mw = AuthMiddleware(admin_ids=[999])
+        handler = _make_handler()
+        redis = _make_mock_redis()
+        event = MagicMock()
+        event.answer = AsyncMock()
+        data: dict = {"event_from_user": _make_tg_user(123), "db": MagicMock(), "redis": redis}
+
+        with patch("bot.middlewares.auth.UsersRepository") as repo_cls:
+            repo_cls.return_value.get_or_create = AsyncMock(return_value=(mock_user, False))
+            result = await mw(handler, event, data)
+
+        assert result is None
+        handler.assert_not_called()
+
+    async def test_blocked_admin_id_still_passes(self) -> None:
+        """Admin IDs are never blocked even if role is 'blocked'."""
+        mw = AuthMiddleware(admin_ids=[123])
+        handler = _make_handler()
+        cached_json = json.dumps({"id": 123, "balance": 0, "role": "blocked"})
+        redis = _make_mock_redis(cached_user=cached_json)
+        data: dict = {"event_from_user": _make_tg_user(123), "db": MagicMock(), "redis": redis}
+
+        await mw(handler, _make_event(), data)
+
+        handler.assert_called_once()
+        assert data["user"].id == 123
+
 
 # === ThrottlingMiddleware ===
 

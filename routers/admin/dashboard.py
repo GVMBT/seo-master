@@ -1,7 +1,9 @@
-"""Admin panel: stats, monitoring, API costs, user lookup, broadcast (UX_TOOLBOX section 16)."""
+"""Admin panel: stats, API status, user management, broadcast (UX_TOOLBOX section 16)."""
 
 import asyncio
+import contextlib
 
+import httpx
 import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -14,16 +16,25 @@ from aiogram.types import (
 )
 
 from bot.assets import edit_screen
+from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import AdminServiceFactory
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
-from keyboards.inline import admin_panel_kb, broadcast_audience_kb, broadcast_confirm_kb
+from keyboards.inline import (
+    admin_panel_kb,
+    broadcast_audience_kb,
+    broadcast_confirm_kb,
+    user_actions_kb,
+)
+from services.admin import UserCard
 
 log = structlog.get_logger()
 router = Router()
+
+_BROADCAST_PROGRESS_STEP = 25
 
 
 class BroadcastFSM(StatesGroup):
@@ -34,6 +45,10 @@ class BroadcastFSM(StatesGroup):
 
 class UserLookupFSM(StatesGroup):
     waiting_input = State()
+
+
+class BalanceAdjustFSM(StatesGroup):
+    waiting_amount = State()
 
 
 # ---------------------------------------------------------------------------
@@ -95,19 +110,20 @@ async def admin_panel(
 
 
 # ---------------------------------------------------------------------------
-# Monitoring
+# API Status (replaces Monitoring)
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "admin:monitoring")
-async def admin_monitoring(
+@router.callback_query(F.data == "admin:api_status")
+async def admin_api_status(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
     admin_service_factory: AdminServiceFactory,
 ) -> None:
-    """Show service health status: DB, Redis, active schedules."""
+    """Show all external service statuses with latency and credits."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
@@ -116,16 +132,29 @@ async def admin_monitoring(
         await callback.answer()
         return
 
+    settings = get_settings()
     admin_svc = admin_service_factory(db)
-    status = await admin_svc.get_monitoring_status(redis)
+
+    status = await admin_svc.get_api_status(
+        redis=redis,
+        http_client=http_client,
+        openrouter_api_key=settings.openrouter_api_key.get_secret_value(),
+        qstash_token=settings.qstash_token.get_secret_value(),
+    )
 
     db_icon = "\u2705" if status.db_ok else "\u274c"
     redis_icon = "\u2705" if status.redis_ok else "\u274c"
+    or_icon = "\u2705" if status.openrouter_ok else "\u274c"
+    qs_icon = "\u2705" if status.qstash_ok else "\u274c"
+
+    credits_str = f"${status.openrouter_credits:.2f}" if status.openrouter_credits is not None else "\u2014"
 
     text = (
-        "<b>Мониторинг</b>\n\n"
-        f"База данных: {db_icon}\n"
-        f"Redis: {redis_icon}\n"
+        "<b>Статус API</b>\n\n"
+        f"База данных: {db_icon} ({status.db_latency_ms}ms)\n"
+        f"Redis: {redis_icon} ({status.redis_latency_ms}ms)\n"
+        f"OpenRouter: {or_icon} | Кредиты: {credits_str}\n"
+        f"QStash: {qs_icon}\n"
         f"Активных расписаний: {status.active_schedules}\n"
     )
 
@@ -169,6 +198,25 @@ async def admin_api_costs(
 # ---------------------------------------------------------------------------
 
 
+def _format_user_card(card: UserCard) -> str:
+    """Format user card text for display."""
+    name_parts = [p for p in (card.first_name, card.last_name) if p]
+    name = " ".join(name_parts) or "\u2014"
+    uname = f"@{card.username}" if card.username else "\u2014"
+    activity = card.last_activity[:10] if card.last_activity else "\u2014"
+
+    return (
+        f"<b>Пользователь #{card.user_id}</b>\n\n"
+        f"Имя: {name}\n"
+        f"Username: {uname}\n"
+        f"Роль: {card.role}\n"
+        f"Баланс: {card.balance} токенов\n"
+        f"Проектов: {card.projects_count}\n"
+        f"Публикаций: {card.publications_count}\n"
+        f"Последняя активность: {activity}\n"
+    )
+
+
 @router.callback_query(F.data == "admin:user_lookup")
 async def user_lookup_start(callback: CallbackQuery, user: User, state: FSMContext) -> None:
     """Start user lookup flow: ask for user_id or @username."""
@@ -201,7 +249,7 @@ async def user_lookup_input(
     admin_service_factory: AdminServiceFactory,
     state: FSMContext,
 ) -> None:
-    """Parse input and show user card."""
+    """Parse input and show user card with action buttons."""
     if not _is_admin(user):
         return
     raw = (message.text or "").strip()
@@ -223,21 +271,238 @@ async def user_lookup_input(
         await message.answer("Пользователь не найден.", reply_markup=_BACK_TO_PANEL_KB)
         return
 
-    name_parts = [p for p in (card.first_name, card.last_name) if p]
-    name = " ".join(name_parts) or "\u2014"
-    uname = f"@{card.username}" if card.username else "\u2014"
+    text = _format_user_card(card)
+    await message.answer(text, reply_markup=user_actions_kb(card.user_id, card.role == "blocked"))
 
-    text = (
-        f"<b>Пользователь #{card.user_id}</b>\n\n"
-        f"Имя: {name}\n"
-        f"Username: {uname}\n"
-        f"Роль: {card.role}\n"
-        f"Баланс: {card.balance} токенов\n"
-        f"Проектов: {card.projects_count}\n"
-        f"Регистрация: {card.created_at[:10] if card.created_at else '\u2014'}\n"
+
+# ---------------------------------------------------------------------------
+# User actions: credit / debit
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^admin:user:(\d+):(credit|debit)$"))
+async def user_balance_start(callback: CallbackQuery, user: User, state: FSMContext) -> None:
+    """Start balance adjustment FSM: ask for amount."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    parts = str(callback.data).split(":")
+    target_id = int(parts[2])
+    action = parts[3]  # "credit" or "debit"
+
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+
+    await state.set_state(BalanceAdjustFSM.waiting_amount)
+    await state.update_data(balance_target_id=target_id, balance_action=action)
+
+    label = "начисления" if action == "credit" else "списания"
+    await safe_edit_text(
+        msg,
+        f"Введите сумму для {label} (целое число):",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Отмена", callback_data=f"admin:user:{target_id}:card")],
+            ]
+        ),
+    )
+    await callback.answer()
+
+
+@router.message(BalanceAdjustFSM.waiting_amount)
+async def user_balance_input(
+    message: Message,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    admin_service_factory: AdminServiceFactory,
+    state: FSMContext,
+) -> None:
+    """Process balance amount input."""
+    if not _is_admin(user):
+        return
+    raw = (message.text or "").strip()
+    if not raw.isdigit() or int(raw) <= 0:
+        await message.answer("Введите положительное целое число.")
+        return
+
+    amount = int(raw)
+    data = await state.get_data()
+    target_id = data.get("balance_target_id")
+    action = data.get("balance_action", "credit")
+    await state.clear()
+
+    if target_id is None:
+        await message.answer("Ошибка: нет данных о пользователе.", reply_markup=_BACK_TO_PANEL_KB)
+        return
+
+    admin_svc = admin_service_factory(db)
+
+    try:
+        result = await admin_svc.adjust_balance(
+            target_id=target_id,
+            amount=amount,
+            is_credit=(action == "credit"),
+            admin_id=user.id,
+            redis=redis,
+        )
+    except Exception:
+        log.exception("admin_balance_adjust_failed", target_id=target_id)
+        await message.answer("Ошибка при корректировке баланса.", reply_markup=_BACK_TO_PANEL_KB)
+        return
+
+    verb = "Начислено" if action == "credit" else "Списано"
+    await message.answer(
+        f"{verb}: {amount} токенов\nНовый баланс: {result.new_balance}",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="К карточке", callback_data=f"admin:user:{target_id}:card")],
+                [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
+            ]
+        ),
     )
 
-    await message.answer(text, reply_markup=_BACK_TO_PANEL_KB)
+
+# ---------------------------------------------------------------------------
+# User actions: block / unblock
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^admin:user:(\d+):(block|unblock)$"))
+async def user_block_toggle(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    admin_service_factory: AdminServiceFactory,
+) -> None:
+    """Block or unblock a user."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    parts = str(callback.data).split(":")
+    target_id = int(parts[2])
+    action = parts[3]
+
+    # Self-block protection
+    if target_id == user.id:
+        await callback.answer("Нельзя заблокировать себя", show_alert=True)
+        return
+
+    settings = get_settings()
+    admin_ids = settings.admin_ids
+    admin_svc = admin_service_factory(db)
+
+    new_role = "blocked" if action == "block" else "user"
+
+    try:
+        await admin_svc.change_user_role(target_id, new_role, admin_ids, redis)
+    except Exception as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+
+    verb = "заблокирован" if action == "block" else "разблокирован"
+    await callback.answer(f"Пользователь {verb}")
+
+    # Reload card
+    card = await admin_svc.lookup_user(user_id=target_id)
+    if card:
+        text = _format_user_card(card)
+        await safe_edit_text(msg, text, reply_markup=user_actions_kb(card.user_id, card.role == "blocked"))
+
+
+# ---------------------------------------------------------------------------
+# User actions: activity (recent publications)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^admin:user:(\d+):activity$"))
+async def user_activity(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    admin_service_factory: AdminServiceFactory,
+) -> None:
+    """Show recent publications for a user."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    target_id = int(str(callback.data).split(":")[2])
+    admin_svc = admin_service_factory(db)
+    pubs = await admin_svc.get_recent_publications(target_id, limit=5)
+
+    if not pubs:
+        text = f"<b>Активность #{target_id}</b>\n\nПубликаций нет."
+    else:
+        lines = [f"<b>Активность #{target_id}</b>\n"]
+        for p in pubs:
+            date = str(p.created_at)[:10] if p.created_at else "\u2014"
+            kw = p.keyword or "\u2014"
+            lines.append(f"{date} | {p.status} | {kw}")
+        text = "\n".join(lines)
+
+    await safe_edit_text(
+        msg,
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="К карточке", callback_data=f"admin:user:{target_id}:card")],
+                [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
+            ]
+        ),
+    )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# User card reload (from action buttons)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^admin:user:(\d+):card$"))
+async def user_card_reload(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+    admin_service_factory: AdminServiceFactory,
+) -> None:
+    """Reload and show user card."""
+    if not _is_admin(user):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    target_id = int(str(callback.data).split(":")[2])
+    admin_svc = admin_service_factory(db)
+    card = await admin_svc.lookup_user(user_id=target_id)
+
+    if card is None:
+        await safe_edit_text(msg, "Пользователь не найден.", reply_markup=_BACK_TO_PANEL_KB)
+        await callback.answer()
+        return
+
+    text = _format_user_card(card)
+    await safe_edit_text(msg, text, reply_markup=user_actions_kb(card.user_id, card.role == "blocked"))
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +578,7 @@ async def broadcast_audience(
         f"Аудитория: {_AUDIENCE_LABELS.get(audience_key, audience_key)}\n"
         f"Получателей: ~{count}\n\n"
         f"Отправьте текст сообщения:",
+        reply_markup=_BACK_TO_PANEL_KB,
     )
     await callback.answer()
 
@@ -348,7 +614,7 @@ async def broadcast_confirm(
     admin_service_factory: AdminServiceFactory,
     state: FSMContext,
 ) -> None:
-    """Execute broadcast with rate limiting."""
+    """Execute broadcast with rate limiting and progress updates."""
     if not _is_admin(user):
         await callback.answer("Доступ запрещён", show_alert=True)
         return
@@ -365,14 +631,15 @@ async def broadcast_confirm(
 
     admin_svc = admin_service_factory(db)
     user_ids = await admin_svc.get_audience_ids(audience_key)
+    total = len(user_ids)
 
-    await msg.edit_text(f"Рассылка запущена... (0/{len(user_ids)})")
+    await msg.edit_text(f"Рассылка... (0/{total})")
 
     sent = 0
     failed = 0
     bot = callback.bot
 
-    for uid in user_ids:
+    for i, uid in enumerate(user_ids, start=1):
         try:
             if bot is not None:
                 await bot.send_message(uid, text)
@@ -381,6 +648,11 @@ async def broadcast_confirm(
             log.warning("broadcast_send_failed", user_id=uid)
             failed += 1
         await asyncio.sleep(0.05)  # 50ms rate limit
+
+        # Progress update every N users (Telegram edit rate limit is acceptable to suppress)
+        if i % _BROADCAST_PROGRESS_STEP == 0 and i < total:
+            with contextlib.suppress(Exception):
+                await msg.edit_text(f"Рассылка... ({i}/{total})\nОтправлено: {sent}, ошибок: {failed}")
 
     await msg.edit_text(
         f"<b>Рассылка завершена</b>\n\nОтправлено: {sent}\nОшибок: {failed}",

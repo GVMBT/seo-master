@@ -1,4 +1,4 @@
-"""Admin service — stats, monitoring, broadcast targeting, user lookup.
+"""Admin service — stats, monitoring, broadcast targeting, user lookup, user management.
 
 Extracts UsersRepository + PaymentsRepository usage from routers/admin/dashboard.py.
 Zero Telegram/Aiogram dependencies.
@@ -9,12 +9,18 @@ Source of truth: ARCHITECTURE.md section 2 ("routers -> services -> repositories
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import time
 from dataclasses import dataclass
 
+import httpx
 import structlog
 
+from bot.exceptions import AppError
 from cache.client import RedisClient
+from cache.keys import CacheKeys
 from db.client import SupabaseClient
+from db.models import PublicationLog, TokenExpenseCreate, UserUpdate
 from db.repositories.payments import PaymentsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
@@ -36,11 +42,16 @@ class AdminPanelStats:
 
 
 @dataclass(frozen=True, slots=True)
-class MonitoringStatus:
-    """Service health status for admin monitoring screen."""
+class APIStatusReport:
+    """Service health status with latency and credits info."""
 
     db_ok: bool
+    db_latency_ms: int
     redis_ok: bool
+    redis_latency_ms: int
+    openrouter_ok: bool
+    openrouter_credits: float | None
+    qstash_ok: bool
     active_schedules: int
 
 
@@ -55,7 +66,17 @@ class UserCard:
     balance: int
     role: str
     projects_count: int
+    publications_count: int
+    last_activity: str | None
     created_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BalanceAdjustResult:
+    """Result of admin balance adjustment."""
+
+    new_balance: int
+    expense_recorded: bool
 
 
 class AdminService:
@@ -110,16 +131,78 @@ class AdminService:
             publications_7d=pubs_7d,
         )
 
-    async def get_monitoring_status(self, redis: RedisClient) -> MonitoringStatus:
-        """Check service health: DB, Redis, active QStash schedules."""
-        db_ok, redis_ok, active_schedules = await asyncio.gather(
-            self.check_db_health(),
-            redis.ping(),
-            self._schedules.count_active(),
-        )
-        return MonitoringStatus(
+    async def get_api_status(
+        self,
+        redis: RedisClient,
+        http_client: httpx.AsyncClient,
+        openrouter_api_key: str,
+        qstash_token: str,
+    ) -> APIStatusReport:
+        """Check all external services: DB, Redis, OpenRouter, QStash."""
+        # DB check with latency
+        db_ok = False
+        t0 = time.monotonic()
+        try:
+            await self._users.count_all()
+            db_ok = True
+        except Exception:
+            log.exception("admin_api_status_db_failed")
+        db_latency_ms = round((time.monotonic() - t0) * 1000)
+
+        # Redis check with latency
+        redis_ok = False
+        t0 = time.monotonic()
+        try:
+            redis_ok = await redis.ping()
+        except Exception:
+            log.exception("admin_api_status_redis_failed")
+        redis_latency_ms = round((time.monotonic() - t0) * 1000)
+
+        # OpenRouter credits check
+        openrouter_ok = False
+        openrouter_credits: float | None = None
+        try:
+            resp = await http_client.get(
+                "https://openrouter.ai/api/v1/auth/key",
+                headers={"Authorization": f"Bearer {openrouter_api_key}"},
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                openrouter_ok = True
+                data = resp.json().get("data", {})
+                limit = data.get("limit")
+                usage = data.get("usage", 0)
+                if limit is not None:
+                    openrouter_credits = round(limit - usage, 2)
+        except Exception:
+            log.warning("admin_api_status_openrouter_failed", exc_info=True)
+
+        # QStash check + active schedules
+        qstash_ok = False
+        active_schedules = 0
+        try:
+            from qstash import QStash
+
+            def _qstash_check() -> int:
+                q = QStash(token=qstash_token)
+                schedules = q.schedule.list()
+                return len(schedules)
+
+            active_schedules = await asyncio.to_thread(_qstash_check)
+            qstash_ok = True
+        except Exception:
+            log.warning("admin_api_status_qstash_failed", exc_info=True)
+            with contextlib.suppress(Exception):
+                active_schedules = await self._schedules.count_active()
+
+        return APIStatusReport(
             db_ok=db_ok,
+            db_latency_ms=db_latency_ms,
             redis_ok=redis_ok,
+            redis_latency_ms=redis_latency_ms,
+            openrouter_ok=openrouter_ok,
+            openrouter_credits=openrouter_credits,
+            qstash_ok=qstash_ok,
             active_schedules=active_schedules,
         )
 
@@ -129,11 +212,7 @@ class AdminService:
         user_id: int | None = None,
         username: str | None = None,
     ) -> UserCard | None:
-        """Find user by ID or username and build admin card.
-
-        When both user_id and username are provided, user_id takes precedence.
-        Returns None if no arguments given or user not found.
-        """
+        """Find user by ID or username and build admin card."""
         user = None
         if user_id is not None:
             user = await self._users.get_by_id(user_id)
@@ -143,7 +222,10 @@ class AdminService:
         if user is None:
             return None
 
-        projects_count = await self._projects.get_count_by_user(user.id)
+        projects_count, publications_count = await asyncio.gather(
+            self._projects.get_count_by_user(user.id),
+            self._publications.count_by_user(user.id),
+        )
 
         return UserCard(
             user_id=user.id,
@@ -153,5 +235,75 @@ class AdminService:
             balance=user.balance,
             role=user.role,
             projects_count=projects_count,
+            publications_count=publications_count,
+            last_activity=str(user.last_activity) if user.last_activity else None,
             created_at=str(user.created_at) if user.created_at else None,
         )
+
+    async def change_user_role(
+        self,
+        target_id: int,
+        new_role: str,
+        admin_ids: list[int],
+        redis: RedisClient,
+    ) -> str:
+        """Change user role with safety checks. Returns new role."""
+        if target_id in admin_ids:
+            raise AppError("Нельзя менять роль администратора")
+
+        user = await self._users.get_by_id(target_id)
+        if user is None:
+            raise AppError("Пользователь не найден")
+
+        await self._users.update(target_id, UserUpdate(role=new_role))
+        # Invalidate user cache so middleware picks up the new role
+        await redis.delete(CacheKeys.user_cache(target_id))
+
+        log.info("admin_role_changed", target_id=target_id, new_role=new_role)
+        return new_role
+
+    async def adjust_balance(
+        self,
+        target_id: int,
+        amount: int,
+        is_credit: bool,
+        admin_id: int,
+        redis: RedisClient,
+    ) -> BalanceAdjustResult:
+        """Credit or debit user balance with audit trail."""
+        user = await self._users.get_by_id(target_id)
+        if user is None:
+            raise AppError("Пользователь не найден")
+
+        if is_credit:
+            new_balance = await self._users.credit_balance(target_id, amount)
+            op_type = "admin_credit"
+        else:
+            new_balance = await self._users.force_debit_balance(target_id, amount)
+            op_type = "admin_debit"
+
+        # Audit trail
+        expense = TokenExpenseCreate(
+            user_id=target_id,
+            amount=amount if is_credit else -amount,
+            operation_type=op_type,
+            description=f"Admin #{admin_id}",
+        )
+        await self._payments.create_expense(expense)
+
+        # Invalidate user cache
+        await redis.delete(CacheKeys.user_cache(target_id))
+
+        log.info(
+            "admin_balance_adjusted",
+            target_id=target_id,
+            amount=amount,
+            is_credit=is_credit,
+            admin_id=admin_id,
+            new_balance=new_balance,
+        )
+        return BalanceAdjustResult(new_balance=new_balance, expense_recorded=True)
+
+    async def get_recent_publications(self, user_id: int, limit: int = 5) -> list[PublicationLog]:
+        """Get recent publications for a user."""
+        return await self._publications.get_by_user(user_id, limit=limit)
