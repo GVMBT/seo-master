@@ -1,11 +1,12 @@
 """Tests for legal document handlers in routers/profile.py.
 
 Covers:
-- /privacy command handler
-- /terms command handler
-- profile:privacy callback handler
-- profile:terms callback handler
+- /privacy command handler (sends URL link)
+- /terms command handler (sends URL link)
 - split_message utility
+- Telegraph URL constants
+- Profile keyboard legal URL buttons
+- Consent keyboard legal URL buttons
 - LEGAL_NOTICE in /start for new users
 """
 
@@ -14,20 +15,18 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiogram.types import InaccessibleMessage
 
 from bot.texts.legal import (
     LEGAL_NOTICE,
     PRIVACY_POLICY,
     PRIVACY_POLICY_CHUNKS,
+    PRIVACY_POLICY_URL,
     TERMS_OF_SERVICE,
     TERMS_OF_SERVICE_CHUNKS,
+    TERMS_OF_SERVICE_URL,
     split_message,
 )
 from routers.profile import (
-    _send_legal_chunks,
-    cb_privacy,
-    cb_terms,
     cmd_privacy,
     cmd_terms,
 )
@@ -159,144 +158,89 @@ class TestLegalTexts:
 
 
 # ---------------------------------------------------------------------------
-# _send_legal_chunks helper
+# Telegraph URL constants
 # ---------------------------------------------------------------------------
 
 
-class TestSendLegalChunks:
-    """Tests for _send_legal_chunks helper."""
+class TestTelegraphUrls:
+    """Verify Telegraph URL constants are valid."""
 
-    async def test_sends_all_chunks(self) -> None:
-        message = MagicMock()
-        message.answer = AsyncMock()
-        chunks = ["Part 1", "Part 2", "Part 3"]
-        await _send_legal_chunks(message, chunks)
-        assert message.answer.call_count == 3
-        message.answer.assert_any_call("Part 1")
-        message.answer.assert_any_call("Part 2")
-        message.answer.assert_any_call("Part 3")
+    def test_privacy_url_is_telegraph(self) -> None:
+        assert PRIVACY_POLICY_URL.startswith("https://telegra.ph/")
 
-    async def test_sends_single_chunk(self) -> None:
-        message = MagicMock()
-        message.answer = AsyncMock()
-        await _send_legal_chunks(message, ["Only one part"])
-        message.answer.assert_called_once_with("Only one part")
+    def test_terms_url_is_telegraph(self) -> None:
+        assert TERMS_OF_SERVICE_URL.startswith("https://telegra.ph/")
+
+    def test_urls_are_different(self) -> None:
+        assert PRIVACY_POLICY_URL != TERMS_OF_SERVICE_URL
 
 
 # ---------------------------------------------------------------------------
-# Command handlers: /privacy, /terms
+# Command handlers: /privacy, /terms (now send URL links)
 # ---------------------------------------------------------------------------
 
 
 class TestCmdPrivacy:
     """Tests for /privacy command handler."""
 
-    async def test_sends_privacy_policy(self) -> None:
+    async def test_sends_privacy_link(self) -> None:
         message = MagicMock()
         message.answer = AsyncMock()
         await cmd_privacy(message)
-        assert message.answer.call_count == len(PRIVACY_POLICY_CHUNKS)
+        message.answer.assert_called_once()
+        call_text = message.answer.call_args[0][0]
+        assert PRIVACY_POLICY_URL in call_text
 
-    async def test_first_chunk_contains_title(self) -> None:
+    async def test_response_contains_link_text(self) -> None:
         message = MagicMock()
         message.answer = AsyncMock()
         await cmd_privacy(message)
-        first_call_text = message.answer.call_args_list[0][0][0]
-        assert "Политика конфиденциальности" in first_call_text
+        call_text = message.answer.call_args[0][0]
+        assert "Политика конфиденциальности" in call_text
 
 
 class TestCmdTerms:
     """Tests for /terms command handler."""
 
-    async def test_sends_terms(self) -> None:
+    async def test_sends_terms_link(self) -> None:
         message = MagicMock()
         message.answer = AsyncMock()
         await cmd_terms(message)
-        assert message.answer.call_count == len(TERMS_OF_SERVICE_CHUNKS)
+        message.answer.assert_called_once()
+        call_text = message.answer.call_args[0][0]
+        assert TERMS_OF_SERVICE_URL in call_text
 
-    async def test_first_chunk_contains_title(self) -> None:
+    async def test_response_contains_link_text(self) -> None:
         message = MagicMock()
         message.answer = AsyncMock()
         await cmd_terms(message)
-        first_call_text = message.answer.call_args_list[0][0][0]
-        assert "оферта" in first_call_text.lower()
+        call_text = message.answer.call_args[0][0]
+        assert "оферта" in call_text.lower()
 
 
 # ---------------------------------------------------------------------------
-# Callback handlers: profile:privacy, profile:terms
-# ---------------------------------------------------------------------------
-
-
-class TestCbPrivacy:
-    """Tests for profile:privacy callback handler."""
-
-    async def test_sends_privacy_via_callback(self) -> None:
-        callback = MagicMock()
-        callback.message = MagicMock()
-        callback.message.answer = AsyncMock()
-        callback.answer = AsyncMock()
-        await cb_privacy(callback)
-        assert callback.message.answer.call_count == len(PRIVACY_POLICY_CHUNKS)
-        callback.answer.assert_called_once()
-
-    async def test_inaccessible_message_returns_early(self) -> None:
-        callback = MagicMock()
-        callback.message = MagicMock(spec=InaccessibleMessage)
-        callback.answer = AsyncMock()
-        await cb_privacy(callback)
-        callback.answer.assert_called_once()
-
-    async def test_no_message_returns_early(self) -> None:
-        callback = MagicMock()
-        callback.message = None
-        callback.answer = AsyncMock()
-        await cb_privacy(callback)
-        callback.answer.assert_called_once()
-
-
-class TestCbTerms:
-    """Tests for profile:terms callback handler."""
-
-    async def test_sends_terms_via_callback(self) -> None:
-        callback = MagicMock()
-        callback.message = MagicMock()
-        callback.message.answer = AsyncMock()
-        callback.answer = AsyncMock()
-        await cb_terms(callback)
-        assert callback.message.answer.call_count == len(TERMS_OF_SERVICE_CHUNKS)
-        callback.answer.assert_called_once()
-
-    async def test_inaccessible_message_returns_early(self) -> None:
-        callback = MagicMock()
-        callback.message = MagicMock(spec=InaccessibleMessage)
-        callback.answer = AsyncMock()
-        await cb_terms(callback)
-        callback.answer.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# Profile keyboard: legal buttons
+# Profile keyboard: legal URL buttons
 # ---------------------------------------------------------------------------
 
 
 class TestProfileKbLegalButtons:
-    """Verify profile keyboard includes legal document buttons."""
+    """Verify profile keyboard includes legal document URL buttons."""
 
-    def test_profile_kb_has_privacy_button(self) -> None:
+    def test_profile_kb_has_privacy_url_button(self) -> None:
         from keyboards.inline import profile_kb
 
         kb = profile_kb()
         all_buttons = [btn for row in kb.inline_keyboard for btn in row]
-        privacy_btns = [b for b in all_buttons if b.callback_data == "profile:privacy"]
+        privacy_btns = [b for b in all_buttons if b.url == PRIVACY_POLICY_URL]
         assert len(privacy_btns) == 1
         assert privacy_btns[0].text == "Политика"
 
-    def test_profile_kb_has_terms_button(self) -> None:
+    def test_profile_kb_has_terms_url_button(self) -> None:
         from keyboards.inline import profile_kb
 
         kb = profile_kb()
         all_buttons = [btn for row in kb.inline_keyboard for btn in row]
-        terms_btns = [b for b in all_buttons if b.callback_data == "profile:terms"]
+        terms_btns = [b for b in all_buttons if b.url == TERMS_OF_SERVICE_URL]
         assert len(terms_btns) == 1
         assert terms_btns[0].text == "Оферта"
 
@@ -305,9 +249,43 @@ class TestProfileKbLegalButtons:
 
         kb = profile_kb()
         for row in kb.inline_keyboard:
-            cbs = [b.callback_data for b in row]
-            if "profile:privacy" in cbs:
-                assert "profile:terms" in cbs, "Privacy and Terms should be on the same row"
+            urls = [b.url for b in row if b.url]
+            if PRIVACY_POLICY_URL in urls:
+                assert TERMS_OF_SERVICE_URL in urls, "Privacy and Terms should be on the same row"
                 break
         else:
-            pytest.fail("No row contains profile:privacy button")
+            pytest.fail("No row contains privacy URL button")
+
+
+# ---------------------------------------------------------------------------
+# Consent keyboard: legal URL buttons
+# ---------------------------------------------------------------------------
+
+
+class TestConsentKbLegalButtons:
+    """Verify consent keyboard uses URL buttons for legal docs."""
+
+    def test_consent_kb_has_privacy_url(self) -> None:
+        from keyboards.inline import consent_kb
+
+        kb = consent_kb()
+        all_buttons = [btn for row in kb.inline_keyboard for btn in row]
+        privacy_btns = [b for b in all_buttons if b.url == PRIVACY_POLICY_URL]
+        assert len(privacy_btns) == 1
+
+    def test_consent_kb_has_terms_url(self) -> None:
+        from keyboards.inline import consent_kb
+
+        kb = consent_kb()
+        all_buttons = [btn for row in kb.inline_keyboard for btn in row]
+        terms_btns = [b for b in all_buttons if b.url == TERMS_OF_SERVICE_URL]
+        assert len(terms_btns) == 1
+
+    def test_consent_kb_has_accept_callback(self) -> None:
+        from keyboards.inline import consent_kb
+
+        kb = consent_kb()
+        all_buttons = [btn for row in kb.inline_keyboard for btn in row]
+        accept_btns = [b for b in all_buttons if b.callback_data == "legal:consent:accept"]
+        assert len(accept_btns) == 1
+        assert accept_btns[0].text == "Принимаю"
