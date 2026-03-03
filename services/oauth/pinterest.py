@@ -22,6 +22,7 @@ log = structlog.get_logger()
 _PINTEREST_TOKEN_ENDPOINT = "https://api.pinterest.com/v5/oauth/token"  # noqa: S105
 PINTEREST_AUTH_TTL = 1800  # 30 min (E20)
 _OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
+_DEFAULT_EXPIRES_IN = 2_592_000  # 30 days in seconds (Pinterest default)
 
 
 class PinterestOAuthError(OAuthStateError):
@@ -114,7 +115,11 @@ class PinterestOAuthService:
         if "access_token" not in data:
             raise PinterestOAuthError("No access_token in Pinterest response")
 
-        expires_in = int(data.get("expires_in", 2592000))
+        raw_expires = data.get("expires_in")
+        try:
+            expires_in = int(raw_expires) if raw_expires is not None else _DEFAULT_EXPIRES_IN
+        except (ValueError, TypeError):
+            expires_in = _DEFAULT_EXPIRES_IN
         expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
 
         return {

@@ -494,8 +494,14 @@ async def publish_social_post(
             await callback.answer()
             return
 
-        # Get publisher for platform
-        publisher = _get_publisher(platform_type, http_client)
+        # Get publisher for platform (with token refresh to persist refreshed credentials)
+        from bot.config import get_settings as _get_settings
+        from services.publishers.factory import make_token_refresh_cb
+
+        _settings = _get_settings()
+        _enc_key = _settings.encryption_key.get_secret_value()
+        _on_refresh = make_token_refresh_cb(db, connection.id, _enc_key)
+        publisher = _get_publisher(platform_type, http_client, _settings, on_token_refresh=_on_refresh)
         content_type = _get_content_type(platform_type)
 
         # Append hashtags for VK/Telegram
@@ -809,7 +815,12 @@ async def more_posts_social(
 # ---------------------------------------------------------------------------
 
 
-def _get_publisher(platform_type: str, http_client: httpx.AsyncClient, settings: Any = None) -> Any:
+def _get_publisher(
+    platform_type: str,
+    http_client: httpx.AsyncClient,
+    settings: Any = None,
+    on_token_refresh: Any = None,
+) -> Any:
     """Get publisher instance for platform type with proper credentials."""
     from services.publishers.factory import create_publisher
 
@@ -817,7 +828,7 @@ def _get_publisher(platform_type: str, http_client: httpx.AsyncClient, settings:
         from bot.config import get_settings
 
         settings = get_settings()
-    return create_publisher(platform_type, http_client, settings)
+    return create_publisher(platform_type, http_client, settings, on_token_refresh=on_token_refresh)
 
 
 def _get_content_type(platform_type: str) -> Literal["html", "telegram_html", "plain_text", "pin_text"]:

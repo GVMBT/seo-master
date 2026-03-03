@@ -6,7 +6,7 @@ routers/publishing/pipeline/social/generation.py.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -14,6 +14,7 @@ from .base import BasePublisher, TokenRefreshCallback
 
 if TYPE_CHECKING:
     from bot.config import Settings
+    from db.client import SupabaseClient
 
 
 def create_publisher(
@@ -49,3 +50,21 @@ def create_publisher(
         case _:
             msg = f"Unknown platform: {platform}"
             raise ValueError(msg)
+
+
+def make_token_refresh_cb(
+    db: SupabaseClient,
+    connection_id: int,
+    enc_key: str,
+) -> TokenRefreshCallback:
+    """Build callback to persist refreshed OAuth credentials in DB."""
+
+    async def _cb(old_creds: dict[str, Any], new_creds: dict[str, Any]) -> None:
+        from db.credential_manager import CredentialManager
+        from db.repositories.connections import ConnectionsRepository
+
+        cm = CredentialManager(enc_key)
+        repo = ConnectionsRepository(db, cm)
+        await repo.update_credentials(connection_id, new_creds)
+
+    return _cb

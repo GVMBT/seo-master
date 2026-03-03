@@ -153,8 +153,8 @@ class TestMakeTokenRefreshCb:
     """Tests for PublishService._make_token_refresh_cb."""
 
     @patch("services.publish.get_settings")
-    @patch("services.publish.ConnectionsRepository")
-    @patch("services.publish.CredentialManager")
+    @patch("db.repositories.connections.ConnectionsRepository")
+    @patch("db.credential_manager.CredentialManager")
     async def test_make_token_refresh_cb_calls_update_credentials(
         self,
         mock_cm_cls: MagicMock,
@@ -193,8 +193,8 @@ class TestMakeTokenRefreshCb:
         )
 
     @patch("services.publish.get_settings")
-    @patch("services.publish.ConnectionsRepository")
-    @patch("services.publish.CredentialManager")
+    @patch("db.repositories.connections.ConnectionsRepository")
+    @patch("db.credential_manager.CredentialManager")
     async def test_token_refresh_cb_different_connection_ids(
         self,
         mock_cm_cls: MagicMock,

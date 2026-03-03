@@ -344,15 +344,19 @@ class PublishService:
             log.exception("publish_generation_failed", user_id=user_id, keyword=keyword)
 
             # Track consecutive platform errors for schedule pause
+            # Wrapped in try/except: Redis failure must NOT prevent refund/logging below
             if schedule:
-                counter_key = f"schedule_errors:{schedule.id}"
-                count = await self._redis.incr(counter_key)
-                await self._redis.expire(counter_key, 86400)  # 24h TTL
-                if count >= 3:
-                    await self._disable_schedule(
-                        schedule, "publish_platform_errors_threshold", reason=str(exc)[:200]
-                    )
-                    await self._redis.delete(counter_key)
+                try:
+                    counter_key = f"schedule_errors:{schedule.id}"
+                    count = await self._redis.incr(counter_key)
+                    await self._redis.expire(counter_key, 86400)  # 24h TTL
+                    if count >= 3:
+                        await self._disable_schedule(
+                            schedule, "publish_platform_errors_threshold", reason=str(exc)[:200]
+                        )
+                        await self._redis.delete(counter_key)
+                except Exception:
+                    log.exception("publish_error_counter_failed", schedule_id=schedule.id)
 
             # Refund if charge was already made (post-charge failure)
             if charged and actual_cost > 0:
@@ -928,14 +932,10 @@ class PublishService:
 
     def _make_token_refresh_cb(self, connection_id: int) -> Any:
         """Build callback to persist refreshed credentials in DB."""
+        from services.publishers.factory import make_token_refresh_cb
+
         enc_key = (self._settings or get_settings()).encryption_key.get_secret_value()
-
-        async def _cb(old_creds: dict[str, Any], new_creds: dict[str, Any]) -> None:
-            cm = CredentialManager(enc_key)
-            repo = ConnectionsRepository(self._db, cm)
-            await repo.update_credentials(connection_id, new_creds)
-
-        return _cb
+        return make_token_refresh_cb(self._db, connection_id, enc_key)
 
     def _get_publisher(self, platform_type: str, connection_id: int = 0) -> Any:
         """Get publisher instance for platform type with token refresh callback."""
