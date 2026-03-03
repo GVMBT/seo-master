@@ -458,6 +458,12 @@ def create_app() -> web.Application:
     app.router.add_post("/api/notify", notify_handler)
     app.router.add_get("/api/health", health_handler)
 
+    # Legal document redirects (for Pinterest/VK app review — needs company domain)
+    from api.legal import legal_privacy, legal_terms
+
+    app.router.add_get("/api/legal/privacy", legal_privacy)
+    app.router.add_get("/api/legal/terms", legal_terms)
+
     return app
 
 

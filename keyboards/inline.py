@@ -39,11 +39,13 @@ def cancel_kb(callback_data: str = "fsm:cancel") -> InlineKeyboardMarkup:
 
 
 def consent_kb() -> InlineKeyboardMarkup:
-    """Consent screen: privacy policy, terms, accept button."""
+    """Consent screen: privacy policy, terms (URL links), accept button."""
+    from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Политика конфиденциальности", callback_data="legal:consent:privacy")],
-            [InlineKeyboardButton(text="Оферта", callback_data="legal:consent:terms")],
+            [InlineKeyboardButton(text="Политика конфиденциальности", url=PRIVACY_POLICY_URL)],
+            [InlineKeyboardButton(text="Оферта", url=TERMS_OF_SERVICE_URL)],
             [InlineKeyboardButton(text="Принимаю", callback_data="legal:consent:accept")],
         ]
     )
@@ -1086,13 +1088,15 @@ def image_custom_kb(cat_id: int) -> InlineKeyboardMarkup:
 
 def profile_kb() -> InlineKeyboardMarkup:
     """Profile main screen keyboard."""
+    from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
+
     rows = [
         [InlineKeyboardButton(text="Пополнить баланс", callback_data="nav:tokens", style=ButtonStyle.PRIMARY)],
         [InlineKeyboardButton(text="Уведомления", callback_data="profile:notifications")],
         [InlineKeyboardButton(text="Реферальная программа", callback_data="profile:referral")],
         [
-            InlineKeyboardButton(text="Политика", callback_data="profile:privacy"),
-            InlineKeyboardButton(text="Оферта", callback_data="profile:terms"),
+            InlineKeyboardButton(text="Политика", url=PRIVACY_POLICY_URL),
+            InlineKeyboardButton(text="Оферта", url=TERMS_OF_SERVICE_URL),
         ],
         [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
     ]

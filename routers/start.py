@@ -10,14 +10,14 @@ import structlog
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.assets import asset_photo, cache_file_id, edit_screen
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import DashboardServiceFactory
-from bot.texts.legal import LEGAL_NOTICE, PRIVACY_POLICY_CHUNKS, TERMS_OF_SERVICE_CHUNKS
+from bot.texts.legal import LEGAL_NOTICE
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
@@ -517,27 +517,6 @@ async def cmd_start(
 # Consent flow (C7/H30)
 # ---------------------------------------------------------------------------
 
-
-@router.callback_query(F.data == "legal:consent:privacy")
-async def consent_privacy(callback: CallbackQuery) -> None:
-    """Show privacy policy from consent screen."""
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
-        for chunk in PRIVACY_POLICY_CHUNKS:
-            await callback.message.answer(chunk)
-        # Re-show consent keyboard so user can accept without /start (CR-109)
-        await callback.message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
-    await callback.answer()
-
-
-@router.callback_query(F.data == "legal:consent:terms")
-async def consent_terms(callback: CallbackQuery) -> None:
-    """Show terms of service from consent screen."""
-    if callback.message and not isinstance(callback.message, InaccessibleMessage):
-        for chunk in TERMS_OF_SERVICE_CHUNKS:
-            await callback.message.answer(chunk)
-        # Re-show consent keyboard so user can accept without /start (CR-109)
-        await callback.message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
-    await callback.answer()
 
 
 @router.callback_query(F.data == "legal:consent:accept")

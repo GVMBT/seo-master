@@ -8,10 +8,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.assets import edit_screen
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
-from bot.texts.legal import (
-    PRIVACY_POLICY_CHUNKS,
-    TERMS_OF_SERVICE_CHUNKS,
-)
+from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -182,45 +179,20 @@ async def show_referral(
 # ---------------------------------------------------------------------------
 
 
-async def _send_legal_chunks(message: Message, chunks: list[str]) -> None:
-    """Send a multi-part legal document as sequential messages."""
-    for chunk in chunks:
-        await message.answer(chunk)
-
-
 @router.message(Command("privacy"))
 async def cmd_privacy(message: Message) -> None:
-    """Send privacy policy text (152-FZ compliant)."""
-    await _send_legal_chunks(message, PRIVACY_POLICY_CHUNKS)
+    """Send privacy policy link (152-FZ compliant)."""
+    await message.answer(
+        f'<a href="{PRIVACY_POLICY_URL}">Политика конфиденциальности</a>',
+    )
 
 
 @router.message(Command("terms"))
 async def cmd_terms(message: Message) -> None:
-    """Send terms of service / public offer text."""
-    await _send_legal_chunks(message, TERMS_OF_SERVICE_CHUNKS)
-
-
-@router.callback_query(F.data == "profile:privacy")
-async def cb_privacy(callback: CallbackQuery) -> None:
-    """Privacy policy via inline button in profile."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-    # Send as new messages (legal text is too long for editMessageText)
-    await _send_legal_chunks(msg, PRIVACY_POLICY_CHUNKS)
-    await callback.answer()
-
-
-@router.callback_query(F.data == "profile:terms")
-async def cb_terms(callback: CallbackQuery) -> None:
-    """Terms of service via inline button in profile."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-    await _send_legal_chunks(msg, TERMS_OF_SERVICE_CHUNKS)
-    await callback.answer()
+    """Send terms of service / public offer link."""
+    await message.answer(
+        f'<a href="{TERMS_OF_SERVICE_URL}">Публичная оферта</a>',
+    )
 
 
 # ---------------------------------------------------------------------------

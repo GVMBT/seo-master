@@ -244,6 +244,10 @@ TERMS_OF_SERVICE = (
 PRIVACY_POLICY_CHUNKS: list[str] = split_message(PRIVACY_POLICY)
 TERMS_OF_SERVICE_CHUNKS: list[str] = split_message(TERMS_OF_SERVICE)
 
+# Telegraph URLs for external viewing (Pinterest/VK app review, consent screen)
+PRIVACY_POLICY_URL = "https://telegra.ph/Politika-konfidencialnosti--SEO-Master-Bot-03-03"
+TERMS_OF_SERVICE_URL = "https://telegra.ph/Publichnaya-oferta--SEO-Master-Bot-03-03"
+
 # Consent notice for /start (shown until user accepts)
 LEGAL_NOTICE = (
     "Для использования бота необходимо принять "
