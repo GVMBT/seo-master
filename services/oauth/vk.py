@@ -330,7 +330,7 @@ class VKOAuthService:
         if meta:
             with contextlib.suppress(ValueError, TypeError, KeyError):
                 project_id = int(meta["project_id"])
-            from_pipeline = bool(meta.get("from_pipeline"))
+            from_pipeline = meta.get("from_pipeline") is True
 
         expires_in = int(result.get("expires_in") or 3600)
         expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()

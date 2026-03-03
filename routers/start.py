@@ -101,7 +101,7 @@ async def _handle_pinterest_deep_link(
     try:
         meta = json.loads(meta_raw)
         project_id = int(meta["project_id"]) if isinstance(meta, dict) else int(meta)
-        from_pipeline = isinstance(meta, dict) and bool(meta.get("from_pipeline"))
+        from_pipeline = isinstance(meta, dict) and meta.get("from_pipeline") is True
     except (json.JSONDecodeError, ValueError, TypeError, KeyError):  # fmt: skip
         try:
             project_id = int(meta_raw)
@@ -416,7 +416,7 @@ async def vk_group_select_deeplink(
     # Return to social pipeline if OAuth was triggered from pipeline flow
     from_pipeline = False
     if meta:
-        from_pipeline = bool(meta.get("from_pipeline"))
+        from_pipeline = meta.get("from_pipeline") is True
     if from_pipeline and project:
         await _return_to_pipeline(msg, state, user, db, redis, http_client, project)
 
