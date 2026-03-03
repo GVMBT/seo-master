@@ -6,6 +6,7 @@ from typing import Any
 from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
 from db.models import Category, PlatformConnection, Project
 from keyboards.pagination import PAGE_SIZE, _safe_cb, paginate
 from services.tokens import COST_DESCRIPTION
@@ -40,8 +41,6 @@ def cancel_kb(callback_data: str = "fsm:cancel") -> InlineKeyboardMarkup:
 
 def consent_kb() -> InlineKeyboardMarkup:
     """Consent screen: privacy policy, terms (URL links), accept button."""
-    from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Политика конфиденциальности", url=PRIVACY_POLICY_URL)],
@@ -551,28 +550,6 @@ def connection_delete_confirm_kb(conn_id: int, project_id: int) -> InlineKeyboar
             ],
         ]
     )
-
-
-def vk_group_select_kb(groups: list[dict[str, Any]], project_id: int) -> InlineKeyboardMarkup:
-    """VK group selection keyboard."""
-    rows: list[list[InlineKeyboardButton]] = []
-    for group in groups:
-        gid = group.get("id", 0)
-        name = str(group.get("name", f"Group {gid}"))
-        rows.append([InlineKeyboardButton(text=name, callback_data=f"vk:group:{gid}:select")])
-    rows.append([InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:list")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def pinterest_board_select_kb(boards: list[dict[str, Any]], project_id: int) -> InlineKeyboardMarkup:
-    """Pinterest board selection keyboard."""
-    rows: list[list[InlineKeyboardButton]] = []
-    for board in boards:
-        bid = board.get("id", "")
-        name = str(board.get("name", f"Board {bid}"))
-        rows.append([InlineKeyboardButton(text=name, callback_data=f"pinterest:board:{bid}")])
-    rows.append([InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:list")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ---------------------------------------------------------------------------
@@ -1088,8 +1065,6 @@ def image_custom_kb(cat_id: int) -> InlineKeyboardMarkup:
 
 def profile_kb() -> InlineKeyboardMarkup:
     """Profile main screen keyboard."""
-    from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
-
     rows = [
         [InlineKeyboardButton(text="Пополнить баланс", callback_data="nav:tokens", style=ButtonStyle.PRIMARY)],
         [InlineKeyboardButton(text="Уведомления", callback_data="profile:notifications")],

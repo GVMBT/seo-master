@@ -851,29 +851,6 @@ def social_no_connections_kb(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def vk_group_select_pipeline_kb(groups: list[dict[str, Any]]) -> InlineKeyboardMarkup:
-    """VK group selection within social pipeline."""
-    rows: list[list[InlineKeyboardButton]] = []
-    for group in groups:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=group["name"],
-                    callback_data=f"pipeline:social:vk_group:{group['id']}",
-                ),
-            ]
-        )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="Отмена",
-                callback_data="pipeline:social:cancel",
-            ),
-        ]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
 def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     """Simplified readiness checklist for social pipeline (UX_PIPELINE.md §5.4).
 

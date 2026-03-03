@@ -1,7 +1,7 @@
 """Tests for SocialPipelineFSM definition.
 
 Verifies:
-- FSM has exactly 28 states (FSM_SPEC.md section 2.2)
+- FSM has exactly 24 states (FSM_SPEC.md section 2.2, dead states removed)
 - All expected state names exist
 - State group name matches convention (*FSM suffix)
 """
@@ -25,10 +25,8 @@ _EXPECTED_STATES = [
     "connect_tg_channel",
     "connect_tg_token",
     "connect_tg_verify",
-    "connect_vk_token",
-    "connect_vk_group",
+    "connect_vk_oauth",
     "connect_pinterest_oauth",
-    "connect_pinterest_board",
     # Step 3: Category selection
     "select_category",
     "create_category_name",
@@ -45,16 +43,13 @@ _EXPECTED_STATES = [
     "review",
     "publishing",
     "regenerating",
-    # Cross-posting (E52)
-    "cross_post_review",
-    "cross_post_publishing",
 ]
 
 
 class TestSocialPipelineFSMDefinition:
     def test_state_count(self) -> None:
         states = [attr for attr in dir(SocialPipelineFSM) if isinstance(getattr(SocialPipelineFSM, attr), State)]
-        assert len(states) == 28
+        assert len(states) == 24
 
     def test_all_expected_states_exist(self) -> None:
         for name in _EXPECTED_STATES:

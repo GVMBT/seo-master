@@ -61,9 +61,11 @@ def _parse_referrer_id(arg: str) -> int | None:
 
 async def _handle_pinterest_deep_link(
     message: Message,
+    state: FSMContext,
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
+    http_client: httpx.AsyncClient,
     nonce: str,
 ) -> None:
     """Handle Pinterest OAuth deep-link — read tokens, create connection.
@@ -95,9 +97,11 @@ async def _handle_pinterest_deep_link(
 
     # Parse metadata — toolbox stores plain project_id, pipeline stores JSON dict
     project_id: int | None = None
+    from_pipeline = False
     try:
         meta = json.loads(meta_raw)
         project_id = int(meta["project_id"]) if isinstance(meta, dict) else int(meta)
+        from_pipeline = isinstance(meta, dict) and bool(meta.get("from_pipeline"))
     except (json.JSONDecodeError, ValueError, TypeError, KeyError):  # fmt: skip
         try:
             project_id = int(meta_raw)
@@ -146,13 +150,16 @@ async def _handle_pinterest_deep_link(
     await redis.delete(CacheKeys.pinterest_oauth(nonce))
 
     safe_name = html.escape(project.name)
-    await message.answer(f"Pinterest подключён к проекту «{safe_name}»!", reply_markup=menu_kb())
+    await message.answer(f"Pinterest подключён к проекту «{safe_name}»!")
     log.info(
         "pinterest_connected_via_deeplink",
         connection_id=conn.id,
         project_id=project_id,
         user_id=user.id,
     )
+
+    if from_pipeline:
+        await _return_to_pipeline(message, state, user, db, redis, http_client, project)
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +186,7 @@ def _build_vk_oauth_service(
 
 async def _handle_vk_deep_link(
     message: Message,
+    state: FSMContext,
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
@@ -224,6 +232,8 @@ async def _handle_vk_deep_link(
         group = dl.groups[0]
         await _create_vk_connection(message, user, db, http_client, project, dl, group)
         await vk_svc.cleanup_meta(nonce)
+        if dl.from_pipeline:
+            await _return_to_pipeline(message, state, user, db, redis, http_client, project)
         return
 
     # Multiple groups — store result back and show picker
@@ -308,6 +318,7 @@ async def _create_vk_connection(
 @router.callback_query(F.data.regexp(r"^vk_auth:[^:]+:\d+$"))
 async def vk_group_select_deeplink(
     callback: CallbackQuery,
+    state: FSMContext,
     user: User,
     db: SupabaseClient,
     redis: RedisClient,
@@ -401,7 +412,45 @@ async def vk_group_select_deeplink(
 
     # Cleanup
     await vk_svc.cleanup(nonce)
+
+    # Return to social pipeline if OAuth was triggered from pipeline flow
+    from_pipeline = False
+    if meta:
+        from_pipeline = bool(meta.get("from_pipeline"))
+    if from_pipeline and project:
+        await _return_to_pipeline(msg, state, user, db, redis, http_client, project)
+
     await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Return to social pipeline after OAuth (P0: pipeline return)
+# ---------------------------------------------------------------------------
+
+
+async def _return_to_pipeline(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    project: Project,
+) -> None:
+    """Return user to social pipeline connection step after OAuth.
+
+    After VK/Pinterest OAuth completes, the user should land back at the
+    social pipeline connection screen instead of Dashboard (FSM_SPEC.md:419-423,
+    UX_PIPELINE.md:416).  Re-uses _show_connection_step_msg which handles
+    0/1/N connections and auto-transitions to category step.
+    """
+    from routers.publishing.pipeline.social.connection import _show_connection_step_msg
+
+    await state.update_data(project_id=project.id, project_name=project.name)
+    await _show_connection_step_msg(
+        message, state, user, db, redis,
+        project.id, project.name, http_client=http_client,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -474,25 +523,30 @@ async def cmd_start(
     dashboard_service_factory: DashboardServiceFactory,
 ) -> None:
     """Handle /start command — show Dashboard."""
+    # Parse deep link args BEFORE clearing FSM — OAuth deep-links need
+    # the active pipeline FSM state to survive (P0: pipeline return).
+    args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
+
+    # OAuth deep-links: handle without clearing FSM and return early
+    if args.startswith("pinterest_auth_"):
+        nonce = args.removeprefix("pinterest_auth_")
+        await _handle_pinterest_deep_link(message, state, user, db, redis, http_client, nonce)
+        return
+    if args.startswith("vk_auth_"):
+        nonce = args.removeprefix("vk_auth_")
+        await _handle_vk_deep_link(message, state, user, db, redis, http_client, nonce)
+        return
+
+    # For all other cases: clear FSM as before
     await ensure_no_active_fsm(state)
 
-    # Parse deep link args
-    args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
     if args.startswith("referrer_"):
         referrer_id = _parse_referrer_id(args)
         if is_new_user and referrer_id:
-            # Link referrer to newly created user (C4: referral was dead before this fix)
-            # CR-77b: delegate to UsersService (thin router rule)
             users_svc = UsersService(db)
             await users_svc.link_referrer(user.id, referrer_id, redis)
         else:
             log.info("deep_link_referral_ignored", referrer_arg=args, is_new_user=is_new_user)
-    elif args.startswith("pinterest_auth_"):
-        nonce = args.removeprefix("pinterest_auth_")
-        await _handle_pinterest_deep_link(message, user, db, redis, nonce)
-    elif args.startswith("vk_auth_"):
-        nonce = args.removeprefix("vk_auth_")
-        await _handle_vk_deep_link(message, user, db, redis, http_client, nonce)
 
     # Consent gate: must accept terms before accessing dashboard (C7/H30)
     if user.accepted_terms_at is None:
@@ -791,8 +845,7 @@ async def pipeline_resume(
     )
 
     if pipeline_type == "social":
-        # Social pipeline not production-ready — answer with alert before redirect.
-        await callback.answer("Социальные посты — скоро!", show_alert=True)
+        await callback.answer()
         await _route_social_to_step(
             callback,
             state,
