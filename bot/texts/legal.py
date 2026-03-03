@@ -4,48 +4,10 @@
 Public offer (oferta) for token-based AI content generation service.
 
 Placeholders: [IP_FIO], [INN], [EMAIL], [DATE] — replace before production.
+
+Full text constants (PRIVACY_POLICY, TERMS_OF_SERVICE) are kept for compliance
+tests that verify all third-party data processors and token packages are disclosed.
 """
-
-# Maximum Telegram message length
-_TG_MSG_LIMIT = 4096
-
-
-def split_message(text: str, limit: int = _TG_MSG_LIMIT) -> list[str]:
-    """Split long text into chunks that fit Telegram message limit.
-
-    Splits on double-newline boundaries to keep paragraphs intact.
-    Falls back to single-newline, then hard cut if a paragraph exceeds the limit.
-    """
-    if len(text) <= limit:
-        return [text]
-
-    chunks: list[str] = []
-    remaining = text
-
-    while remaining:
-        if len(remaining) <= limit:
-            chunks.append(remaining)
-            break
-
-        # Try to split on double newline
-        cut_pos = remaining.rfind("\n\n", 0, limit)
-        if cut_pos > 0:
-            chunks.append(remaining[:cut_pos])
-            remaining = remaining[cut_pos + 2 :]
-            continue
-
-        # Fallback: split on single newline
-        cut_pos = remaining.rfind("\n", 0, limit)
-        if cut_pos > 0:
-            chunks.append(remaining[:cut_pos])
-            remaining = remaining[cut_pos + 1 :]
-            continue
-
-        # Hard cut (should not happen with well-structured text)
-        chunks.append(remaining[:limit])
-        remaining = remaining[limit:]
-
-    return chunks
 
 
 # ---------------------------------------------------------------------------
@@ -239,10 +201,6 @@ TERMS_OF_SERVICE = (
     "Исполнителя в соответствии с законодательством РФ.\n\n"
     "9.4. Связь с Исполнителем: [EMAIL]."
 )
-
-# Pre-computed chunks for sending via Telegram
-PRIVACY_POLICY_CHUNKS: list[str] = split_message(PRIVACY_POLICY)
-TERMS_OF_SERVICE_CHUNKS: list[str] = split_message(TERMS_OF_SERVICE)
 
 # Telegraph URLs for external viewing (Pinterest/VK app review, consent screen)
 PRIVACY_POLICY_URL = "https://telegra.ph/Politika-konfidencialnosti--SEO-Master-Bot-03-03"

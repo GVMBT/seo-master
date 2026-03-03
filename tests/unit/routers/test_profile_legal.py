@@ -3,7 +3,7 @@
 Covers:
 - /privacy command handler (sends URL link)
 - /terms command handler (sends URL link)
-- split_message utility
+- Legal text compliance (third-party disclosures, token packages)
 - Telegraph URL constants
 - Profile keyboard legal URL buttons
 - Consent keyboard legal URL buttons
@@ -19,113 +19,22 @@ import pytest
 from bot.texts.legal import (
     LEGAL_NOTICE,
     PRIVACY_POLICY,
-    PRIVACY_POLICY_CHUNKS,
     PRIVACY_POLICY_URL,
     TERMS_OF_SERVICE,
-    TERMS_OF_SERVICE_CHUNKS,
     TERMS_OF_SERVICE_URL,
-    split_message,
 )
 from routers.profile import (
     cmd_privacy,
     cmd_terms,
 )
 
-_MODULE = "routers.profile"
-
-
 # ---------------------------------------------------------------------------
-# split_message tests
-# ---------------------------------------------------------------------------
-
-
-class TestSplitMessage:
-    """Tests for bot.texts.legal.split_message."""
-
-    def test_short_text_no_split(self) -> None:
-        text = "Hello world"
-        result = split_message(text, limit=100)
-        assert result == [text]
-
-    def test_exact_limit_no_split(self) -> None:
-        text = "A" * 4096
-        result = split_message(text, limit=4096)
-        assert result == [text]
-
-    def test_splits_on_double_newline(self) -> None:
-        part1 = "A" * 100
-        part2 = "B" * 100
-        text = f"{part1}\n\n{part2}"
-        result = split_message(text, limit=150)
-        assert len(result) == 2
-        assert result[0] == part1
-        assert result[1] == part2
-
-    def test_splits_on_single_newline_fallback(self) -> None:
-        part1 = "A" * 100
-        part2 = "B" * 100
-        text = f"{part1}\n{part2}"
-        result = split_message(text, limit=150)
-        assert len(result) == 2
-        assert result[0] == part1
-        assert result[1] == part2
-
-    def test_hard_cut_no_newlines(self) -> None:
-        text = "A" * 200
-        result = split_message(text, limit=100)
-        assert len(result) == 2
-        assert result[0] == "A" * 100
-        assert result[1] == "A" * 100
-
-    def test_multiple_chunks(self) -> None:
-        parts = ["Section " + str(i) + " " + "x" * 80 for i in range(5)]
-        text = "\n\n".join(parts)
-        result = split_message(text, limit=100)
-        assert len(result) >= 3
-
-    def test_empty_string(self) -> None:
-        result = split_message("")
-        assert result == [""]
-
-
-# ---------------------------------------------------------------------------
-# Pre-computed chunks validation
+# Legal text compliance
 # ---------------------------------------------------------------------------
 
 
 class TestLegalTexts:
-    """Verify pre-computed legal text chunks are valid."""
-
-    def test_privacy_policy_chunks_not_empty(self) -> None:
-        assert len(PRIVACY_POLICY_CHUNKS) >= 1
-
-    def test_terms_chunks_not_empty(self) -> None:
-        assert len(TERMS_OF_SERVICE_CHUNKS) >= 1
-
-    def test_privacy_chunks_under_limit(self) -> None:
-        for chunk in PRIVACY_POLICY_CHUNKS:
-            assert len(chunk) <= 4096, f"Chunk too long: {len(chunk)} chars"
-
-    def test_terms_chunks_under_limit(self) -> None:
-        for chunk in TERMS_OF_SERVICE_CHUNKS:
-            assert len(chunk) <= 4096, f"Chunk too long: {len(chunk)} chars"
-
-    def test_privacy_chunks_reconstruct_original(self) -> None:
-        """Joining chunks should cover the full text content."""
-        joined = "\n\n".join(PRIVACY_POLICY_CHUNKS)
-        # All content from the original must appear in the joined version
-        # (split_message drops separators, so we check key phrases)
-        assert "Политика конфиденциальности" in joined
-        assert "152-ФЗ" in joined
-        assert "OpenRouter" in joined
-        assert "[EMAIL]" in joined
-
-    def test_terms_chunks_reconstruct_original(self) -> None:
-        joined = "\n\n".join(TERMS_OF_SERVICE_CHUNKS)
-        assert "Публичная оферта" in joined
-        assert "1 токен = 1 рубль" in joined
-        assert "438 ГК РФ" in joined
-        assert "[EMAIL]" in joined
+    """Verify legal texts contain all required disclosures."""
 
     def test_privacy_policy_has_all_services(self) -> None:
         """Privacy policy must disclose all third-party data processors."""

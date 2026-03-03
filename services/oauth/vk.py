@@ -64,6 +64,7 @@ class VKDeepLinkResult:
     expires_at: str = ""
     device_id: str = ""
     raw_result: dict[str, Any] = field(default_factory=dict)
+    from_pipeline: bool = False
 
 
 def _generate_pkce() -> tuple[str, str]:
@@ -322,12 +323,14 @@ class VKOAuthService:
 
         groups: list[dict[str, Any]] = result.get("groups") or []
 
-        # Read project_id from meta
+        # Read project_id and pipeline context from meta
         meta = await self.get_meta(nonce)
         project_id: int | None = None
+        from_pipeline = False
         if meta:
             with contextlib.suppress(ValueError, TypeError, KeyError):
                 project_id = int(meta["project_id"])
+            from_pipeline = meta.get("from_pipeline") is True
 
         expires_in = int(result.get("expires_in") or 3600)
         expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
@@ -340,6 +343,7 @@ class VKOAuthService:
             expires_at=expires_at,
             device_id=str(result.get("device_id", "")),
             raw_result=result,
+            from_pipeline=from_pipeline,
         )
 
     async def restore_result_for_group_select(

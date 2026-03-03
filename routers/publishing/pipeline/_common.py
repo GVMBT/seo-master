@@ -58,7 +58,6 @@ class ArticlePipelineFSM(StatesGroup):
     readiness_keywords_generating = State()
     readiness_description = State()
     readiness_prices = State()
-    readiness_photos = State()
 
     # Step 5-8: Confirmation, generation, preview, result
     confirm_cost = State()
@@ -70,12 +69,12 @@ class ArticlePipelineFSM(StatesGroup):
 
 
 # ---------------------------------------------------------------------------
-# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 28 states)
+# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 24 states)
 # ---------------------------------------------------------------------------
 
 
 class SocialPipelineFSM(StatesGroup):
-    """Social pipeline FSM — 28 states for social post creation + cross-posting."""
+    """Social pipeline FSM — 24 states for social post creation."""
 
     # Step 1: Project selection
     select_project = State()
@@ -89,10 +88,8 @@ class SocialPipelineFSM(StatesGroup):
     connect_tg_channel = State()
     connect_tg_token = State()
     connect_tg_verify = State()
-    connect_vk_token = State()
-    connect_vk_group = State()
+    connect_vk_oauth = State()
     connect_pinterest_oauth = State()
-    connect_pinterest_board = State()
 
     # Step 3: Category selection
     select_category = State()
@@ -112,10 +109,6 @@ class SocialPipelineFSM(StatesGroup):
     review = State()
     publishing = State()
     regenerating = State()
-
-    # Cross-posting (E52)
-    cross_post_review = State()
-    cross_post_publishing = State()
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +162,6 @@ async def save_checkpoint(
         "generating": "генерация",
         "review": "ревью",
         "publishing": "публикация",
-        "cross_post_review": "кросс-пост",
     }
     labels = _SOCIAL_LABELS if pipeline_type == "social" else _ARTICLE_LABELS
     data["step_label"] = labels.get(current_step, current_step)

@@ -576,7 +576,7 @@ class TestVKOAuthConnect:
                 _mock_http_client(),
             )
 
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_token)
+        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_oauth)
         mock_redis.set.assert_awaited_once()
         # Check nonce stored in Redis with vk_oauth_meta: prefix
         redis_key = mock_redis.set.call_args[0][0]

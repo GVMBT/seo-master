@@ -37,7 +37,6 @@ _ARTICLE_PROTECTED = StateFilter(
     ArticlePipelineFSM.readiness_keywords_generating,
     ArticlePipelineFSM.readiness_description,
     ArticlePipelineFSM.readiness_prices,
-    ArticlePipelineFSM.readiness_photos,
     ArticlePipelineFSM.confirm_cost,
     ArticlePipelineFSM.preview,
 )
@@ -51,7 +50,6 @@ _SOCIAL_PROTECTED = StateFilter(
     SocialPipelineFSM.readiness_description,
     SocialPipelineFSM.confirm_cost,
     SocialPipelineFSM.review,
-    SocialPipelineFSM.cross_post_review,
 )
 
 
