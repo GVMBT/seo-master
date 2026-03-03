@@ -112,9 +112,13 @@ def _make_pub_result():
 def _make_service() -> PublishService:
     mock_scheduler = MagicMock()
     mock_scheduler.delete_qstash_schedules = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.incr = AsyncMock(return_value=1)
+    mock_redis.expire = AsyncMock(return_value=True)
+    mock_redis.delete = AsyncMock(return_value=1)
     svc = PublishService(
         db=MagicMock(),
-        redis=MagicMock(),
+        redis=mock_redis,
         http_client=MagicMock(),
         ai_orchestrator=MagicMock(),
         image_storage=MagicMock(),

@@ -40,6 +40,7 @@ from services.tokens import TokenService, estimate_article_cost, estimate_cross_
 if TYPE_CHECKING:
     import httpx
 
+    from bot.config import Settings
     from services.external.firecrawl import FirecrawlClient
     from services.external.serper import SerperClient
     from services.scheduler import SchedulerService
@@ -87,6 +88,7 @@ class PublishService:
         scheduler_service: SchedulerService | None = None,
         serper_client: SerperClient | None = None,
         firecrawl_client: FirecrawlClient | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._db = db
         self._redis = redis
@@ -97,6 +99,7 @@ class PublishService:
         self._scheduler_service = scheduler_service
         self._serper = serper_client
         self._firecrawl = firecrawl_client
+        self._settings = settings
         self._tokens = TokenService(db, admin_ids)
         self._users = UsersRepository(db)
         self._categories = CategoriesRepository(db)
@@ -187,11 +190,15 @@ class PublishService:
                 cluster_name=cluster.get("cluster_name", ""),
             )
 
-        # 6. Estimate cost (social auto-publish does not generate images)
+        # 6. Estimate cost
         if content_type == "article":
             estimated_cost = estimate_article_cost()
         else:
-            estimated_cost = estimate_social_post_cost(images_count=0)
+            social_image_count = (category.image_settings or {}).get("count", 1)
+            # Pinterest requires at least 1 image
+            if payload.platform_type == "pinterest" and social_image_count < 1:
+                social_image_count = 1
+            estimated_cost = estimate_social_post_cost(images_count=social_image_count)
 
         # 7. Check balance (E01): pause schedule per EDGE_CASES.md
         if not await self._tokens.check_balance(user_id, estimated_cost):
@@ -284,11 +291,12 @@ class PublishService:
                 )
             )
 
-            # Update schedule last_post_at
+            # Update schedule last_post_at + reset error counter on success
             await self._schedules.update(
                 payload.schedule_id,
                 PlatformScheduleUpdate(last_post_at=datetime.now(tz=UTC)),
             )
+            await self._redis.delete(f"schedule_errors:{schedule.id}")
 
             # Execute cross-posts if configured (social posts only)
             cross_results: list[CrossPostResult] = []
@@ -326,6 +334,15 @@ class PublishService:
 
         except Exception as exc:
             log.exception("publish_generation_failed", user_id=user_id, keyword=keyword)
+
+            # Track consecutive platform errors for schedule pause
+            if schedule:
+                counter_key = f"schedule_errors:{schedule.id}"
+                count = await self._redis.incr(counter_key)
+                await self._redis.expire(counter_key, 86400)  # 24h TTL
+                if count >= 3:
+                    await self._pause_schedule_platform_error(schedule, reason=str(exc)[:200])
+                    await self._redis.delete(counter_key)
 
             # Refund if charge was already made (post-charge failure)
             if charged and actual_cost > 0:
@@ -376,6 +393,20 @@ class PublishService:
             PlatformScheduleUpdate(status="error", enabled=False, qstash_schedule_ids=[]),
         )
 
+    async def _pause_schedule_platform_error(
+        self,
+        schedule: Any,
+        reason: str,
+    ) -> None:
+        """Pause schedule after 3 consecutive platform errors."""
+        log.warning("publish_platform_errors_threshold", schedule_id=schedule.id, reason=reason)
+        if schedule.qstash_schedule_ids and self._scheduler_service:
+            await self._scheduler_service.delete_qstash_schedules(schedule.qstash_schedule_ids)
+        await self._schedules.update(
+            schedule.id,
+            PlatformScheduleUpdate(status="error", enabled=False, qstash_schedule_ids=[]),
+        )
+
     async def _generate_and_publish(
         self,
         user_id: int,
@@ -404,7 +435,7 @@ class PublishService:
                 cluster=cluster,
             )
 
-        result, pub = await self._generate_social_post(
+        return await self._generate_social_post(
             user_id,
             project_id,
             category_id,
@@ -412,7 +443,6 @@ class PublishService:
             connection,
             category,
         )
-        return result, pub, 0
 
     async def _generate_article(
         self,
@@ -631,8 +661,11 @@ class PublishService:
         keyword: str,
         connection: Any,
         category: Any,
-    ) -> tuple[Any, PublishResult]:
-        """Generate social post and publish."""
+    ) -> tuple[Any, PublishResult, int]:
+        """Generate social post with images and publish.
+
+        Returns (gen_result, pub_result, failed_image_count).
+        """
         from services.ai.social_posts import SocialPostService
 
         social_service = SocialPostService(self._ai_orchestrator, self._db)
@@ -644,7 +677,7 @@ class PublishService:
             platform=connection.platform_type,
         )
 
-        publisher = self._get_publisher(connection.platform_type)
+        publisher = self._get_publisher(connection.platform_type, connection.id)
         # Social post content is a dict {text, hashtags, pin_title} — extract text
         content = result.content.get("text", "") if isinstance(result.content, dict) else result.content
 
@@ -673,11 +706,44 @@ class PublishService:
         if connection.platform_type == "pinterest" and isinstance(result.content, dict):
             metadata["pin_title"] = result.content.get("pin_title", "")[:100]
 
+        # Generate images for social posts
+        image_count = (category.image_settings or {}).get("count", 1)
+        if connection.platform_type == "pinterest" and image_count < 1:
+            image_count = 1  # Pinterest requires media_source
+
+        images: list[bytes] = []
+        failed_images = 0
+        if image_count > 0:
+            try:
+                from services.ai.images import ImageService
+
+                image_service = ImageService(self._ai_orchestrator)
+                project = await self._projects.get_by_id(project_id)
+                image_context: dict[str, Any] = {
+                    "keyword": keyword,
+                    "content_type": "social_post",
+                    "company_name": (project.company_name or "") if project else "",
+                    "specialization": (project.specialization or "") if project else "",
+                    "image_settings": category.image_settings or {},
+                }
+                image_results = await image_service.generate(
+                    user_id=user_id,
+                    context=image_context,
+                    count=image_count,
+                )
+                images = [img.data for img in image_results]
+                failed_images = image_count - len(image_results)
+            except Exception:
+                log.warning("social_image_generation_failed", exc_info=True)
+                failed_images = image_count
+                # Graceful degradation: TG/VK publish without images, Pinterest will fail
+
         pub_result = await publisher.publish(
             PublishRequest(
                 connection=connection,
                 content=content,
                 content_type=ct,
+                images=images,
                 category=category,
                 metadata=metadata,
             )
@@ -686,7 +752,7 @@ class PublishService:
         if not pub_result.success:
             raise RuntimeError(f"Publish failed: {pub_result.error}")
 
-        return result, pub_result
+        return result, pub_result, failed_images
 
     async def _execute_cross_posts(
         self,
@@ -756,7 +822,7 @@ class PublishService:
                         tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
                         adapted_text = f"{adapted_text}\n\n{tags_str}"
 
-                publisher = self._get_publisher(conn.platform_type)
+                publisher = self._get_publisher(conn.platform_type, conn.id)
                 from services.ai.content_validator import ContentValidator
 
                 validator = ContentValidator()
@@ -871,24 +937,22 @@ class PublishService:
                     return cluster
         return None
 
-    def _get_publisher(self, platform_type: str) -> Any:
-        """Get publisher instance for platform type."""
-        from services.publishers.pinterest import PinterestPublisher
-        from services.publishers.telegram import TelegramPublisher
-        from services.publishers.vk import VKPublisher
-        from services.publishers.wordpress import WordPressPublisher
+    def _make_token_refresh_cb(self, connection_id: int) -> Any:
+        """Build callback to persist refreshed credentials in DB."""
+        async def _cb(old_creds: dict[str, Any], new_creds: dict[str, Any]) -> None:
+            cm = CredentialManager(get_settings().encryption_key.get_secret_value())
+            repo = ConnectionsRepository(self._db, cm)
+            await repo.update_credentials(connection_id, new_creds)
 
-        publishers = {
-            "wordpress": lambda: WordPressPublisher(self._http_client),
-            "telegram": lambda: TelegramPublisher(self._http_client),
-            "vk": lambda: VKPublisher(self._http_client),
-            "pinterest": lambda: PinterestPublisher(http_client=self._http_client),
-        }
-        factory = publishers.get(platform_type)
-        if not factory:
-            msg = f"Unknown platform: {platform_type}"
-            raise ValueError(msg)
-        return factory()
+        return _cb
+
+    def _get_publisher(self, platform_type: str, connection_id: int = 0) -> Any:
+        """Get publisher instance for platform type with token refresh callback."""
+        from services.publishers.factory import create_publisher
+
+        settings = self._settings or get_settings()
+        on_refresh = self._make_token_refresh_cb(connection_id) if connection_id else None
+        return create_publisher(platform_type, self._http_client, settings, on_token_refresh=on_refresh)
 
     @staticmethod
     def _get_content_type(platform_type: str) -> str:

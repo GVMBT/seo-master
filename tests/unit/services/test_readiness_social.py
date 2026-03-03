@@ -80,10 +80,11 @@ class TestReadinessServiceSocial:
             pipeline_type="social",
         )
 
-        assert report.image_count == 0
+        # Default 1 image for social (Pinterest requires media_source)
+        assert report.image_count == 1
         assert report.has_keywords is True
         assert report.has_description is True
         assert "prices" not in report.missing_items
         assert "images" not in report.missing_items
-        # Social cost should be less than article cost (no images)
+        # Social cost should be less than article cost
         assert report.estimated_cost < 300

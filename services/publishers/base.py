@@ -6,10 +6,17 @@ Source of truth: docs/API_CONTRACTS.md section 3.2.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from db.models import Category, PlatformConnection
+
+# Callback type for callers that need to persist refreshed credentials
+TokenRefreshCallback = Callable[
+    [dict[str, Any], dict[str, Any]],  # (old_creds, new_creds)
+    Coroutine[Any, Any, None],
+]
 
 
 @dataclass(frozen=True, slots=True)

@@ -9,6 +9,7 @@ H10: State token is HMAC-protected (E30) AND single-use via Redis NX lock.
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import structlog
@@ -94,9 +95,8 @@ class PinterestOAuthService:
                     "grant_type": "authorization_code",
                     "code": code,
                     "redirect_uri": self._redirect_uri,
-                    "client_id": self._app_id,
-                    "client_secret": self._app_secret,
                 },
+                auth=httpx.BasicAuth(self._app_id, self._app_secret),
             )
         except httpx.HTTPError as exc:
             log.error("pinterest_token_exchange_http_error", error=str(exc))
@@ -114,10 +114,13 @@ class PinterestOAuthService:
         if "access_token" not in data:
             raise PinterestOAuthError("No access_token in Pinterest response")
 
+        expires_in = int(data.get("expires_in", 2592000))
+        expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+
         return {
             "access_token": data["access_token"],
             "refresh_token": data.get("refresh_token", ""),
-            "expires_in": data.get("expires_in", 2592000),
+            "expires_at": expires_at,
         }
 
     async def _store_tokens(self, nonce: str, tokens: dict) -> None:

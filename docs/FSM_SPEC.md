@@ -52,11 +52,11 @@ class ConnectTelegramFSM(StatesGroup):
 
 class ConnectVKFSM(StatesGroup):
     oauth_callback = State() # Ожидание OAuth 2.1 PKCE (id.vk.com)
-    select_group = State()   # Выбор группы из списка
+    select_group = State()   # Handled by deep-link callback in routers/start.py (NOT by FSM handler)
 
 class ConnectPinterestFSM(StatesGroup):
     oauth_callback = State() # Ожидание OAuth
-    select_board = State()   # Выбор доски
+    select_board = State()   # Board selection deferred — uses _get_default_board() fallback
 
 # OAuth flow для Pinterest:
 # 1. Бот отправляет кнопку-ссылку на {RAILWAY_PUBLIC_URL}/api/auth/pinterest?user_id={id}&nonce={nonce}

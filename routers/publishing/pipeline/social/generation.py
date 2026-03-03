@@ -810,21 +810,12 @@ async def more_posts_social(
 
 
 def _get_publisher(platform_type: str, http_client: httpx.AsyncClient) -> Any:
-    """Get publisher instance for platform type."""
-    from services.publishers.pinterest import PinterestPublisher
-    from services.publishers.telegram import TelegramPublisher
-    from services.publishers.vk import VKPublisher
+    """Get publisher instance for platform type with proper credentials."""
+    from bot.config import get_settings
+    from services.publishers.factory import create_publisher
 
-    publishers = {
-        "telegram": lambda: TelegramPublisher(http_client),
-        "vk": lambda: VKPublisher(http_client),
-        "pinterest": lambda: PinterestPublisher(http_client=http_client),
-    }
-    factory = publishers.get(platform_type)
-    if not factory:
-        msg = f"Unknown social platform: {platform_type}"
-        raise ValueError(msg)
-    return factory()
+    settings = get_settings()
+    return create_publisher(platform_type, http_client, settings)
 
 
 def _get_content_type(platform_type: str) -> Literal["html", "telegram_html", "plain_text", "pin_text"]:
@@ -846,6 +837,6 @@ def _get_content_type(platform_type: str) -> Literal["html", "telegram_html", "p
 async def crosspost_stub(callback: CallbackQuery) -> None:
     """Stub handler for cross-post buttons until F6.4 is implemented."""
     await callback.answer(
-        "Кросс-постинг будет доступен в следующем обновлении.",  # noqa: RUF001
+        "Кросс-постинг будет доступен в следующем обновлении.",
         show_alert=True,
     )

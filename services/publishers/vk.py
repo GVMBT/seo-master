@@ -12,7 +12,6 @@ Pattern: same as PinterestPublisher._maybe_refresh_token().
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -21,7 +20,7 @@ import structlog
 
 from db.models import PlatformConnection
 
-from .base import BasePublisher, PublishRequest, PublishResult
+from .base import BasePublisher, PublishRequest, PublishResult, TokenRefreshCallback
 
 log = structlog.get_logger()
 
@@ -30,12 +29,6 @@ VK_API_VERSION = "5.199"
 _VK_TEXT_LIMIT = 16384
 _VK_TOKEN_URL = "https://id.vk.com/oauth2/auth"  # noqa: S105
 _REFRESH_THRESHOLD = timedelta(minutes=5)
-
-# Callback type for callers that need to persist refreshed credentials
-TokenRefreshCallback = Callable[
-    [dict[str, Any], dict[str, Any]],
-    Coroutine[Any, Any, None],
-]
 
 
 class VKPublisher(BasePublisher):

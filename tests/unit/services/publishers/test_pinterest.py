@@ -207,6 +207,75 @@ class TestMaybeRefreshToken:
 
 
 # ---------------------------------------------------------------------------
+# _refresh_token — Basic Auth
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshTokenBasicAuth:
+    """Verify that _refresh_token uses HTTP Basic Auth (not body credentials)."""
+
+    async def test_refresh_uses_basic_auth_header(self) -> None:
+        """Refresh token request sends Authorization: Basic {base64(client_id:client_secret)} header."""
+        captured_headers: dict[str, str] = {}
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "oauth/token" in str(request.url):
+                captured_headers.update(dict(request.headers))
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "new_at",
+                        "refresh_token": "new_rt",
+                        "expires_in": 2592000,
+                    },
+                )
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection(expires_at=_EXPIRING_SOON)
+        await pub._maybe_refresh_token(conn.credentials)
+
+        # httpx.BasicAuth sends Authorization header with "Basic" scheme
+        auth_header = captured_headers.get("authorization", "")
+        assert auth_header.startswith("Basic ")
+
+        # Decode and verify contents: base64(test_app_id:test_app_secret)
+        encoded = auth_header.split(" ", 1)[1]
+        decoded = base64.b64decode(encoded).decode()
+        assert decoded == "test_app_id:test_app_secret"
+
+    async def test_refresh_does_not_send_credentials_in_body(self) -> None:
+        """Form body only has grant_type and refresh_token, no client_id/client_secret."""
+        captured_body: str = ""
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal captured_body
+            if "oauth/token" in str(request.url):
+                captured_body = request.content.decode("utf-8")
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "new_at",
+                        "refresh_token": "new_rt",
+                        "expires_in": 2592000,
+                    },
+                )
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection(expires_at=_EXPIRING_SOON)
+        await pub._maybe_refresh_token(conn.credentials)
+
+        # Body should NOT contain client_id or client_secret
+        assert "client_id" not in captured_body
+        assert "client_secret" not in captured_body
+
+        # Body SHOULD contain grant_type and refresh_token
+        assert "grant_type=refresh_token" in captured_body
+        assert "refresh_token=" in captured_body
+
+
+# ---------------------------------------------------------------------------
 # validate_connection
 # ---------------------------------------------------------------------------
 

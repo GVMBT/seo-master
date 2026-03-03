@@ -58,12 +58,12 @@ class ConnectTelegramFSM(StatesGroup):
 
 class ConnectVKFSM(StatesGroup):
     oauth_callback = State()
-    select_group = State()
+    select_group = State()  # Handled by deep-link callback in routers/start.py
 
 
 class ConnectPinterestFSM(StatesGroup):
     oauth_callback = State()
-    select_board = State()
+    select_board = State()  # Board selection deferred — uses _get_default_board() fallback
 
 
 # ---------------------------------------------------------------------------

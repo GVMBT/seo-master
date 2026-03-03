@@ -80,6 +80,7 @@
 | E48 | Anti-hallucination: цена в тексте не совпадает с прайсом | Warning (не error): "Возможно выдуманная цена: {N} руб." Пользователь решает при превью. НЕ блокировать публикацию — может быть контекстная цена ("от 10 000 руб./мес" для услуги, не из прайса товаров) |
 | E53 | Perplexity Sonar Pro недоступен / ошибка research | Graceful degradation: pipeline продолжает БЕЗ research-данных (`current_research = ""`). Статья генерируется на знаниях модели + Serper + Firecrawl. Warning в лог: "research_skipped". НЕ уведомлять пользователя (не ошибка, а degradation). НЕ отключать расписание |
 | E54 | Image Director недоступен / ошибка AI-планирования изображений | Graceful degradation: fallback на механические промпты (block_context + image_settings, как было до Director). Изображения будут generic, но pipeline продолжает. Warning в лог: "image_director_skipped". НЕ уведомлять пользователя. Стоимость не меняется (Director ~$0.001 не списывается при ошибке) |
+| E55 | 3 consecutive platform publish errors | Redis counter `schedule_errors:{schedule_id}` (TTL 24h). After 3 errors: schedule → `enabled: false, status: "error"`, delete QStash crons. Counter auto-resets on success or via TTL. Notify user if `notify_publications` enabled |
 
 ## Pipeline edge cases (UX_PIPELINE.md)
 

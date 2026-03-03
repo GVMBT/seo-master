@@ -9,7 +9,6 @@ Write idempotency (CR-78a): no retry on POST/create operations
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -18,20 +17,14 @@ import structlog
 
 from db.models import PlatformConnection
 
-from .base import BasePublisher, PublishRequest, PublishResult
+from .base import BasePublisher, PublishRequest, PublishResult, TokenRefreshCallback
 
 log = structlog.get_logger()
 
 _BASE_URL = "https://api.pinterest.com/v5"
 _TITLE_LIMIT = 100
-_DESCRIPTION_LIMIT = 500
+_DESCRIPTION_LIMIT = 800
 _REFRESH_THRESHOLD = timedelta(days=1)
-
-# Callback type for callers that need to persist refreshed credentials
-TokenRefreshCallback = Callable[
-    [dict[str, Any], dict[str, Any]],
-    Coroutine[Any, Any, None],
-]
 
 
 class PinterestPublisher(BasePublisher):
@@ -75,9 +68,8 @@ class PinterestPublisher(BasePublisher):
             data={
                 "grant_type": "refresh_token",
                 "refresh_token": creds["refresh_token"],
-                "client_id": self._client_id,
-                "client_secret": self._client_secret,
             },
+            auth=httpx.BasicAuth(self._client_id, self._client_secret),
             timeout=15,
         )
         resp.raise_for_status()
