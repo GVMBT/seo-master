@@ -13,8 +13,8 @@ from urllib.parse import quote
 import structlog
 from aiohttp import web
 
-from api.vk_oauth import VKOAuthError, VKOAuthService
 from bot.config import get_settings
+from services.oauth.vk import VKOAuthError, VKOAuthService
 
 log = structlog.get_logger()
 

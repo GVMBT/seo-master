@@ -691,7 +691,7 @@ async def start_vk_connect(
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     # Delegate nonce + meta + URL to VKOAuthService (CR-118: thin router)
-    from api.vk_oauth import VKOAuthService
+    from services.oauth.vk import VKOAuthService
 
     settings = get_settings()
     base_url = (settings.railway_public_url or "").rstrip("/")
