@@ -809,12 +809,14 @@ async def more_posts_social(
 # ---------------------------------------------------------------------------
 
 
-def _get_publisher(platform_type: str, http_client: httpx.AsyncClient) -> Any:
+def _get_publisher(platform_type: str, http_client: httpx.AsyncClient, settings: Any = None) -> Any:
     """Get publisher instance for platform type with proper credentials."""
-    from bot.config import get_settings
     from services.publishers.factory import create_publisher
 
-    settings = get_settings()
+    if settings is None:
+        from bot.config import get_settings
+
+        settings = get_settings()
     return create_publisher(platform_type, http_client, settings)
 
 

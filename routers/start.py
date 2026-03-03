@@ -3,7 +3,6 @@
 import contextlib
 import html
 import json
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -125,10 +124,6 @@ async def _handle_pinterest_deep_link(
     cm = CredentialManager(settings.encryption_key.get_secret_value())
     conn_repo = ConnectionsRepository(db, cm)
 
-    # Convert expires_in (seconds) → expires_at (ISO datetime) for token refresh
-    expires_in = int(tokens.get("expires_in", 2592000))
-    expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
-
     try:
         conn = await conn_repo.create(
             PlatformConnectionCreate(
@@ -140,7 +135,7 @@ async def _handle_pinterest_deep_link(
             raw_credentials={
                 "access_token": tokens.get("access_token", ""),
                 "refresh_token": tokens.get("refresh_token", ""),
-                "expires_at": expires_at,
+                "expires_at": tokens.get("expires_at", ""),
             },
         )
     except Exception:

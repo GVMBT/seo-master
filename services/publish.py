@@ -47,6 +47,16 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
+_PINTEREST_MIN_IMAGES = 1
+
+
+def _effective_social_image_count(image_settings: dict[str, Any] | None, platform_type: str) -> int:
+    """Get image count for social posts, enforcing Pinterest minimum."""
+    count = (image_settings or {}).get("count", 1)
+    if platform_type == "pinterest" and count < _PINTEREST_MIN_IMAGES:
+        return _PINTEREST_MIN_IMAGES
+    return int(count)
+
 
 @dataclass
 class CrossPostResult:
@@ -194,15 +204,14 @@ class PublishService:
         if content_type == "article":
             estimated_cost = estimate_article_cost()
         else:
-            social_image_count = (category.image_settings or {}).get("count", 1)
-            # Pinterest requires at least 1 image
-            if payload.platform_type == "pinterest" and social_image_count < 1:
-                social_image_count = 1
+            social_image_count = _effective_social_image_count(category.image_settings, payload.platform_type)
             estimated_cost = estimate_social_post_cost(images_count=social_image_count)
 
         # 7. Check balance (E01): pause schedule per EDGE_CASES.md
         if not await self._tokens.check_balance(user_id, estimated_cost):
-            await self._pause_schedule_insufficient_balance(schedule, user_id, estimated_cost)
+            await self._disable_schedule(
+                schedule, "publish_insufficient_balance", user_id=user_id, required=estimated_cost
+            )
             return PublishOutcome(
                 status="error",
                 reason="insufficient_balance",
@@ -259,7 +268,6 @@ class PublishService:
             actual_cost = max(actual_cost, 0)
 
             # Charge tokens AFTER successful generation + publish
-            charged = False
             try:
                 await self._tokens.charge(
                     user_id, actual_cost, f"auto_{content_type}", description=f"Auto-publish: {keyword}"
@@ -341,7 +349,9 @@ class PublishService:
                 count = await self._redis.incr(counter_key)
                 await self._redis.expire(counter_key, 86400)  # 24h TTL
                 if count >= 3:
-                    await self._pause_schedule_platform_error(schedule, reason=str(exc)[:200])
+                    await self._disable_schedule(
+                        schedule, "publish_platform_errors_threshold", reason=str(exc)[:200]
+                    )
                     await self._redis.delete(counter_key)
 
             # Refund if charge was already made (post-charge failure)
@@ -378,28 +388,9 @@ class PublishService:
                 notify=user.notify_publications,
             )
 
-    async def _pause_schedule_insufficient_balance(
-        self,
-        schedule: Any,
-        user_id: int,
-        required: int,
-    ) -> None:
-        """E01: Disable schedule + delete QStash crons on insufficient balance."""
-        log.warning("publish_insufficient_balance", user_id=user_id, required=required)
-        if schedule.qstash_schedule_ids and self._scheduler_service:
-            await self._scheduler_service.delete_qstash_schedules(schedule.qstash_schedule_ids)
-        await self._schedules.update(
-            schedule.id,
-            PlatformScheduleUpdate(status="error", enabled=False, qstash_schedule_ids=[]),
-        )
-
-    async def _pause_schedule_platform_error(
-        self,
-        schedule: Any,
-        reason: str,
-    ) -> None:
-        """Pause schedule after 3 consecutive platform errors."""
-        log.warning("publish_platform_errors_threshold", schedule_id=schedule.id, reason=reason)
+    async def _disable_schedule(self, schedule: Any, log_event: str, **log_kwargs: Any) -> None:
+        """Disable schedule + delete QStash crons (shared by E01 insufficient balance & E55 platform errors)."""
+        log.warning(log_event, schedule_id=schedule.id, **log_kwargs)
         if schedule.qstash_schedule_ids and self._scheduler_service:
             await self._scheduler_service.delete_qstash_schedules(schedule.qstash_schedule_ids)
         await self._schedules.update(
@@ -707,9 +698,7 @@ class PublishService:
             metadata["pin_title"] = result.content.get("pin_title", "")[:100]
 
         # Generate images for social posts
-        image_count = (category.image_settings or {}).get("count", 1)
-        if connection.platform_type == "pinterest" and image_count < 1:
-            image_count = 1  # Pinterest requires media_source
+        image_count = _effective_social_image_count(category.image_settings, connection.platform_type)
 
         images: list[bytes] = []
         failed_images = 0
@@ -939,8 +928,10 @@ class PublishService:
 
     def _make_token_refresh_cb(self, connection_id: int) -> Any:
         """Build callback to persist refreshed credentials in DB."""
+        enc_key = (self._settings or get_settings()).encryption_key.get_secret_value()
+
         async def _cb(old_creds: dict[str, Any], new_creds: dict[str, Any]) -> None:
-            cm = CredentialManager(get_settings().encryption_key.get_secret_value())
+            cm = CredentialManager(enc_key)
             repo = ConnectionsRepository(self._db, cm)
             await repo.update_credentials(connection_id, new_creds)
 

@@ -1,8 +1,8 @@
 """Tests for schedule error tracking in services/publish.py.
 
 Covers:
-- _pause_schedule_platform_error: disables schedule + deletes QStash crons
-- _pause_schedule_platform_error without scheduler_service
+- _disable_schedule: disables schedule + deletes QStash crons
+- _disable_schedule without scheduler_service
 - _make_token_refresh_cb: persists refreshed credentials via ConnectionsRepository
 """
 
@@ -76,14 +76,14 @@ def _make_service(
 
 
 class TestPauseSchedulePlatformError:
-    """Tests for PublishService._pause_schedule_platform_error."""
+    """Tests for PublishService._disable_schedule."""
 
     async def test_pause_disables_schedule_and_deletes_qstash(self) -> None:
         """Verify schedule set to error/disabled AND QStash crons deleted."""
         svc = _make_service()
         schedule = _make_schedule(qstash_schedule_ids=["sch_1", "sch_2"])
 
-        await svc._pause_schedule_platform_error(schedule, reason="Connection timeout")
+        await svc._disable_schedule(schedule, "publish_platform_errors_threshold", reason="Connection timeout")
 
         # QStash schedules must be deleted
         svc._scheduler_service.delete_qstash_schedules.assert_awaited_once_with(  # type: ignore[union-attr]
@@ -105,7 +105,7 @@ class TestPauseSchedulePlatformError:
         svc = _make_service(scheduler_service=None)
         schedule = _make_schedule(qstash_schedule_ids=["sch_1"])
 
-        await svc._pause_schedule_platform_error(schedule, reason="Platform error")
+        await svc._disable_schedule(schedule, "publish_platform_errors_threshold", reason="Platform error")
 
         # Schedule must still be updated even without scheduler
         svc._schedules.update.assert_awaited_once()
@@ -122,7 +122,7 @@ class TestPauseSchedulePlatformError:
         svc = _make_service()
         schedule = _make_schedule(qstash_schedule_ids=[])
 
-        await svc._pause_schedule_platform_error(schedule, reason="Error")
+        await svc._disable_schedule(schedule, "publish_platform_errors_threshold", reason="Error")
 
         # delete_qstash_schedules should NOT be called (empty list is falsy)
         svc._scheduler_service.delete_qstash_schedules.assert_not_awaited()  # type: ignore[union-attr]
@@ -136,7 +136,7 @@ class TestPauseSchedulePlatformError:
         schedule = _make_schedule()
 
         with patch("services.publish.log") as mock_log:
-            await svc._pause_schedule_platform_error(schedule, reason="test reason")
+            await svc._disable_schedule(schedule, "publish_platform_errors_threshold", reason="test reason")
             mock_log.warning.assert_called_once_with(
                 "publish_platform_errors_threshold",
                 schedule_id=42,

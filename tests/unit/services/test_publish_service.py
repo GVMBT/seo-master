@@ -978,7 +978,7 @@ async def test_schedule_passed_to_pause_cr77c(
     mock_cm_cls: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """CR-77c: _pause_schedule_insufficient_balance uses schedule.id, not schedule_id param."""
+    """CR-77c: _disable_schedule uses schedule.id, not schedule_id param."""
     svc = _make_service()
     schedule = _make_schedule(id=42, qstash_schedule_ids=["qs_42"])
     svc._users.get_by_id = AsyncMock(return_value=_make_user())
