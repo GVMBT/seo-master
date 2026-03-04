@@ -52,10 +52,14 @@ _PINTEREST_MIN_IMAGES = 1
 
 def _effective_social_image_count(image_settings: dict[str, Any] | None, platform_type: str) -> int:
     """Get image count for social posts, enforcing Pinterest minimum."""
-    count = (image_settings or {}).get("count", 1)
-    if platform_type == "pinterest" and count < _PINTEREST_MIN_IMAGES:
-        return _PINTEREST_MIN_IMAGES
-    return int(count)
+    raw = (image_settings or {}).get("count", 1)
+    try:
+        count = max(0, int(raw))
+    except (ValueError, TypeError):
+        count = 1
+    if platform_type == "pinterest":
+        return max(count, _PINTEREST_MIN_IMAGES)
+    return count
 
 
 @dataclass
@@ -300,11 +304,7 @@ class PublishService:
             )
 
             # Update schedule last_post_at + reset error counter on success
-            await self._schedules.update(
-                payload.schedule_id,
-                PlatformScheduleUpdate(last_post_at=datetime.now(tz=UTC)),
-            )
-            await self._redis.delete(f"schedule_errors:{schedule.id}")
+            await self._mark_schedule_success(payload.schedule_id, schedule.id)
 
             # Execute cross-posts if configured (social posts only)
             cross_results: list[CrossPostResult] = []
@@ -391,6 +391,17 @@ class PublishService:
                 user_id=user_id,
                 notify=user.notify_publications,
             )
+
+    async def _mark_schedule_success(self, schedule_id: int, schedule_pk: int) -> None:
+        """Update schedule last_post_at and reset error counter on success."""
+        await self._schedules.update(
+            schedule_id,
+            PlatformScheduleUpdate(last_post_at=datetime.now(tz=UTC)),
+        )
+        try:
+            await self._redis.delete(f"schedule_errors:{schedule_pk}")
+        except Exception:
+            log.exception("publish_error_counter_reset_failed", schedule_id=schedule_pk)
 
     async def _disable_schedule(self, schedule: Any, log_event: str, **log_kwargs: Any) -> None:
         """Disable schedule + delete QStash crons (shared by E01 insufficient balance & E55 platform errors)."""

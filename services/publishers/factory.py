@@ -6,21 +6,26 @@ routers/publishing/pipeline/social/generation.py.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 import httpx
+from pydantic import SecretStr
 
 from .base import BasePublisher, TokenRefreshCallback
 
-if TYPE_CHECKING:
-    from bot.config import Settings
-    from db.client import SupabaseClient
+
+class PublisherSettings(Protocol):
+    """Minimal settings interface for publisher creation (no bot/ dependency)."""
+
+    vk_app_id: int
+    pinterest_app_id: str
+    pinterest_app_secret: SecretStr
 
 
 def create_publisher(
     platform: str,
     http_client: httpx.AsyncClient,
-    settings: Settings,
+    settings: PublisherSettings,
     on_token_refresh: TokenRefreshCallback | None = None,
 ) -> BasePublisher:
     """Create publisher for platform with proper credentials from settings."""
@@ -53,7 +58,7 @@ def create_publisher(
 
 
 def make_token_refresh_cb(
-    db: SupabaseClient,
+    db: Any,
     connection_id: int,
     enc_key: str,
 ) -> TokenRefreshCallback:
