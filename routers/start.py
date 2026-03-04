@@ -135,7 +135,7 @@ async def _handle_pinterest_deep_link(
             raw_credentials={
                 "access_token": tokens.get("access_token", ""),
                 "refresh_token": tokens.get("refresh_token", ""),
-                "expires_in": tokens.get("expires_in", 2592000),
+                "expires_at": tokens.get("expires_at", ""),
             },
         )
     except Exception:

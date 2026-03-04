@@ -9,6 +9,7 @@ H10: State token is HMAC-protected (E30) AND single-use via Redis NX lock.
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import structlog
@@ -21,6 +22,7 @@ log = structlog.get_logger()
 _PINTEREST_TOKEN_ENDPOINT = "https://api.pinterest.com/v5/oauth/token"  # noqa: S105
 PINTEREST_AUTH_TTL = 1800  # 30 min (E20)
 _OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
+_DEFAULT_EXPIRES_IN = 2_592_000  # 30 days in seconds (Pinterest default)
 
 
 class PinterestOAuthError(OAuthStateError):
@@ -94,9 +96,8 @@ class PinterestOAuthService:
                     "grant_type": "authorization_code",
                     "code": code,
                     "redirect_uri": self._redirect_uri,
-                    "client_id": self._app_id,
-                    "client_secret": self._app_secret,
                 },
+                auth=httpx.BasicAuth(self._app_id, self._app_secret),
             )
         except httpx.HTTPError as exc:
             log.error("pinterest_token_exchange_http_error", error=str(exc))
@@ -114,10 +115,17 @@ class PinterestOAuthService:
         if "access_token" not in data:
             raise PinterestOAuthError("No access_token in Pinterest response")
 
+        raw_expires = data.get("expires_in")
+        try:
+            expires_in = int(raw_expires) if raw_expires is not None else _DEFAULT_EXPIRES_IN
+        except (ValueError, TypeError):
+            expires_in = _DEFAULT_EXPIRES_IN
+        expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+
         return {
             "access_token": data["access_token"],
             "refresh_token": data.get("refresh_token", ""),
-            "expires_in": data.get("expires_in", 2592000),
+            "expires_at": expires_at,
         }
 
     async def _store_tokens(self, nonce: str, tokens: dict) -> None:

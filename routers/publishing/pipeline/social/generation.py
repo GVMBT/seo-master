@@ -494,8 +494,14 @@ async def publish_social_post(
             await callback.answer()
             return
 
-        # Get publisher for platform
-        publisher = _get_publisher(platform_type, http_client)
+        # Get publisher for platform (with token refresh to persist refreshed credentials)
+        from bot.config import get_settings as _get_settings
+        from services.publishers.factory import make_token_refresh_cb
+
+        _settings = _get_settings()
+        _enc_key = _settings.encryption_key.get_secret_value()
+        _on_refresh = make_token_refresh_cb(db, connection.id, _enc_key)
+        publisher = _get_publisher(platform_type, http_client, _settings, on_token_refresh=_on_refresh)
         content_type = _get_content_type(platform_type)
 
         # Append hashtags for VK/Telegram
@@ -809,22 +815,20 @@ async def more_posts_social(
 # ---------------------------------------------------------------------------
 
 
-def _get_publisher(platform_type: str, http_client: httpx.AsyncClient) -> Any:
-    """Get publisher instance for platform type."""
-    from services.publishers.pinterest import PinterestPublisher
-    from services.publishers.telegram import TelegramPublisher
-    from services.publishers.vk import VKPublisher
+def _get_publisher(
+    platform_type: str,
+    http_client: httpx.AsyncClient,
+    settings: Any = None,
+    on_token_refresh: Any = None,
+) -> Any:
+    """Get publisher instance for platform type with proper credentials."""
+    from services.publishers.factory import create_publisher
 
-    publishers = {
-        "telegram": lambda: TelegramPublisher(http_client),
-        "vk": lambda: VKPublisher(http_client),
-        "pinterest": lambda: PinterestPublisher(http_client=http_client),
-    }
-    factory = publishers.get(platform_type)
-    if not factory:
-        msg = f"Unknown social platform: {platform_type}"
-        raise ValueError(msg)
-    return factory()
+    if settings is None:
+        from bot.config import get_settings
+
+        settings = get_settings()
+    return create_publisher(platform_type, http_client, settings, on_token_refresh=on_token_refresh)
 
 
 def _get_content_type(platform_type: str) -> Literal["html", "telegram_html", "plain_text", "pin_text"]:
@@ -846,6 +850,6 @@ def _get_content_type(platform_type: str) -> Literal["html", "telegram_html", "p
 async def crosspost_stub(callback: CallbackQuery) -> None:
     """Stub handler for cross-post buttons until F6.4 is implemented."""
     await callback.answer(
-        "Кросс-постинг будет доступен в следующем обновлении.",  # noqa: RUF001
+        "Кросс-постинг будет доступен в следующем обновлении.",
         show_alert=True,
     )

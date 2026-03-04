@@ -112,9 +112,13 @@ def _make_pub_result():
 def _make_service() -> PublishService:
     mock_scheduler = MagicMock()
     mock_scheduler.delete_qstash_schedules = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.incr = AsyncMock(return_value=1)
+    mock_redis.expire = AsyncMock(return_value=True)
+    mock_redis.delete = AsyncMock(return_value=1)
     svc = PublishService(
         db=MagicMock(),
-        redis=MagicMock(),
+        redis=mock_redis,
         http_client=MagicMock(),
         ai_orchestrator=MagicMock(),
         image_storage=MagicMock(),
@@ -974,7 +978,7 @@ async def test_schedule_passed_to_pause_cr77c(
     mock_cm_cls: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """CR-77c: _pause_schedule_insufficient_balance uses schedule.id, not schedule_id param."""
+    """CR-77c: _disable_schedule uses schedule.id, not schedule_id param."""
     svc = _make_service()
     schedule = _make_schedule(id=42, qstash_schedule_ids=["qs_42"])
     svc._users.get_by_id = AsyncMock(return_value=_make_user())

@@ -173,7 +173,7 @@ class TestExchangeCode:
         tokens = await service._exchange_code("test_code_123")
         assert tokens["access_token"] == "pin_at"
         assert tokens["refresh_token"] == "pin_rt"
-        assert tokens["expires_in"] == 2592000
+        assert "expires_at" in tokens  # expires_in → expires_at (ISO datetime)
 
     async def test_no_access_token_raises(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -206,7 +206,7 @@ class TestExchangeCode:
         service = _make_service(handler)
         tokens = await service._exchange_code("code")
         assert tokens["refresh_token"] == ""
-        assert tokens["expires_in"] == 2592000
+        assert "expires_at" in tokens  # expires_in converted to ISO datetime
 
 
 # ---------------------------------------------------------------------------

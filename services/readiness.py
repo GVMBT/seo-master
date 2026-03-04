@@ -120,10 +120,13 @@ class ReadinessService:
         user_pubs = await self._publications.get_by_user(user_id)
         publication_count = len(user_pubs)
 
-        # Cost estimation: social posts are cheaper, no images
+        # Cost estimation
         if pipeline_type == "social":
-            # Social: no images in pipeline
-            effective_image_count = 0
+            raw_count = (category.image_settings or {}).get("count", 1)
+            try:
+                effective_image_count = max(0, int(raw_count))
+            except (ValueError, TypeError):
+                effective_image_count = 1
             estimated_cost = estimate_social_post_cost(images_count=effective_image_count)
         else:
             estimated_cost = estimate_article_cost(images_count=image_count)
