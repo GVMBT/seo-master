@@ -372,8 +372,12 @@ async def vk_group_select_deeplink(
 
     from datetime import UTC, datetime, timedelta
 
-    expires_in = int(result.get("expires_in") or 3600)
-    expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+    expires_in = int(result.get("expires_in") or 0)
+    expires_at = (
+        (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+        if expires_in > 0
+        else ""
+    )
 
     conn_svc = ConnectionService(db, http_client)
     group_id_str = str(group["id"])
