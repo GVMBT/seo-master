@@ -85,12 +85,12 @@ class TestBuildAuthorizeUrl:
         service, _ = _make_service()
         nonce = _nonce()
         url, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        assert "id.vk.com/authorize" in url
+        assert "id.vk.ru/authorize" in url
         assert "response_type=code" in url
         assert "client_id=123456" in url
         assert "code_challenge=" in url
         assert "code_challenge_method=S256" in url
-        assert "scope=wall,groups,photos" in url
+        assert "scope=wall+groups+photos" in url
         assert len(verifier) > 40
         assert nonce in state
 
@@ -297,3 +297,45 @@ class TestExchangeErrors:
 
         with pytest.raises(VKOAuthError, match="No access_token"):
             await service.handle_callback(code="code", state=state, device_id="dev")
+
+
+# ---------------------------------------------------------------------------
+# groups.get API errors
+# ---------------------------------------------------------------------------
+
+
+class TestFetchGroupsErrors:
+    async def test_api_error_returns_empty_list(self) -> None:
+        """groups.get returns VK API error → empty groups, OAuth still succeeds."""
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "oauth2/auth" in url:
+                return httpx.Response(200, json={
+                    "access_token": "tok",
+                    "refresh_token": "ref",
+                    "expires_in": 3600,
+                    "user_id": 42,
+                })
+            if "groups.get" in url:
+                return httpx.Response(200, json={
+                    "error": {
+                        "error_code": 15,
+                        "error_msg": "Access denied: no access to call this method",
+                    },
+                })
+            return httpx.Response(404)
+
+        service, redis = _make_service(handler=handler)
+        nonce = _nonce()
+        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        auth_data = json.dumps({"code_verifier": verifier, "user_id": 42})
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
+        redis.delete = AsyncMock()
+
+        user_id, parsed_nonce = await service.handle_callback(
+            code="code", state=state, device_id="dev",
+        )
+        assert user_id == 42
+        assert parsed_nonce == nonce

@@ -8,8 +8,8 @@ Source of truth:
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 
 Key facts (verified Feb 2026):
-- Authorize: https://id.vk.com/authorize
-- Token exchange: POST https://id.vk.com/oauth2/auth (x-www-form-urlencoded)
+- Authorize: https://id.vk.ru/authorize
+- Token exchange: POST https://id.vk.ru/oauth2/auth (x-www-form-urlencoded)
 - access_token TTL: 3600s (60 min), refresh_token TTL: 180 days
 - device_id: returned in callback, required for token exchange and refresh
 - scope offline: disabled — use refresh_token instead
@@ -34,8 +34,8 @@ from services.oauth.state import OAuthStateError, build_state, parse_and_verify_
 
 log = structlog.get_logger()
 
-_VK_AUTHORIZE_URL = "https://id.vk.com/authorize"
-_VK_TOKEN_URL = "https://id.vk.com/oauth2/auth"  # noqa: S105
+_VK_AUTHORIZE_URL = "https://id.vk.ru/authorize"
+_VK_TOKEN_URL = "https://id.vk.ru/oauth2/auth"  # noqa: S105
 _OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
 
 VK_API_VERSION = "5.199"
@@ -108,7 +108,7 @@ class VKOAuthService:
             f"response_type=code"
             f"&client_id={self._app_id}"
             f"&redirect_uri={self._redirect_uri}"
-            f"&scope=wall,groups,photos"
+            f"&scope=wall+groups+photos"
             f"&state={state}"
             f"&code_challenge={code_challenge}"
             f"&code_challenge_method=S256"
@@ -243,7 +243,18 @@ class VKOAuthService:
                 timeout=10,
             )
             data = resp.json()
+
+            if "error" in data:
+                err = data["error"]
+                log.error(
+                    "vk_groups_get_api_error",
+                    error_code=err.get("error_code"),
+                    error_msg=err.get("error_msg"),
+                )
+                return []
+
             items: list[dict] = data.get("response", {}).get("items", [])
+            log.info("vk_groups_get_result", count=len(items))
             return items
         except Exception:
             log.exception("vk_oauth_fetch_groups_failed")
