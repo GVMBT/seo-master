@@ -7,6 +7,7 @@ Redis storage, single-use nonce, error handling.
 from __future__ import annotations
 
 import json
+import secrets
 from unittest.mock import AsyncMock
 
 import httpx
@@ -20,6 +21,11 @@ from services.oauth.vk import VKOAuthError, VKOAuthService, _generate_pkce
 # ---------------------------------------------------------------------------
 
 _ENCRYPTION_KEY = "test-encryption-key-32chars-long!"
+
+
+def _nonce() -> str:
+    """Generate a valid 22-char nonce (same as production)."""
+    return secrets.token_urlsafe(16)
 
 
 def _make_service(
@@ -77,7 +83,8 @@ class TestPKCE:
 class TestBuildAuthorizeUrl:
     def test_returns_url_with_pkce_params(self) -> None:
         service, _ = _make_service()
-        url, verifier, state = service.build_authorize_url(user_id=42, nonce="test_nonce")
+        nonce = _nonce()
+        url, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
         assert "id.vk.com/authorize" in url
         assert "response_type=code" in url
         assert "client_id=123456" in url
@@ -85,15 +92,16 @@ class TestBuildAuthorizeUrl:
         assert "code_challenge_method=S256" in url
         assert "scope=wall,groups,photos" in url
         assert len(verifier) > 40
-        assert "." in state  # HMAC state format: user_id.nonce.hmac
+        assert nonce in state
 
     def test_state_contains_user_id_and_nonce(self) -> None:
         service, _ = _make_service()
-        _, _, state = service.build_authorize_url(user_id=42, nonce="abc123")
-        parts = state.split(".")
-        assert parts[0] == "42"
-        assert parts[1] == "abc123"
-        assert len(parts) == 3  # user_id.nonce.hmac
+        nonce = _nonce()
+        _, _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        assert state.startswith("42")
+        assert nonce in state
+        # user_id(2) + nonce(22) + hmac(64) = 88
+        assert len(state) == 2 + 22 + 64
 
 
 # ---------------------------------------------------------------------------
@@ -123,24 +131,22 @@ class TestHandleCallback:
         """Full callback flow: verify state → exchange code → fetch groups → store."""
         service, redis = _make_service(handler=self._mock_vk_api)
 
-        # Build state and store PKCE
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce="n1")
+        nonce = _nonce()
+        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
         auth_data = json.dumps({"code_verifier": verifier, "user_id": 42})
 
-        # Configure Redis mock
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
         redis.delete = AsyncMock()
 
-        user_id, nonce = await service.handle_callback(
+        user_id, parsed_nonce = await service.handle_callback(
             code="auth_code_123",
             state=state,
             device_id="device_abc",
         )
         assert user_id == 42
-        assert nonce == "n1"
+        assert parsed_nonce == nonce
 
-        # Verify result was stored in vk_oauth:{nonce}
         set_calls = [c for c in redis.set.call_args_list if "vk_oauth:" in str(c)]
         assert len(set_calls) >= 1
 
@@ -151,7 +157,7 @@ class TestHandleCallback:
         with pytest.raises(VKOAuthError):
             await service.handle_callback(
                 code="code",
-                state="invalid|state",
+                state="invalid_state_too_short",
                 device_id="dev",
             )
 
@@ -159,10 +165,10 @@ class TestHandleCallback:
         """Second use of same state should fail (H10)."""
         service, redis = _make_service()
 
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce="n1")
+        nonce = _nonce()
+        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
         auth_data = json.dumps({"code_verifier": verifier, "user_id": 42})
         redis.get = AsyncMock(return_value=auth_data)
-        # Simulate NX lock already taken (replay)
         redis.set = AsyncMock(return_value=False)
 
         with pytest.raises(VKOAuthError, match="replay"):
@@ -175,9 +181,10 @@ class TestHandleCallback:
     async def test_expired_session_raises(self) -> None:
         """Missing vk_auth:{nonce} in Redis → expired."""
         service, redis = _make_service()
-        _, _, state = service.build_authorize_url(user_id=42, nonce="n1")
+        nonce = _nonce()
+        _, _, state = service.build_authorize_url(user_id=42, nonce=nonce)
         redis.set = AsyncMock(return_value=True)
-        redis.get = AsyncMock(return_value=None)  # No PKCE data
+        redis.get = AsyncMock(return_value=None)
 
         with pytest.raises(VKOAuthError, match="expired"):
             await service.handle_callback(
@@ -253,7 +260,8 @@ class TestExchangeErrors:
             return httpx.Response(404)
 
         service, redis = _make_service(handler=handler)
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce="n1")
+        nonce = _nonce()
+        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(return_value=json.dumps({"code_verifier": verifier, "user_id": 42}))
 
@@ -267,7 +275,8 @@ class TestExchangeErrors:
             return httpx.Response(404)
 
         service, redis = _make_service(handler=handler)
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce="n1")
+        nonce = _nonce()
+        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(return_value=json.dumps({"code_verifier": verifier, "user_id": 42}))
 
@@ -281,7 +290,8 @@ class TestExchangeErrors:
             return httpx.Response(404)
 
         service, redis = _make_service(handler=handler)
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce="n1")
+        nonce = _nonce()
+        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(return_value=json.dumps({"code_verifier": verifier, "user_id": 42}))
 
