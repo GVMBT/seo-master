@@ -6,7 +6,7 @@ Write idempotency (CR-78a): no retry on POST/create operations
 (wall.post / photo upload could duplicate posts).
 
 Token refresh: access_token TTL=3600s (60 min), refreshed via
-POST https://id.vk.com/oauth2/auth (refresh_token grant).
+POST https://id.vk.ru/oauth2/auth (refresh_token grant).
 Pattern: same as PinterestPublisher._maybe_refresh_token().
 """
 
@@ -27,7 +27,7 @@ log = structlog.get_logger()
 VK_API_URL = "https://api.vk.ru/method"
 VK_API_VERSION = "5.199"
 _VK_TEXT_LIMIT = 16384
-_VK_TOKEN_URL = "https://id.vk.com/oauth2/auth"  # noqa: S105
+_VK_TOKEN_URL = "https://id.vk.ru/oauth2/auth"  # noqa: S105
 _REFRESH_THRESHOLD = timedelta(minutes=5)
 
 
@@ -81,7 +81,7 @@ class VKPublisher(BasePublisher):
             return str(creds["access_token"])
 
     async def _refresh_token(self, creds: dict[str, Any]) -> str:
-        """POST https://id.vk.com/oauth2/auth (refresh_token grant)."""
+        """POST https://id.vk.ru/oauth2/auth (refresh_token grant)."""
         resp = await self._client.post(
             _VK_TOKEN_URL,
             data={

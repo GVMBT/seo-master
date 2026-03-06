@@ -8,8 +8,8 @@ Source of truth:
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 
 Key facts (verified Feb 2026):
-- Authorize: https://id.vk.com/authorize
-- Token exchange: POST https://id.vk.com/oauth2/auth (x-www-form-urlencoded)
+- Authorize: https://id.vk.ru/authorize
+- Token exchange: POST https://id.vk.ru/oauth2/auth (x-www-form-urlencoded)
 - access_token TTL: 3600s (60 min), refresh_token TTL: 180 days
 - device_id: returned in callback, required for token exchange and refresh
 - scope offline: disabled — use refresh_token instead
