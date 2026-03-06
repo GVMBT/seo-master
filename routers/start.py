@@ -180,6 +180,7 @@ def _build_vk_oauth_service(
         redis=redis,
         encryption_key=settings.encryption_key.get_secret_value(),
         vk_app_id=settings.vk_app_id,
+        vk_app_secret=settings.vk_secure_key.get_secret_value(),
         redirect_uri=redirect_uri,
     )
 

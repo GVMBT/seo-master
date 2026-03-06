@@ -590,6 +590,7 @@ async def pipeline_start_connect_vk(
         redis=redis,
         encryption_key=settings.encryption_key.get_secret_value(),
         vk_app_id=settings.vk_app_id,
+        vk_app_secret=settings.vk_secure_key.get_secret_value(),
         redirect_uri=f"{base_url}/api/auth/vk/callback",
     )
     nonce = vk_svc.generate_nonce()

@@ -1,7 +1,7 @@
-"""Tests for api/vk_auth.py — VK ID OAuth 2.1 aiohttp handlers.
+"""Tests for api/vk_auth.py — VK OAuth aiohttp handlers.
 
 Covers: redirect (302 + correct params), callback happy path,
-error param (user denial), invalid state (403), missing device_id fallback.
+error param (user denial), invalid state (403).
 """
 
 from __future__ import annotations
@@ -45,7 +45,6 @@ def _make_redirect_request(
 def _make_callback_request(
     code: str = "",
     state: str = "",
-    device_id: str = "",
     error: str = "",
     error_description: str = "",
     bot_username: str = "seo_master_bot",
@@ -56,8 +55,6 @@ def _make_callback_request(
         query_parts.append(f"code={code}")
     if state:
         query_parts.append(f"state={state}")
-    if device_id:
-        query_parts.append(f"device_id={device_id}")
     if error:
         query_parts.append(f"error={error}")
     if error_description:
@@ -81,6 +78,8 @@ def _mock_settings() -> MagicMock:
     settings.encryption_key = MagicMock()
     settings.encryption_key.get_secret_value.return_value = "x" * 32
     settings.vk_app_id = 123456
+    settings.vk_secure_key = MagicMock()
+    settings.vk_secure_key.get_secret_value.return_value = "test_secret"
     return settings
 
 
@@ -116,11 +115,10 @@ class TestVKAuthRedirect:
 
         mock_service = MagicMock()
         mock_service.build_authorize_url.return_value = (
-            "https://id.vk.com/authorize?client_id=123",
-            "verifier_abc",
+            "https://oauth.vk.com/authorize?client_id=123",
             "state_xyz",
         )
-        mock_service.store_pkce = AsyncMock()
+        mock_service.store_auth = AsyncMock()
 
         with (
             patch("api.vk_auth.get_settings", return_value=_mock_settings()),
@@ -130,19 +128,18 @@ class TestVKAuthRedirect:
             await vk_auth_redirect(request)
 
         location = exc_info.value.location
-        assert "id.vk.com/authorize" in location
-        mock_service.store_pkce.assert_awaited_once_with("test_nonce", "verifier_abc", 42)
+        assert "oauth.vk.com/authorize" in location
+        mock_service.store_auth.assert_awaited_once_with("test_nonce", 42)
 
-    async def test_redirect_calls_store_pkce(self) -> None:
+    async def test_redirect_calls_store_auth(self) -> None:
         request = _make_redirect_request(user_id="99", nonce="n1")
 
         mock_service = MagicMock()
         mock_service.build_authorize_url.return_value = (
-            "https://id.vk.com/authorize?foo=bar",
-            "my_verifier",
+            "https://oauth.vk.com/authorize?foo=bar",
             "my_state",
         )
-        mock_service.store_pkce = AsyncMock()
+        mock_service.store_auth = AsyncMock()
 
         with (
             patch("api.vk_auth.get_settings", return_value=_mock_settings()),
@@ -151,7 +148,7 @@ class TestVKAuthRedirect:
         ):
             await vk_auth_redirect(request)
 
-        mock_service.store_pkce.assert_awaited_once_with("n1", "my_verifier", 99)
+        mock_service.store_auth.assert_awaited_once_with("n1", 99)
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +166,6 @@ class TestVKAuthCallback:
             response = await vk_auth_callback(request)
         assert response.status == 200
         assert "text/html" in response.content_type
-        assert "отменена" in response.text.lower()
 
     async def test_missing_code_returns_400(self) -> None:
         request = _make_callback_request(code="", state="some_state")
@@ -186,11 +182,7 @@ class TestVKAuthCallback:
         assert "Missing" in response.text
 
     async def test_oauth_error_returns_403(self) -> None:
-        request = _make_callback_request(
-            code="bad_code",
-            state="bad_state",
-            device_id="dev123",
-        )
+        request = _make_callback_request(code="bad_code", state="bad_state")
 
         mock_service = AsyncMock()
         mock_service.handle_callback = AsyncMock(side_effect=VKOAuthError("HMAC failed"))
@@ -207,7 +199,6 @@ class TestVKAuthCallback:
         request = _make_callback_request(
             code="good_code",
             state="valid_state",
-            device_id="dev_abc",
             bot_username="testbot",
         )
 
@@ -226,35 +217,10 @@ class TestVKAuthCallback:
         assert "testbot" in location
         assert "vk_auth_nonce_abc" in location
 
-    async def test_missing_device_id_generates_fallback(self) -> None:
-        """device_id is required for token exchange — fallback if missing."""
-        request = _make_callback_request(
-            code="code",
-            state="state",
-            device_id="",  # missing
-            bot_username="mybot",
-        )
-
-        mock_service = AsyncMock()
-        mock_service.handle_callback = AsyncMock(return_value=(1, "n1"))
-
-        with (
-            patch("api.vk_auth.get_settings", return_value=_mock_settings()),
-            patch("api.vk_auth._build_vk_oauth_service", return_value=mock_service),
-            pytest.raises(web.HTTPFound),
-        ):
-            await vk_auth_callback(request)
-
-        # Verify handle_callback was called with a non-empty device_id
-        call_args = mock_service.handle_callback.call_args
-        actual_device_id = call_args.kwargs.get("device_id") or call_args[1].get("device_id", call_args[0][2])
-        assert len(actual_device_id) > 0
-
     async def test_deep_link_contains_nonce(self) -> None:
         request = _make_callback_request(
             code="code",
             state="state",
-            device_id="dev",
             bot_username="mybot",
         )
 
