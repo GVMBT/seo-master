@@ -85,12 +85,12 @@ class TestBuildAuthorizeUrl:
         service, _ = _make_service()
         nonce = _nonce()
         url, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        assert "id.vk.com/authorize" in url
+        assert "id.vk.ru/authorize" in url
         assert "response_type=code" in url
         assert "client_id=123456" in url
         assert "code_challenge=" in url
         assert "code_challenge_method=S256" in url
-        assert "scope=wall,groups,photos" in url
+        assert "scope=wall+groups+photos" in url
         assert len(verifier) > 40
         assert nonce in state
 
