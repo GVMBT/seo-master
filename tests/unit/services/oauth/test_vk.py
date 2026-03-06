@@ -85,15 +85,15 @@ class TestBuildAuthorizeUrl:
         assert "code_challenge_method=S256" in url
         assert "scope=wall,groups,photos" in url
         assert len(verifier) > 40
-        assert "|" in state  # HMAC state format
+        assert "." in state  # HMAC state format: user_id.nonce.hmac
 
     def test_state_contains_user_id_and_nonce(self) -> None:
         service, _ = _make_service()
         _, _, state = service.build_authorize_url(user_id=42, nonce="abc123")
-        parts = state.split("|")
+        parts = state.split(".")
         assert parts[0] == "42"
         assert parts[1] == "abc123"
-        assert len(parts) == 3  # user_id|nonce|hmac
+        assert len(parts) == 3  # user_id.nonce.hmac
 
 
 # ---------------------------------------------------------------------------
