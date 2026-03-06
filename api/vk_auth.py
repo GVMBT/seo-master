@@ -10,6 +10,7 @@ import html
 import secrets
 from urllib.parse import quote
 
+import sentry_sdk
 import structlog
 from aiohttp import web
 
@@ -84,6 +85,7 @@ async def vk_auth_callback(request: web.Request) -> web.Response:
         _user_id, nonce = await service.handle_callback(code, state, device_id)
     except VKOAuthError:
         log.exception("vk_callback_failed")
+        sentry_sdk.capture_exception()
         return web.Response(status=403, text="Authorization failed. Please try again.")
 
     bot_username: str = request.app["bot_username"]

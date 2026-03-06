@@ -9,6 +9,7 @@ Source of truth:
 
 from urllib.parse import quote, urlencode
 
+import sentry_sdk
 import structlog
 from aiohttp import web
 
@@ -70,6 +71,7 @@ async def pinterest_callback(request: web.Request) -> web.Response:
         _user_id, nonce = await service.handle_callback(code, state)
     except PinterestOAuthError:
         log.exception("pinterest_callback_failed")
+        sentry_sdk.capture_exception()
         return web.Response(status=403, text="Authorization failed. Please try again.")
 
     bot_username: str = request.app["bot_username"]
