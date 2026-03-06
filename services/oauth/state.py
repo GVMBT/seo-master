@@ -29,17 +29,17 @@ class OAuthStateError(AppError):
 
 
 def build_state(user_id: int, nonce: str, encryption_key: str) -> str:
-    """Build state param: {user_id}|{nonce}|{hmac_hex}.
+    """Build state param: {user_id}.{nonce}.{hmac_hex}.
 
     HMAC-SHA256(user_id + nonce, ENCRYPTION_KEY) prevents CSRF (E30).
     """
-    payload = f"{user_id}|{nonce}"
+    payload = f"{user_id}.{nonce}"
     mac = hmac.new(
         encryption_key.encode(),
         payload.encode(),
         hashlib.sha256,
     ).hexdigest()
-    return f"{payload}|{mac}"
+    return f"{payload}.{mac}"
 
 
 def parse_and_verify_state(
@@ -48,10 +48,10 @@ def parse_and_verify_state(
 ) -> tuple[int, str]:
     """Parse state param and verify HMAC. Returns (user_id, nonce).
 
-    State format: {user_id}|{nonce}|{hmac_hex}
+    State format: {user_id}.{nonce}.{hmac_hex}
     Raises OAuthStateError on invalid/tampered state (E30).
     """
-    parts = state.split("|", maxsplit=2)
+    parts = state.split(".", maxsplit=2)
     expected_parts = 3
     if len(parts) != expected_parts:
         raise OAuthStateError("Invalid state format")
@@ -65,7 +65,7 @@ def parse_and_verify_state(
 
     expected_mac = hmac.new(
         encryption_key.encode(),
-        f"{user_id}|{nonce}".encode(),
+        f"{user_id}.{nonce}".encode(),
         hashlib.sha256,
     ).hexdigest()
 
