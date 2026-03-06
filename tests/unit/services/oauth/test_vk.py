@@ -1,6 +1,6 @@
-"""Tests for services/oauth/vk.py — VK ID OAuth 2.1 + PKCE service.
+"""Tests for services/oauth/vk.py — VK OAuth service.
 
-Covers: PKCE generation, HMAC state, code exchange, groups fetch,
+Covers: authorize URL, code exchange, groups fetch,
 Redis storage, single-use nonce, error handling.
 """
 
@@ -14,13 +14,14 @@ import httpx
 import pytest
 
 from cache.keys import CacheKeys
-from services.oauth.vk import VKOAuthError, VKOAuthService, _generate_pkce
+from services.oauth.vk import VKOAuthError, VKOAuthService
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 _ENCRYPTION_KEY = "test-encryption-key-32chars-long!"
+_APP_SECRET = "test_app_secret_value"
 
 
 def _nonce() -> str:
@@ -51,28 +52,10 @@ def _make_service(
         redis=redis,
         encryption_key=_ENCRYPTION_KEY,
         vk_app_id=123456,
+        vk_app_secret=_APP_SECRET,
         redirect_uri="https://example.com/api/auth/vk/callback",
     )
     return service, redis
-
-
-# ---------------------------------------------------------------------------
-# PKCE generation
-# ---------------------------------------------------------------------------
-
-
-class TestPKCE:
-    def test_generate_pkce_returns_pair(self) -> None:
-        verifier, challenge = _generate_pkce()
-        assert len(verifier) > 40  # token_urlsafe(64)
-        assert len(challenge) > 20  # base64url(sha256(...))
-        assert "=" not in challenge  # padding stripped
-
-    def test_generate_pkce_different_each_time(self) -> None:
-        v1, c1 = _generate_pkce()
-        v2, c2 = _generate_pkce()
-        assert v1 != v2
-        assert c1 != c2
 
 
 # ---------------------------------------------------------------------------
@@ -81,23 +64,20 @@ class TestPKCE:
 
 
 class TestBuildAuthorizeUrl:
-    def test_returns_url_with_pkce_params(self) -> None:
+    def test_returns_url_with_params(self) -> None:
         service, _ = _make_service()
         nonce = _nonce()
-        url, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        assert "id.vk.ru/authorize" in url
+        url, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        assert "oauth.vk.com/authorize" in url
         assert "response_type=code" in url
         assert "client_id=123456" in url
-        assert "code_challenge=" in url
-        assert "code_challenge_method=S256" in url
-        assert "scope=wall+groups+photos" in url
-        assert len(verifier) > 40
+        assert "scope=wall,groups,photos,offline" in url
         assert nonce in state
 
     def test_state_contains_user_id_and_nonce(self) -> None:
         service, _ = _make_service()
         nonce = _nonce()
-        _, _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
         assert state.startswith("42")
         assert nonce in state
         # user_id(2) + nonce(22) + hmac(64) = 88
@@ -105,19 +85,18 @@ class TestBuildAuthorizeUrl:
 
 
 # ---------------------------------------------------------------------------
-# store_pkce
+# store_auth
 # ---------------------------------------------------------------------------
 
 
-class TestStorePkce:
-    async def test_stores_code_verifier_in_redis(self) -> None:
+class TestStoreAuth:
+    async def test_stores_user_id_in_redis(self) -> None:
         service, redis = _make_service()
-        await service.store_pkce("nonce123", "verifier_abc", 42)
+        await service.store_auth("nonce123", 42)
         redis.set.assert_called_once()
         key = redis.set.call_args[0][0]
         data = json.loads(redis.set.call_args[0][1])
         assert key == CacheKeys.vk_auth("nonce123")
-        assert data["code_verifier"] == "verifier_abc"
         assert data["user_id"] == 42
 
 
@@ -128,12 +107,12 @@ class TestStorePkce:
 
 class TestHandleCallback:
     async def test_happy_path(self) -> None:
-        """Full callback flow: verify state → exchange code → fetch groups → store."""
+        """Full callback flow: verify state -> exchange code -> fetch groups -> store."""
         service, redis = _make_service(handler=self._mock_vk_api)
 
         nonce = _nonce()
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        auth_data = json.dumps({"code_verifier": verifier, "user_id": 42})
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        auth_data = json.dumps({"user_id": 42})
 
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
@@ -142,7 +121,6 @@ class TestHandleCallback:
         user_id, parsed_nonce = await service.handle_callback(
             code="auth_code_123",
             state=state,
-            device_id="device_abc",
         )
         assert user_id == 42
         assert parsed_nonce == nonce
@@ -158,7 +136,6 @@ class TestHandleCallback:
             await service.handle_callback(
                 code="code",
                 state="invalid_state_too_short",
-                device_id="dev",
             )
 
     async def test_replay_attack_blocked(self) -> None:
@@ -166,8 +143,8 @@ class TestHandleCallback:
         service, redis = _make_service()
 
         nonce = _nonce()
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        auth_data = json.dumps({"code_verifier": verifier, "user_id": 42})
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        auth_data = json.dumps({"user_id": 42})
         redis.get = AsyncMock(return_value=auth_data)
         redis.set = AsyncMock(return_value=False)
 
@@ -175,14 +152,13 @@ class TestHandleCallback:
             await service.handle_callback(
                 code="code",
                 state=state,
-                device_id="dev",
             )
 
     async def test_expired_session_raises(self) -> None:
-        """Missing vk_auth:{nonce} in Redis → expired."""
+        """Missing vk_auth:{nonce} in Redis -> expired."""
         service, redis = _make_service()
         nonce = _nonce()
-        _, _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(return_value=None)
 
@@ -190,17 +166,15 @@ class TestHandleCallback:
             await service.handle_callback(
                 code="code",
                 state=state,
-                device_id="dev",
             )
 
     @staticmethod
     async def _mock_vk_api(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "oauth2/auth" in url:
+        if "oauth.vk.com/access_token" in url:
             return httpx.Response(200, json={
                 "access_token": "new_access_token",
-                "refresh_token": "new_refresh_token",
-                "expires_in": 3600,
+                "expires_in": 86400,
                 "user_id": 42,
             })
         if "groups.get" in url:
@@ -255,48 +229,48 @@ class TestGetOAuthResult:
 class TestExchangeErrors:
     async def test_http_error_during_exchange(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth2/auth" in str(request.url):
+            if "oauth.vk.com/access_token" in str(request.url):
                 raise httpx.ConnectError("VK down")
             return httpx.Response(404)
 
         service, redis = _make_service(handler=handler)
         nonce = _nonce()
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
         redis.set = AsyncMock(return_value=True)
-        redis.get = AsyncMock(return_value=json.dumps({"code_verifier": verifier, "user_id": 42}))
+        redis.get = AsyncMock(return_value=json.dumps({"user_id": 42}))
 
         with pytest.raises(VKOAuthError, match="HTTP error"):
-            await service.handle_callback(code="code", state=state, device_id="dev")
+            await service.handle_callback(code="code", state=state)
 
     async def test_non_200_response(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth2/auth" in str(request.url):
+            if "oauth.vk.com/access_token" in str(request.url):
                 return httpx.Response(400, json={"error": "invalid_code"})
             return httpx.Response(404)
 
         service, redis = _make_service(handler=handler)
         nonce = _nonce()
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
         redis.set = AsyncMock(return_value=True)
-        redis.get = AsyncMock(return_value=json.dumps({"code_verifier": verifier, "user_id": 42}))
+        redis.get = AsyncMock(return_value=json.dumps({"user_id": 42}))
 
         with pytest.raises(VKOAuthError, match="HTTP 400"):
-            await service.handle_callback(code="code", state=state, device_id="dev")
+            await service.handle_callback(code="code", state=state)
 
     async def test_no_access_token_in_response(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth2/auth" in str(request.url):
+            if "oauth.vk.com/access_token" in str(request.url):
                 return httpx.Response(200, json={"error": "invalid_grant"})
             return httpx.Response(404)
 
         service, redis = _make_service(handler=handler)
         nonce = _nonce()
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
         redis.set = AsyncMock(return_value=True)
-        redis.get = AsyncMock(return_value=json.dumps({"code_verifier": verifier, "user_id": 42}))
+        redis.get = AsyncMock(return_value=json.dumps({"user_id": 42}))
 
         with pytest.raises(VKOAuthError, match="No access_token"):
-            await service.handle_callback(code="code", state=state, device_id="dev")
+            await service.handle_callback(code="code", state=state)
 
 
 # ---------------------------------------------------------------------------
@@ -306,15 +280,14 @@ class TestExchangeErrors:
 
 class TestFetchGroupsErrors:
     async def test_api_error_returns_empty_list(self) -> None:
-        """groups.get returns VK API error → empty groups, OAuth still succeeds."""
+        """groups.get returns VK API error -> empty groups, OAuth still succeeds."""
 
         async def handler(request: httpx.Request) -> httpx.Response:
             url = str(request.url)
-            if "oauth2/auth" in url:
+            if "oauth.vk.com/access_token" in url:
                 return httpx.Response(200, json={
                     "access_token": "tok",
-                    "refresh_token": "ref",
-                    "expires_in": 3600,
+                    "expires_in": 86400,
                     "user_id": 42,
                 })
             if "groups.get" in url:
@@ -328,14 +301,14 @@ class TestFetchGroupsErrors:
 
         service, redis = _make_service(handler=handler)
         nonce = _nonce()
-        _, verifier, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        auth_data = json.dumps({"code_verifier": verifier, "user_id": 42})
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        auth_data = json.dumps({"user_id": 42})
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
         redis.delete = AsyncMock()
 
         user_id, parsed_nonce = await service.handle_callback(
-            code="code", state=state, device_id="dev",
+            code="code", state=state,
         )
         assert user_id == 42
         assert parsed_nonce == nonce

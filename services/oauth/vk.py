@@ -1,23 +1,21 @@
-"""VK ID OAuth 2.1 service — PKCE Authorization Code Flow.
+"""VK OAuth service — Authorization Code Flow via oauth.vk.com.
 
-VK migrated to OAuth 2.1 (id.vk.com), Implicit Flow no longer works.
-All token exchanges require PKCE (code_verifier + code_challenge S256).
+Uses the classic VK OAuth (oauth.vk.com) which provides full VK API access
+(groups.get, wall.post, photos). VK ID (id.vk.ru) tokens do NOT support
+VK API methods (error 1051).
 
 Source of truth:
 - docs/API_CONTRACTS.md section 3.5 (VK API)
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 
-Key facts (verified Feb 2026):
-- Authorize: https://id.vk.ru/authorize
-- Token exchange: POST https://id.vk.ru/oauth2/auth (x-www-form-urlencoded)
-- access_token TTL: 3600s (60 min), refresh_token TTL: 180 days
-- device_id: returned in callback, required for token exchange and refresh
-- scope offline: disabled — use refresh_token instead
+Key facts:
+- Authorize: https://oauth.vk.com/authorize
+- Token exchange: https://oauth.vk.com/access_token (requires client_secret)
+- No PKCE — uses client_secret instead
+- access_token TTL: 86400s (24h) or 0 (infinite with offline scope)
 """
 
-import base64
 import contextlib
-import hashlib
 import json
 import secrets
 from dataclasses import dataclass, field
@@ -34,8 +32,8 @@ from services.oauth.state import OAuthStateError, build_state, parse_and_verify_
 
 log = structlog.get_logger()
 
-_VK_AUTHORIZE_URL = "https://id.vk.ru/authorize"
-_VK_TOKEN_URL = "https://id.vk.ru/oauth2/auth"  # noqa: S105
+_VK_AUTHORIZE_URL = "https://oauth.vk.com/authorize"
+_VK_TOKEN_URL = "https://oauth.vk.com/access_token"  # noqa: S105
 _OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
 
 VK_API_VERSION = "5.199"
@@ -67,19 +65,8 @@ class VKDeepLinkResult:
     from_pipeline: bool = False
 
 
-def _generate_pkce() -> tuple[str, str]:
-    """Generate PKCE code_verifier and code_challenge (S256).
-
-    Returns (code_verifier, code_challenge).
-    """
-    code_verifier = secrets.token_urlsafe(64)
-    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
-    code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    return code_verifier, code_challenge
-
-
 class VKOAuthService:
-    """VK ID OAuth 2.1 + PKCE — exchange code for tokens, fetch groups."""
+    """VK OAuth — exchange code for tokens, fetch groups."""
 
     def __init__(
         self,
@@ -87,53 +74,51 @@ class VKOAuthService:
         redis: RedisClient,
         encryption_key: str,
         vk_app_id: int,
+        vk_app_secret: str,
         redirect_uri: str,
     ) -> None:
         self._http = http_client
         self._redis = redis
         self._encryption_key = encryption_key
         self._app_id = vk_app_id
+        self._app_secret = vk_app_secret
         self._redirect_uri = redirect_uri
 
-    def build_authorize_url(self, user_id: int, nonce: str) -> tuple[str, str, str]:
-        """Build VK ID authorize URL with PKCE + HMAC state.
+    def build_authorize_url(self, user_id: int, nonce: str) -> tuple[str, str]:
+        """Build VK authorize URL with HMAC state.
 
-        Returns (authorize_url, code_verifier, state).
-        Caller must await store_pkce() to persist code_verifier in Redis.
+        Returns (authorize_url, state).
         """
-        code_verifier, code_challenge = _generate_pkce()
         state = build_state(user_id, nonce, self._encryption_key)
 
         params = (
-            f"response_type=code"
-            f"&client_id={self._app_id}"
+            f"client_id={self._app_id}"
+            f"&display=page"
             f"&redirect_uri={self._redirect_uri}"
-            f"&scope=wall+groups+photos"
+            f"&scope=wall,groups,photos,offline"
+            f"&response_type=code"
+            f"&v={VK_API_VERSION}"
             f"&state={state}"
-            f"&code_challenge={code_challenge}"
-            f"&code_challenge_method=S256"
         )
-        return f"{_VK_AUTHORIZE_URL}?{params}", code_verifier, state
+        return f"{_VK_AUTHORIZE_URL}?{params}", state
 
-    async def store_pkce(self, nonce: str, code_verifier: str, user_id: int) -> None:
-        """Store PKCE code_verifier + user_id in Redis (TTL 30 min)."""
-        data = json.dumps({"code_verifier": code_verifier, "user_id": user_id})
+    async def store_auth(self, nonce: str, user_id: int) -> None:
+        """Store user_id in Redis for callback verification (TTL 30 min)."""
+        data = json.dumps({"user_id": user_id})
         await self._redis.set(CacheKeys.vk_auth(nonce), data, ex=VK_AUTH_TTL)
 
     async def handle_callback(
         self,
         code: str,
         state: str,
-        device_id: str,
     ) -> tuple[int, str]:
         """Full OAuth callback flow. Returns (user_id, nonce).
 
         1. Validate HMAC state (E30)
         2. Ensure single-use via Redis NX lock (H10)
-        3. Retrieve code_verifier from Redis
-        4. Exchange code for tokens via VK ID API
-        5. Fetch user's admin/editor groups
-        6. Store tokens + groups in Redis
+        3. Exchange code for tokens via oauth.vk.com
+        4. Fetch user's admin/editor groups
+        5. Store tokens + groups in Redis
         """
         try:
             user_id, nonce = parse_and_verify_state(state, self._encryption_key)
@@ -147,25 +132,19 @@ class VKOAuthService:
             log.warning("vk_oauth_state_replay", user_id=user_id, nonce=nonce)
             raise VKOAuthError("OAuth state already used (replay)")
 
-        # Retrieve code_verifier from Redis
+        # Verify auth session exists in Redis
         auth_raw = await self._redis.get(CacheKeys.vk_auth(nonce))
         if not auth_raw:
             raise VKOAuthError("VK auth session expired or not found")
 
-        try:
-            auth_data = json.loads(auth_raw)
-            code_verifier = auth_data["code_verifier"]
-        except (json.JSONDecodeError, KeyError) as exc:
-            raise VKOAuthError("Invalid VK auth session data") from exc
-
         # Exchange code for tokens
-        tokens = await self._exchange_code(code, code_verifier, device_id, state)
+        tokens = await self._exchange_code(code)
 
         # Fetch groups with new access_token
         groups = await self._fetch_groups(tokens["access_token"])
 
         # Store complete OAuth result in Redis
-        await self._store_result(nonce, tokens, groups, device_id)
+        await self._store_result(nonce, tokens, groups)
 
         # Clean up auth session
         await self._redis.delete(CacheKeys.vk_auth(nonce))
@@ -185,27 +164,17 @@ class VKOAuthService:
         except (json.JSONDecodeError, TypeError):
             return None
 
-    async def _exchange_code(
-        self,
-        code: str,
-        code_verifier: str,
-        device_id: str,
-        state: str,
-    ) -> dict:
-        """Exchange authorization code for tokens via VK ID API."""
+    async def _exchange_code(self, code: str) -> dict:
+        """Exchange authorization code for tokens via oauth.vk.com."""
         try:
-            resp = await self._http.post(
+            resp = await self._http.get(
                 _VK_TOKEN_URL,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": self._redirect_uri,
+                params={
                     "client_id": str(self._app_id),
-                    "device_id": device_id,
-                    "code_verifier": code_verifier,
-                    "state": state,
+                    "client_secret": self._app_secret,
+                    "redirect_uri": self._redirect_uri,
+                    "code": code,
                 },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=15,
             )
         except httpx.HTTPError as exc:
@@ -223,8 +192,7 @@ class VKOAuthService:
 
         return {
             "access_token": data["access_token"],
-            "refresh_token": data.get("refresh_token", ""),
-            "expires_in": data.get("expires_in", 3600),
+            "expires_in": data.get("expires_in", 0),
             "user_id": data.get("user_id"),
         }
 
@@ -265,16 +233,12 @@ class VKOAuthService:
         nonce: str,
         tokens: dict,
         groups: list[dict],
-        device_id: str,
     ) -> None:
         """Store OAuth result in Redis: vk_oauth:{nonce}, TTL=30min."""
-        # Compact groups to minimize Redis storage
         compact_groups = [{"id": g["id"], "name": g.get("name", "")} for g in groups]
         result = {
             "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
             "expires_in": tokens["expires_in"],
-            "device_id": device_id,
             "groups": compact_groups,
         }
         await self._redis.set(
@@ -284,7 +248,7 @@ class VKOAuthService:
         )
 
     # ------------------------------------------------------------------
-    # Meta storage (nonce → project_id, used by toolbox & pipeline)
+    # Meta storage (nonce -> project_id, used by toolbox & pipeline)
     # ------------------------------------------------------------------
 
     async def store_meta(
@@ -293,7 +257,7 @@ class VKOAuthService:
         project_id: int,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        """Store nonce → project_id mapping in Redis (30 min TTL)."""
+        """Store nonce -> project_id mapping in Redis (30 min TTL)."""
         data: dict[str, Any] = {"project_id": project_id}
         if extra:
             data.update(extra)
@@ -343,16 +307,20 @@ class VKOAuthService:
                 project_id = int(meta["project_id"])
             from_pipeline = meta.get("from_pipeline") is True
 
-        expires_in = int(result.get("expires_in") or 3600)
-        expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+        expires_in = int(result.get("expires_in") or 0)
+        expires_at = (
+            (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+            if expires_in > 0
+            else ""
+        )
 
         return VKDeepLinkResult(
             groups=groups,
             project_id=project_id,
             access_token=str(result.get("access_token", "")),
-            refresh_token=str(result.get("refresh_token", "")),
+            refresh_token="",
             expires_at=expires_at,
-            device_id=str(result.get("device_id", "")),
+            device_id="",
             raw_result=result,
             from_pipeline=from_pipeline,
         )
@@ -389,6 +357,5 @@ class VKOAuthService:
 
         Requires self._redirect_uri to be set (includes base_url).
         """
-        # Extract base_url from redirect_uri (remove /api/auth/vk/callback)
         base_url = self._redirect_uri.rsplit("/api/auth/vk/callback", 1)[0]
         return f"{base_url}/api/auth/vk?user_id={user_id}&nonce={nonce}"

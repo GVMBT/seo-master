@@ -180,6 +180,7 @@ def _build_vk_oauth_service(
         redis=redis,
         encryption_key=settings.encryption_key.get_secret_value(),
         vk_app_id=settings.vk_app_id,
+        vk_app_secret=settings.vk_secure_key.get_secret_value(),
         redirect_uri=redirect_uri,
     )
 
@@ -371,8 +372,12 @@ async def vk_group_select_deeplink(
 
     from datetime import UTC, datetime, timedelta
 
-    expires_in = int(result.get("expires_in") or 3600)
-    expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+    expires_in = int(result.get("expires_in") or 0)
+    expires_at = (
+        (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+        if expires_in > 0
+        else ""
+    )
 
     conn_svc = ConnectionService(db, http_client)
     group_id_str = str(group["id"])
