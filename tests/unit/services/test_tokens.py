@@ -12,12 +12,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from services.tokens import (
-    COST_AUDIT,
-    COST_COMPETITOR,
     COST_DESCRIPTION,
     COST_PER_100_WORDS,
     COST_PER_IMAGE,
-    COST_REVIEW_EACH,
     TokenService,
     _avg_cost_by_platform,
     estimate_article_cost,
@@ -98,17 +95,8 @@ class TestCostConstants:
     def test_per_image(self) -> None:
         assert COST_PER_IMAGE == 30
 
-    def test_audit(self) -> None:
-        assert COST_AUDIT == 50
-
-    def test_competitor(self) -> None:
-        assert COST_COMPETITOR == 50
-
     def test_description(self) -> None:
         assert COST_DESCRIPTION == 20
-
-    def test_review_each(self) -> None:
-        assert COST_REVIEW_EACH == 10
 
 
 # ---------------------------------------------------------------------------

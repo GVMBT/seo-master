@@ -181,6 +181,7 @@ def _build_vk_oauth_service(
         vk_app_id=settings.vk_app_id,
         vk_app_secret=settings.vk_secure_key.get_secret_value(),
         redirect_uri=redirect_uri,
+        vk_service_key=settings.vk_service_key.get_secret_value(),
     )
 
 

@@ -142,6 +142,8 @@ class VKOAuthService:
         vk_app_id: int,
         vk_app_secret: str,
         redirect_uri: str,
+        *,
+        vk_service_key: str = "",
     ) -> None:
         self._http = http_client
         self._redis = redis
@@ -149,6 +151,7 @@ class VKOAuthService:
         self._app_id = vk_app_id
         self._app_secret = vk_app_secret
         self._redirect_uri = redirect_uri
+        self._service_key = vk_service_key
 
     async def resolve_group(self, group_id_or_name: str) -> tuple[int, str]:
         """Resolve VK group by numeric ID or screen_name.
@@ -211,7 +214,15 @@ class VKOAuthService:
         return int(group["id"]), str(group.get("name", ""))
 
     async def _get_service_token(self) -> str:
-        """Get VK service token via client_credentials grant."""
+        """Get VK service token.
+
+        Uses pre-configured service key if available (from VK app settings).
+        Falls back to client_credentials grant.
+        """
+        # Static service key from VK app settings — no HTTP call needed
+        if self._service_key:
+            return self._service_key
+
         try:
             resp = await self._http.get(
                 _VK_TOKEN_URL,
