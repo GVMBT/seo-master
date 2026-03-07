@@ -334,13 +334,15 @@ class AIOrchestrator:
             },
         }
 
-        # Budget tasks use price sorting (no max_price — it blocks endpoints
-        # when combined with require_parameters + json_schema)
+        # Budget tasks use price sorting
         if request.task in BUDGET_TASKS:
             extra_body["provider"]["sort"] = "price"
         else:
-            # Non-budget tasks (article, image) need
-            # strict parameter matching for quality
+            extra_body["provider"]["require_parameters"] = True
+
+        # Structured output tasks need providers that support json_schema,
+        # even budget ones (otherwise cheap providers return errors)
+        if request.response_schema and request.task in STRUCTURED_TASKS:
             extra_body["provider"]["require_parameters"] = True
 
         # Response healing plugin for structured tasks
@@ -418,8 +420,22 @@ class AIOrchestrator:
                         message="Failed to parse AI response as JSON after healing",
                     )
 
-        # OpenRouter may return model with variant suffix (e.g. ":beta")
-        fallback_used = not model_used.startswith(chain[0]) if chain else False
+        # OpenRouter resolves aliases to canonical slugs (e.g.
+        # "anthropic/claude-sonnet-4.5" → "anthropic/claude-4.5-sonnet-20250929").
+        # Comparing with primary via startswith fails for Anthropic naming.
+        # Instead, check if model_used matches any FALLBACK model.
+        fallback_used = any(model_used.startswith(fb) for fb in chain[1:]) if len(chain) > 1 else False
+
+        # Defensive: warn if model_used doesn't match any model in chain
+        # (OpenRouter alias fully renamed — neither primary nor fallback detected)
+        if chain and not fallback_used and not model_used.startswith(chain[0]):
+            log.warning(
+                "model_alias_unresolved",
+                model_used=model_used,
+                primary=chain[0],
+                fallbacks=chain[1:] if len(chain) > 1 else [],
+                task=request.task,
+            )
 
         log.info(
             "generation_complete",
