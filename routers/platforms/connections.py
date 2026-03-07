@@ -34,6 +34,7 @@ from keyboards.inline import (
     menu_kb,
 )
 from services.connections import ConnectionService
+from services.oauth.vk import VKOAuthError, VKOAuthService, parse_vk_group_input
 from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
@@ -57,6 +58,7 @@ class ConnectTelegramFSM(StatesGroup):
 
 
 class ConnectVKFSM(StatesGroup):
+    enter_group_url = State()  # User enters VK group URL/ID
     oauth_callback = State()
     select_group = State()  # Handled by deep-link callback in routers/start.py
 
@@ -664,7 +666,7 @@ async def start_vk_connect(
     project_service_factory: ProjectServiceFactory,
     redis: RedisClient,
 ) -> None:
-    """Start VK OAuth connection wizard (VK ID OAuth 2.1 + PKCE)."""
+    """Start VK connection — ask user for group URL/ID."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -690,13 +692,70 @@ async def start_vk_connect(
     if interrupted:
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
-    # Delegate nonce + meta + URL to VKOAuthService (CR-118: thin router)
-    from services.oauth.vk import VKOAuthService
+    await state.set_state(ConnectVKFSM.enter_group_url)
+    await state.update_data(
+        last_update_time=time.time(),
+        connect_project_id=project_id,
+    )
+
+    await msg.answer(
+        "Подключение VK\n\n"
+        "Отправьте ссылку на группу VK, к которой хотите подключиться.\n\n"
+        "Примеры:\n"
+        "• https://vk.com/club123456\n"
+        "• https://vk.com/mygroup\n"
+        "• 123456 (ID группы)",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
+            ]
+        ),
+    )
+    await callback.answer()
+
+
+@router.message(ConnectVKFSM.enter_group_url, F.text)
+async def vk_process_group_url(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+    redis: RedisClient,
+    project_service_factory: ProjectServiceFactory,
+) -> None:
+    """VK: parse group URL/ID, resolve name, redirect to OAuth with group_ids."""
+    text = (message.text or "").strip()
+    if text == "Отмена":
+        await state.clear()
+        await message.answer("Подключение отменено.", reply_markup=menu_kb())
+        return
+
+    group_id, screen_name = parse_vk_group_input(text)
+    if group_id is None and screen_name is None:
+        await message.answer(
+            "Не удалось распознать группу.\n\n"
+            "Примеры:\n"
+            "• https://vk.com/club123456\n"
+            "• https://vk.com/mygroup\n"
+            "• 123456",
+        )
+        return
+
+    data = await state.get_data()
+    project_id = int(data["connect_project_id"])
+
+    # Re-validate project ownership
+    project = await project_service_factory(db).get_owned_project(project_id, user.id)
+    if not project:
+        await state.clear()
+        await message.answer("Проект не найден.", reply_markup=menu_kb())
+        return
 
     settings = get_settings()
     base_url = (settings.railway_public_url or "").rstrip("/")
     if not base_url:
-        await msg.answer("Ошибка конфигурации сервера. Попробуйте позже.")
+        await message.answer("Ошибка конфигурации сервера. Попробуйте позже.")
         return
 
     vk_svc = VKOAuthService(
@@ -707,33 +766,40 @@ async def start_vk_connect(
         vk_app_secret=settings.vk_secure_key.get_secret_value(),
         redirect_uri=f"{base_url}/api/auth/vk/callback",
     )
-    nonce = vk_svc.generate_nonce()
-    await vk_svc.store_meta(nonce, project_id)
-    oauth_url = vk_svc.build_oauth_url(user.id, nonce)
 
-    await state.set_state(ConnectVKFSM.oauth_callback)
-    await state.update_data(
-        last_update_time=time.time(),
-        connect_project_id=project_id,
-        vk_nonce=nonce,
+    # Resolve group: either by numeric ID or screen_name
+    resolve_input = str(group_id) if group_id else screen_name
+    try:
+        resolved_id, group_name = await vk_svc.resolve_group(resolve_input or "")
+    except VKOAuthError as exc:
+        await message.answer(exc.user_message)
+        return
+
+    # Generate nonce, store auth session for step 2
+    nonce = vk_svc.generate_nonce()
+    await vk_svc.store_meta(nonce, project_id, extra={"user_id": user.id})
+    await vk_svc.store_auth(
+        nonce, user.id, step="community", group_id=resolved_id, group_name=group_name,
     )
 
-    await msg.answer(
-        "Подключение VK\n\n"
-        "Нажмите кнопку ниже, чтобы авторизоваться через VK ID.\n"
-        "После авторизации вы будете перенаправлены обратно в бот.",
+    # Build OAuth URL with group_ids
+    oauth_url = vk_svc.build_oauth_url(user.id, nonce, group_ids=resolved_id)
+
+    await state.set_state(ConnectVKFSM.oauth_callback)
+    await state.update_data(vk_nonce=nonce)
+
+    safe_name = html.escape(group_name or f"Группа {resolved_id}")
+    await message.answer(
+        f"Группа найдена: <b>{safe_name}</b>\n\n"
+        "Нажмите кнопку ниже, чтобы предоставить доступ на публикацию.\n"
+        "Ссылка действительна 30 минут.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Авторизоваться в VK", url=oauth_url)],
+                [InlineKeyboardButton(text="Подтвердить доступ к группе", url=oauth_url)],
                 [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
             ]
         ),
     )
-    await callback.answer()
-
-    # NOTE: VK group selection after deep-link is handled in routers/start.py
-    # (vk_group_select_deeplink callback). ConnectVKFSM.select_group is kept
-    # for FSM state tracking but the handler is via deep-link flow.
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +888,7 @@ async def _cancel_connection_wizard(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     project_service_factory: ProjectServiceFactory,
+    redis: RedisClient | None = None,
 ) -> None:
     """Common cancel logic for connection wizards."""
     msg = safe_message(callback)
@@ -834,10 +901,20 @@ async def _cancel_connection_wizard(
     parts = (callback.data or "").split(":")
     if len(parts) >= 2 and parts[1].isdigit():
         project_id = int(parts[1])
+
+    data = await state.get_data()
     if not project_id:
-        data = await state.get_data()
         pid = data.get("connect_project_id")
         project_id = int(pid) if pid else None
+
+    # Clean up VK OAuth Redis keys if cancel during VK flow
+    vk_nonce = data.get("vk_nonce")
+    if vk_nonce and redis:
+        from cache.keys import CacheKeys
+        await redis.delete(CacheKeys.vk_auth(vk_nonce))
+        await redis.delete(CacheKeys.vk_oauth(vk_nonce))
+        await redis.delete(CacheKeys.vk_oauth_meta(vk_nonce))
+
     await state.clear()
 
     if project_id:
@@ -893,6 +970,7 @@ async def cancel_vk_connect(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     project_service_factory: ProjectServiceFactory,
+    redis: RedisClient,
 ) -> None:
-    """Cancel VK connection via inline button."""
-    await _cancel_connection_wizard(callback, state, user, db, http_client, project_service_factory)
+    """Cancel VK connection via inline button — also cleans up VK OAuth Redis keys."""
+    await _cancel_connection_wizard(callback, state, user, db, http_client, project_service_factory, redis)

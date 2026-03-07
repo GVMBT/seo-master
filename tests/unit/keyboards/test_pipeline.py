@@ -37,11 +37,7 @@ from keyboards.pipeline import (
     pipeline_result_kb,
 )
 from services.readiness import ReadinessReport
-from services.tokens import (
-    COST_DESCRIPTION,
-    COST_PER_IMAGE,
-    estimate_keywords_cost,
-)
+from services.tokens import COST_PER_IMAGE
 
 # ---------------------------------------------------------------------------
 # Factories
@@ -259,21 +255,23 @@ class TestPipelineReadinessKb:
         last_row = kb.inline_keyboard[-1]
         assert last_row[0].callback_data == "pipeline:article:cancel"
 
-    def test_keyword_cost_in_label(self) -> None:
-        """Keywords button shows cost estimate."""
+    def test_keyword_button_no_keywords_shows_free_label(self) -> None:
+        """Keywords button shown when no keywords — free, no cost label."""
         report = _make_report(has_keywords=False)
         kb = pipeline_readiness_kb(report)
         buttons = _flatten_buttons(kb)
         kw_btn = next(b for b in buttons if b.callback_data == "pipeline:readiness:keywords")
-        assert str(estimate_keywords_cost(100)) in kw_btn.text
+        assert "ключевики" in kw_btn.text.lower()
+        assert "ток" not in kw_btn.text.lower()  # free — no cost label
 
-    def test_description_cost_in_label(self) -> None:
-        """Description button shows cost."""
+    def test_description_button_no_desc_shows_free_label(self) -> None:
+        """Description button shown when no description — free, no cost label."""
         report = _make_report(has_description=False)
         kb = pipeline_readiness_kb(report)
         buttons = _flatten_buttons(kb)
         desc_btn = next(b for b in buttons if b.callback_data == "pipeline:readiness:description")
-        assert str(COST_DESCRIPTION) in desc_btn.text
+        assert "описание" in desc_btn.text.lower()
+        assert "ток" not in desc_btn.text.lower()  # free — no cost label
 
     def test_image_count_in_label(self) -> None:
         """Images button shows count and cost."""
@@ -551,11 +549,12 @@ class TestPipelineDescriptionOptionsKb:
         buttons = _flatten_buttons(kb)
         assert any(b.callback_data == "pipeline:readiness:back" for b in buttons)
 
-    def test_ai_shows_cost(self) -> None:
+    def test_ai_generate_button_shows_free_label(self) -> None:
         kb = pipeline_description_options_kb()
         buttons = _flatten_buttons(kb)
         ai_btn = next(b for b in buttons if b.callback_data == "pipeline:readiness:description:ai")
-        assert str(COST_DESCRIPTION) in ai_btn.text
+        assert "ai" in ai_btn.text.lower() or "сгенерировать" in ai_btn.text.lower()
+        assert "ток" not in ai_btn.text.lower()  # free — no cost label
 
 
 # ---------------------------------------------------------------------------

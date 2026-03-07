@@ -193,10 +193,10 @@ async def _handle_vk_deep_link(
     http_client: httpx.AsyncClient,
     nonce: str,
 ) -> None:
-    """Handle VK OAuth deep-link — two-step community token flow.
+    """Handle VK OAuth deep-link — community token flow.
 
-    Step 1 (dl.step="groups"): show group picker
-    Step 2 (dl.step="community"): create connection with community token
+    Primary flow: dl.step="community" → create connection with community token.
+    Legacy flow: dl.step="groups" → show group picker (kept for backward compat).
     """
     vk_svc = _build_vk_oauth_service(http_client, redis)
     dl: VKDeepLinkResult | None = await vk_svc.process_deep_link(nonce)
@@ -225,7 +225,7 @@ async def _handle_vk_deep_link(
         return
 
     if dl.step == "community":
-        # Step 2 complete — create connection with community token
+        # Community token ready — create connection
         await _create_vk_connection_from_community(
             message, user, db, http_client, project, dl,
         )
@@ -234,7 +234,7 @@ async def _handle_vk_deep_link(
             await _return_to_pipeline(message, state, user, db, redis, http_client, project)
         return
 
-    # Step 1 — show group picker
+    # Legacy: step 1 group picker (VK ID OAuth — kept for backward compat)
     if not dl.groups:
         await vk_svc.cleanup_meta(nonce)
         await message.answer(
@@ -243,7 +243,6 @@ async def _handle_vk_deep_link(
         )
         return
 
-    # Store groups + meta for group selection callback
     await vk_svc.restore_result_for_group_select(nonce, dl.raw_result)
     await _show_vk_group_picker(message, project, dl.groups, nonce)
 

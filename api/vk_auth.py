@@ -2,11 +2,11 @@
 
 Thin handlers — all logic delegated to VKOAuthService.
 
-Two different OAuth systems:
-- Step 1: VK ID OAuth 2.1 (id.vk.ru) — callback returns code + state + device_id
-- Step 2: Classic VK OAuth (oauth.vk.com) — callback returns code + state
+Primary flow: Classic VK OAuth (oauth.vk.ru) with group_ids → community token.
+Legacy: VK ID OAuth 2.1 (id.vk.ru) without group_ids (kept for backward compat).
 
 Source of truth:
+- https://dev.vk.com/ru/api/access-token/authcode-flow-community
 - docs/ARCHITECTURE.md section 2.3 (aiohttp routes)
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 """
@@ -42,8 +42,8 @@ def _build_vk_oauth_service(request: web.Request) -> VKOAuthService:
 async def vk_auth_redirect(request: web.Request) -> web.Response:
     """GET /api/auth/vk?user_id=123&nonce=abc[&group_ids=456] — redirect to VK authorize.
 
-    Without group_ids: step 1 → VK ID OAuth 2.1 (id.vk.ru) with PKCE
-    With group_ids: step 2 → Classic VK OAuth (oauth.vk.com) with group_ids
+    With group_ids (primary): Classic VK OAuth (oauth.vk.ru) → community token.
+    Without group_ids (legacy): VK ID OAuth 2.1 (id.vk.ru) with PKCE.
     """
     user_id_raw = request.query.get("user_id", "")
     nonce = request.query.get("nonce", "")

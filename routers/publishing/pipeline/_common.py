@@ -74,7 +74,7 @@ class ArticlePipelineFSM(StatesGroup):
 
 
 class SocialPipelineFSM(StatesGroup):
-    """Social pipeline FSM — 24 states for social post creation."""
+    """Social pipeline FSM — 25 states for social post creation."""
 
     # Step 1: Project selection
     select_project = State()
@@ -88,6 +88,7 @@ class SocialPipelineFSM(StatesGroup):
     connect_tg_channel = State()
     connect_tg_token = State()
     connect_tg_verify = State()
+    connect_vk_group_url = State()
     connect_vk_oauth = State()
     connect_pinterest_oauth = State()
 

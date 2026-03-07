@@ -22,7 +22,6 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.state import State
 from aiogram.types import CallbackQuery, Message
 
-from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
 from db.models import User
 from keyboards.inline import cancel_kb, menu_kb
@@ -37,7 +36,6 @@ from keyboards.pipeline import (
 from services.ai.description import DescriptionService
 from services.categories import CategoryService
 from services.keywords import KeywordService
-from services.tokens import COST_DESCRIPTION, TokenService, estimate_keywords_cost
 
 if TYPE_CHECKING:
     from aiogram.fsm.context import FSMContext
@@ -130,8 +128,6 @@ async def run_keyword_generation(
     products: str,
     geography: str,
     quantity: int,
-    cost: int,
-    token_service: TokenService,
     ai_orchestrator: AIOrchestrator,
     dataforseo_client: DataForSEOClient,
     log_prefix: str,
@@ -227,7 +223,6 @@ async def run_keyword_generation(
             category_id=category_id,
             clusters=len(enriched),
             phrases=total_phrases,
-            cost=cost,
         )
 
     except Exception:
@@ -235,13 +230,6 @@ async def run_keyword_generation(
             f"{log_prefix}.keywords_failed",
             user_id=user.id,
             category_id=category_id,
-        )
-        # Refund on error — only if keywords were NOT saved yet
-        await token_service.refund(
-            user_id=user.id,
-            amount=cost,
-            reason="refund",
-            description=f"Возврат: ошибка подбора фраз ({log_prefix}, категория #{category_id})",
         )
         # Send error as new message (original may be expired)
         with contextlib.suppress(Exception):
@@ -251,13 +239,13 @@ async def run_keyword_generation(
             return
         await bot.send_message(
             chat_id=msg.chat.id,
-            text="Ошибка при подборе фраз. Токены возвращены.\nПопробуйте позже.",
+            text="Ошибка при подборе фраз. Попробуйте позже.",
             reply_markup=pipeline_back_to_checklist_kb(prefix=back_kb_prefix),
         )
         await state.set_state(readiness_state)
         return
 
-    # Post-success UI: outside refundable try so DB-saved keywords aren't refunded
+    # Post-success UI
     try:
         await msg.delete()
     except Exception:
@@ -273,8 +261,7 @@ async def run_keyword_generation(
                 f"Готово! Добавлено:\n"
                 f"Кластеров: {len(enriched)}\n"
                 f"Фраз: {total_phrases}\n"
-                f"Общий объём: {total_volume:,}/мес\n\n"
-                f"Списано {cost} токенов."
+                f"Общий объём: {total_volume:,}/мес"
             ),
         )
     await asyncio.sleep(1)
@@ -298,7 +285,7 @@ async def generate_description_ai(
     log_prefix: str,
     on_success: Callable[[CallbackQuery, FSMContext, User, SupabaseClient, RedisClient], Awaitable[None]],
 ) -> None:
-    """Generate category description via AI, charge tokens, and return to checklist.
+    """Generate category description via AI (free for user) and return to checklist.
 
     Shared between article and social readiness description:ai handlers.
 
@@ -318,37 +305,11 @@ async def generate_description_ai(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    settings = get_settings()
-    token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-
-    # E01: balance check
-    has_balance = await token_svc.check_balance(user.id, COST_DESCRIPTION)
-    if not has_balance:
-        balance = await token_svc.get_balance(user.id)
-        await callback.answer(
-            token_svc.format_insufficient_msg(COST_DESCRIPTION, balance),
-            show_alert=True,
-        )
-        return
-
     # Answer callback immediately so the button stops "loading"
     await callback.answer()
     await safe_edit_text(msg, "Генерирую описание...")
 
-    # Debit-first: charge before generation, refund on failure
-    try:
-        await token_svc.charge(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            operation_type="description",
-            description=f"Описание ({log_prefix}, категория #{category_id})",
-        )
-    except Exception:
-        log.exception(f"{log_prefix}.description_charge_failed", user_id=user.id)
-        await safe_edit_text(msg, "Ошибка списания токенов.", reply_markup=menu_kb())
-        return
-
-    # Generate + save; refund on any failure
+    # Generate + save
     desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
     try:
         result = await desc_svc.generate(
@@ -363,26 +324,18 @@ async def generate_description_ai(
         if not save_result:
             raise RuntimeError("description_save_failed")
     except Exception:
-        # Refund on any error after charge
-        await token_svc.refund(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            reason="refund",
-            description=f"Возврат: ошибка описания (категория #{category_id})",
-        )
         log.exception(
             f"{log_prefix}.description_ai_failed",
             user_id=user.id,
             category_id=category_id,
         )
-        await safe_edit_text(msg, "Ошибка генерации описания. Токены возвращены.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Ошибка генерации описания. Попробуйте позже.", reply_markup=menu_kb())
         return
 
     log.info(
         f"{log_prefix}.description_generated",
         user_id=user.id,
         category_id=category_id,
-        cost=COST_DESCRIPTION,
     )
 
     await on_success(callback, state, user, db, redis)
@@ -483,27 +436,20 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             return
 
         quantity = 100
-        cost = estimate_keywords_cost(quantity)
-
-        settings = get_settings()
-        token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-        balance = await token_svc.get_balance(user.id)
 
         await state.set_state(fsm.readiness_keywords_qty)
         await state.update_data(
             kw_products=products,
             kw_geography=geography,
             kw_quantity=quantity,
-            kw_cost=cost,
         )
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(msg,
             f"Автоподбор ключевых фраз\n\n"
             f"Тема: {html.escape(products)}\n"
             f"География: {html.escape(geography)}\n"
-            f"Количество: {quantity} фраз\n\n"
-            f"Стоимость: {cost} ток. Баланс: {balance}.",
-            reply_markup=pipeline_keywords_confirm_kb(cost, balance, prefix=prefix),
+            f"Количество: {quantity} фраз",
+            reply_markup=pipeline_keywords_confirm_kb(prefix=prefix),
         )
         await callback.answer()
 
@@ -775,26 +721,19 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         if kw_mode == "auto":
             # Auto path: city selected -> go straight to confirm (100 phrases)
             quantity = 100
-            cost = estimate_keywords_cost(quantity)
-
-            settings = get_settings()
-            token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-            balance = await token_svc.get_balance(user.id)
 
             await state.set_state(fsm.readiness_keywords_qty)
             await state.update_data(
                 kw_geography=city,
                 kw_quantity=quantity,
-                kw_cost=cost,
             )
 
-            await safe_edit_text(msg, 
+            await safe_edit_text(msg,
                 f"Автоподбор ключевых фраз\n\n"
                 f"Тема: {html.escape(products)}\n"
                 f"География: {html.escape(city)}\n"
-                f"Количество: {quantity} фраз\n\n"
-                f"Стоимость: {cost} ток. Баланс: {balance}.",
-                reply_markup=pipeline_keywords_confirm_kb(cost, balance, prefix=prefix),
+                f"Количество: {quantity} фраз",
+                reply_markup=pipeline_keywords_confirm_kb(prefix=prefix),
             )
         else:
             # Configure path: city selected -> go to qty selection
@@ -867,25 +806,18 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer("Недопустимое количество.", show_alert=True)
             return
 
-        cost = estimate_keywords_cost(quantity)
-
-        settings = get_settings()
-        token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-        balance = await token_svc.get_balance(user.id)
-
         data = await state.get_data()
         products = data.get("kw_products", "")
         geography = data.get("kw_geography", "")
 
-        await state.update_data(kw_quantity=quantity, kw_cost=cost)
+        await state.update_data(kw_quantity=quantity)
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(msg,
             f"Подбор ключевых фраз\n\n"
             f"Тема: {html.escape(products)}\n"
             f"География: {html.escape(geography)}\n"
-            f"Количество: {quantity} фраз\n\n"
-            f"Стоимость: {cost} ток. Баланс: {balance}.",
-            reply_markup=pipeline_keywords_confirm_kb(cost, balance, prefix=prefix),
+            f"Количество: {quantity} фраз",
+            reply_markup=pipeline_keywords_confirm_kb(prefix=prefix),
         )
         await callback.answer()
 
@@ -904,52 +836,21 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         ai_orchestrator: AIOrchestrator,
         dataforseo_client: DataForSEOClient,
     ) -> None:
-        """Confirm keyword generation: E01 balance check -> charge -> run pipeline."""
+        """Confirm keyword generation (free for user — platform expense)."""
         msg = safe_message(callback)
         if not msg:
             await callback.answer()
             return
 
         data = await state.get_data()
-        cost = int(data.get("kw_cost", 0))
         quantity = int(data.get("kw_quantity", 100))
         products = str(data.get("kw_products", ""))
         geography = str(data.get("kw_geography", ""))
         category_id = data.get("category_id")
         project_id = data.get("project_id")
 
-        if not category_id or not project_id or not cost:
+        if not category_id or not project_id:
             await callback.answer("Данные не найдены. Начните заново.", show_alert=True)
-            return
-
-        settings = get_settings()
-        token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-
-        # E01: balance check
-        has_balance = await token_svc.check_balance(user.id, cost)
-        if not has_balance:
-            balance = await token_svc.get_balance(user.id)
-            await callback.answer(
-                token_svc.format_insufficient_msg(cost, balance),
-                show_alert=True,
-            )
-            return
-
-        # Charge tokens
-        try:
-            await token_svc.charge(
-                user_id=user.id,
-                amount=cost,
-                operation_type="keywords",
-                description=f"Подбор ключевых фраз ({quantity} шт., {cfg.charge_suffix})",
-            )
-        except Exception:
-            log.exception(
-                f"{log_prefix}.keywords_charge_failed",
-                user_id=user.id,
-                category_id=category_id,
-            )
-            await callback.answer("Ошибка списания токенов. Попробуйте позже.", show_alert=True)
             return
 
         await state.set_state(fsm.readiness_keywords_generating)
@@ -967,8 +868,6 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             products=products,
             geography=geography,
             quantity=quantity,
-            cost=cost,
-            token_service=token_svc,
             ai_orchestrator=ai_orchestrator,
             dataforseo_client=dataforseo_client,
             log_prefix=log_prefix,

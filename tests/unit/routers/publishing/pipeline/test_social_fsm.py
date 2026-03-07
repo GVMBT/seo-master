@@ -25,6 +25,7 @@ _EXPECTED_STATES = [
     "connect_tg_channel",
     "connect_tg_token",
     "connect_tg_verify",
+    "connect_vk_group_url",
     "connect_vk_oauth",
     "connect_pinterest_oauth",
     # Step 3: Category selection
@@ -49,7 +50,7 @@ _EXPECTED_STATES = [
 class TestSocialPipelineFSMDefinition:
     def test_state_count(self) -> None:
         states = [attr for attr in dir(SocialPipelineFSM) if isinstance(getattr(SocialPipelineFSM, attr), State)]
-        assert len(states) == 24
+        assert len(states) == 25  # +connect_vk_group_url (2-step VK OAuth)
 
     def test_all_expected_states_exist(self) -> None:
         for name in _EXPECTED_STATES:

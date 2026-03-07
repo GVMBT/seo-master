@@ -591,6 +591,16 @@ async def pipeline_social_cancel(
     redis: RedisClient,
 ) -> None:
     """Cancel social pipeline, clear FSM and checkpoint."""
+    # Clean up VK OAuth Redis keys if cancel during VK connection flow
+    data = await state.get_data()
+    vk_nonce = data.get("vk_nonce")
+    if vk_nonce:
+        from cache.keys import CacheKeys
+
+        await redis.delete(CacheKeys.vk_auth(vk_nonce))
+        await redis.delete(CacheKeys.vk_oauth(vk_nonce))
+        await redis.delete(CacheKeys.vk_oauth_meta(vk_nonce))
+
     await state.clear()
     await clear_checkpoint(redis, user.id)
     msg = safe_message(callback)

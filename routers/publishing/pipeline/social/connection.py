@@ -10,6 +10,7 @@ Design decisions:
 - TG bot validation (Bot(token).get_me()) happens in handler, NOT in ConnectionService:
   aiogram.Bot is a Telegram dependency, services/ must remain Telegram-free.
 - Pinterest board selection: stub in F6.2 (full impl requires Pinterest API /boards).
+- VK: user provides group URL/ID → resolve → classic OAuth with group_ids.
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from routers.publishing.pipeline._common import (
     save_checkpoint,
 )
 from services.connections import ConnectionService
+from services.oauth.vk import VKOAuthError, VKOAuthService, parse_vk_group_input
 
 log = structlog.get_logger()
 router = Router()
@@ -559,11 +561,8 @@ async def pipeline_connect_tg_verify(
 async def pipeline_start_connect_vk(
     callback: CallbackQuery,
     state: FSMContext,
-    user: User,
-    redis: RedisClient,
-    http_client: httpx.AsyncClient,
 ) -> None:
-    """Start VK OAuth connection — delegates nonce/meta/URL to VKOAuthService."""
+    """Start VK connection — ask user for group URL/ID."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -575,14 +574,53 @@ async def pipeline_start_connect_vk(
         await callback.answer("Проект не выбран.", show_alert=True)
         return
 
+    await state.set_state(SocialPipelineFSM.connect_vk_group_url)
+    await safe_edit_text(
+        msg,
+        f"Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
+        "Отправьте ссылку на группу VK:\n\n"
+        "Примеры:\n"
+        "• https://vk.com/club123456\n"
+        "• https://vk.com/mygroup\n"
+        "• 123456 (ID группы)",
+        reply_markup=cancel_kb("pipeline:social:cancel"),
+    )
+    await callback.answer()
+
+
+@router.message(SocialPipelineFSM.connect_vk_group_url, F.text)
+async def pipeline_connect_vk_group_url(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """VK inline: parse group URL → resolve → redirect to OAuth with group_ids."""
+    text = (message.text or "").strip()
+
+    group_id, screen_name = parse_vk_group_input(text)
+    if group_id is None and screen_name is None:
+        await message.answer(
+            "Не удалось распознать группу.\n\n"
+            "Примеры: https://vk.com/club123456, https://vk.com/mygroup, 123456",
+            reply_markup=cancel_kb("pipeline:social:cancel"),
+        )
+        return
+
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    if not project_id:
+        await message.answer("Проект не выбран. Начните заново.", reply_markup=menu_kb())
+        return
+
     from bot.config import get_settings
-    from services.oauth.vk import VKOAuthService
 
     settings = get_settings()
     base_url = (settings.railway_public_url or "").rstrip("/")
     if not base_url:
         log.error("vk_oauth_base_url_missing")
-        await safe_edit_text(msg, "Ошибка конфигурации сервера. Попробуйте позже.")
+        await message.answer("Ошибка конфигурации сервера. Попробуйте позже.")
         return
 
     vk_svc = VKOAuthService(
@@ -593,30 +631,46 @@ async def pipeline_start_connect_vk(
         vk_app_secret=settings.vk_secure_key.get_secret_value(),
         redirect_uri=f"{base_url}/api/auth/vk/callback",
     )
+
+    # Resolve group
+    resolve_input = str(group_id) if group_id else screen_name
+    try:
+        resolved_id, group_name = await vk_svc.resolve_group(resolve_input or "")
+    except VKOAuthError as exc:
+        await message.answer(
+            exc.user_message,
+            reply_markup=cancel_kb("pipeline:social:cancel"),
+        )
+        return
+
+    # Generate nonce, store auth session for community token
     nonce = vk_svc.generate_nonce()
     await vk_svc.store_meta(nonce, project_id, extra={"user_id": user.id, "from_pipeline": True})
-    oauth_url = vk_svc.build_oauth_url(user.id, nonce)
+    await vk_svc.store_auth(
+        nonce, user.id, step="community", group_id=resolved_id, group_name=group_name,
+    )
 
+    oauth_url = vk_svc.build_oauth_url(user.id, nonce, group_ids=resolved_id)
+
+    safe_name = html.escape(group_name or f"Группа {resolved_id}")
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Авторизоваться в VK", url=oauth_url)],
+            [InlineKeyboardButton(text="Подтвердить доступ к группе", url=oauth_url)],
             [InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")],
         ]
     )
 
     await state.set_state(SocialPipelineFSM.connect_vk_oauth)
-    await safe_edit_text(
-        msg,
-        f"Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
-        "Нажмите кнопку ниже для авторизации через VK ID.\n"
+    await state.update_data(vk_nonce=nonce)
+    await message.answer(
+        f"Группа найдена: <b>{safe_name}</b>\n\n"
+        "Нажмите кнопку ниже, чтобы предоставить доступ на публикацию.\n"
         "Ссылка действительна 30 минут.",
         reply_markup=kb,
     )
-    await callback.answer()
 
     # NOTE: After OAuth, user returns via deep-link /start vk_auth_{nonce},
-    # which is handled in routers/start.py. The pipeline flow continues
-    # after the connection is created via the deep-link handler.
+    # which is handled in routers/start.py.
 
 
 # ---------------------------------------------------------------------------
