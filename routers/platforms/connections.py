@@ -479,7 +479,7 @@ async def wp_process_password(
     log.info("wordpress_connected", conn_id=conn.id, project_id=project_id, identifier=identifier)
 
     # Fire-and-forget site analysis (PRD §7.1: branding + map + PSI)
-    asyncio.create_task(
+    _task = asyncio.create_task(  # noqa: RUF006 — intentional fire-and-forget
         _run_site_analysis(db, firecrawl_client, pagespeed_client, project_id, wp_url, conn.id),
     )
 

@@ -136,6 +136,8 @@ seo-master-bot-v2/
 │   ├── notifications.py            # Автоуведомления
 │   ├── connections.py             # ConnectionService: валидация платформ + CRUD подключений
 │   ├── readiness.py               # ReadinessService: чеклист готовности для Pipeline
+│   ├── analysis.py                # SiteAnalysisService: branding + map + PSI при подключении WP
+│   ├── research_helpers.py        # Shared helpers: Serper + Firecrawl + Sonar Pro research
 │   └── payments/                   # Платежи
 │       ├── packages.py             # Пакеты и тарифы
 │       ├── stars.py                # Telegram Stars

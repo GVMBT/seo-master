@@ -195,6 +195,7 @@ async def gather_websearch_data(
     company_name: str = "",
     geography: str = "",
     company_description_short: str = "",
+    internal_links_cache: str | None = None,
 ) -> dict[str, Any]:
     """Gather Serper PAA + Firecrawl competitor data + Research in parallel.
 
@@ -228,8 +229,10 @@ async def gather_websearch_data(
             company_description_short=company_description_short,
         )
 
-    # Firecrawl: internal links for the project site (if URL provided)
-    if firecrawl and project_url:
+    # Internal links: prefer cache from site analysis, fallback to live map_site
+    if internal_links_cache:
+        result["internal_links"] = internal_links_cache
+    elif firecrawl and project_url:
         tasks["map"] = firecrawl.map_site(project_url, limit=100)
 
     if not tasks:
