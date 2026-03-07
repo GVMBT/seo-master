@@ -172,15 +172,17 @@ class VKOAuthService:
         # --- Strategy 1: scrape vk.com page (no auth needed) ---
         scraped_id = await self._resolve_by_scraping(group_id_or_name)
         if scraped_id is not None:
-            # For numeric input, verify the scraped ID matches
             if is_numeric and scraped_id != int(group_id_or_name):
+                # Mismatch: user typed one ID but page has a different pid.
+                # Don't silently swap — fall through to API or fail.
                 log.warning(
                     "vk_resolve_id_mismatch",
                     input=group_id_or_name,
                     scraped=scraped_id,
                 )
-            display_name = group_id_or_name if not is_numeric else f"club{scraped_id}"
-            return scraped_id, display_name
+            else:
+                display_name = group_id_or_name if not is_numeric else f"club{scraped_id}"
+                return scraped_id, display_name
 
         # --- Strategy 2: VK API with service token ---
         if self._service_key:

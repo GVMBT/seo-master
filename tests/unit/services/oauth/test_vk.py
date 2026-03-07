@@ -219,7 +219,7 @@ class TestHandleCallbackStep1:
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
 
-        with pytest.raises(VKOAuthError, match="Invalid.*step"):
+        with pytest.raises(VKOAuthError, match=r"Invalid.*step"):
             await service.handle_callback(code="code", state=state)
 
     async def test_missing_pkce_data_raises(self) -> None:
@@ -651,8 +651,36 @@ class TestResolveGroup:
         with pytest.raises(VKOAuthError, match="Cannot resolve"):
             await service.resolve_group("durov")
 
-    async def test_both_strategies_fail_raises(self) -> None:
+    async def test_numeric_id_mismatch_falls_through_to_api(self) -> None:
+        """If scraped pid differs from user input, skip scrape and use API."""
         async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            # Scrape returns pid=999 but user typed "123"
+            if "vk.com/123" in url:
+                return httpx.Response(200, text='{"loc":"?act=s&pid=999&subdir=club123"}')
+            if "groups.getById" in url:
+                return httpx.Response(200, json={
+                    "response": {"groups": [{"id": 123, "name": "Real Group"}]},
+                })
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(handler)
+        client = httpx.AsyncClient(transport=transport)
+        service = VKOAuthService(
+            http_client=client,
+            redis=AsyncMock(set=AsyncMock(return_value=True), get=AsyncMock(return_value=None), delete=AsyncMock()),
+            encryption_key=_ENCRYPTION_KEY,
+            vk_app_id=123456,
+            vk_app_secret=_APP_SECRET,
+            redirect_uri="https://example.com/api/auth/vk/callback",
+            vk_service_key="real_service_key",
+        )
+        gid, name = await service.resolve_group("123")
+        assert gid == 123
+        assert name == "Real Group"
+
+    async def test_both_strategies_fail_raises(self) -> None:
+        async def handler(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(404)
 
         service, _ = _make_service(handler=handler)
