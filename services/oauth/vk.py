@@ -1,22 +1,26 @@
-"""VK OAuth service — two-step Authorization Code Flow via oauth.vk.ru.
+"""VK OAuth service — two-step community token flow.
 
-Two-step flow to obtain a **community token** (not a user token):
-1. Step 1: scope=groups → user token → groups.get(filter=admin) → show picker
-2. Step 2: scope=wall,photos + group_ids=ID → community token → save
+Two DIFFERENT OAuth systems to obtain a **community token**:
+1. Step 1: VK ID OAuth 2.1 (id.vk.ru) + PKCE → user token → groups.get(filter=admin)
+2. Step 2: Classic VK OAuth (oauth.vk.com) + client_secret + group_ids → community token
 
 Source of truth:
-- https://dev.vk.com/ru/api/access-token/authcode-flow-community
+- https://id.vk.com/about/business/go/docs/ru/vkid/latest/oauth/oauth-vkontakte/authcode-flow-community
+- https://id.vk.com/about/business/go/docs/ru/vkid/latest/vk-id/connection/api-description
 - docs/API_CONTRACTS.md section 3.5 (VK API)
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 
 Key facts:
-- Authorize: https://oauth.vk.ru/authorize
-- Token exchange: https://oauth.vk.ru/access_token (requires client_secret)
-- No PKCE — uses client_secret instead
+- Step 1 authorize: https://id.vk.ru/authorize (PKCE, code_challenge S256)
+- Step 1 exchange: POST https://id.vk.ru/oauth2/auth (code_verifier, device_id)
+- Step 2 authorize: https://oauth.vk.com/authorize (group_ids required)
+- Step 2 exchange: POST https://oauth.vk.com/access_token (client_secret)
 - Community token with offline scope: permanent (expires_in=0)
 """
 
+import base64
 import contextlib
+import hashlib
 import json
 import secrets
 from dataclasses import dataclass, field
@@ -33,8 +37,14 @@ from services.oauth.state import OAuthStateError, build_state, parse_and_verify_
 
 log = structlog.get_logger()
 
-_VK_AUTHORIZE_URL = "https://oauth.vk.ru/authorize"
-_VK_TOKEN_URL = "https://oauth.vk.ru/access_token"  # noqa: S105
+# Step 1: VK ID OAuth 2.1 (user token for groups.get)
+_VKID_AUTHORIZE_URL = "https://id.vk.ru/authorize"
+_VKID_TOKEN_URL = "https://id.vk.ru/oauth2/auth"  # noqa: S105
+
+# Step 2: Classic VK OAuth (community token)
+_VK_AUTHORIZE_URL = "https://oauth.vk.com/authorize"
+_VK_TOKEN_URL = "https://oauth.vk.com/access_token"  # noqa: S105
+
 _OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
 
 VK_API_VERSION = "5.199"
@@ -67,8 +77,24 @@ class VKDeepLinkResult:
     from_pipeline: bool = False
 
 
+# ---------------------------------------------------------------------------
+# PKCE helpers (for VK ID OAuth 2.1, step 1)
+# ---------------------------------------------------------------------------
+
+
+def _generate_code_verifier() -> str:
+    """Generate PKCE code_verifier (43-128 chars, URL-safe)."""
+    return secrets.token_urlsafe(64)
+
+
+def _generate_code_challenge(code_verifier: str) -> str:
+    """Generate PKCE code_challenge from code_verifier (S256)."""
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
 class VKOAuthService:
-    """VK OAuth — exchange code for tokens, fetch groups."""
+    """VK OAuth — two-step community token flow with two OAuth systems."""
 
     def __init__(
         self,
@@ -95,16 +121,17 @@ class VKOAuthService:
     ) -> tuple[str, str]:
         """Build VK authorize URL with HMAC state.
 
-        Two-step flow (authcode-flow-community):
-        - Step 1 (group_ids=None): scope=groups → user token for groups.get
-        - Step 2 (group_ids=ID): scope=wall,photos,offline + group_ids → community token
+        Two-step flow uses TWO DIFFERENT OAuth systems:
+        - Step 1 (group_ids=None): VK ID OAuth 2.1 (id.vk.ru) + PKCE
+        - Step 2 (group_ids=ID): Classic VK OAuth (oauth.vk.com) + group_ids
 
         Returns (authorize_url, state).
+        For step 1, also generates code_verifier (retrieve via get_last_code_verifier).
         """
         state = build_state(user_id, nonce, self._encryption_key)
 
         if group_ids is not None:
-            # Step 2: community token for specific group
+            # Step 2: Classic VK OAuth → community token
             scope = "wall,photos,offline"
             params = (
                 f"client_id={self._app_id}"
@@ -116,19 +143,29 @@ class VKOAuthService:
                 f"&state={state}"
                 f"&group_ids={group_ids}"
             )
-        else:
-            # Step 1: user token to fetch admin groups
-            scope = "groups"
-            params = (
-                f"client_id={self._app_id}"
-                f"&display=page"
-                f"&redirect_uri={self._redirect_uri}"
-                f"&scope={scope}"
-                f"&response_type=code"
-                f"&v={VK_API_VERSION}"
-                f"&state={state}"
-            )
-        return f"{_VK_AUTHORIZE_URL}?{params}", state
+            return f"{_VK_AUTHORIZE_URL}?{params}", state
+
+        # Step 1: VK ID OAuth 2.1 → user token for groups.get
+        code_verifier = _generate_code_verifier()
+        code_challenge = _generate_code_challenge(code_verifier)
+        self._last_code_verifier = code_verifier
+        params = (
+            f"response_type=code"
+            f"&client_id={self._app_id}"
+            f"&redirect_uri={self._redirect_uri}"
+            f"&code_challenge={code_challenge}"
+            f"&code_challenge_method=S256"
+            f"&state={state}"
+            f"&scope=groups"
+        )
+        return f"{_VKID_AUTHORIZE_URL}?{params}", state
+
+    def get_last_code_verifier(self) -> str:
+        """Get the code_verifier generated by the last build_authorize_url() call.
+
+        Must be called IMMEDIATELY after build_authorize_url() for step 1.
+        """
+        return getattr(self, "_last_code_verifier", "")
 
     async def store_auth(
         self,
@@ -138,6 +175,7 @@ class VKOAuthService:
         step: str = "groups",
         group_id: int | None = None,
         group_name: str = "",
+        code_verifier: str = "",
     ) -> None:
         """Store auth session in Redis for callback verification (TTL 30 min).
 
@@ -145,30 +183,31 @@ class VKOAuthService:
             step: "groups" (step 1: fetch groups) or "community" (step 2: get token)
             group_id: VK group ID (required for step 2)
             group_name: VK group name (for step 2 metadata)
+            code_verifier: PKCE code_verifier (required for step 1)
         """
         data: dict[str, Any] = {"user_id": user_id, "step": step}
         if group_id is not None:
             data["group_id"] = group_id
             data["group_name"] = group_name
+        if code_verifier:
+            data["code_verifier"] = code_verifier
         await self._redis.set(CacheKeys.vk_auth(nonce), json.dumps(data), ex=VK_AUTH_TTL)
 
     async def handle_callback(
         self,
         code: str,
         state: str,
+        *,
+        device_id: str = "",
     ) -> tuple[int, str]:
         """Full OAuth callback flow. Returns (user_id, nonce).
 
-        Two-step community token flow:
-        - Step 1: exchange code → user token → groups.get → store groups in Redis
-        - Step 2: exchange code → community token (access_token_GROUP_ID) → store
+        Two-step community token flow using two OAuth systems:
+        - Step 1: VK ID OAuth 2.1 exchange (code_verifier + device_id) → groups.get
+        - Step 2: Classic VK OAuth exchange (client_secret) → community token
 
-        The step is determined by auth session data in Redis (has "step" field).
-
-        1. Validate HMAC state (E30)
-        2. Ensure single-use via Redis NX lock (H10)
-        3. Exchange code for tokens
-        4. Step 1: fetch groups + store | Step 2: store community token
+        Args:
+            device_id: Device ID from VK ID callback (required for step 1).
         """
         try:
             user_id, nonce = parse_and_verify_state(state, self._encryption_key)
@@ -193,16 +232,16 @@ class VKOAuthService:
 
         step = auth_data.get("step", "groups")
 
-        # Exchange code for tokens
-        tokens = await self._exchange_code(code)
-
         if step == "community":
-            # Step 2: we got a community token — extract it
+            # Step 2: Classic VK OAuth → community token
+            tokens = await self._exchange_code_classic(code)
             group_id = auth_data.get("group_id")
             community_token = self._extract_community_token(tokens, group_id)
             await self._store_community_result(nonce, community_token, group_id, auth_data)
         else:
-            # Step 1: user token → fetch admin groups
+            # Step 1: VK ID OAuth 2.1 → user token → groups.get
+            code_verifier = auth_data.get("code_verifier", "")
+            tokens = await self._exchange_code_vkid(code, code_verifier, device_id)
             groups = await self._fetch_groups(tokens["access_token"])
             await self._store_result(nonce, tokens, groups)
 
@@ -224,8 +263,59 @@ class VKOAuthService:
         except (json.JSONDecodeError, TypeError):
             return None
 
-    async def _exchange_code(self, code: str) -> dict[str, Any]:
-        """Exchange authorization code for tokens via oauth.vk.ru."""
+    # ------------------------------------------------------------------
+    # Token exchange — two different systems
+    # ------------------------------------------------------------------
+
+    async def _exchange_code_vkid(
+        self,
+        code: str,
+        code_verifier: str,
+        device_id: str,
+    ) -> dict[str, Any]:
+        """Exchange code via VK ID OAuth 2.1 (step 1).
+
+        POST https://id.vk.ru/oauth2/auth with PKCE code_verifier + device_id.
+        """
+        try:
+            resp = await self._http.post(
+                _VKID_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code_verifier": code_verifier,
+                    "redirect_uri": self._redirect_uri,
+                    "code": code,
+                    "client_id": str(self._app_id),
+                    "device_id": device_id,
+                },
+                timeout=15,
+            )
+        except httpx.HTTPError as exc:
+            log.error("vk_token_exchange_http_error", error=str(exc), system="vkid")
+            raise VKOAuthError(f"HTTP error during VK ID token exchange: {exc}") from exc
+
+        if resp.status_code != 200:
+            log.error(
+                "vk_token_exchange_failed",
+                status=resp.status_code,
+                body=resp.text[:500],
+                system="vkid",
+            )
+            raise VKOAuthError(f"VK ID token exchange failed: HTTP {resp.status_code}")
+
+        data = resp.json()
+        if "access_token" not in data:
+            error_desc = data.get("error_description", data.get("error", "unknown"))
+            raise VKOAuthError(f"No access_token in VK ID response: {error_desc}")
+
+        result: dict[str, Any] = data
+        return result
+
+    async def _exchange_code_classic(self, code: str) -> dict[str, Any]:
+        """Exchange code via classic VK OAuth (step 2).
+
+        GET https://oauth.vk.com/access_token with client_secret.
+        """
         try:
             resp = await self._http.get(
                 _VK_TOKEN_URL,
@@ -238,15 +328,20 @@ class VKOAuthService:
                 timeout=15,
             )
         except httpx.HTTPError as exc:
-            log.error("vk_token_exchange_http_error", error=str(exc))
+            log.error("vk_token_exchange_http_error", error=str(exc), system="classic")
             raise VKOAuthError(f"HTTP error during VK token exchange: {exc}") from exc
 
         if resp.status_code != 200:
-            log.error("vk_token_exchange_failed", status=resp.status_code, body=resp.text[:500])
+            log.error(
+                "vk_token_exchange_failed",
+                status=resp.status_code,
+                body=resp.text[:500],
+                system="classic",
+            )
             raise VKOAuthError(f"VK token exchange failed: HTTP {resp.status_code}")
 
         data = resp.json()
-        # Step 1 returns "access_token", step 2 returns "access_token_GROUP_ID"
+        # Step 2 returns "access_token_GROUP_ID"
         has_token = "access_token" in data or any(
             k.startswith("access_token_") for k in data
         )

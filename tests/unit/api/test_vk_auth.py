@@ -1,7 +1,7 @@
 """Tests for api/vk_auth.py — VK OAuth aiohttp handlers.
 
-Covers: redirect (step 1 + step 2), callback happy path,
-error param (user denial), invalid state (403).
+Covers: redirect (step 1 VK ID + step 2 classic), callback happy path,
+device_id passthrough, error param (user denial), invalid state (403).
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ def _make_callback_request(
     state: str = "",
     error: str = "",
     error_description: str = "",
+    device_id: str = "",
     bot_username: str = "seo_master_bot",
 ) -> web.Request:
     """Create a mock request for /api/auth/vk/callback."""
@@ -62,6 +63,8 @@ def _make_callback_request(
         query_parts.append(f"error={error}")
     if error_description:
         query_parts.append(f"error_description={error_description}")
+    if device_id:
+        query_parts.append(f"device_id={device_id}")
     query_string = "&".join(query_parts)
 
     app = MagicMock()
@@ -113,15 +116,16 @@ class TestVKAuthRedirect:
         assert response.status == 400
         assert "Invalid" in response.text
 
-    async def test_step1_redirects_to_vk(self) -> None:
-        """Step 1 (no group_ids): redirects to VK with scope=groups."""
+    async def test_step1_redirects_to_vkid(self) -> None:
+        """Step 1 (no group_ids): redirects to VK ID OAuth 2.1 (id.vk.ru)."""
         request = _make_redirect_request(user_id="42", nonce="test_nonce")
 
         mock_service = MagicMock()
         mock_service.build_authorize_url.return_value = (
-            "https://oauth.vk.ru/authorize?client_id=123",
+            "https://id.vk.ru/authorize?client_id=123",
             "state_xyz",
         )
+        mock_service.get_last_code_verifier.return_value = "test_code_verifier"
         mock_service.store_auth = AsyncMock()
 
         with (
@@ -132,16 +136,18 @@ class TestVKAuthRedirect:
             await vk_auth_redirect(request)
 
         location = exc_info.value.location
-        assert "oauth.vk.ru/authorize" in location
-        mock_service.store_auth.assert_awaited_once_with("test_nonce", 42, step="groups")
+        assert "id.vk.ru/authorize" in location
+        mock_service.store_auth.assert_awaited_once_with(
+            "test_nonce", 42, step="groups", code_verifier="test_code_verifier",
+        )
 
-    async def test_step2_redirects_with_group_ids(self) -> None:
-        """Step 2 (with group_ids): redirects to VK, does NOT store auth (already stored)."""
+    async def test_step2_redirects_to_classic_vk(self) -> None:
+        """Step 2 (with group_ids): redirects to classic VK OAuth (oauth.vk.com)."""
         request = _make_redirect_request(user_id="42", nonce="test_nonce", group_ids="999")
 
         mock_service = MagicMock()
         mock_service.build_authorize_url.return_value = (
-            "https://oauth.vk.ru/authorize?group_ids=999",
+            "https://oauth.vk.com/authorize?group_ids=999",
             "state_xyz",
         )
         mock_service.store_auth = AsyncMock()
@@ -230,6 +236,29 @@ class TestVKAuthCallback:
         assert "tg://resolve" in location
         assert "testbot" in location
         assert "vk_auth_nonce_abc" in location
+
+    async def test_device_id_passed_to_handle_callback(self) -> None:
+        """VK ID OAuth 2.1 (step 1) returns device_id which must be forwarded."""
+        request = _make_callback_request(
+            code="code",
+            state="state",
+            device_id="test_device_123",
+            bot_username="mybot",
+        )
+
+        mock_service = AsyncMock()
+        mock_service.handle_callback = AsyncMock(return_value=(999, "unique_nonce"))
+
+        with (
+            patch("api.vk_auth.get_settings", return_value=_mock_settings()),
+            patch("api.vk_auth._build_vk_oauth_service", return_value=mock_service),
+            pytest.raises(web.HTTPFound),
+        ):
+            await vk_auth_callback(request)
+
+        mock_service.handle_callback.assert_awaited_once_with(
+            "code", "state", device_id="test_device_123",
+        )
 
     async def test_deep_link_contains_nonce(self) -> None:
         request = _make_callback_request(
