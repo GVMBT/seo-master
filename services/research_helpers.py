@@ -300,11 +300,11 @@ async def gather_websearch_data(
 
     tasks: dict[str, Any] = {}
 
-    # Serper: PAA + organic results for the keyword
+    # Serper: all endpoints use consistent locale (gl=ua, hl=ru)
     if serper:
-        tasks["serper"] = serper.search(keyword, num=10)
-        tasks["news"] = serper.search_news(keyword, num=5)
-        tasks["autocomplete"] = serper.autocomplete(keyword)
+        tasks["serper"] = serper.search(keyword, num=10, gl="ua", hl="ru")
+        tasks["news"] = serper.search_news(keyword, num=5, gl="ua", hl="ru")
+        tasks["autocomplete"] = serper.autocomplete(keyword, gl="ua", hl="ru")
 
     # Research: Perplexity Sonar Pro (parallel with Serper, API_CONTRACTS.md section 7a)
     if orchestrator:

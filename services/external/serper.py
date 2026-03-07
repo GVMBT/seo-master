@@ -68,6 +68,13 @@ def _cache_key(query: str) -> str:
     return f"serper:{query_hash}"
 
 
+def _cache_key_for(prefix: str, payload: dict[str, Any]) -> str:
+    """Build Redis cache key from prefix + full request params."""
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    payload_hash = hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+    return f"{prefix}:{payload_hash}"
+
+
 class SerperClient:
     """Client for Serper.dev Google Search API.
 
@@ -136,7 +143,7 @@ class SerperClient:
 
         E04: on error -> return empty result (graceful degradation).
         """
-        cache_key = f"serper_news:{hashlib.md5(query.encode()).hexdigest()}"  # noqa: S324  # nosec B324
+        cache_key = _cache_key_for("serper_news", {"q": query, "num": num, "gl": gl, "hl": hl, "tbs": tbs})
         cached = await self._try_generic_cache_get(cache_key)
         if cached is not None and isinstance(cached, list):
             log.debug("serper.news_cache_hit", query=query)
@@ -172,7 +179,7 @@ class SerperClient:
 
         Returns list of suggestion strings. Empty list on failure.
         """
-        cache_key = f"serper_ac:{hashlib.md5(query.encode()).hexdigest()}"  # noqa: S324  # nosec B324
+        cache_key = _cache_key_for("serper_ac", {"q": query, "gl": gl, "hl": hl})
         cached = await self._try_generic_cache_get(cache_key)
         if cached is not None and isinstance(cached, list):
             log.debug("serper.autocomplete_cache_hit", query=query)
