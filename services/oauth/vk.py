@@ -54,11 +54,11 @@ VK_API_URL = "https://api.vk.ru/method"
 
 # Regex for parsing VK group URLs
 _VK_CLUB_RE = re.compile(
-    r"(?:https?://)?(?:m\.)?vk\.(?:com|ru)/(?:club|public)(\d+)",
+    r"(?:(?:https?://)?(?:m\.)?vk\.(?:com|ru)/)?(?:club|public)(\d+)",
     re.IGNORECASE,
 )
 _VK_SCREEN_NAME_RE = re.compile(
-    r"(?:https?://)?(?:m\.)?vk\.(?:com|ru)/([a-zA-Z][a-zA-Z0-9_.]{1,31})",
+    r"(?:https?://)?(?:m\.)?vk\.(?:com|ru)/([a-zA-Z0-9][a-zA-Z0-9_.]{0,31})",
     re.IGNORECASE,
 )
 # Extracts group pid from VK SPA page: "loc":"?act=s&pid=GROUP_ID&subdir=..."
@@ -73,7 +73,7 @@ def parse_vk_group_input(text: str) -> tuple[int | None, str | None]:
     - ``vk.com/mygroup`` → (None, "mygroup")
     - Invalid input → (None, None)
     """
-    text = text.strip().rstrip("/")
+    text = text.strip().rstrip("/").rstrip(".,;:")
 
     # Plain numeric ID
     if text.isdigit():
