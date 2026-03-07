@@ -280,7 +280,14 @@ async def _create_vk_connection_from_community(
     dl: VKDeepLinkResult,
 ) -> None:
     """Create VK connection from community token (step 2 result)."""
-    group_id = str(dl.group_id or 0)
+    if not dl.group_id:
+        log.error("vk_community_missing_group_id", project_id=project.id)
+        await message.answer(
+            "Ошибка: не указан ID группы. Попробуйте подключить VK заново.",
+            reply_markup=menu_kb(),
+        )
+        return
+    group_id = str(dl.group_id)
     group_name = dl.group_name or f"Группа {group_id}"
     conn_svc = ConnectionService(db, http_client)
 
