@@ -1,6 +1,11 @@
 """VK OAuth callback handlers (aiohttp.web).
 
 Thin handlers — all logic delegated to VKOAuthService.
+
+Two different OAuth systems:
+- Step 1: VK ID OAuth 2.1 (id.vk.ru) — callback returns code + state + device_id
+- Step 2: Classic VK OAuth (oauth.vk.com) — callback returns code + state
+
 Source of truth:
 - docs/ARCHITECTURE.md section 2.3 (aiohttp routes)
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
@@ -37,8 +42,8 @@ def _build_vk_oauth_service(request: web.Request) -> VKOAuthService:
 async def vk_auth_redirect(request: web.Request) -> web.Response:
     """GET /api/auth/vk?user_id=123&nonce=abc[&group_ids=456] — redirect to VK authorize.
 
-    Without group_ids: step 1 (scope=groups, user token for groups.get)
-    With group_ids: step 2 (scope=wall,photos,offline, community token)
+    Without group_ids: step 1 → VK ID OAuth 2.1 (id.vk.ru) with PKCE
+    With group_ids: step 2 → Classic VK OAuth (oauth.vk.com) with group_ids
     """
     user_id_raw = request.query.get("user_id", "")
     nonce = request.query.get("nonce", "")
@@ -61,15 +66,21 @@ async def vk_auth_redirect(request: web.Request) -> web.Response:
     service = _build_vk_oauth_service(request)
     authorize_url, _state = service.build_authorize_url(user_id, nonce, group_ids=group_ids)
 
-    # Only store auth for step 1 — step 2 auth is already stored by group select handler
+    # Step 1: store auth with code_verifier (PKCE)
+    # Step 2: auth already stored by group select handler (skip)
     if group_ids is None:
-        await service.store_auth(nonce, user_id, step="groups")
+        code_verifier = service.get_last_code_verifier()
+        await service.store_auth(nonce, user_id, step="groups", code_verifier=code_verifier)
 
     raise web.HTTPFound(location=authorize_url)
 
 
 async def vk_auth_callback(request: web.Request) -> web.Response:
-    """GET /api/auth/vk/callback?code=xxx&state=yyy."""
+    """GET /api/auth/vk/callback?code=xxx&state=yyy[&device_id=zzz].
+
+    VK ID (step 1) returns device_id in query params.
+    Classic VK OAuth (step 2) does not.
+    """
     # Handle user denial
     error = request.query.get("error")
     if error:
@@ -91,10 +102,13 @@ async def vk_auth_callback(request: web.Request) -> web.Response:
     if not code or not state:
         return web.Response(status=400, text="Missing code or state")
 
+    # VK ID OAuth 2.1 (step 1) returns device_id in callback
+    device_id = request.query.get("device_id", "")
+
     service = _build_vk_oauth_service(request)
 
     try:
-        _user_id, nonce = await service.handle_callback(code, state)
+        _user_id, nonce = await service.handle_callback(code, state, device_id=device_id)
     except VKOAuthError:
         log.exception("vk_callback_failed")
         sentry_sdk.capture_exception()
