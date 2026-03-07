@@ -475,6 +475,26 @@ class PublishService:
         image_service = ImageService(self._ai_orchestrator)
         publisher = WordPressPublisher(self._http_client)
 
+        # Resolve WP category (auto-map bot category → WP category)
+        wp_category_id: int | None = None
+        if category.name:
+            cached_wp_cats: dict[str, int] = (connection.metadata or {}).get("wp_categories", {})
+            if category.name in cached_wp_cats:
+                wp_category_id = cached_wp_cats[category.name]
+                log.info("wp_category_cache_hit", name=category.name, wp_id=wp_category_id)
+            else:
+                base_url = WordPressPublisher._base_url(connection.credentials)
+                auth = WordPressPublisher._auth(connection.credentials)
+                wp_category_id = await publisher.resolve_wp_category(base_url, auth, category.name)
+                if wp_category_id is not None:
+                    settings = get_settings()
+                    cm = CredentialManager(settings.encryption_key.get_secret_value())
+                    conn_repo = ConnectionsRepository(self._db, cm)
+                    await conn_repo.merge_metadata(
+                        connection.id,
+                        {"wp_categories": {**cached_wp_cats, category.name: wp_category_id}},
+                    )
+
         image_settings = category.image_settings or {}
         image_count = image_settings.get("count", 4)
         image_context: dict[str, Any] = {
@@ -536,18 +556,27 @@ class PublishService:
             competitor_gaps=websearch["competitor_gaps"],
             internal_links=websearch.get("internal_links", ""),
             research_data=websearch.get("research_data"),
+            news_data=websearch.get("news_data"),
+            autocomplete_suggestions=websearch.get("autocomplete_suggestions"),
         )
 
         # Extract text content
         content_markdown = ""
         title = keyword
         meta_desc = ""
+        seo_title = ""
         images_meta: list[dict[str, str]] = []
         if isinstance(text_result.content, dict):
             content_markdown = text_result.content.get("content_markdown", "")
             title = text_result.content.get("title", keyword)
+            seo_title = text_result.content.get("seo_title", "")
             meta_desc = text_result.content.get("meta_description", "")
             images_meta = text_result.content.get("images_meta", [])
+
+        # Safety-net truncation for SEO fields
+        from services.ai.articles import truncate_seo_fields
+
+        seo_title, meta_desc = truncate_seo_fields(seo_title or title[:60], meta_desc)
 
         # Phase 3: Image Director + Image Generation (§7.4.2)
         from services.ai.image_director import ImageDirectorContext, ImageDirectorService
@@ -665,9 +694,11 @@ class PublishService:
                 images_meta=[{"alt": u.alt_text, "filename": u.filename, "figcaption": u.caption} for u in uploads],
                 category=category,
                 metadata={
+                    "seo_title": seo_title,
                     "meta_description": meta_desc,
                     "focus_keyword": keyword,
                     "storage_urls": reconciled_urls,
+                    **({"wp_category_id": wp_category_id} if wp_category_id else {}),
                 },
             )
         )

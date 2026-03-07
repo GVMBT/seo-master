@@ -839,6 +839,11 @@ async def test_gather_websearch_with_serper() -> None:
     serper_result.related_searches = ["seo guide"]
     mock_serper.search = AsyncMock(return_value=serper_result)
 
+    news_result = MagicMock()
+    news_result.news = [{"title": "Fresh news", "source": "RBC"}]
+    mock_serper.search_news = AsyncMock(return_value=news_result)
+    mock_serper.autocomplete = AsyncMock(return_value=["seo tips for beginners", "seo tips 2026"])
+
     result = await gather_websearch_data(
         "seo tips",
         None,
@@ -851,6 +856,9 @@ async def test_gather_websearch_with_serper() -> None:
     assert result["serper_data"] is not None
     assert result["serper_data"]["organic"] == serper_result.organic
     assert result["serper_data"]["people_also_ask"] == serper_result.people_also_ask
+    assert len(result["news_data"]) == 1
+    assert result["news_data"][0]["title"] == "Fresh news"
+    assert result["autocomplete_suggestions"] == ["seo tips for beginners", "seo tips 2026"]
 
 
 async def test_gather_websearch_with_research_data() -> None:
@@ -879,6 +887,8 @@ async def test_gather_websearch_serper_failure_graceful() -> None:
     """C1: Serper failure does not crash pipeline (graceful degradation)."""
     mock_serper = MagicMock()
     mock_serper.search = AsyncMock(side_effect=RuntimeError("Serper API down"))
+    mock_serper.search_news = AsyncMock(side_effect=RuntimeError("Serper API down"))
+    mock_serper.autocomplete = AsyncMock(side_effect=RuntimeError("Serper API down"))
 
     result = await gather_websearch_data(
         "seo tips",
@@ -891,6 +901,8 @@ async def test_gather_websearch_serper_failure_graceful() -> None:
 
     assert result["serper_data"] is None
     assert result["competitor_pages"] == []
+    assert result["news_data"] == []
+    assert result["autocomplete_suggestions"] == []
 
 
 async def test_fetch_research_cache_hit() -> None:
