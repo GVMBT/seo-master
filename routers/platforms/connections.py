@@ -44,6 +44,8 @@ from services.scheduler import SchedulerService
 log = structlog.get_logger()
 router = Router()
 
+# Strong reference set for fire-and-forget background tasks (prevents GC mid-execution)
+_background_tasks: set[asyncio.Task[None]] = set()
 
 async def _run_site_analysis(
     db: SupabaseClient,
@@ -52,13 +54,14 @@ async def _run_site_analysis(
     project_id: int,
     site_url: str,
     connection_id: int,
+    encryption_key: str,
 ) -> None:
     """Fire-and-forget site analysis wrapper (PRD §7.1).
 
     Catches all exceptions so a background task crash doesn't propagate.
     """
     try:
-        svc = SiteAnalysisService(db, firecrawl, pagespeed)
+        svc = SiteAnalysisService(db, firecrawl, pagespeed, encryption_key=encryption_key)
         report = await svc.run_full_analysis(project_id, site_url, connection_id)
         if report.errors:
             log.warning("site_analysis.partial", project_id=project_id, errors=report.errors)
@@ -479,9 +482,12 @@ async def wp_process_password(
     log.info("wordpress_connected", conn_id=conn.id, project_id=project_id, identifier=identifier)
 
     # Fire-and-forget site analysis (PRD §7.1: branding + map + PSI)
-    _task = asyncio.create_task(  # noqa: RUF006 — intentional fire-and-forget
-        _run_site_analysis(db, firecrawl_client, pagespeed_client, project_id, wp_url, conn.id),
+    _enc_key = get_settings().encryption_key.get_secret_value()
+    task = asyncio.create_task(
+        _run_site_analysis(db, firecrawl_client, pagespeed_client, project_id, wp_url, conn.id, _enc_key),
     )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     # Reload list (project already validated above)
     connections = await conn_svc.get_by_project(project_id)

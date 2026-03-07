@@ -8,10 +8,13 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 
 from services.analysis import SiteAnalysisService
 from services.external.firecrawl import BrandingResult, MapResult
 from services.external.pagespeed import AuditResult
+
+_TEST_KEY = Fernet.generate_key().decode()
 
 
 def _make_branding() -> BrandingResult:
@@ -72,7 +75,7 @@ def _make_service(
     else:
         pagespeed.audit = AsyncMock(return_value=psi)
 
-    return SiteAnalysisService(db, firecrawl, pagespeed)
+    return SiteAnalysisService(db, firecrawl, pagespeed, encryption_key=_TEST_KEY)
 
 
 @pytest.mark.asyncio

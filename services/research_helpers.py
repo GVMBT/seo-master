@@ -34,7 +34,7 @@ MAX_SUMMARY_CHARS = 400
 # Max competitor pages to scrape (cost: 1 Firecrawl credit each)
 MAX_COMPETITOR_SCRAPE = 3
 
-# Max internal links to include in prompt
+# Max internal links to include in AI prompt (subset of cached links)
 MAX_INTERNAL_LINKS = 20
 
 

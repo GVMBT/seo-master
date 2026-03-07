@@ -15,6 +15,7 @@ from decimal import Decimal
 import structlog
 
 from db.client import SupabaseClient
+from db.credential_manager import CredentialManager
 from db.models import SiteAuditCreate, SiteBrandingCreate
 from db.repositories.audits import AuditsRepository
 from db.repositories.connections import ConnectionsRepository
@@ -23,7 +24,7 @@ from services.external.pagespeed import AuditResult, PageSpeedClient
 
 log = structlog.get_logger()
 
-MAX_INTERNAL_LINKS = 50
+MAX_INTERNAL_LINKS_CACHE = 50  # How many links to cache in connection metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,10 +49,12 @@ class SiteAnalysisService:
         db: SupabaseClient,
         firecrawl: FirecrawlClient,
         pagespeed: PageSpeedClient,
+        encryption_key: str = "",
     ) -> None:
         self._db = db
         self._firecrawl = firecrawl
         self._pagespeed = pagespeed
+        self._encryption_key = encryption_key
 
     async def run_full_analysis(
         self,
@@ -80,6 +83,7 @@ class SiteAnalysisService:
         branding: BrandingResult | None = None
         map_result: MapResult | None = None
         psi: AuditResult | None = None
+        audits_repo = AuditsRepository(self._db)
 
         # --- Save branding ---
         if isinstance(branding_raw, BaseException):
@@ -87,7 +91,6 @@ class SiteAnalysisService:
             log.warning("analysis.branding_failed", project_id=project_id, error=str(branding_raw))
         elif branding_raw is not None:
             branding = branding_raw
-            audits_repo = AuditsRepository(self._db)
             await audits_repo.upsert_branding(SiteBrandingCreate(
                 project_id=project_id,
                 url=site_url,
@@ -105,7 +108,7 @@ class SiteAnalysisService:
         elif map_raw is not None:
             map_result = map_raw
             map_urls = [
-                u.get("url", "") for u in map_result.urls[:MAX_INTERNAL_LINKS]
+                u.get("url", "") for u in map_result.urls[:MAX_INTERNAL_LINKS_CACHE]
                 if u.get("url")
             ]
             if map_urls:
@@ -118,7 +121,6 @@ class SiteAnalysisService:
             log.warning("analysis.psi_failed", project_id=project_id, error=str(psi_raw))
         elif psi_raw is not None:
             psi = psi_raw
-            audits_repo = AuditsRepository(self._db)
             await audits_repo.upsert_audit(SiteAuditCreate(
                 project_id=project_id,
                 url=site_url,
@@ -144,11 +146,6 @@ class SiteAnalysisService:
 
     async def _save_internal_links(self, connection_id: int, urls: list[str]) -> None:
         """Store internal links in connection metadata for caching."""
-        from bot.config import get_settings
-
-        settings = get_settings()
-        from db.credential_manager import CredentialManager
-
-        cm = CredentialManager(settings.encryption_key.get_secret_value())
+        cm = CredentialManager(self._encryption_key)
         repo = ConnectionsRepository(self._db, cm)
         await repo.merge_metadata(connection_id, {"internal_links": "\n".join(urls)})
