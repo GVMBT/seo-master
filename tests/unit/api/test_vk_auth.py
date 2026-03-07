@@ -1,6 +1,6 @@
 """Tests for api/vk_auth.py — VK OAuth aiohttp handlers.
 
-Covers: redirect (302 + correct params), callback happy path,
+Covers: redirect (step 1 + step 2), callback happy path,
 error param (user denial), invalid state (403).
 """
 
@@ -23,6 +23,7 @@ from services.oauth.vk import VKOAuthError
 def _make_redirect_request(
     user_id: str = "",
     nonce: str = "",
+    group_ids: str = "",
 ) -> web.Request:
     """Create a mock request for /api/auth/vk."""
     query_parts = []
@@ -30,6 +31,8 @@ def _make_redirect_request(
         query_parts.append(f"user_id={user_id}")
     if nonce:
         query_parts.append(f"nonce={nonce}")
+    if group_ids:
+        query_parts.append(f"group_ids={group_ids}")
     query_string = "&".join(query_parts)
 
     app = MagicMock()
@@ -110,12 +113,13 @@ class TestVKAuthRedirect:
         assert response.status == 400
         assert "Invalid" in response.text
 
-    async def test_success_redirects_to_vk(self) -> None:
+    async def test_step1_redirects_to_vk(self) -> None:
+        """Step 1 (no group_ids): redirects to VK with scope=groups."""
         request = _make_redirect_request(user_id="42", nonce="test_nonce")
 
         mock_service = MagicMock()
         mock_service.build_authorize_url.return_value = (
-            "https://oauth.vk.com/authorize?client_id=123",
+            "https://oauth.vk.ru/authorize?client_id=123",
             "state_xyz",
         )
         mock_service.store_auth = AsyncMock()
@@ -128,16 +132,17 @@ class TestVKAuthRedirect:
             await vk_auth_redirect(request)
 
         location = exc_info.value.location
-        assert "oauth.vk.com/authorize" in location
-        mock_service.store_auth.assert_awaited_once_with("test_nonce", 42)
+        assert "oauth.vk.ru/authorize" in location
+        mock_service.store_auth.assert_awaited_once_with("test_nonce", 42, step="groups")
 
-    async def test_redirect_calls_store_auth(self) -> None:
-        request = _make_redirect_request(user_id="99", nonce="n1")
+    async def test_step2_redirects_with_group_ids(self) -> None:
+        """Step 2 (with group_ids): redirects to VK, does NOT store auth (already stored)."""
+        request = _make_redirect_request(user_id="42", nonce="test_nonce", group_ids="999")
 
         mock_service = MagicMock()
         mock_service.build_authorize_url.return_value = (
-            "https://oauth.vk.com/authorize?foo=bar",
-            "my_state",
+            "https://oauth.vk.ru/authorize?group_ids=999",
+            "state_xyz",
         )
         mock_service.store_auth = AsyncMock()
 
@@ -148,7 +153,16 @@ class TestVKAuthRedirect:
         ):
             await vk_auth_redirect(request)
 
-        mock_service.store_auth.assert_awaited_once_with("n1", 99)
+        # Step 2: store_auth NOT called (already stored by group select handler)
+        mock_service.store_auth.assert_not_awaited()
+        mock_service.build_authorize_url.assert_called_once_with(42, "test_nonce", group_ids=999)
+
+    async def test_invalid_group_ids_returns_400(self) -> None:
+        request = _make_redirect_request(user_id="42", nonce="abc", group_ids="not_a_number")
+        with patch("api.vk_auth.get_settings", return_value=_mock_settings()):
+            response = await vk_auth_redirect(request)
+        assert response.status == 400
+        assert "group_ids" in response.text
 
 
 # ---------------------------------------------------------------------------

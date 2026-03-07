@@ -1,18 +1,19 @@
-"""VK OAuth service — Authorization Code Flow via oauth.vk.com.
+"""VK OAuth service — two-step Authorization Code Flow via oauth.vk.ru.
 
-Uses the classic VK OAuth (oauth.vk.com) which provides full VK API access
-(groups.get, wall.post, photos). VK ID (id.vk.ru) tokens do NOT support
-VK API methods (error 1051).
+Two-step flow to obtain a **community token** (not a user token):
+1. Step 1: scope=groups → user token → groups.get(filter=admin) → show picker
+2. Step 2: scope=wall,photos + group_ids=ID → community token → save
 
 Source of truth:
+- https://dev.vk.com/ru/api/access-token/authcode-flow-community
 - docs/API_CONTRACTS.md section 3.5 (VK API)
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 
 Key facts:
-- Authorize: https://oauth.vk.com/authorize
-- Token exchange: https://oauth.vk.com/access_token (requires client_secret)
+- Authorize: https://oauth.vk.ru/authorize
+- Token exchange: https://oauth.vk.ru/access_token (requires client_secret)
 - No PKCE — uses client_secret instead
-- access_token TTL: 86400s (24h) or 0 (infinite with offline scope)
+- Community token with offline scope: permanent (expires_in=0)
 """
 
 import contextlib
@@ -32,8 +33,8 @@ from services.oauth.state import OAuthStateError, build_state, parse_and_verify_
 
 log = structlog.get_logger()
 
-_VK_AUTHORIZE_URL = "https://oauth.vk.com/authorize"
-_VK_TOKEN_URL = "https://oauth.vk.com/access_token"  # noqa: S105
+_VK_AUTHORIZE_URL = "https://oauth.vk.ru/authorize"
+_VK_TOKEN_URL = "https://oauth.vk.ru/access_token"  # noqa: S105
 _OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
 
 VK_API_VERSION = "5.199"
@@ -55,12 +56,13 @@ class VKOAuthError(AppError):
 class VKDeepLinkResult:
     """Result of processing a VK OAuth deep-link."""
 
+    step: str = "groups"  # "groups" (step 1) or "community" (step 2)
     groups: list[dict[str, Any]] = field(default_factory=list)
+    group_id: int | None = None
+    group_name: str = ""
     project_id: int | None = None
     access_token: str = ""
-    refresh_token: str = ""
     expires_at: str = ""
-    device_id: str = ""
     raw_result: dict[str, Any] = field(default_factory=dict)
     from_pipeline: bool = False
 
@@ -84,28 +86,71 @@ class VKOAuthService:
         self._app_secret = vk_app_secret
         self._redirect_uri = redirect_uri
 
-    def build_authorize_url(self, user_id: int, nonce: str) -> tuple[str, str]:
+    def build_authorize_url(
+        self,
+        user_id: int,
+        nonce: str,
+        *,
+        group_ids: int | None = None,
+    ) -> tuple[str, str]:
         """Build VK authorize URL with HMAC state.
+
+        Two-step flow (authcode-flow-community):
+        - Step 1 (group_ids=None): scope=groups → user token for groups.get
+        - Step 2 (group_ids=ID): scope=wall,photos,offline + group_ids → community token
 
         Returns (authorize_url, state).
         """
         state = build_state(user_id, nonce, self._encryption_key)
 
-        params = (
-            f"client_id={self._app_id}"
-            f"&display=page"
-            f"&redirect_uri={self._redirect_uri}"
-            f"&scope=wall,groups,photos,offline"
-            f"&response_type=code"
-            f"&v={VK_API_VERSION}"
-            f"&state={state}"
-        )
+        if group_ids is not None:
+            # Step 2: community token for specific group
+            scope = "wall,photos,offline"
+            params = (
+                f"client_id={self._app_id}"
+                f"&display=page"
+                f"&redirect_uri={self._redirect_uri}"
+                f"&scope={scope}"
+                f"&response_type=code"
+                f"&v={VK_API_VERSION}"
+                f"&state={state}"
+                f"&group_ids={group_ids}"
+            )
+        else:
+            # Step 1: user token to fetch admin groups
+            scope = "groups"
+            params = (
+                f"client_id={self._app_id}"
+                f"&display=page"
+                f"&redirect_uri={self._redirect_uri}"
+                f"&scope={scope}"
+                f"&response_type=code"
+                f"&v={VK_API_VERSION}"
+                f"&state={state}"
+            )
         return f"{_VK_AUTHORIZE_URL}?{params}", state
 
-    async def store_auth(self, nonce: str, user_id: int) -> None:
-        """Store user_id in Redis for callback verification (TTL 30 min)."""
-        data = json.dumps({"user_id": user_id})
-        await self._redis.set(CacheKeys.vk_auth(nonce), data, ex=VK_AUTH_TTL)
+    async def store_auth(
+        self,
+        nonce: str,
+        user_id: int,
+        *,
+        step: str = "groups",
+        group_id: int | None = None,
+        group_name: str = "",
+    ) -> None:
+        """Store auth session in Redis for callback verification (TTL 30 min).
+
+        Args:
+            step: "groups" (step 1: fetch groups) or "community" (step 2: get token)
+            group_id: VK group ID (required for step 2)
+            group_name: VK group name (for step 2 metadata)
+        """
+        data: dict[str, Any] = {"user_id": user_id, "step": step}
+        if group_id is not None:
+            data["group_id"] = group_id
+            data["group_name"] = group_name
+        await self._redis.set(CacheKeys.vk_auth(nonce), json.dumps(data), ex=VK_AUTH_TTL)
 
     async def handle_callback(
         self,
@@ -114,11 +159,16 @@ class VKOAuthService:
     ) -> tuple[int, str]:
         """Full OAuth callback flow. Returns (user_id, nonce).
 
+        Two-step community token flow:
+        - Step 1: exchange code → user token → groups.get → store groups in Redis
+        - Step 2: exchange code → community token (access_token_GROUP_ID) → store
+
+        The step is determined by auth session data in Redis (has "step" field).
+
         1. Validate HMAC state (E30)
         2. Ensure single-use via Redis NX lock (H10)
-        3. Exchange code for tokens via oauth.vk.com
-        4. Fetch user's admin/editor groups
-        5. Store tokens + groups in Redis
+        3. Exchange code for tokens
+        4. Step 1: fetch groups + store | Step 2: store community token
         """
         try:
             user_id, nonce = parse_and_verify_state(state, self._encryption_key)
@@ -137,19 +187,29 @@ class VKOAuthService:
         if not auth_raw:
             raise VKOAuthError("VK auth session expired or not found")
 
+        auth_data: dict[str, Any] = {}
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            auth_data = json.loads(auth_raw)
+
+        step = auth_data.get("step", "groups")
+
         # Exchange code for tokens
         tokens = await self._exchange_code(code)
 
-        # Fetch groups with new access_token
-        groups = await self._fetch_groups(tokens["access_token"])
-
-        # Store complete OAuth result in Redis
-        await self._store_result(nonce, tokens, groups)
+        if step == "community":
+            # Step 2: we got a community token — extract it
+            group_id = auth_data.get("group_id")
+            community_token = self._extract_community_token(tokens, group_id)
+            await self._store_community_result(nonce, community_token, group_id, auth_data)
+        else:
+            # Step 1: user token → fetch admin groups
+            groups = await self._fetch_groups(tokens["access_token"])
+            await self._store_result(nonce, tokens, groups)
 
         # Clean up auth session
         await self._redis.delete(CacheKeys.vk_auth(nonce))
 
-        log.info("vk_oauth_success", user_id=user_id, nonce=nonce, groups_count=len(groups))
+        log.info("vk_oauth_success", user_id=user_id, nonce=nonce, step=step)
         return user_id, nonce
 
     async def get_oauth_result(self, nonce: str) -> dict[str, object] | None:
@@ -164,8 +224,8 @@ class VKOAuthService:
         except (json.JSONDecodeError, TypeError):
             return None
 
-    async def _exchange_code(self, code: str) -> dict:
-        """Exchange authorization code for tokens via oauth.vk.com."""
+    async def _exchange_code(self, code: str) -> dict[str, Any]:
+        """Exchange authorization code for tokens via oauth.vk.ru."""
         try:
             resp = await self._http.get(
                 _VK_TOKEN_URL,
@@ -186,15 +246,16 @@ class VKOAuthService:
             raise VKOAuthError(f"VK token exchange failed: HTTP {resp.status_code}")
 
         data = resp.json()
-        if "access_token" not in data:
+        # Step 1 returns "access_token", step 2 returns "access_token_GROUP_ID"
+        has_token = "access_token" in data or any(
+            k.startswith("access_token_") for k in data
+        )
+        if not has_token:
             error_desc = data.get("error_description", data.get("error", "unknown"))
             raise VKOAuthError(f"No access_token in VK response: {error_desc}")
 
-        return {
-            "access_token": data["access_token"],
-            "expires_in": data.get("expires_in", 0),
-            "user_id": data.get("user_id"),
-        }
+        result: dict[str, Any] = data
+        return result
 
     async def _fetch_groups(self, access_token: str) -> list[dict]:
         """Fetch user's admin/editor groups via VK API."""
@@ -228,18 +289,58 @@ class VKOAuthService:
             log.exception("vk_oauth_fetch_groups_failed")
             return []
 
+    @staticmethod
+    def _extract_community_token(
+        data: dict[str, Any],
+        group_id: int | None,
+    ) -> str:
+        """Extract community access token from VK response.
+
+        VK returns community token as `access_token_GROUP_ID` key.
+        """
+        if group_id:
+            key = f"access_token_{group_id}"
+            if key in data:
+                return str(data[key])
+        # Fallback: search for any access_token_* key
+        for k, v in data.items():
+            if k.startswith("access_token_") and v:
+                return str(v)
+        # Last resort: plain access_token
+        return str(data.get("access_token", ""))
+
     async def _store_result(
         self,
         nonce: str,
         tokens: dict,
         groups: list[dict],
     ) -> None:
-        """Store OAuth result in Redis: vk_oauth:{nonce}, TTL=30min."""
+        """Store step-1 result (groups list) in Redis: vk_oauth:{nonce}, TTL=30min."""
         compact_groups = [{"id": g["id"], "name": g.get("name", "")} for g in groups]
-        result = {
-            "access_token": tokens["access_token"],
-            "expires_in": tokens["expires_in"],
+        result: dict[str, Any] = {
+            "step": "groups",
             "groups": compact_groups,
+        }
+        await self._redis.set(
+            CacheKeys.vk_oauth(nonce),
+            json.dumps(result),
+            ex=VK_AUTH_TTL,
+        )
+
+    async def _store_community_result(
+        self,
+        nonce: str,
+        community_token: str,
+        group_id: int | None,
+        auth_data: dict[str, Any],
+    ) -> None:
+        """Store step-2 result (community token) in Redis: vk_oauth:{nonce}, TTL=30min."""
+        result: dict[str, Any] = {
+            "step": "community",
+            "access_token": community_token,
+            "group_id": group_id,
+            "group_name": auth_data.get("group_name", ""),
+            "expires_in": 0,  # community token with offline scope is permanent
         }
         await self._redis.set(
             CacheKeys.vk_oauth(nonce),
@@ -287,16 +388,17 @@ class VKOAuthService:
     # ------------------------------------------------------------------
 
     async def process_deep_link(self, nonce: str) -> VKDeepLinkResult | None:
-        """Process VK OAuth deep-link — read result + meta, compute expires_at.
+        """Process VK OAuth deep-link — read result + meta.
 
-        Returns VKDeepLinkResult with all data needed by the router to show UI,
-        or None if the OAuth result is missing/expired.
+        Returns VKDeepLinkResult with step info:
+        - step="groups": groups list available, user must pick one
+        - step="community": community token ready, create connection
+
+        Returns None if the OAuth result is missing/expired.
         """
         result: dict[str, Any] | None = await self.get_oauth_result(nonce)  # type: ignore[assignment]
         if not result:
             return None
-
-        groups: list[dict[str, Any]] = result.get("groups") or []
 
         # Read project_id and pipeline context from meta
         meta = await self.get_meta(nonce)
@@ -307,20 +409,34 @@ class VKOAuthService:
                 project_id = int(meta["project_id"])
             from_pipeline = meta.get("from_pipeline") is True
 
-        expires_in = int(result.get("expires_in") or 0)
-        expires_at = (
-            (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
-            if expires_in > 0
-            else ""
-        )
+        step = result.get("step", "groups")
 
+        if step == "community":
+            # Step 2 result: community token ready
+            expires_in = int(result.get("expires_in") or 0)
+            expires_at = (
+                (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+                if expires_in > 0
+                else ""
+            )
+            group_id_val = result.get("group_id")
+            return VKDeepLinkResult(
+                step="community",
+                group_id=int(group_id_val) if group_id_val else None,
+                group_name=str(result.get("group_name", "")),
+                project_id=project_id,
+                access_token=str(result.get("access_token", "")),
+                expires_at=expires_at,
+                raw_result=result,
+                from_pipeline=from_pipeline,
+            )
+
+        # Step 1 result: groups list
+        groups: list[dict[str, Any]] = result.get("groups") or []
         return VKDeepLinkResult(
+            step="groups",
             groups=groups,
             project_id=project_id,
-            access_token=str(result.get("access_token", "")),
-            refresh_token="",
-            expires_at=expires_at,
-            device_id="",
             raw_result=result,
             from_pipeline=from_pipeline,
         )
@@ -352,10 +468,15 @@ class VKOAuthService:
         """Generate a cryptographic nonce for OAuth flow."""
         return secrets.token_urlsafe(16)
 
-    def build_oauth_url(self, user_id: int, nonce: str) -> str:
-        """Build the redirect URL: /api/auth/vk?user_id=...&nonce=...
+    def build_oauth_url(
+        self, user_id: int, nonce: str, *, group_ids: int | None = None,
+    ) -> str:
+        """Build the redirect URL: /api/auth/vk?user_id=...&nonce=...[&group_ids=...]
 
         Requires self._redirect_uri to be set (includes base_url).
         """
         base_url = self._redirect_uri.rsplit("/api/auth/vk/callback", 1)[0]
-        return f"{base_url}/api/auth/vk?user_id={user_id}&nonce={nonce}"
+        url = f"{base_url}/api/auth/vk?user_id={user_id}&nonce={nonce}"
+        if group_ids is not None:
+            url += f"&group_ids={group_ids}"
+        return url

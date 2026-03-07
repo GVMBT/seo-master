@@ -35,7 +35,11 @@ def _build_vk_oauth_service(request: web.Request) -> VKOAuthService:
 
 
 async def vk_auth_redirect(request: web.Request) -> web.Response:
-    """GET /api/auth/vk?user_id=123&nonce=abc — redirect to VK authorize."""
+    """GET /api/auth/vk?user_id=123&nonce=abc[&group_ids=456] — redirect to VK authorize.
+
+    Without group_ids: step 1 (scope=groups, user token for groups.get)
+    With group_ids: step 2 (scope=wall,photos,offline, community token)
+    """
     user_id_raw = request.query.get("user_id", "")
     nonce = request.query.get("nonce", "")
     if not user_id_raw or not nonce:
@@ -46,9 +50,20 @@ async def vk_auth_redirect(request: web.Request) -> web.Response:
     except ValueError:
         return web.Response(status=400, text="Invalid user_id")
 
+    group_ids_raw = request.query.get("group_ids", "")
+    group_ids: int | None = None
+    if group_ids_raw:
+        try:
+            group_ids = int(group_ids_raw)
+        except ValueError:
+            return web.Response(status=400, text="Invalid group_ids")
+
     service = _build_vk_oauth_service(request)
-    authorize_url, _state = service.build_authorize_url(user_id, nonce)
-    await service.store_auth(nonce, user_id)
+    authorize_url, _state = service.build_authorize_url(user_id, nonce, group_ids=group_ids)
+
+    # Only store auth for step 1 — step 2 auth is already stored by group select handler
+    if group_ids is None:
+        await service.store_auth(nonce, user_id, step="groups")
 
     raise web.HTTPFound(location=authorize_url)
 
