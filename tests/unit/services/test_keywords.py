@@ -474,7 +474,7 @@ class TestGenerateClustersDirect:
                 )
 
         p = result[0]["phrases"][0]
-        assert p["ai_suggested"] is True
+        assert p["ai_suggested"] is False  # E03 fallback: sole data source, must survive filter
         assert p["volume"] == 0
         assert p["difficulty"] == 0
         assert p["cpc"] == 0.0

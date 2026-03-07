@@ -1,27 +1,28 @@
-"""VK OAuth service — two-step community token flow.
+"""VK OAuth service — community token flow via classic VK OAuth.
 
-Two DIFFERENT OAuth systems to obtain a **community token**:
-1. Step 1: VK ID OAuth 2.1 (id.vk.ru) + PKCE → user token → groups.get(filter=admin)
-2. Step 2: Classic VK OAuth (oauth.vk.com) + client_secret + group_ids → community token
+Obtains a **community token** for wall.post on behalf of a VK group.
+
+Flow:
+1. User provides group URL/ID → resolve to numeric group_id
+2. Classic VK OAuth (oauth.vk.ru) with group_ids → community token
 
 Source of truth:
-- https://id.vk.com/about/business/go/docs/ru/vkid/latest/oauth/oauth-vkontakte/authcode-flow-community
-- https://id.vk.com/about/business/go/docs/ru/vkid/latest/vk-id/connection/api-description
+- https://dev.vk.com/ru/api/access-token/authcode-flow-community
 - docs/API_CONTRACTS.md section 3.5 (VK API)
 - docs/EDGE_CASES.md E20 (30min TTL), E30 (HMAC state)
 
 Key facts:
-- Step 1 authorize: https://id.vk.ru/authorize (PKCE, code_challenge S256)
-- Step 1 exchange: POST https://id.vk.ru/oauth2/auth (code_verifier, device_id)
-- Step 2 authorize: https://oauth.vk.com/authorize (group_ids required)
-- Step 2 exchange: POST https://oauth.vk.com/access_token (client_secret)
+- Authorize: https://oauth.vk.ru/authorize (group_ids required)
+- Exchange: GET https://oauth.vk.ru/access_token (client_secret)
 - Community token with offline scope: permanent (expires_in=0)
+- Group resolution: groups.getById with service token (client_credentials)
 """
 
 import base64
 import contextlib
 import hashlib
 import json
+import re
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -37,18 +38,55 @@ from services.oauth.state import OAuthStateError, build_state, parse_and_verify_
 
 log = structlog.get_logger()
 
-# Step 1: VK ID OAuth 2.1 (user token for groups.get)
+# Classic VK OAuth (community token) — per dev.vk.com docs
+_VK_AUTHORIZE_URL = "https://oauth.vk.ru/authorize"
+_VK_TOKEN_URL = "https://oauth.vk.ru/access_token"  # noqa: S105
+
+# VK ID OAuth 2.1 (kept for potential future use)
 _VKID_AUTHORIZE_URL = "https://id.vk.ru/authorize"
 _VKID_TOKEN_URL = "https://id.vk.ru/oauth2/auth"  # noqa: S105
-
-# Step 2: Classic VK OAuth (community token)
-_VK_AUTHORIZE_URL = "https://oauth.vk.com/authorize"
-_VK_TOKEN_URL = "https://oauth.vk.com/access_token"  # noqa: S105
 
 _OAUTH_STATE_LOCK_TTL = 600  # 10 min — single-use state lock (H10)
 
 VK_API_VERSION = "5.199"
 VK_API_URL = "https://api.vk.ru/method"
+
+# Regex for parsing VK group URLs
+_VK_CLUB_RE = re.compile(
+    r"(?:https?://)?(?:m\.)?vk\.(?:com|ru)/(?:club|public)(\d+)",
+    re.IGNORECASE,
+)
+_VK_SCREEN_NAME_RE = re.compile(
+    r"(?:https?://)?(?:m\.)?vk\.(?:com|ru)/([a-zA-Z][a-zA-Z0-9_.]{1,31})",
+    re.IGNORECASE,
+)
+
+
+def parse_vk_group_input(text: str) -> tuple[int | None, str | None]:
+    """Parse VK group URL or ID into (numeric_id, screen_name).
+
+    Returns exactly one non-None value:
+    - ``123456``, ``club123456``, ``vk.com/club123456`` → (123456, None)
+    - ``vk.com/mygroup`` → (None, "mygroup")
+    - Invalid input → (None, None)
+    """
+    text = text.strip().rstrip("/")
+
+    # Plain numeric ID
+    if text.isdigit():
+        return int(text), None
+
+    # vk.com/club123456 or vk.com/public123456
+    m = _VK_CLUB_RE.match(text)
+    if m:
+        return int(m.group(1)), None
+
+    # vk.com/screen_name (must start with letter)
+    m = _VK_SCREEN_NAME_RE.match(text)
+    if m:
+        return None, m.group(1)
+
+    return None, None
 
 
 class VKOAuthError(AppError):
@@ -112,6 +150,73 @@ class VKOAuthService:
         self._app_secret = vk_app_secret
         self._redirect_uri = redirect_uri
 
+    async def resolve_group(self, group_id_or_name: str) -> tuple[int, str]:
+        """Resolve VK group by numeric ID or screen_name.
+
+        Uses a service token (client_credentials) — no user auth needed.
+        Returns (group_id, group_name).
+        """
+        service_token = await self._get_service_token()
+        try:
+            resp = await self._http.post(
+                f"{VK_API_URL}/groups.getById",
+                data={
+                    "access_token": service_token,
+                    "v": VK_API_VERSION,
+                    "group_id": group_id_or_name,
+                },
+                timeout=10,
+            )
+            data = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            log.error("vk_resolve_group_failed", input=group_id_or_name, error=str(exc))
+            raise VKOAuthError("Не удалось проверить группу VK") from exc
+
+        if "error" in data:
+            err = data["error"]
+            log.warning(
+                "vk_resolve_group_api_error",
+                error_code=err.get("error_code"),
+                error_msg=err.get("error_msg"),
+                input=group_id_or_name,
+            )
+            raise VKOAuthError("Группа VK не найдена или недоступна")
+
+        # API v5.199: response.groups[] or response[] (depends on version)
+        response = data.get("response", {})
+        groups: list[dict[str, Any]] = (
+            response.get("groups", []) if isinstance(response, dict) else response
+        )
+        if not groups:
+            raise VKOAuthError("Группа VK не найдена")
+
+        group = groups[0]
+        return int(group["id"]), str(group.get("name", ""))
+
+    async def _get_service_token(self) -> str:
+        """Get VK service token via client_credentials grant."""
+        try:
+            resp = await self._http.get(
+                _VK_TOKEN_URL,
+                params={
+                    "client_id": str(self._app_id),
+                    "client_secret": self._app_secret,
+                    "v": VK_API_VERSION,
+                    "grant_type": "client_credentials",
+                },
+                timeout=10,
+            )
+            data = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            log.error("vk_service_token_failed", error=str(exc))
+            raise VKOAuthError("Не удалось получить сервисный токен VK") from exc
+
+        token = data.get("access_token", "")
+        if not token:
+            error_desc = data.get("error_description", data.get("error", "unknown"))
+            raise VKOAuthError(f"VK service token error: {error_desc}")
+        return str(token)
+
     def build_authorize_url(
         self,
         user_id: int,
@@ -121,17 +226,15 @@ class VKOAuthService:
     ) -> tuple[str, str]:
         """Build VK authorize URL with HMAC state.
 
-        Two-step flow uses TWO DIFFERENT OAuth systems:
-        - Step 1 (group_ids=None): VK ID OAuth 2.1 (id.vk.ru) + PKCE
-        - Step 2 (group_ids=ID): Classic VK OAuth (oauth.vk.com) + group_ids
+        group_ids is REQUIRED for community token flow (classic VK OAuth).
+        Without group_ids, falls back to VK ID OAuth 2.1 (step 1, rarely used).
 
         Returns (authorize_url, state).
-        For step 1, also generates code_verifier (retrieve via get_last_code_verifier).
         """
         state = build_state(user_id, nonce, self._encryption_key)
 
         if group_ids is not None:
-            # Step 2: Classic VK OAuth → community token
+            # Classic VK OAuth → community token
             scope = "wall,photos,offline"
             params = (
                 f"client_id={self._app_id}"
@@ -145,7 +248,7 @@ class VKOAuthService:
             )
             return f"{_VK_AUTHORIZE_URL}?{params}", state
 
-        # Step 1: VK ID OAuth 2.1 → user token for groups.get
+        # VK ID OAuth 2.1 (fallback — user token for groups.get)
         code_verifier = _generate_code_verifier()
         code_challenge = _generate_code_challenge(code_verifier)
         self._last_code_verifier = code_verifier
@@ -330,7 +433,7 @@ class VKOAuthService:
     async def _exchange_code_classic(self, code: str) -> dict[str, Any]:
         """Exchange code via classic VK OAuth (step 2).
 
-        GET https://oauth.vk.com/access_token with client_secret.
+        GET https://oauth.vk.ru/access_token with client_secret.
         """
         try:
             resp = await self._http.get(

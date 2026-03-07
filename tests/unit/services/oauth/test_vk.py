@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from cache.keys import CacheKeys
-from services.oauth.vk import VKOAuthError, VKOAuthService
+from services.oauth.vk import VKOAuthError, VKOAuthService, parse_vk_group_input
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -88,11 +88,11 @@ class TestBuildAuthorizeUrl:
         assert len(cv) >= 43  # PKCE minimum
 
     def test_step2_uses_classic_vk_oauth(self) -> None:
-        """Step 2 (with group_ids): classic OAuth at oauth.vk.com."""
+        """Step 2 (with group_ids): classic OAuth at oauth.vk.ru."""
         service, _ = _make_service()
         nonce = _nonce()
         url, state = service.build_authorize_url(user_id=42, nonce=nonce, group_ids=12345)
-        assert "oauth.vk.com/authorize" in url
+        assert "oauth.vk.ru/authorize" in url
         assert "scope=wall,photos,offline" in url
         assert "group_ids=12345" in url
         assert "code_challenge" not in url  # No PKCE for step 2
@@ -280,7 +280,7 @@ class TestHandleCallbackStep2:
         """Step 2: classic exchange (client_secret) → community token → store."""
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth.vk.com/access_token" in str(request.url):
+            if "oauth.vk.ru/access_token" in str(request.url):
                 return httpx.Response(200, json={
                     "access_token_100": "community_token_for_100",
                     "expires_in": 0,
@@ -371,7 +371,7 @@ class TestExchangeErrors:
         """Step 2: classic OAuth HTTP error."""
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth.vk.com/access_token" in str(request.url):
+            if "oauth.vk.ru/access_token" in str(request.url):
                 raise httpx.ConnectError("VK down")
             return httpx.Response(404)
 
@@ -403,7 +403,7 @@ class TestExchangeErrors:
 
     async def test_non_200_classic_response(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth.vk.com/access_token" in str(request.url):
+            if "oauth.vk.ru/access_token" in str(request.url):
                 return httpx.Response(400, json={"error": "invalid_code"})
             return httpx.Response(404)
 
@@ -435,7 +435,7 @@ class TestExchangeErrors:
 
     async def test_no_access_token_in_classic_response(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth.vk.com/access_token" in str(request.url):
+            if "oauth.vk.ru/access_token" in str(request.url):
                 return httpx.Response(200, json={"error": "invalid_grant"})
             return httpx.Response(404)
 
@@ -528,3 +528,119 @@ class TestPKCE:
         # base64url characters only (no padding)
         assert "=" not in cc
         assert all(c.isalnum() or c in "-_" for c in cc)
+
+
+# ---------------------------------------------------------------------------
+# parse_vk_group_input
+# ---------------------------------------------------------------------------
+
+
+class TestParseVKGroupInput:
+    def test_plain_numeric_id(self) -> None:
+        gid, name = parse_vk_group_input("123456")
+        assert gid == 123456
+        assert name is None
+
+    def test_club_url(self) -> None:
+        gid, name = parse_vk_group_input("https://vk.com/club123456")
+        assert gid == 123456
+        assert name is None
+
+    def test_public_url(self) -> None:
+        gid, name = parse_vk_group_input("https://vk.ru/public789")
+        assert gid == 789
+        assert name is None
+
+    def test_screen_name_url(self) -> None:
+        gid, name = parse_vk_group_input("https://vk.com/mygroup")
+        assert gid is None
+        assert name == "mygroup"
+
+    def test_mobile_url(self) -> None:
+        gid, name = parse_vk_group_input("https://m.vk.com/club42")
+        assert gid == 42
+        assert name is None
+
+    def test_screen_name_with_dots(self) -> None:
+        gid, name = parse_vk_group_input("vk.com/my.group_name")
+        assert gid is None
+        assert name == "my.group_name"
+
+    def test_invalid_input(self) -> None:
+        gid, name = parse_vk_group_input("not a url at all")
+        assert gid is None
+        assert name is None
+
+    def test_empty_input(self) -> None:
+        gid, name = parse_vk_group_input("")
+        assert gid is None
+        assert name is None
+
+    def test_trailing_slash(self) -> None:
+        gid, name = parse_vk_group_input("https://vk.com/club123/")
+        assert gid == 123
+        assert name is None
+
+
+# ---------------------------------------------------------------------------
+# resolve_group
+# ---------------------------------------------------------------------------
+
+
+class TestResolveGroup:
+    async def test_resolves_by_screen_name(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "access_token" in url and "grant_type=client_credentials" in url:
+                return httpx.Response(200, json={"access_token": "svc_token"})
+            if "groups.getById" in url:
+                return httpx.Response(200, json={
+                    "response": {"groups": [{"id": 12345, "name": "Test Group"}]},
+                })
+            return httpx.Response(404)
+
+        service, _ = _make_service(handler=handler)
+        gid, name = await service.resolve_group("testgroup")
+        assert gid == 12345
+        assert name == "Test Group"
+
+    async def test_resolves_by_numeric_id(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "access_token" in url and "grant_type=client_credentials" in url:
+                return httpx.Response(200, json={"access_token": "svc_token"})
+            if "groups.getById" in url:
+                return httpx.Response(200, json={
+                    "response": {"groups": [{"id": 999, "name": "My Community"}]},
+                })
+            return httpx.Response(404)
+
+        service, _ = _make_service(handler=handler)
+        gid, name = await service.resolve_group("999")
+        assert gid == 999
+        assert name == "My Community"
+
+    async def test_group_not_found_raises(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "grant_type=client_credentials" in url:
+                return httpx.Response(200, json={"access_token": "svc_token"})
+            if "groups.getById" in url:
+                return httpx.Response(200, json={
+                    "error": {"error_code": 100, "error_msg": "Invalid group id"},
+                })
+            return httpx.Response(404)
+
+        service, _ = _make_service(handler=handler)
+        with pytest.raises(VKOAuthError, match="не найдена"):
+            await service.resolve_group("nonexistent")
+
+    async def test_service_token_failure_raises(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "grant_type=client_credentials" in str(request.url):
+                return httpx.Response(200, json={"error": "invalid_client"})
+            return httpx.Response(404)
+
+        service, _ = _make_service(handler=handler)
+        with pytest.raises(VKOAuthError):
+            await service.resolve_group("anygroup")

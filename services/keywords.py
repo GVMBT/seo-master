@@ -437,11 +437,13 @@ class KeywordService:
         if isinstance(result.content, dict):
             clusters = result.content.get("clusters", [])
 
-        # Mark all phrases as AI-suggested, assign defaults
+        # Mark phrases with defaults.  ai_suggested=False because this is the
+        # E03 fallback (DataForSEO returned 0 results) — these phrases are the
+        # sole data source and must NOT be filtered by filter_low_quality().
         for cluster in clusters:
             total_vol = 0
             for p in cluster.get("phrases", []):
-                p.setdefault("ai_suggested", True)
+                p.setdefault("ai_suggested", False)
                 p.setdefault("volume", 0)
                 p.setdefault("difficulty", 0)
                 p.setdefault("cpc", 0.0)

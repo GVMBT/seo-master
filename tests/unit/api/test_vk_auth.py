@@ -142,12 +142,12 @@ class TestVKAuthRedirect:
         )
 
     async def test_step2_redirects_to_classic_vk(self) -> None:
-        """Step 2 (with group_ids): redirects to classic VK OAuth (oauth.vk.com)."""
+        """Step 2 (with group_ids): redirects to classic VK OAuth (oauth.vk.ru)."""
         request = _make_redirect_request(user_id="42", nonce="test_nonce", group_ids="999")
 
         mock_service = MagicMock()
         mock_service.build_authorize_url.return_value = (
-            "https://oauth.vk.com/authorize?group_ids=999",
+            "https://oauth.vk.ru/authorize?group_ids=999",
             "state_xyz",
         )
         mock_service.store_auth = AsyncMock()
