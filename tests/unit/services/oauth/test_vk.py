@@ -199,6 +199,53 @@ class TestHandleCallbackStep1:
         with pytest.raises(VKOAuthError, match="expired"):
             await service.handle_callback(code="code", state=state)
 
+    async def test_corrupted_session_raises(self) -> None:
+        """Corrupted JSON in Redis → error before any I/O."""
+        service, redis = _make_service()
+        nonce = _nonce()
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(side_effect=lambda key: "not-json{" if "vk_auth:" in key else None)
+
+        with pytest.raises(VKOAuthError, match="Corrupted"):
+            await service.handle_callback(code="code", state=state)
+
+    async def test_invalid_step_raises(self) -> None:
+        """Unknown step value in session → error before I/O."""
+        service, redis = _make_service()
+        nonce = _nonce()
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        auth_data = json.dumps({"user_id": 42, "step": "unknown"})
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
+
+        with pytest.raises(VKOAuthError, match="Invalid.*step"):
+            await service.handle_callback(code="code", state=state)
+
+    async def test_missing_pkce_data_raises(self) -> None:
+        """Step 1 without code_verifier or device_id → error before exchange."""
+        service, redis = _make_service()
+        nonce = _nonce()
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce)
+        auth_data = json.dumps({"user_id": 42, "step": "groups"})  # no code_verifier
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
+
+        with pytest.raises(VKOAuthError, match="PKCE"):
+            await service.handle_callback(code="code", state=state, device_id="dev")
+
+    async def test_missing_group_id_in_community_step_raises(self) -> None:
+        """Step 2 without group_id → error before exchange."""
+        service, redis = _make_service()
+        nonce = _nonce()
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce, group_ids=100)
+        auth_data = json.dumps({"user_id": 42, "step": "community"})  # no group_id
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
+
+        with pytest.raises(VKOAuthError, match="group_id"):
+            await service.handle_callback(code="code", state=state)
+
     @staticmethod
     async def _mock_step1_api(request: httpx.Request) -> httpx.Response:
         url = str(request.url)

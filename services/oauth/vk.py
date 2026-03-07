@@ -226,21 +226,28 @@ class VKOAuthService:
         if not auth_raw:
             raise VKOAuthError("VK auth session expired or not found")
 
-        auth_data: dict[str, Any] = {}
-        with contextlib.suppress(json.JSONDecodeError, TypeError):
-            auth_data = json.loads(auth_raw)
+        try:
+            auth_data: dict[str, Any] = json.loads(auth_raw)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise VKOAuthError("Corrupted VK auth session") from exc
 
-        step = auth_data.get("step", "groups")
+        step = auth_data.get("step")
+        if step not in {"groups", "community"}:
+            raise VKOAuthError("Invalid VK auth session step")
 
         if step == "community":
+            group_id = auth_data.get("group_id")
+            if group_id is None:
+                raise VKOAuthError("Missing group_id in VK auth session")
             # Step 2: Classic VK OAuth → community token
             tokens = await self._exchange_code_classic(code)
-            group_id = auth_data.get("group_id")
             community_token = self._extract_community_token(tokens, group_id)
             await self._store_community_result(nonce, community_token, group_id, auth_data)
         else:
             # Step 1: VK ID OAuth 2.1 → user token → groups.get
-            code_verifier = auth_data.get("code_verifier", "")
+            code_verifier = str(auth_data.get("code_verifier", ""))
+            if not code_verifier or not device_id:
+                raise VKOAuthError("Missing PKCE session data")
             tokens = await self._exchange_code_vkid(code, code_verifier, device_id)
             groups = await self._fetch_groups(tokens["access_token"])
             await self._store_result(nonce, tokens, groups)
@@ -303,7 +310,12 @@ class VKOAuthService:
             )
             raise VKOAuthError(f"VK ID token exchange failed: HTTP {resp.status_code}")
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            log.error("vk_token_exchange_invalid_json", body=resp.text[:200], system="vkid")
+            raise VKOAuthError("VK ID returned invalid JSON") from exc
+
         if "access_token" not in data:
             error_desc = data.get("error_description", data.get("error", "unknown"))
             raise VKOAuthError(f"No access_token in VK ID response: {error_desc}")
@@ -340,7 +352,12 @@ class VKOAuthService:
             )
             raise VKOAuthError(f"VK token exchange failed: HTTP {resp.status_code}")
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            log.error("vk_token_exchange_invalid_json", body=resp.text[:200], system="classic")
+            raise VKOAuthError("VK returned invalid JSON") from exc
+
         # Step 2 returns "access_token_GROUP_ID"
         has_token = "access_token" in data or any(
             k.startswith("access_token_") for k in data
