@@ -519,6 +519,7 @@ class PublishService:
                 user_id=user_id,
                 has_serper=not serper_empty,
                 has_research=not research_empty,
+                reason="both_empty",
             )
             raise RuntimeError("External data unavailable (Serper + Research empty), skipping slot")
 

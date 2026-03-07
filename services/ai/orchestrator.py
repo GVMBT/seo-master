@@ -426,6 +426,17 @@ class AIOrchestrator:
         # Instead, check if model_used matches any FALLBACK model.
         fallback_used = any(model_used.startswith(fb) for fb in chain[1:]) if len(chain) > 1 else False
 
+        # Defensive: warn if model_used doesn't match any model in chain
+        # (OpenRouter alias fully renamed — neither primary nor fallback detected)
+        if chain and not fallback_used and not model_used.startswith(chain[0]):
+            log.warning(
+                "model_alias_unresolved",
+                model_used=model_used,
+                primary=chain[0],
+                fallbacks=chain[1:] if len(chain) > 1 else [],
+                task=request.task,
+            )
+
         log.info(
             "generation_complete",
             task=request.task,
