@@ -630,6 +630,7 @@ async def pipeline_connect_vk_group_url(
         vk_app_id=settings.vk_app_id,
         vk_app_secret=settings.vk_secure_key.get_secret_value(),
         redirect_uri=f"{base_url}/api/auth/vk/callback",
+        vk_service_key=settings.vk_service_key.get_secret_value(),
     )
 
     # Resolve group

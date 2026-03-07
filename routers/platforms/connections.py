@@ -1,5 +1,6 @@
 """Connection list, manage, delete + 4 connection wizard FSMs."""
 
+import asyncio
 import html
 import secrets
 import time
@@ -33,12 +34,38 @@ from keyboards.inline import (
     connection_manage_kb,
     menu_kb,
 )
+from services.analysis import SiteAnalysisService
 from services.connections import ConnectionService
+from services.external.firecrawl import FirecrawlClient
+from services.external.pagespeed import PageSpeedClient
 from services.oauth.vk import VKOAuthError, VKOAuthService, parse_vk_group_input
 from services.scheduler import SchedulerService
 
 log = structlog.get_logger()
 router = Router()
+
+
+async def _run_site_analysis(
+    db: SupabaseClient,
+    firecrawl: FirecrawlClient,
+    pagespeed: PageSpeedClient,
+    project_id: int,
+    site_url: str,
+    connection_id: int,
+) -> None:
+    """Fire-and-forget site analysis wrapper (PRD §7.1).
+
+    Catches all exceptions so a background task crash doesn't propagate.
+    """
+    try:
+        svc = SiteAnalysisService(db, firecrawl, pagespeed)
+        report = await svc.run_full_analysis(project_id, site_url, connection_id)
+        if report.errors:
+            log.warning("site_analysis.partial", project_id=project_id, errors=report.errors)
+        else:
+            log.info("site_analysis.complete", project_id=project_id)
+    except Exception:
+        log.exception("site_analysis.failed", project_id=project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +412,8 @@ async def wp_process_password(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     project_service_factory: ProjectServiceFactory,
+    firecrawl_client: FirecrawlClient,
+    pagespeed_client: PageSpeedClient,
 ) -> None:
     """WP step 3: Application Password — validate and create connection."""
     text = (message.text or "").strip()
@@ -449,11 +478,17 @@ async def wp_process_password(
 
     log.info("wordpress_connected", conn_id=conn.id, project_id=project_id, identifier=identifier)
 
+    # Fire-and-forget site analysis (PRD §7.1: branding + map + PSI)
+    asyncio.create_task(
+        _run_site_analysis(db, firecrawl_client, pagespeed_client, project_id, wp_url, conn.id),
+    )
+
     # Reload list (project already validated above)
     connections = await conn_svc.get_by_project(project_id)
     safe_name = html.escape(project.name)
     await message.answer(
-        f"WordPress ({html.escape(identifier)}) подключён!\n\n<b>{safe_name}</b> — Подключения",
+        f"WordPress ({html.escape(identifier)}) подключён!\n"
+        f"Анализ сайта запущен.\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
     )
 
@@ -765,6 +800,7 @@ async def vk_process_group_url(
         vk_app_id=settings.vk_app_id,
         vk_app_secret=settings.vk_secure_key.get_secret_value(),
         redirect_uri=f"{base_url}/api/auth/vk/callback",
+        vk_service_key=settings.vk_service_key.get_secret_value(),
     )
 
     # Resolve group: either by numeric ID or screen_name
