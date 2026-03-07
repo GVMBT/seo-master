@@ -93,7 +93,7 @@ class TestBuildAuthorizeUrl:
         nonce = _nonce()
         url, state = service.build_authorize_url(user_id=42, nonce=nonce, group_ids=12345)
         assert "oauth.vk.ru/authorize" in url
-        assert "scope=wall,photos,offline" in url
+        assert "scope=manage,photos" in url
         assert "group_ids=12345" in url
         assert "code_challenge" not in url  # No PKCE for step 2
         assert nonce in state
@@ -219,7 +219,7 @@ class TestHandleCallbackStep1:
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
 
-        with pytest.raises(VKOAuthError, match="Invalid.*step"):
+        with pytest.raises(VKOAuthError, match=r"Invalid.*step"):
             await service.handle_callback(code="code", state=state)
 
     async def test_missing_pkce_data_raises(self) -> None:
@@ -588,59 +588,117 @@ class TestParseVKGroupInput:
 
 
 class TestResolveGroup:
-    async def test_resolves_by_screen_name(self) -> None:
+    """resolve_group: scrape vk.com first, fallback to API with service key."""
+
+    _VK_PAGE_HTML = '<script>{"loc":"?act=s&pid=12345&subdir=testgroup"}</script>'
+
+    async def test_resolves_by_scraping(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            url = str(request.url)
-            if "access_token" in url and "grant_type=client_credentials" in url:
-                return httpx.Response(200, json={"access_token": "svc_token"})
-            if "groups.getById" in url:
-                return httpx.Response(200, json={
-                    "response": {"groups": [{"id": 12345, "name": "Test Group"}]},
-                })
+            if "vk.com/testgroup" in str(request.url):
+                return httpx.Response(200, text=self._VK_PAGE_HTML)
             return httpx.Response(404)
 
         service, _ = _make_service(handler=handler)
         gid, name = await service.resolve_group("testgroup")
         assert gid == 12345
-        assert name == "Test Group"
+        assert name == "testgroup"
 
-    async def test_resolves_by_numeric_id(self) -> None:
+    async def test_resolves_numeric_id_via_scraping(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            url = str(request.url)
-            if "access_token" in url and "grant_type=client_credentials" in url:
-                return httpx.Response(200, json={"access_token": "svc_token"})
-            if "groups.getById" in url:
-                return httpx.Response(200, json={
-                    "response": {"groups": [{"id": 999, "name": "My Community"}]},
-                })
+            if "vk.com/999" in str(request.url):
+                return httpx.Response(200, text='{"loc":"?act=s&pid=999&subdir=myclub"}')
             return httpx.Response(404)
 
         service, _ = _make_service(handler=handler)
         gid, name = await service.resolve_group("999")
         assert gid == 999
-        assert name == "My Community"
+        assert name == "club999"
 
-    async def test_group_not_found_raises(self) -> None:
+    async def test_scrape_fails_falls_back_to_api(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             url = str(request.url)
-            if "grant_type=client_credentials" in url:
-                return httpx.Response(200, json={"access_token": "svc_token"})
+            if "vk.com/" in url and "api" not in url:
+                return httpx.Response(404)
+            if "groups.getById" in url:
+                return httpx.Response(200, json={
+                    "response": {"groups": [{"id": 555, "name": "API Group"}]},
+                })
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(handler)
+        client = httpx.AsyncClient(transport=transport)
+        service = VKOAuthService(
+            http_client=client,
+            redis=AsyncMock(set=AsyncMock(return_value=True), get=AsyncMock(return_value=None), delete=AsyncMock()),
+            encryption_key=_ENCRYPTION_KEY,
+            vk_app_id=123456,
+            vk_app_secret=_APP_SECRET,
+            redirect_uri="https://example.com/api/auth/vk/callback",
+            vk_service_key="real_service_key",
+        )
+        gid, name = await service.resolve_group("testgroup")
+        assert gid == 555
+        assert name == "API Group"
+
+    async def test_scrape_user_page_not_group(self) -> None:
+        """User pages have no pid in loc — should not resolve."""
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "vk.com/durov" in str(request.url):
+                return httpx.Response(200, text='{"loc":"?subdir=durov"}')
+            return httpx.Response(404)
+
+        service, _ = _make_service(handler=handler)
+        with pytest.raises(VKOAuthError, match="Cannot resolve"):
+            await service.resolve_group("durov")
+
+    async def test_numeric_id_mismatch_falls_through_to_api(self) -> None:
+        """If scraped pid differs from user input, skip scrape and use API."""
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            # Scrape returns pid=999 but user typed "123"
+            if "vk.com/123" in url:
+                return httpx.Response(200, text='{"loc":"?act=s&pid=999&subdir=club123"}')
+            if "groups.getById" in url:
+                return httpx.Response(200, json={
+                    "response": {"groups": [{"id": 123, "name": "Real Group"}]},
+                })
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(handler)
+        client = httpx.AsyncClient(transport=transport)
+        service = VKOAuthService(
+            http_client=client,
+            redis=AsyncMock(set=AsyncMock(return_value=True), get=AsyncMock(return_value=None), delete=AsyncMock()),
+            encryption_key=_ENCRYPTION_KEY,
+            vk_app_id=123456,
+            vk_app_secret=_APP_SECRET,
+            redirect_uri="https://example.com/api/auth/vk/callback",
+            vk_service_key="real_service_key",
+        )
+        gid, name = await service.resolve_group("123")
+        assert gid == 123
+        assert name == "Real Group"
+
+    async def test_both_strategies_fail_raises(self) -> None:
+        """Both scrape and API fail → VKOAuthError with clear message."""
+        async def handler(_request: httpx.Request) -> httpx.Response:
+            url = str(_request.url)
             if "groups.getById" in url:
                 return httpx.Response(200, json={
                     "error": {"error_code": 100, "error_msg": "Invalid group id"},
                 })
             return httpx.Response(404)
 
-        service, _ = _make_service(handler=handler)
+        transport = httpx.MockTransport(handler)
+        client = httpx.AsyncClient(transport=transport)
+        service = VKOAuthService(
+            http_client=client,
+            redis=AsyncMock(set=AsyncMock(return_value=True), get=AsyncMock(return_value=None), delete=AsyncMock()),
+            encryption_key=_ENCRYPTION_KEY,
+            vk_app_id=123456,
+            vk_app_secret=_APP_SECRET,
+            redirect_uri="https://example.com/api/auth/vk/callback",
+            vk_service_key="real_service_key",
+        )
         with pytest.raises(VKOAuthError, match="VK API error"):
             await service.resolve_group("nonexistent")
-
-    async def test_service_token_failure_raises(self) -> None:
-        async def handler(request: httpx.Request) -> httpx.Response:
-            if "grant_type=client_credentials" in str(request.url):
-                return httpx.Response(200, json={"error": "invalid_client"})
-            return httpx.Response(404)
-
-        service, _ = _make_service(handler=handler)
-        with pytest.raises(VKOAuthError):
-            await service.resolve_group("anygroup")

@@ -14,8 +14,9 @@ Source of truth:
 Key facts:
 - Authorize: https://oauth.vk.ru/authorize (group_ids required)
 - Exchange: GET https://oauth.vk.ru/access_token (client_secret)
-- Community token with offline scope: permanent (expires_in=0)
-- Group resolution: groups.getById with service token (client_credentials)
+- Community token scope: manage,photos (NOT wall/offline — those are user scopes)
+- Community token is permanent (expires_in=0) by default
+- Group resolution: scrape vk.com page (no auth), fallback to API + service key
 """
 
 import base64
@@ -60,6 +61,8 @@ _VK_SCREEN_NAME_RE = re.compile(
     r"(?:https?://)?(?:m\.)?vk\.(?:com|ru)/([a-zA-Z][a-zA-Z0-9_.]{1,31})",
     re.IGNORECASE,
 )
+# Extracts group pid from VK SPA page: "loc":"?act=s&pid=GROUP_ID&subdir=..."
+_VK_LOC_PID_RE = re.compile(r'"loc"\s*:\s*"\?act=s&pid=(\d+)&subdir=')
 
 
 def parse_vk_group_input(text: str) -> tuple[int | None, str | None]:
@@ -156,9 +159,81 @@ class VKOAuthService:
     async def resolve_group(self, group_id_or_name: str) -> tuple[int, str]:
         """Resolve VK group by numeric ID or screen_name.
 
-        Uses a service token (client_credentials) — no user auth needed.
-        Returns (group_id, group_name).
+        Strategy:
+        1. Scrape vk.com/{screen_name} page → extract pid from "loc" field (no auth)
+        2. Fallback: VK API groups.getById with service token (if available)
+
+        Returns (group_id, group_name).  group_name may be screen_name if
+        the actual name is unavailable (will be fetched later with user token).
         """
+        # For numeric IDs, try scraping first to verify it's a real group
+        is_numeric = group_id_or_name.isdigit()
+
+        # --- Strategy 1: scrape vk.com page (no auth needed) ---
+        scraped_id = await self._resolve_by_scraping(group_id_or_name)
+        if scraped_id is not None:
+            if is_numeric and scraped_id != int(group_id_or_name):
+                # Mismatch: user typed one ID but page has a different pid.
+                # Don't silently swap — fall through to API or fail.
+                log.warning(
+                    "vk_resolve_id_mismatch",
+                    input=group_id_or_name,
+                    scraped=scraped_id,
+                )
+            else:
+                display_name = group_id_or_name if not is_numeric else f"club{scraped_id}"
+                return scraped_id, display_name
+
+        # --- Strategy 2: VK API with service token ---
+        if self._service_key:
+            return await self._resolve_by_api(group_id_or_name)
+
+        # Both strategies failed
+        raise VKOAuthError(
+            f"Cannot resolve VK group: {group_id_or_name}",
+            user_message="Группа VK не найдена или недоступна. Проверьте ссылку.",
+        )
+
+    async def _resolve_by_scraping(self, screen_name: str) -> int | None:
+        """Scrape vk.com/{screen_name} and extract group ID from "loc" field.
+
+        VK SPA pages contain a JSON snippet with "loc":"?act=s&pid=GROUP_ID&subdir=NAME"
+        for group pages.  User pages have "loc":"?subdir=NAME" (no pid).
+
+        Returns numeric group_id or None if not found / not a group.
+        """
+        url = f"https://vk.com/{screen_name}"
+        try:
+            resp = await self._http.get(
+                url,
+                headers={"User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                )},
+                timeout=10,
+                follow_redirects=True,
+            )
+        except httpx.HTTPError as exc:
+            log.warning("vk_scrape_http_error", screen_name=screen_name, error=str(exc))
+            return None
+
+        if resp.status_code != 200:
+            log.warning("vk_scrape_bad_status", screen_name=screen_name, status=resp.status_code)
+            return None
+
+        # Extract pid from "loc":"?act=s&pid=GROUP_ID&subdir=..."
+        m = _VK_LOC_PID_RE.search(resp.text)
+        if not m:
+            log.info("vk_scrape_no_pid", screen_name=screen_name)
+            return None
+
+        group_id = int(m.group(1))
+        log.info("vk_scrape_resolved", screen_name=screen_name, group_id=group_id)
+        return group_id
+
+    async def _resolve_by_api(self, group_id_or_name: str) -> tuple[int, str]:
+        """Resolve group via VK API groups.getById with service token."""
         service_token = await self._get_service_token()
         try:
             resp = await self._http.post(
@@ -264,7 +339,7 @@ class VKOAuthService:
 
         if group_ids is not None:
             # Classic VK OAuth → community token
-            scope = "wall,photos,offline"
+            scope = "manage,photos"
             params = (
                 f"client_id={self._app_id}"
                 f"&display=page"
