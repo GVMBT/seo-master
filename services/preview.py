@@ -158,6 +158,8 @@ class PreviewService:
             competitor_gaps=websearch["competitor_gaps"],
             internal_links=websearch.get("internal_links", ""),
             research_data=websearch.get("research_data"),
+            news_data=websearch.get("news_data"),
+            autocomplete_suggestions=websearch.get("autocomplete_suggestions"),
         )
 
         content = text_result.content if isinstance(text_result.content, dict) else {}
@@ -320,6 +322,7 @@ class PreviewService:
         self,
         preview: ArticlePreview,
         connection: PlatformConnection,
+        category_name: str = "",
     ) -> PublishResult:
         """Publish article preview to WordPress.
 
@@ -350,6 +353,37 @@ class PreviewService:
                     log.warning("image_download_failed", path=storage_path)
 
         publisher = WordPressPublisher(self._http_client)
+
+        # Derive SEO title from preview title (no seo_title stored in article_previews)
+        from services.ai.articles import truncate_seo_fields
+
+        seo_title, meta_desc = truncate_seo_fields(
+            (preview.title or "")[:60], preview.meta_description or ""
+        )
+
+        # Resolve WP category (auto-map bot category → WP category)
+        wp_category_id: int | None = None
+        if category_name:
+            cached_wp_cats: dict[str, int] = (connection.metadata or {}).get("wp_categories", {})
+            if category_name in cached_wp_cats:
+                wp_category_id = cached_wp_cats[category_name]
+            else:
+                base_url = WordPressPublisher._base_url(connection.credentials)
+                auth = WordPressPublisher._auth(connection.credentials)
+                wp_category_id = await publisher.resolve_wp_category(base_url, auth, category_name)
+                if wp_category_id is not None:
+                    from bot.config import get_settings
+                    from db.credential_manager import CredentialManager
+                    from db.repositories.connections import ConnectionsRepository
+
+                    settings = get_settings()
+                    cm = CredentialManager(settings.encryption_key.get_secret_value())
+                    conn_repo = ConnectionsRepository(self._db, cm)
+                    await conn_repo.merge_metadata(
+                        connection.id,
+                        {"wp_categories": {**cached_wp_cats, category_name: wp_category_id}},
+                    )
+
         return await publisher.publish(
             PublishRequest(
                 connection=connection,
@@ -359,9 +393,11 @@ class PreviewService:
                 images=image_bytes_list,
                 images_meta=images_meta_list,
                 metadata={
+                    "seo_title": seo_title,
                     "focus_keyword": preview.keyword or "",
-                    "meta_description": preview.meta_description or "",
+                    "meta_description": meta_desc,
                     "storage_urls": storage_urls,
+                    **({"wp_category_id": wp_category_id} if wp_category_id else {}),
                 },
             )
         )

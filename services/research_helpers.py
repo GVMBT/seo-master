@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import json
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import structlog
 
@@ -36,6 +36,39 @@ MAX_COMPETITOR_SCRAPE = 3
 
 # Max internal links to include in AI prompt (subset of cached links)
 MAX_INTERNAL_LINKS = 20
+
+
+def _url_to_hint(url: str) -> str:
+    """Extract a human-readable topic hint from a URL path segment.
+
+    Takes the last non-empty path segment, decodes percent-encoded chars,
+    replaces hyphens/underscores with spaces.
+    """
+    try:
+        parsed = urlparse(url)
+        parts = [p for p in parsed.path.split("/") if p]
+        if not parts:
+            return ""
+        slug = parts[-1]
+        decoded = unquote(slug, encoding="utf-8", errors="replace")
+        return decoded.replace("-", " ").replace("_", " ").strip()
+    except (ValueError, AttributeError):
+        return ""
+
+
+def format_internal_links(urls: list[str]) -> str:
+    """Format internal links with URL-derived topic hints for AI context.
+
+    Produces lines like: https://example.com/betonnye-bloki (betonnye bloki)
+    """
+    lines: list[str] = []
+    for url in urls:
+        hint = _url_to_hint(url)
+        if hint:
+            lines.append(f"{url} ({hint})")
+        else:
+            lines.append(url)
+    return "\n".join(lines)
 
 
 def is_own_site(url: str, project_url: str | None) -> bool:
@@ -88,6 +121,43 @@ def identify_gaps(pages: list[dict[str, Any]]) -> str:
         "Структура H2 конкурентов (определи, какие темы НЕ раскрыты "
         "ни одним конкурентом — это твоя уникальная ценность):\n" + "\n".join(lines)
     )
+
+
+def format_news_for_prompt(news_items: list[dict[str, Any]], max_items: int = 5) -> str:
+    """Format Serper news results into a text block for AI prompts.
+
+    Returns a <CURRENT_NEWS> block or empty string if no news.
+    """
+    if not news_items:
+        return ""
+    lines: list[str] = []
+    for item in news_items[:max_items]:
+        title = item.get("title", "")
+        source = item.get("source", "")
+        date = item.get("date", "")
+        snippet = item.get("snippet", "")
+        if title:
+            parts = [f"- {title}"]
+            if source or date:
+                parts.append(f"  ({source}, {date})" if source and date else f"  ({source or date})")
+            if snippet:
+                parts.append(f"  {snippet[:200]}")
+            lines.append("\n".join(parts))
+    if not lines:
+        return ""
+    return (
+        "<CURRENT_NEWS>\n"
+        "Свежие новости по теме (используй для актуальности статьи):\n"
+        + "\n".join(lines)
+        + "\n</CURRENT_NEWS>"
+    )
+
+
+def format_autocomplete_for_prompt(suggestions: list[str], max_items: int = 10) -> str:
+    """Format autocomplete suggestions as LSI keywords for AI prompts."""
+    if not suggestions:
+        return ""
+    return ", ".join(suggestions[:max_items])
 
 
 async def fetch_research(
@@ -183,6 +253,21 @@ async def _scrape_competitors(
     return pages
 
 
+def _process_extra_serper(responses: dict[str, Any], result: dict[str, Any]) -> None:
+    """Process Serper News and Autocomplete results from gathered responses."""
+    news_result = responses.get("news")
+    if news_result and not isinstance(news_result, BaseException):
+        result["news_data"] = news_result.news
+    elif isinstance(news_result, BaseException):
+        log.warning("websearch_news_failed", error=str(news_result))
+
+    ac_result = responses.get("autocomplete")
+    if ac_result and not isinstance(ac_result, BaseException):
+        result["autocomplete_suggestions"] = ac_result
+    elif isinstance(ac_result, BaseException):
+        log.warning("websearch_autocomplete_failed", error=str(ac_result))
+
+
 async def gather_websearch_data(
     keyword: str,
     project_url: str | None,
@@ -209,6 +294,8 @@ async def gather_websearch_data(
         "competitor_analysis": "",
         "competitor_gaps": "",
         "research_data": None,
+        "news_data": [],
+        "autocomplete_suggestions": [],
     }
 
     tasks: dict[str, Any] = {}
@@ -216,6 +303,8 @@ async def gather_websearch_data(
     # Serper: PAA + organic results for the keyword
     if serper:
         tasks["serper"] = serper.search(keyword, num=10)
+        tasks["news"] = serper.search_news(keyword, num=5)
+        tasks["autocomplete"] = serper.autocomplete(keyword)
 
     # Research: Perplexity Sonar Pro (parallel with Serper, API_CONTRACTS.md section 7a)
     if orchestrator:
@@ -269,11 +358,13 @@ async def gather_websearch_data(
     elif isinstance(serper_result, BaseException):
         log.warning("websearch_serper_failed", error=str(serper_result))
 
+    _process_extra_serper(responses, result)
+
     # Format internal links
     map_result = responses.get("map")
     if map_result and not isinstance(map_result, BaseException):
         urls = [u.get("url", "") for u in map_result.urls[:MAX_INTERNAL_LINKS] if u.get("url")]
-        result["internal_links"] = "\n".join(urls) if urls else ""
+        result["internal_links"] = format_internal_links(urls) if urls else ""
     elif isinstance(map_result, BaseException):
         log.warning("websearch_map_failed", error=str(map_result))
 
@@ -283,5 +374,7 @@ async def gather_websearch_data(
         has_research=result["research_data"] is not None,
         competitor_count=len(result["competitor_pages"]),
         has_internal_links=bool(result.get("internal_links")),
+        news_count=len(result["news_data"]),
+        autocomplete_count=len(result["autocomplete_suggestions"]),
     )
     return result

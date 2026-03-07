@@ -34,6 +34,7 @@ ARTICLE_SCHEMA: dict[str, Any] = {
         "type": "object",
         "properties": {
             "title": {"type": "string"},
+            "seo_title": {"type": "string"},
             "meta_description": {"type": "string"},
             "content_markdown": {"type": "string"},
             "faq_schema": {
@@ -62,7 +63,7 @@ ARTICLE_SCHEMA: dict[str, Any] = {
                 },
             },
         },
-        "required": ["title", "meta_description", "content_markdown", "faq_schema", "images_meta"],
+        "required": ["title", "seo_title", "meta_description", "content_markdown", "faq_schema", "images_meta"],
         "additionalProperties": False,
     },
 }
@@ -104,6 +105,7 @@ CRITIQUE_SCHEMA: dict[str, Any] = {
         "type": "object",
         "properties": {
             "title": {"type": "string"},
+            "seo_title": {"type": "string"},
             "meta_description": {"type": "string"},
             "content_markdown": {"type": "string"},
             "faq_schema": {
@@ -135,6 +137,7 @@ CRITIQUE_SCHEMA: dict[str, Any] = {
         },
         "required": [
             "title",
+            "seo_title",
             "meta_description",
             "content_markdown",
             "faq_schema",
@@ -195,6 +198,26 @@ RESEARCH_SCHEMA: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+
+def truncate_seo_fields(seo_title: str, meta_description: str) -> tuple[str, str]:
+    """Safety-net truncation for SEO fields.
+
+    seo_title: max 60 chars (Yoast recommendation).
+    meta_description: max 160 chars (Google snippet limit).
+    Truncates at word boundary where possible.
+    """
+
+    def _truncate(text: str, max_len: int) -> str:
+        if len(text) <= max_len:
+            return text
+        truncated = text[:max_len]
+        last_space = truncated.rfind(" ")
+        if last_space > max_len - 20:
+            return truncated[:last_space].rstrip(".,;: ")
+        return truncated.rstrip(".,;: ")
+
+    return _truncate(seo_title, 60), _truncate(meta_description, 160)
 
 
 def format_research_for_prompt(research: dict[str, Any] | None, step: str) -> str:
@@ -499,6 +522,8 @@ class ArticleService:
         internal_links: str = "",
         lsi_keywords: str = "",
         research_data: dict[str, Any] | None = None,
+        news_data: list[dict[str, Any]] | None = None,
+        autocomplete_suggestions: list[str] | None = None,
     ) -> GenerationResult:
         """Generate an SEO article via multi-step pipeline.
 
@@ -527,6 +552,8 @@ class ArticleService:
             internal_links=internal_links,
             lsi_keywords=lsi_keywords,
             research_data=research_data,
+            news_data=news_data,
+            autocomplete_suggestions=autocomplete_suggestions,
         )
 
         # Step 1: OUTLINE → Step 2: EXPAND
@@ -579,6 +606,8 @@ class ArticleService:
         internal_links: str,
         lsi_keywords: str,
         research_data: dict[str, Any] | None = None,
+        news_data: list[dict[str, Any]] | None = None,
+        autocomplete_suggestions: list[str] | None = None,
     ) -> tuple[dict[str, Any], str, str, dict[str, str]]:
         """Build prompt context from project/category/competitor data."""
         text_settings = overrides or category.text_settings or {}
@@ -647,6 +676,21 @@ class ArticleService:
             context["_research_data"] = research_data
             # Default: expand wording (used by article_v7.yaml)
             context["current_research"] = format_research_for_prompt(research_data, "expand")
+
+        # News data: fresh articles for trend/actuality sections
+        if news_data:
+            from services.research_helpers import format_news_for_prompt
+
+            context["current_news"] = format_news_for_prompt(news_data)
+
+        # Autocomplete: enrich LSI keywords with real Google suggestions
+        if autocomplete_suggestions:
+            from services.research_helpers import format_autocomplete_for_prompt
+
+            ac_text = format_autocomplete_for_prompt(autocomplete_suggestions)
+            if ac_text:
+                existing_lsi = context.get("lsi_keywords", "")
+                context["lsi_keywords"] = f"{existing_lsi}, {ac_text}" if existing_lsi else ac_text
 
         branding_dict = {"text": text_color, "accent": accent_color}
         return context, main_phrase, secondary_phrases, branding_dict

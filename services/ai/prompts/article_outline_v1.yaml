@@ -33,6 +33,10 @@ user: |
   <<current_research>>
   <% endif %>
 
+  <% if current_news %>
+  <<current_news>>
+  <% endif %>
+
   Требования к плану:
   - Title (заголовок статьи): содержит "<<main_phrase>>"
   - 3-6 H2: каждый решает конкретную проблему читателя, включают дополнительные фразы
@@ -103,6 +107,9 @@ variables:
     required: false
     default: ""
   - name: current_research
+    required: false
+    default: ""
+  - name: current_news
     required: false
     default: ""
   - name: language

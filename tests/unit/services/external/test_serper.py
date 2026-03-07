@@ -2,7 +2,7 @@
 
 Covers: search (success, cache hit/miss, retry, E04 graceful degradation),
 PAA parsing (dict and string formats), related searches parsing,
-Redis cache get/set errors.
+Redis cache get/set errors, news search, autocomplete.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 
-from services.external.serper import SerperClient, SerperResult, _cache_key, _empty_result
+from services.external.serper import NewsResult, SerperClient, SerperResult, _cache_key, _empty_result
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -371,3 +371,213 @@ class TestSearchErrors:
 
         assert len(result.organic) == 1
         assert result.organic[0]["title"] == "Second try"
+
+
+# ---------------------------------------------------------------------------
+# search_news
+# ---------------------------------------------------------------------------
+
+
+class TestSearchNews:
+    async def test_basic_news_search(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "/news" in str(request.url):
+                return httpx.Response(
+                    200,
+                    json={
+                        "news": [
+                            {
+                                "title": "Panels in Crimea",
+                                "link": "https://news.example.com/1",
+                                "snippet": "New wall panels...",
+                                "date": "2 hours ago",
+                                "source": "RBC",
+                                "position": 1,
+                            },
+                            {
+                                "title": "Construction trends",
+                                "link": "https://news.example.com/2",
+                                "snippet": "Construction market...",
+                                "date": "1 day ago",
+                                "source": "Vedomosti",
+                                "position": 2,
+                            },
+                        ],
+                    },
+                )
+            return httpx.Response(404)
+
+        redis = _make_redis_mock()
+        client = _make_client(handler, redis=redis)
+        result = await client.search_news("стеновые панели Крым")
+
+        assert isinstance(result, NewsResult)
+        assert len(result.news) == 2
+        assert result.news[0]["title"] == "Panels in Crimea"
+        assert result.news[0]["source"] == "RBC"
+
+    async def test_news_sends_tbs_param(self) -> None:
+        captured_body: dict[str, Any] = {}
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "/news" in str(request.url):
+                captured_body.update(json.loads(request.content))
+                return httpx.Response(200, json={"news": []})
+            return httpx.Response(404)
+
+        redis = _make_redis_mock()
+        client = _make_client(handler, redis=redis)
+        await client.search_news("test", tbs="qdr:w")
+
+        assert captured_body["tbs"] == "qdr:w"
+        assert captured_body["gl"] == "ua"
+
+    async def test_news_cache_hit(self) -> None:
+        call_count = 0
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(200, json={"news": []})
+
+        cached_news = [{"title": "Cached news", "link": "https://cached.com"}]
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value=json.dumps(cached_news))
+        redis.set = AsyncMock()
+        client = _make_client(handler, redis=redis)
+        result = await client.search_news("cached query")
+
+        assert call_count == 0
+        assert len(result.news) == 1
+        assert result.news[0]["title"] == "Cached news"
+
+    async def test_news_error_returns_empty(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, text="Server Error")
+
+        redis = _make_redis_mock()
+        client = _make_client(handler, redis=redis)
+        result = await client.search_news("test")
+
+        assert result.news == []
+
+    async def test_news_caches_successful_result(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "/news" in str(request.url):
+                return httpx.Response(
+                    200,
+                    json={"news": [{"title": "Fresh"}]},
+                )
+            return httpx.Response(404)
+
+        redis = _make_redis_mock()
+        client = _make_client(handler, redis=redis)
+        await client.search_news("cache test")
+
+        redis.set.assert_called_once()
+        call_args = redis.set.call_args
+        assert call_args[1]["ex"] == 21600  # 6h TTL
+
+
+# ---------------------------------------------------------------------------
+# autocomplete
+# ---------------------------------------------------------------------------
+
+
+class TestAutocomplete:
+    async def test_basic_autocomplete(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "/autocomplete" in str(request.url):
+                return httpx.Response(
+                    200,
+                    json={
+                        "suggestions": [
+                            "стеновые панели для кухни",
+                            "стеновые панели мдф",
+                            "стеновые панели пвх",
+                            "стеновые панели цена",
+                        ],
+                    },
+                )
+            return httpx.Response(404)
+
+        redis = _make_redis_mock()
+        client = _make_client(handler, redis=redis)
+        result = await client.autocomplete("стеновые панели")
+
+        assert len(result) == 4
+        assert "стеновые панели для кухни" in result
+        assert "стеновые панели цена" in result
+
+    async def test_autocomplete_cache_hit(self) -> None:
+        call_count = 0
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(200, json={"suggestions": []})
+
+        cached_suggestions = ["cached suggestion 1", "cached suggestion 2"]
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value=json.dumps(cached_suggestions))
+        redis.set = AsyncMock()
+        client = _make_client(handler, redis=redis)
+        result = await client.autocomplete("cached")
+
+        assert call_count == 0
+        assert len(result) == 2
+        assert result[0] == "cached suggestion 1"
+
+    async def test_autocomplete_error_returns_empty(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, text="Forbidden")
+
+        redis = _make_redis_mock()
+        client = _make_client(handler, redis=redis)
+        result = await client.autocomplete("test")
+
+        assert result == []
+
+    async def test_autocomplete_caches_result(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "/autocomplete" in str(request.url):
+                return httpx.Response(
+                    200,
+                    json={"suggestions": ["sug1", "sug2"]},
+                )
+            return httpx.Response(404)
+
+        redis = _make_redis_mock()
+        client = _make_client(handler, redis=redis)
+        await client.autocomplete("cache test")
+
+        redis.set.assert_called_once()
+        call_args = redis.set.call_args
+        assert call_args[1]["ex"] == 259200  # 3d TTL
+
+    async def test_autocomplete_empty_suggestions(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "/autocomplete" in str(request.url):
+                return httpx.Response(200, json={"suggestions": []})
+            return httpx.Response(404)
+
+        redis = _make_redis_mock()
+        client = _make_client(handler, redis=redis)
+        result = await client.autocomplete("obscure query")
+
+        assert result == []
+        redis.set.assert_not_called()
+
+    async def test_autocomplete_no_redis(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "/autocomplete" in str(request.url):
+                return httpx.Response(
+                    200,
+                    json={"suggestions": ["no-cache"]},
+                )
+            return httpx.Response(404)
+
+        client = _make_client(handler, redis=None)
+        result = await client.autocomplete("test")
+
+        assert result == ["no-cache"]
