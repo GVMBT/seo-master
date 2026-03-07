@@ -167,6 +167,7 @@ class VKOAuthService:
                 },
                 timeout=10,
             )
+            resp.raise_for_status()
             data = resp.json()
         except httpx.HTTPError as exc:
             log.error("vk_resolve_group_http_error", input=group_id_or_name, error=str(exc))
@@ -176,7 +177,10 @@ class VKOAuthService:
             ) from exc
         except ValueError as exc:
             log.error("vk_resolve_group_json_error", input=group_id_or_name, error=str(exc))
-            raise VKOAuthError("VK вернул некорректный ответ") from exc
+            raise VKOAuthError(
+                "VK вернул некорректный ответ",
+                user_message="VK вернул некорректный ответ. Попробуйте позже.",
+            ) from exc
 
         if "error" in data:
             err = data["error"]
@@ -198,7 +202,10 @@ class VKOAuthService:
             response.get("groups", []) if isinstance(response, dict) else response
         )
         if not groups:
-            raise VKOAuthError("Группа VK не найдена")
+            raise VKOAuthError(
+                "Группа VK не найдена",
+                user_message="Группа VK не найдена или недоступна",
+            )
 
         group = groups[0]
         return int(group["id"]), str(group.get("name", ""))
@@ -216,6 +223,7 @@ class VKOAuthService:
                 },
                 timeout=10,
             )
+            resp.raise_for_status()
             data = resp.json()
         except (httpx.HTTPError, ValueError) as exc:
             log.error("vk_service_token_failed", error=str(exc))

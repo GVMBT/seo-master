@@ -771,9 +771,9 @@ async def vk_process_group_url(
     resolve_input = str(group_id) if group_id else screen_name
     try:
         resolved_id, group_name = await vk_svc.resolve_group(resolve_input or "")
-    except VKOAuthError:
+    except VKOAuthError as exc:
         await message.answer(
-            "Группа VK не найдена или недоступна.\n"
+            f"{exc.user_message}\n"
             "Проверьте ссылку и убедитесь, что группа существует.",
         )
         return

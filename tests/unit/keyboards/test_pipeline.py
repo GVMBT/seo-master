@@ -270,6 +270,7 @@ class TestPipelineReadinessKb:
         buttons = _flatten_buttons(kb)
         desc_btn = next(b for b in buttons if b.callback_data == "pipeline:readiness:description")
         assert "описание" in desc_btn.text.lower()
+        assert "ток" not in desc_btn.text.lower()  # free — no cost label
 
     def test_image_count_in_label(self) -> None:
         """Images button shows count and cost."""
@@ -552,6 +553,7 @@ class TestPipelineDescriptionOptionsKb:
         buttons = _flatten_buttons(kb)
         ai_btn = next(b for b in buttons if b.callback_data == "pipeline:readiness:description:ai")
         assert "ai" in ai_btn.text.lower() or "сгенерировать" in ai_btn.text.lower()
+        assert "ток" not in ai_btn.text.lower()  # free — no cost label
 
 
 # ---------------------------------------------------------------------------
