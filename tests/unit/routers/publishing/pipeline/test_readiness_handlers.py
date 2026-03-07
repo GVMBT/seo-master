@@ -1616,20 +1616,16 @@ class TestQtySelectHandler:
         user: Any,
         mock_db: MagicMock,
     ) -> None:
-        """Select 50 phrases -> compute cost=50, show confirm."""
+        """Select 50 phrases -> show confirm (free, no cost)."""
         mock_callback.data = "pipeline:readiness:keywords:qty_50"
         mock_state.get_data = AsyncMock(
             return_value=_make_state_data(kw_products="Мебель", kw_geography="Москва"),
         )
-        p_settings = _patch_settings(module=_COMMON)
-        p_token, _ = _patch_token_svc(balance=500, module=_COMMON)
 
-        with p_settings, p_token:
-            await readiness_keywords_qty_select(mock_callback, mock_state, user, mock_db)
+        await readiness_keywords_qty_select(mock_callback, mock_state, user, mock_db)
 
         update_kwargs = mock_state.update_data.call_args.kwargs
         assert update_kwargs["kw_quantity"] == 50
-        assert update_kwargs["kw_cost"] == 50
         edit_text = mock_callback.message.edit_text.call_args[0][0]
         assert "50" in edit_text
         assert "Мебель" in edit_text
@@ -1641,16 +1637,13 @@ class TestQtySelectHandler:
         user: Any,
         mock_db: MagicMock,
     ) -> None:
-        """Select 200 phrases -> cost=200."""
+        """Select 200 phrases -> quantity stored (free, no cost)."""
         mock_callback.data = "pipeline:readiness:keywords:qty_200"
         mock_state.get_data = AsyncMock(
             return_value=_make_state_data(kw_products="SEO", kw_geography="Россия"),
         )
-        p_settings = _patch_settings(module=_COMMON)
-        p_token, _ = _patch_token_svc(balance=1000, module=_COMMON)
 
-        with p_settings, p_token:
-            await readiness_keywords_qty_select(mock_callback, mock_state, user, mock_db)
+        await readiness_keywords_qty_select(mock_callback, mock_state, user, mock_db)
 
         assert mock_state.update_data.call_args.kwargs["kw_quantity"] == 200
 
@@ -1675,9 +1668,9 @@ class TestQtySelectHandler:
 
 
 class TestConfirmHandler:
-    """readiness_keywords_confirm: E01 balance check, charge, run generation."""
+    """readiness_keywords_confirm: free for user, starts generation."""
 
-    async def test_confirm_insufficient_balance_e01(
+    async def test_confirm_starts_generation(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
@@ -1685,56 +1678,17 @@ class TestConfirmHandler:
         mock_db: MagicMock,
         mock_redis: MagicMock,
     ) -> None:
-        """E01: insufficient balance -> show_alert, no charge."""
+        """Confirm -> set generating state, call pipeline (no charge)."""
         mock_state.get_data = AsyncMock(
             return_value=_make_state_data(
-                kw_cost=100,
                 kw_quantity=100,
                 kw_products="Test",
                 kw_geography="Москва",
             ),
         )
-        p_settings = _patch_settings(module=_COMMON)
-        p_token, token_mock = _patch_token_svc(balance=50, has_balance=False, module=_COMMON)
-
-        with p_settings, p_token:
-            await readiness_keywords_confirm(
-                mock_callback,
-                mock_state,
-                user,
-                mock_db,
-                mock_redis,
-                ai_orchestrator=AsyncMock(),
-                dataforseo_client=AsyncMock(),
-            )
-
-        token_mock.charge.assert_not_called()
-        mock_callback.answer.assert_called_once()
-        assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
-
-    async def test_confirm_charges_and_starts_generation(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-        mock_redis: MagicMock,
-    ) -> None:
-        """Sufficient balance -> charge tokens, set generating state, call pipeline."""
-        mock_state.get_data = AsyncMock(
-            return_value=_make_state_data(
-                kw_cost=100,
-                kw_quantity=100,
-                kw_products="Test",
-                kw_geography="Москва",
-            ),
-        )
-        p_settings = _patch_settings(module=_COMMON)
-        p_token, token_mock = _patch_token_svc(balance=500, has_balance=True, module=_COMMON)
-        # Patch run_keyword_generation in _readiness_common (called by the closure)
         p_pipeline = patch(f"{_COMMON}.run_keyword_generation", new_callable=AsyncMock)
 
-        with p_settings, p_token, p_pipeline as mock_pipeline:
+        with p_pipeline as mock_pipeline:
             await readiness_keywords_confirm(
                 mock_callback,
                 mock_state,
@@ -1745,10 +1699,6 @@ class TestConfirmHandler:
                 dataforseo_client=AsyncMock(),
             )
 
-        token_mock.charge.assert_called_once()
-        charge_kwargs = token_mock.charge.call_args.kwargs
-        assert charge_kwargs["amount"] == 100
-        assert charge_kwargs["operation_type"] == "keywords"
         mock_state.set_state.assert_called_with(
             ArticlePipelineFSM.readiness_keywords_generating,
         )
@@ -1762,8 +1712,8 @@ class TestConfirmHandler:
         mock_db: MagicMock,
         mock_redis: MagicMock,
     ) -> None:
-        """Missing category_id or cost -> show_alert error."""
-        mock_state.get_data = AsyncMock(return_value={"project_id": 1})
+        """Missing category_id or project_id -> show_alert error."""
+        mock_state.get_data = AsyncMock(return_value={})
         await readiness_keywords_confirm(
             mock_callback,
             mock_state,
@@ -1874,8 +1824,6 @@ class TestRunPipelineKeywordGeneration:
         cat_svc_mock.update_keywords = AsyncMock(return_value=True)
         p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_svc_mock)
         mock_show = AsyncMock()
-        token_mock = MagicMock()
-        token_mock.refund = AsyncMock()
         # Mock msg.bot.send_message
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()
@@ -1893,8 +1841,6 @@ class TestRunPipelineKeywordGeneration:
                 products="мебель",
                 geography="Москва",
                 quantity=100,
-                cost=100,
-                token_service=token_mock,
                 ai_orchestrator=AsyncMock(),
                 dataforseo_client=AsyncMock(),
                 log_prefix="pipeline.readiness",
@@ -1906,8 +1852,6 @@ class TestRunPipelineKeywordGeneration:
         kw_mock.cluster_phrases.assert_awaited_once()
         kw_mock.enrich_clusters.assert_awaited_once()
         cat_svc_mock.update_keywords.assert_called_once()
-        # Tokens NOT refunded on success
-        token_mock.refund.assert_not_called()
         # Checklist shown
         mock_show.assert_awaited_once()
 
@@ -1944,8 +1888,6 @@ class TestRunPipelineKeywordGeneration:
                 products="мебель",
                 geography="Москва",
                 quantity=100,
-                cost=100,
-                token_service=MagicMock(refund=AsyncMock()),
                 ai_orchestrator=AsyncMock(),
                 dataforseo_client=AsyncMock(),
                 log_prefix="pipeline.readiness",
@@ -1964,12 +1906,10 @@ class TestRunPipelineKeywordGeneration:
         mock_db: MagicMock,
         mock_redis: MagicMock,
     ) -> None:
-        """Generation error -> refund tokens, show error, return to readiness_check."""
+        """Generation error -> show error, return to readiness_check (no refund, free)."""
         kw_mock = MagicMock()
         kw_mock.fetch_raw_phrases = AsyncMock(side_effect=RuntimeError("API down"))
         p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
-        token_mock = MagicMock()
-        token_mock.refund = AsyncMock()
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()
         mock_callback.message.delete = AsyncMock()
@@ -1986,8 +1926,6 @@ class TestRunPipelineKeywordGeneration:
                 products="мебель",
                 geography="Москва",
                 quantity=100,
-                cost=100,
-                token_service=token_mock,
                 ai_orchestrator=AsyncMock(),
                 dataforseo_client=AsyncMock(),
                 log_prefix="pipeline.readiness",
@@ -1995,11 +1933,9 @@ class TestRunPipelineKeywordGeneration:
                 on_success=AsyncMock(),
             )
 
-        token_mock.refund.assert_awaited_once()
-        refund_kwargs = token_mock.refund.call_args.kwargs
-        assert refund_kwargs["user_id"] == user.id
-        assert refund_kwargs["amount"] == 100
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_check)
+        # Error message shown to user
+        mock_callback.message.bot.send_message.assert_awaited_once()
 
     async def test_merges_with_existing_keywords(
         self,
@@ -2045,8 +1981,6 @@ class TestRunPipelineKeywordGeneration:
                 products="мебель",
                 geography="Москва",
                 quantity=100,
-                cost=100,
-                token_service=MagicMock(refund=AsyncMock()),
                 ai_orchestrator=AsyncMock(),
                 dataforseo_client=AsyncMock(),
                 log_prefix="pipeline.readiness",

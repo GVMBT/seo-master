@@ -40,7 +40,6 @@ from services.readiness import ReadinessReport
 from services.tokens import (
     COST_DESCRIPTION,
     COST_PER_IMAGE,
-    estimate_keywords_cost,
 )
 
 # ---------------------------------------------------------------------------
@@ -259,13 +258,13 @@ class TestPipelineReadinessKb:
         last_row = kb.inline_keyboard[-1]
         assert last_row[0].callback_data == "pipeline:article:cancel"
 
-    def test_keyword_cost_in_label(self) -> None:
-        """Keywords button shows cost estimate."""
+    def test_keyword_button_label(self) -> None:
+        """Keywords button shown when no keywords (free, no cost label)."""
         report = _make_report(has_keywords=False)
         kb = pipeline_readiness_kb(report)
         buttons = _flatten_buttons(kb)
         kw_btn = next(b for b in buttons if b.callback_data == "pipeline:readiness:keywords")
-        assert str(estimate_keywords_cost(100)) in kw_btn.text
+        assert "ключевики" in kw_btn.text.lower()
 
     def test_description_cost_in_label(self) -> None:
         """Description button shows cost."""

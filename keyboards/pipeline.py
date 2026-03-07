@@ -13,7 +13,6 @@ from services.readiness import ReadinessReport
 from services.tokens import (
     COST_DESCRIPTION,
     COST_PER_IMAGE,
-    estimate_keywords_cost,
 )
 
 # ---------------------------------------------------------------------------
@@ -144,11 +143,10 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
     if not report.has_keywords:
-        cost_label = f" ({estimate_keywords_cost(100)} ток.)"
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"Подобрать ключевики{cost_label}",
+                    text="Подобрать ключевики",
                     callback_data="pipeline:readiness:keywords",
                 ),
             ]
@@ -607,41 +605,26 @@ def pipeline_keywords_qty_kb(prefix: str = "pipeline:readiness") -> InlineKeyboa
 
 
 def pipeline_keywords_confirm_kb(
-    cost: int,
-    balance: int,
     prefix: str = "pipeline:readiness",
 ) -> InlineKeyboardMarkup:
-    """Confirm keyword generation cost in pipeline readiness sub-flow."""
-    rows: list[list[InlineKeyboardButton]] = []
-    if balance >= cost:
-        rows.append(
+    """Confirm keyword generation in pipeline readiness sub-flow (free for user)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"Подобрать ({cost} ток.)",
+                    text="Подобрать",
                     callback_data=f"{prefix}:keywords:confirm",
                     style=ButtonStyle.SUCCESS,
                 ),
-            ]
-        )
-    else:
-        rows.append(
+            ],
             [
                 InlineKeyboardButton(
-                    text="Пополнить баланс",
-                    callback_data="nav:tokens",
-                    style=ButtonStyle.PRIMARY,
+                    text="\u2b05\ufe0f Назад к чеклисту",
+                    callback_data=f"{prefix}:keywords:cancel",
                 ),
-            ]
-        )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="\u2b05\ufe0f Назад к чеклисту",
-                callback_data=f"{prefix}:keywords:cancel",
-            ),
+            ],
         ]
     )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ---------------------------------------------------------------------------
@@ -859,11 +842,10 @@ def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
     if not report.has_keywords:
-        cost_label = f" ({estimate_keywords_cost(100)} ток.)"
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"Подобрать ключевики{cost_label}",
+                    text="Подобрать ключевики",
                     callback_data="pipeline:social:readiness:keywords",
                 ),
             ]
