@@ -255,8 +255,8 @@ class TestPipelineReadinessKb:
         last_row = kb.inline_keyboard[-1]
         assert last_row[0].callback_data == "pipeline:article:cancel"
 
-    def test_keyword_button_label(self) -> None:
-        """Keywords button shown when no keywords (free, no cost label)."""
+    def test_keyword_button_no_keywords_shows_free_label(self) -> None:
+        """Keywords button shown when no keywords — free, no cost label."""
         report = _make_report(has_keywords=False)
         kb = pipeline_readiness_kb(report)
         buttons = _flatten_buttons(kb)
@@ -264,8 +264,8 @@ class TestPipelineReadinessKb:
         assert "ключевики" in kw_btn.text.lower()
         assert "ток" not in kw_btn.text.lower()  # free — no cost label
 
-    def test_description_button_label(self) -> None:
-        """Description button shown when no description (free, no cost label)."""
+    def test_description_button_no_desc_shows_free_label(self) -> None:
+        """Description button shown when no description — free, no cost label."""
         report = _make_report(has_description=False)
         kb = pipeline_readiness_kb(report)
         buttons = _flatten_buttons(kb)
@@ -549,7 +549,7 @@ class TestPipelineDescriptionOptionsKb:
         buttons = _flatten_buttons(kb)
         assert any(b.callback_data == "pipeline:readiness:back" for b in buttons)
 
-    def test_ai_button_label(self) -> None:
+    def test_ai_generate_button_shows_free_label(self) -> None:
         kb = pipeline_description_options_kb()
         buttons = _flatten_buttons(kb)
         ai_btn = next(b for b in buttons if b.callback_data == "pipeline:readiness:description:ai")
