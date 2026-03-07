@@ -25,10 +25,7 @@ log = structlog.get_logger()
 
 COST_PER_100_WORDS = 10
 COST_PER_IMAGE = 30
-COST_AUDIT = 50
-COST_COMPETITOR = 50
 COST_DESCRIPTION = 20
-COST_REVIEW_EACH = 10
 
 # Keyword generation: 50 for 50, 100 for 100, 150 for 150, 200 for 200
 COST_KEYWORDS_PER_UNIT = 1  # 1 token per keyword

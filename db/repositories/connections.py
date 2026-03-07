@@ -88,6 +88,13 @@ class ConnectionsRepository(BaseRepository):
         row = self._first(resp)
         return self._to_connection(row) if row else None
 
+    async def merge_metadata(self, connection_id: int, extra: dict[str, Any]) -> None:
+        """Merge extra keys into existing metadata (non-destructive)."""
+        current = await self.get_by_id(connection_id)
+        existing = (current.metadata or {}) if current else {}
+        merged = {**existing, **extra}
+        await self._table(_TABLE).update({"metadata": merged}).eq("id", connection_id).execute()
+
     async def delete(self, connection_id: int) -> bool:
         """Delete connection."""
         resp = await self._table(_TABLE).delete().eq("id", connection_id).execute()

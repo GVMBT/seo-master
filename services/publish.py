@@ -492,6 +492,8 @@ class PublishService:
 
         # Phase 1: Gather web research data (C1 — Serper + Firecrawl + Perplexity)
         project_url = project.website_url if project else None
+        # Use cached internal links from site analysis (PRD §7.1) if available
+        cached_links = (connection.metadata or {}).get("internal_links") if connection else None
         websearch = await gather_websearch_data(
             keyword=keyword,
             project_url=project_url,
@@ -503,6 +505,7 @@ class PublishService:
             company_name=(project.company_name or "") if project else "",
             geography=(project.company_city or "") if project else "",
             company_description_short=((project.description or "")[:200]) if project else "",
+            internal_links_cache=cached_links,
         )
 
         # Phase 2: Text generation (sequential — Director needs article text)

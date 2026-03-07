@@ -382,8 +382,6 @@ def create_app() -> web.Application:
 
     # Inject services into dp.workflow_data for Aiogram routers (Phase 8+)
     dp.workflow_data["ai_orchestrator"] = ai_orchestrator
-    dp.workflow_data["prompt_engine"] = prompt_engine
-    dp.workflow_data["rate_limiter"] = rate_limiter
     dp.workflow_data["image_storage"] = image_storage
     dp.workflow_data["stars_service"] = stars_service
     dp.workflow_data["yookassa_service"] = yookassa_service
