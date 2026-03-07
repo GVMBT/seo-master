@@ -552,7 +552,7 @@ class TestTGInlineVerify:
 
 
 class TestVKOAuthConnect:
-    async def test_start_sets_state_and_shows_group_url_prompt(
+    async def test_start_sets_group_url_state(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,

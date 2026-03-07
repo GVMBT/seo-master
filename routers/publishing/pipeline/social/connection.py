@@ -662,6 +662,7 @@ async def pipeline_connect_vk_group_url(
     )
 
     await state.set_state(SocialPipelineFSM.connect_vk_oauth)
+    await state.update_data(vk_nonce=nonce)
     await message.answer(
         f"Группа найдена: <b>{safe_name}</b>\n\n"
         "Нажмите кнопку ниже, чтобы предоставить доступ на публикацию.\n"

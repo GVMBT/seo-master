@@ -37,7 +37,6 @@ from keyboards.pipeline import (
 from services.ai.description import DescriptionService
 from services.categories import CategoryService
 from services.keywords import KeywordService
-from services.tokens import COST_DESCRIPTION, TokenService
 
 if TYPE_CHECKING:
     from aiogram.fsm.context import FSMContext
@@ -287,7 +286,7 @@ async def generate_description_ai(
     log_prefix: str,
     on_success: Callable[[CallbackQuery, FSMContext, User, SupabaseClient, RedisClient], Awaitable[None]],
 ) -> None:
-    """Generate category description via AI, charge tokens, and return to checklist.
+    """Generate category description via AI (free for user) and return to checklist.
 
     Shared between article and social readiness description:ai handlers.
 
@@ -307,37 +306,11 @@ async def generate_description_ai(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    settings = get_settings()
-    token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
-
-    # E01: balance check
-    has_balance = await token_svc.check_balance(user.id, COST_DESCRIPTION)
-    if not has_balance:
-        balance = await token_svc.get_balance(user.id)
-        await callback.answer(
-            token_svc.format_insufficient_msg(COST_DESCRIPTION, balance),
-            show_alert=True,
-        )
-        return
-
     # Answer callback immediately so the button stops "loading"
     await callback.answer()
     await safe_edit_text(msg, "Генерирую описание...")
 
-    # Debit-first: charge before generation, refund on failure
-    try:
-        await token_svc.charge(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            operation_type="description",
-            description=f"Описание ({log_prefix}, категория #{category_id})",
-        )
-    except Exception:
-        log.exception(f"{log_prefix}.description_charge_failed", user_id=user.id)
-        await safe_edit_text(msg, "Ошибка списания токенов.", reply_markup=menu_kb())
-        return
-
-    # Generate + save; refund on any failure
+    # Generate + save
     desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
     try:
         result = await desc_svc.generate(
@@ -352,26 +325,18 @@ async def generate_description_ai(
         if not save_result:
             raise RuntimeError("description_save_failed")
     except Exception:
-        # Refund on any error after charge
-        await token_svc.refund(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            reason="refund",
-            description=f"Возврат: ошибка описания (категория #{category_id})",
-        )
         log.exception(
             f"{log_prefix}.description_ai_failed",
             user_id=user.id,
             category_id=category_id,
         )
-        await safe_edit_text(msg, "Ошибка генерации описания. Токены возвращены.", reply_markup=menu_kb())
+        await safe_edit_text(msg, "Ошибка генерации описания. Попробуйте позже.", reply_markup=menu_kb())
         return
 
     log.info(
         f"{log_prefix}.description_generated",
         user_id=user.id,
         category_id=category_id,
-        cost=COST_DESCRIPTION,
     )
 
     await on_success(callback, state, user, db, redis)

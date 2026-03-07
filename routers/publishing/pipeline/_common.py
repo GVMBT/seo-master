@@ -74,7 +74,7 @@ class ArticlePipelineFSM(StatesGroup):
 
 
 class SocialPipelineFSM(StatesGroup):
-    """Social pipeline FSM — 24 states for social post creation."""
+    """Social pipeline FSM — 25 states for social post creation."""
 
     # Step 1: Project selection
     select_project = State()

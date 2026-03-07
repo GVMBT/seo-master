@@ -446,9 +446,9 @@ class TestGenerateClustersDirect:
                 )
 
         assert len(result) == 1
-        # All phrases marked as AI-suggested
+        # E03 fallback forces ai_suggested=False so phrases survive filter_low_quality()
         for phrase in result[0]["phrases"]:
-            assert phrase["ai_suggested"] is True
+            assert phrase["ai_suggested"] is False
             assert phrase["volume"] == 0
             assert phrase["intent"] == "informational"
 

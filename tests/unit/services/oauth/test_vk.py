@@ -632,7 +632,7 @@ class TestResolveGroup:
             return httpx.Response(404)
 
         service, _ = _make_service(handler=handler)
-        with pytest.raises(VKOAuthError, match="не найдена"):
+        with pytest.raises(VKOAuthError, match="VK API error"):
             await service.resolve_group("nonexistent")
 
     async def test_service_token_failure_raises(self) -> None:

@@ -402,15 +402,7 @@ class TestKeywordsSubFlow:
         cat_obj.name = "Test Category"
         cf = _make_cat_factory(category=cat_obj)
         pf = _make_proj_factory(project=MagicMock(company_city="Москва"))
-        p_settings = patch(f"{_COMMON}.get_settings", return_value=MagicMock(admin_ids=[]))
-        p_token = patch(
-            f"{_COMMON}.TokenService",
-            return_value=MagicMock(
-                get_balance=AsyncMock(return_value=500),
-            ),
-        )
-
-        with p_settings, p_token:
+        with patch(f"{_COMMON}.get_settings", return_value=MagicMock(admin_ids=[])):
             await readiness_keywords_auto(
                 mock_callback,
                 mock_state,
@@ -737,7 +729,7 @@ class TestDescriptionSubFlow:
         mock_callback.message.edit_text.assert_called_once()
         assert "Описание" in mock_callback.message.edit_text.call_args[0][0]
 
-    async def test_ai_generates_and_charges(
+    async def test_ai_generates_and_saves(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
@@ -745,30 +737,19 @@ class TestDescriptionSubFlow:
         mock_db: MagicMock,
         mock_redis: MagicMock,
     ) -> None:
-        """AI description: checks balance, charges tokens, saves to category."""
+        """AI description: generates and saves to category (free, no charge)."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        # Patches target _COMMON (generate_description_ai lives in _readiness_common)
-        token_mock = MagicMock()
-        token_mock.get_balance = AsyncMock(return_value=1500)
-        token_mock.check_balance = AsyncMock(return_value=True)
-        token_mock.charge = AsyncMock()
-        token_mock.refund = AsyncMock(return_value=1500)
-        token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
-        p_token = patch(f"{_COMMON}.TokenService", return_value=token_mock)
         cat_mock = MagicMock()
         cat_mock.update_description = AsyncMock()
         p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_mock)
-        settings_mock = MagicMock()
-        settings_mock.admin_ids = [999]
-        p_settings = patch(f"{_COMMON}.get_settings", return_value=settings_mock)
         # Mock show_check on the config (closure calls cfg.show_check)
         mock_show, orig = _mock_cfg_show_check()
         p_desc = patch(f"{_COMMON}.DescriptionService")
         mock_orchestrator = MagicMock()
 
         try:
-            with p_token, p_cats, p_settings, p_desc as desc_cls:
+            with p_cats, p_desc as desc_cls:
                 desc_cls.return_value.generate = AsyncMock(
                     return_value=MagicMock(content="Generated description"),
                 )
@@ -783,12 +764,10 @@ class TestDescriptionSubFlow:
         finally:
             object.__setattr__(_CFG, "show_check", orig)
 
-        token_mock.check_balance.assert_called_once()
-        token_mock.charge.assert_called_once()
         cat_mock.update_description.assert_called_once()
         mock_show.assert_called_once()
 
-    async def test_ai_insufficient_balance(
+    async def test_ai_save_fails_shows_error(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
@@ -796,62 +775,16 @@ class TestDescriptionSubFlow:
         mock_db: MagicMock,
         mock_redis: MagicMock,
     ) -> None:
-        """AI description with insufficient balance -> show_alert."""
+        """If category update returns None, error message is shown."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
-        # Patches target _COMMON
-        token_mock = MagicMock()
-        token_mock.get_balance = AsyncMock(return_value=5)
-        token_mock.check_balance = AsyncMock(return_value=False)
-        token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
-        p_token = patch(f"{_COMMON}.TokenService", return_value=token_mock)
-        settings_mock = MagicMock()
-        settings_mock.admin_ids = [999]
-        p_settings = patch(f"{_COMMON}.get_settings", return_value=settings_mock)
-        mock_orchestrator = MagicMock()
-
-        with p_token, p_settings:
-            await readiness_description_ai(
-                mock_callback,
-                mock_state,
-                user,
-                mock_db,
-                mock_redis,
-                mock_orchestrator,
-            )
-
-        mock_callback.answer.assert_called_once()
-        assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
-
-    async def test_ai_save_fails_refunds(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-        mock_redis: MagicMock,
-    ) -> None:
-        """If category update returns None, tokens are refunded (debit-first)."""
-        mock_state.get_data = AsyncMock(return_value=_make_state_data())
-
-        # Patches target _COMMON
-        token_mock = MagicMock()
-        token_mock.get_balance = AsyncMock(return_value=1500)
-        token_mock.check_balance = AsyncMock(return_value=True)
-        token_mock.charge = AsyncMock()
-        token_mock.refund = AsyncMock(return_value=1500)
-        token_mock.format_insufficient_msg = MagicMock(return_value="Недостаточно токенов")
-        p_token = patch(f"{_COMMON}.TokenService", return_value=token_mock)
         cat_mock = MagicMock()
         cat_mock.update_description = AsyncMock(return_value=None)
         p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_mock)
-        settings_mock = MagicMock()
-        settings_mock.admin_ids = [999]
-        p_settings = patch(f"{_COMMON}.get_settings", return_value=settings_mock)
         p_desc = patch(f"{_COMMON}.DescriptionService")
         mock_orchestrator = MagicMock()
 
-        with p_token, p_cats, p_settings, p_desc as desc_cls:
+        with p_cats, p_desc as desc_cls:
             desc_cls.return_value.generate = AsyncMock(
                 return_value=MagicMock(content="Generated description"),
             )
@@ -864,13 +797,10 @@ class TestDescriptionSubFlow:
                 mock_orchestrator,
             )
 
-        # Debit-first: charge called, then refund on save failure
-        token_mock.charge.assert_called_once()
-        token_mock.refund.assert_called_once()
-        # Error message shown via edit_text (answer() called early without text)
+        # Error message shown via edit_text
         mock_callback.message.edit_text.assert_called()
         last_edit = mock_callback.message.edit_text.call_args[0][0]
-        assert "возвращены" in last_edit
+        assert "ошибка" in last_edit.lower() or "попробуйте" in last_edit.lower()
 
     async def test_manual_start_sets_state(
         self,
@@ -1563,11 +1493,8 @@ class TestCitySelectHandler:
         )
         pf = _make_proj_factory()
         proj_svc = pf.return_value
-        p_settings = _patch_settings(module=_COMMON)
-        p_token, _ = _patch_token_svc(balance=500, module=_COMMON)
 
-        with p_settings, p_token:
-            await readiness_keywords_city_select(mock_callback, mock_state, user, mock_db, pf)
+        await readiness_keywords_city_select(mock_callback, mock_state, user, mock_db, pf)
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
         update_kwargs = mock_state.update_data.call_args.kwargs

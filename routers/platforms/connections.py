@@ -891,6 +891,7 @@ async def _cancel_connection_wizard(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     project_service_factory: ProjectServiceFactory,
+    redis: RedisClient | None = None,
 ) -> None:
     """Common cancel logic for connection wizards."""
     msg = safe_message(callback)
@@ -903,10 +904,19 @@ async def _cancel_connection_wizard(
     parts = (callback.data or "").split(":")
     if len(parts) >= 2 and parts[1].isdigit():
         project_id = int(parts[1])
+
+    data = await state.get_data()
     if not project_id:
-        data = await state.get_data()
         pid = data.get("connect_project_id")
         project_id = int(pid) if pid else None
+
+    # Clean up VK OAuth Redis keys if cancel during VK flow
+    vk_nonce = data.get("vk_nonce")
+    if vk_nonce and redis:
+        from cache.keys import CacheKeys
+        await redis.delete(CacheKeys.vk_auth(vk_nonce))
+        await redis.delete(CacheKeys.vk_oauth_meta(vk_nonce))
+
     await state.clear()
 
     if project_id:
@@ -962,6 +972,7 @@ async def cancel_vk_connect(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     project_service_factory: ProjectServiceFactory,
+    redis: RedisClient,
 ) -> None:
-    """Cancel VK connection via inline button."""
-    await _cancel_connection_wizard(callback, state, user, db, http_client, project_service_factory)
+    """Cancel VK connection via inline button — also cleans up VK OAuth Redis keys."""
+    await _cancel_connection_wizard(callback, state, user, db, http_client, project_service_factory, redis)

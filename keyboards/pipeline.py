@@ -10,10 +10,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from db.models import Category, PlatformConnection, Project
 from keyboards.pagination import paginate
 from services.readiness import ReadinessReport
-from services.tokens import (
-    COST_DESCRIPTION,
-    COST_PER_IMAGE,
-)
+from services.tokens import COST_PER_IMAGE
 
 # ---------------------------------------------------------------------------
 # Step 1: Select project (shared article/social)
@@ -156,7 +153,7 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"Описание ({COST_DESCRIPTION} ток.)",
+                    text="Описание",
                     callback_data="pipeline:readiness:description",
                 ),
             ]
@@ -638,7 +635,7 @@ def pipeline_description_options_kb(prefix: str = "pipeline:readiness") -> Inlin
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"Сгенерировать AI ({COST_DESCRIPTION} токенов)",
+                    text="Сгенерировать AI",
                     callback_data=f"{prefix}:description:ai",
                 ),
             ],
@@ -855,7 +852,7 @@ def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"Описание ({COST_DESCRIPTION} ток.)",
+                    text="Описание",
                     callback_data="pipeline:social:readiness:description",
                 ),
             ]

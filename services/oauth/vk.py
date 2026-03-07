@@ -168,19 +168,29 @@ class VKOAuthService:
                 timeout=10,
             )
             data = resp.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            log.error("vk_resolve_group_failed", input=group_id_or_name, error=str(exc))
-            raise VKOAuthError("Не удалось проверить группу VK") from exc
+        except httpx.HTTPError as exc:
+            log.error("vk_resolve_group_http_error", input=group_id_or_name, error=str(exc))
+            raise VKOAuthError(
+                "Ошибка соединения с VK API",
+                user_message="Не удалось связаться с VK. Попробуйте позже.",
+            ) from exc
+        except ValueError as exc:
+            log.error("vk_resolve_group_json_error", input=group_id_or_name, error=str(exc))
+            raise VKOAuthError("VK вернул некорректный ответ") from exc
 
         if "error" in data:
             err = data["error"]
+            error_code = err.get("error_code")
             log.warning(
                 "vk_resolve_group_api_error",
-                error_code=err.get("error_code"),
+                error_code=error_code,
                 error_msg=err.get("error_msg"),
                 input=group_id_or_name,
             )
-            raise VKOAuthError("Группа VK не найдена или недоступна")
+            raise VKOAuthError(
+                f"VK API error {error_code}",
+                user_message="Группа VK не найдена или недоступна",
+            )
 
         # API v5.199: response.groups[] or response[] (depends on version)
         response = data.get("response", {})

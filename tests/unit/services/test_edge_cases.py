@@ -95,7 +95,8 @@ class TestE03DataForSEOUnavailable:
             )
 
         assert len(clusters) == 1
-        assert clusters[0]["phrases"][0]["ai_suggested"] is True
+        # E03 fallback forces ai_suggested=False so phrases survive filter_low_quality()
+        assert clusters[0]["phrases"][0]["ai_suggested"] is False
         assert clusters[0]["phrases"][0]["volume"] == 0
 
     async def test_dataforseo_exception_returns_empty(self) -> None:
