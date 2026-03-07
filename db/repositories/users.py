@@ -57,7 +57,7 @@ class UsersRepository(BaseRepository):
 
     async def update(self, user_id: int, data: UserUpdate) -> User | None:
         """Partial update. Returns None if user not found."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return await self.get_by_id(user_id)
         resp = await self._table(_TABLE).update(payload).eq("id", user_id).execute()

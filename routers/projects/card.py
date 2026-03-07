@@ -46,26 +46,20 @@ async def show_project_card(
 
     project = card_data.project
 
-    # Build card text
+    # Build compact card text
     safe_name = html.escape(project.name)
-    lines = [f"<b>{safe_name}</b>\n"]
-
-    if project.website_url:
-        lines.append(f"\U0001f517 Сайт: {html.escape(project.website_url)}")
-    if project.advantages:
-        short = project.advantages[:80] + "…" if len(project.advantages) > 80 else project.advantages
-        lines.append(f"Преимущества: {html.escape(short)}")
 
     if card_data.platform_types:
         platforms_str = ", ".join(p.capitalize() for p in card_data.platform_types)
-        lines.append(f"\U0001f517 Платформы: {platforms_str}")
     else:
-        lines.append("\U0001f517 Платформы: не подключены \u2014 подключите в настройках")
+        platforms_str = "не подключены"
 
-    lines.append(f"\U0001f4c2 Категорий: {len(card_data.categories)}")
-    lines.append(f"\U0001f4ca Публикаций: {card_data.pub_count}")
-
-    text = "\n".join(lines)
+    text = (
+        f"<b>{safe_name}</b>\n"
+        f"\n\U0001f517 Платформы: {platforms_str}"
+        f"\n\U0001f4c2 Категорий: {len(card_data.categories)}"
+        f"\n\U0001f4ca Публикаций: {card_data.pub_count}"
+    )
     await edit_screen(msg, "project_card.png", text, reply_markup=project_card_kb(project_id))
     await callback.answer()
 
