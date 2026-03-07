@@ -270,6 +270,19 @@ class PreviewService:
         content_html = sanitize_html(content_html)
 
         word_count = len(content_markdown.split())
+
+        # Word count warning: log if significantly below target (not a hard block)
+        text_settings = (category.text_settings or {}) if category else {}
+        words_min = int(text_settings.get("words_min", 1500))
+        if word_count < int(words_min * 0.8):
+            log.warning(
+                "article_word_count_below_target",
+                word_count=word_count,
+                words_min=words_min,
+                threshold=int(words_min * 0.8),
+                keyword=keyword,
+            )
+
         return ArticleContent(
             title=title,
             content_html=content_html,

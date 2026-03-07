@@ -71,7 +71,7 @@ class SerperClient:
         self,
         query: str,
         num: int = 10,
-        gl: str = "ru",
+        gl: str = "ua",
         hl: str = "ru",
     ) -> SerperResult:
         """Google search via Serper.
@@ -154,12 +154,19 @@ class SerperClient:
                     people_also_ask=people_also_ask,
                     related_searches=[s for s in related_searches if s],
                 )
-                log.info(
-                    "serper.search_success",
-                    query=query,
-                    organic_count=len(organic),
-                    paa_count=len(people_also_ask),
-                )
+                if organic:
+                    log.info(
+                        "serper.search_success",
+                        query=query,
+                        organic_count=len(organic),
+                        paa_count=len(people_also_ask),
+                    )
+                else:
+                    log.warning(
+                        "serper.empty_results",
+                        query=query,
+                        hint="Google returned 0 organic results — check gl/hl params or credits",
+                    )
                 return result
 
             except httpx.HTTPStatusError as exc:
