@@ -680,9 +680,25 @@ class TestResolveGroup:
         assert name == "Real Group"
 
     async def test_both_strategies_fail_raises(self) -> None:
+        """Both scrape and API fail → VKOAuthError with clear message."""
         async def handler(_request: httpx.Request) -> httpx.Response:
+            url = str(_request.url)
+            if "groups.getById" in url:
+                return httpx.Response(200, json={
+                    "error": {"error_code": 100, "error_msg": "Invalid group id"},
+                })
             return httpx.Response(404)
 
-        service, _ = _make_service(handler=handler)
-        with pytest.raises(VKOAuthError):
+        transport = httpx.MockTransport(handler)
+        client = httpx.AsyncClient(transport=transport)
+        service = VKOAuthService(
+            http_client=client,
+            redis=AsyncMock(set=AsyncMock(return_value=True), get=AsyncMock(return_value=None), delete=AsyncMock()),
+            encryption_key=_ENCRYPTION_KEY,
+            vk_app_id=123456,
+            vk_app_secret=_APP_SECRET,
+            redirect_uri="https://example.com/api/auth/vk/callback",
+            vk_service_key="real_service_key",
+        )
+        with pytest.raises(VKOAuthError, match="VK API error"):
             await service.resolve_group("nonexistent")
