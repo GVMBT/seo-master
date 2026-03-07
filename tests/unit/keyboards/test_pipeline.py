@@ -262,6 +262,7 @@ class TestPipelineReadinessKb:
         buttons = _flatten_buttons(kb)
         kw_btn = next(b for b in buttons if b.callback_data == "pipeline:readiness:keywords")
         assert "ключевики" in kw_btn.text.lower()
+        assert "ток" not in kw_btn.text.lower()  # free — no cost label
 
     def test_description_button_label(self) -> None:
         """Description button shown when no description (free, no cost label)."""

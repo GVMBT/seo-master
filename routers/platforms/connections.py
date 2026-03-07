@@ -772,10 +772,7 @@ async def vk_process_group_url(
     try:
         resolved_id, group_name = await vk_svc.resolve_group(resolve_input or "")
     except VKOAuthError as exc:
-        await message.answer(
-            f"{exc.user_message}\n"
-            "Проверьте ссылку и убедитесь, что группа существует.",
-        )
+        await message.answer(exc.user_message)
         return
 
     # Generate nonce, store auth session for step 2
@@ -915,6 +912,7 @@ async def _cancel_connection_wizard(
     if vk_nonce and redis:
         from cache.keys import CacheKeys
         await redis.delete(CacheKeys.vk_auth(vk_nonce))
+        await redis.delete(CacheKeys.vk_oauth(vk_nonce))
         await redis.delete(CacheKeys.vk_oauth_meta(vk_nonce))
 
     await state.clear()

@@ -638,8 +638,7 @@ async def pipeline_connect_vk_group_url(
         resolved_id, group_name = await vk_svc.resolve_group(resolve_input or "")
     except VKOAuthError as exc:
         await message.answer(
-            f"{exc.user_message}\n"
-            "Проверьте ссылку и убедитесь, что группа существует.",
+            exc.user_message,
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         return
