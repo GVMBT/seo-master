@@ -402,15 +402,14 @@ class TestKeywordsSubFlow:
         cat_obj.name = "Test Category"
         cf = _make_cat_factory(category=cat_obj)
         pf = _make_proj_factory(project=MagicMock(company_city="Москва"))
-        with patch(f"{_COMMON}.get_settings", return_value=MagicMock(admin_ids=[])):
-            await readiness_keywords_auto(
-                mock_callback,
-                mock_state,
-                user,
-                mock_db,
-                cf,
-                pf,
-            )
+        await readiness_keywords_auto(
+            mock_callback,
+            mock_state,
+            user,
+            mock_db,
+            cf,
+            pf,
+        )
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
         mock_state.update_data.assert_called_once()

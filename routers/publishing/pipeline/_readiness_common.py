@@ -22,7 +22,6 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.state import State
 from aiogram.types import CallbackQuery, Message
 
-from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
 from db.models import User
 from keyboards.inline import cancel_kb, menu_kb
