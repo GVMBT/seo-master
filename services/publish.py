@@ -508,6 +508,21 @@ class PublishService:
             internal_links_cache=cached_links,
         )
 
+        # Data readiness gate: if all external sources failed, skip this slot
+        # (article quality will be too low without competitor/research data)
+        serper_empty = not websearch.get("serper_data") or not websearch["serper_data"].get("organic")
+        research_empty = not websearch.get("research_data")
+        if serper_empty and research_empty:
+            log.warning(
+                "publish_skipped_no_external_data",
+                keyword=keyword,
+                user_id=user_id,
+                has_serper=not serper_empty,
+                has_research=not research_empty,
+                reason="both_empty",
+            )
+            raise RuntimeError("External data unavailable (Serper + Research empty), skipping slot")
+
         # Phase 2: Text generation (sequential — Director needs article text)
         text_result = await article_service.generate(
             user_id=user_id,
