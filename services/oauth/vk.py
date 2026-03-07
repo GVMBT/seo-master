@@ -14,7 +14,8 @@ Source of truth:
 Key facts:
 - Authorize: https://oauth.vk.ru/authorize (group_ids required)
 - Exchange: GET https://oauth.vk.ru/access_token (client_secret)
-- Community token with offline scope: permanent (expires_in=0)
+- Community token scope: manage,photos (NOT wall/offline — those are user scopes)
+- Community token is permanent (expires_in=0) by default
 - Group resolution: scrape vk.com page (no auth), fallback to API + service key
 """
 
@@ -336,7 +337,7 @@ class VKOAuthService:
 
         if group_ids is not None:
             # Classic VK OAuth → community token
-            scope = "wall,photos,offline"
+            scope = "manage,photos"
             params = (
                 f"client_id={self._app_id}"
                 f"&display=page"

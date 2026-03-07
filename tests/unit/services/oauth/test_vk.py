@@ -93,7 +93,7 @@ class TestBuildAuthorizeUrl:
         nonce = _nonce()
         url, state = service.build_authorize_url(user_id=42, nonce=nonce, group_ids=12345)
         assert "oauth.vk.ru/authorize" in url
-        assert "scope=wall,photos,offline" in url
+        assert "scope=manage,photos" in url
         assert "group_ids=12345" in url
         assert "code_challenge" not in url  # No PKCE for step 2
         assert nonce in state
