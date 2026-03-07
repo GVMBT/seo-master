@@ -581,6 +581,24 @@ class TestParseVKGroupInput:
         assert gid == 123
         assert name is None
 
+    def test_bare_club_prefix(self) -> None:
+        """club123456 without vk.com/ prefix."""
+        gid, name = parse_vk_group_input("club53628858")
+        assert gid == 53628858
+        assert name is None
+
+    def test_screen_name_starting_with_digit(self) -> None:
+        """vk.com/3d_design_service — screen_name starts with digit."""
+        gid, name = parse_vk_group_input("https://vk.com/3d_design_service")
+        assert gid is None
+        assert name == "3d_design_service"
+
+    def test_trailing_punctuation(self) -> None:
+        """Trailing dot/comma stripped from input."""
+        gid, name = parse_vk_group_input("53628858.")
+        assert gid == 53628858
+        assert name is None
+
 
 # ---------------------------------------------------------------------------
 # resolve_group
