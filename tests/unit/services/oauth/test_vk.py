@@ -313,31 +313,6 @@ class TestHandleCallbackStep2:
 
 
 # ---------------------------------------------------------------------------
-# _extract_community_token
-# ---------------------------------------------------------------------------
-
-
-class TestExtractCommunityToken:
-    def test_extracts_by_group_id(self) -> None:
-        token = VKOAuthService._extract_community_token(
-            {"access_token_100": "tok100", "access_token_200": "tok200"}, 100,
-        )
-        assert token == "tok100"
-
-    def test_fallback_to_any_access_token_key(self) -> None:
-        token = VKOAuthService._extract_community_token(
-            {"access_token_999": "tok999"}, None,
-        )
-        assert token == "tok999"
-
-    def test_fallback_to_plain_access_token(self) -> None:
-        token = VKOAuthService._extract_community_token(
-            {"access_token": "plain_tok"}, 100,
-        )
-        assert token == "plain_tok"
-
-
-# ---------------------------------------------------------------------------
 # get_oauth_result
 # ---------------------------------------------------------------------------
 

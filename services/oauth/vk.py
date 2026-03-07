@@ -241,7 +241,11 @@ class VKOAuthService:
                 raise VKOAuthError("Missing group_id in VK auth session")
             # Step 2: Classic VK OAuth → community token
             tokens = await self._exchange_code_classic(code)
-            community_token = self._extract_community_token(tokens, group_id)
+            token_key = f"access_token_{group_id}"
+            community_token = str(tokens.get(token_key, ""))
+            if not community_token:
+                log.error("vk_community_token_missing", group_id=group_id, keys=list(tokens.keys()))
+                raise VKOAuthError(f"No community token for group {group_id}")
             await self._store_community_result(nonce, community_token, group_id, auth_data)
         else:
             # Step 1: VK ID OAuth 2.1 → user token → groups.get
@@ -400,26 +404,6 @@ class VKOAuthService:
         except Exception:
             log.exception("vk_oauth_fetch_groups_failed")
             return []
-
-    @staticmethod
-    def _extract_community_token(
-        data: dict[str, Any],
-        group_id: int | None,
-    ) -> str:
-        """Extract community access token from VK response.
-
-        VK returns community token as `access_token_GROUP_ID` key.
-        """
-        if group_id:
-            key = f"access_token_{group_id}"
-            if key in data:
-                return str(data[key])
-        # Fallback: search for any access_token_* key
-        for k, v in data.items():
-            if k.startswith("access_token_") and v:
-                return str(v)
-        # Last resort: plain access_token
-        return str(data.get("access_token", ""))
 
     async def _store_result(
         self,
