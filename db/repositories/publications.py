@@ -85,20 +85,51 @@ class PublicationsRepository(BaseRepository):
         rows: list[dict[str, Any]] = self._rows(resp)
         return [row["keyword"] for row in rows if row.get("keyword")]
 
-    async def get_lru_keyword(self, category_id: int) -> str | None:
-        """Get the least recently used keyword (oldest created_at) for LRU fallback."""
-        resp = (
-            await self._table(_TABLE)
-            .select("keyword")
+    async def get_lru_keyword(
+        self,
+        category_id: int,
+        content_type: str | None = None,
+        allowed_keywords: list[str] | None = None,
+    ) -> str | None:
+        """Get the least recently used keyword for LRU fallback.
+
+        Finds the keyword whose most recent successful publication is the oldest
+        (i.e., cooldown closest to expiring). Filters by content_type and
+        allowed_keywords pool when provided.
+        """
+        # Build subquery: for each keyword, get its MAX(created_at)
+        # Then pick the keyword with the smallest MAX(created_at)
+        query = (
+            self._table(_TABLE)
+            .select("keyword, created_at")
             .eq("category_id", category_id)
             .eq("status", "success")
             .not_.is_("keyword", "null")
-            .order("created_at")
-            .limit(1)
-            .execute()
         )
+        if content_type:
+            query = query.eq("content_type", content_type)
+        if allowed_keywords:
+            query = query.in_("keyword", allowed_keywords)
+
+        resp = await query.order("created_at", desc=True).execute()
         rows: list[dict[str, Any]] = self._rows(resp)
-        return rows[0]["keyword"] if rows else None
+
+        if not rows:
+            return None
+
+        # Group by keyword, find the one with the oldest latest usage
+        latest_per_keyword: dict[str, str] = {}
+        for row in rows:
+            kw = row.get("keyword", "")
+            if kw and kw not in latest_per_keyword:
+                # First occurrence = most recent (ordered DESC)
+                latest_per_keyword[kw] = row.get("created_at", "")
+
+        if not latest_per_keyword:
+            return None
+
+        # Return keyword whose latest publication is the oldest
+        return min(latest_per_keyword, key=lambda k: latest_per_keyword[k])
 
     async def get_rotation_keyword(
         self,
@@ -170,12 +201,15 @@ class PublicationsRepository(BaseRepository):
             if main and main not in used:
                 return main, low_pool_warning
 
-        # All on cooldown -> LRU fallback (E22)
-        lru = await self.get_lru_keyword(category_id)
+        # All on cooldown -> pick keyword with oldest cooldown (nearest to expiring)
+        pool_keywords = [c.get("main_phrase", "") for c in sorted_clusters if c.get("main_phrase")]
+        lru = await self.get_lru_keyword(
+            category_id, content_type=content_type, allowed_keywords=pool_keywords,
+        )
         if lru:
             return lru, low_pool_warning
 
-        # Fallback: first cluster's main_phrase
+        # Fallback: first cluster's main_phrase (no publication_logs yet)
         first = sorted_clusters[0].get("main_phrase", "") if sorted_clusters else None
         return first or None, low_pool_warning
 
@@ -202,12 +236,15 @@ class PublicationsRepository(BaseRepository):
             if phrase and phrase not in used:
                 return phrase, low_pool_warning
 
-        # All on cooldown -> LRU fallback (E22)
-        lru = await self.get_lru_keyword(category_id)
+        # All on cooldown -> pick keyword with oldest cooldown (nearest to expiring)
+        pool_keywords = [k.get("phrase", "") for k in sorted_kw if k.get("phrase")]
+        lru = await self.get_lru_keyword(
+            category_id, content_type=content_type, allowed_keywords=pool_keywords,
+        )
         if lru:
             return lru, low_pool_warning
 
-        # Fallback: first keyword from sorted list
+        # Fallback: first keyword from sorted list (no publication_logs yet)
         first_phrase = sorted_kw[0].get("phrase", "") if sorted_kw else None
         return first_phrase or None, low_pool_warning
 

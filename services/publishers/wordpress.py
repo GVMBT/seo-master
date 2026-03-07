@@ -12,6 +12,7 @@ import httpx
 import structlog
 
 from db.models import PlatformConnection
+from services.ai.markdown_renderer import slugify
 
 from .base import BasePublisher, PublishRequest, PublishResult
 
@@ -132,6 +133,7 @@ class WordPressPublisher(BasePublisher):
         # 3. Create post
         post_data: dict[str, object] = {
             "title": request.title or "",
+            "slug": slugify(request.title or ""),
             "content": content,
             "status": "publish",
             "featured_media": attachment_ids[0] if attachment_ids else 0,
