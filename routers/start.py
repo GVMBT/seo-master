@@ -1,6 +1,5 @@
 """Dashboard, /start, /cancel, navigation callbacks, reply text dispatch."""
 
-import contextlib
 import html
 import json
 from typing import Any
@@ -194,7 +193,11 @@ async def _handle_vk_deep_link(
     http_client: httpx.AsyncClient,
     nonce: str,
 ) -> None:
-    """Handle VK OAuth deep-link — thin router, delegates to VKOAuthService."""
+    """Handle VK OAuth deep-link — two-step community token flow.
+
+    Step 1 (dl.step="groups"): show group picker
+    Step 2 (dl.step="community"): create connection with community token
+    """
     vk_svc = _build_vk_oauth_service(http_client, redis)
     dl: VKDeepLinkResult | None = await vk_svc.process_deep_link(nonce)
 
@@ -202,14 +205,6 @@ async def _handle_vk_deep_link(
         log.warning("vk_deep_link_no_result", nonce=nonce, user_id=user.id)
         await message.answer(
             "Авторизация VK не найдена или истекла. Попробуйте ещё раз.",
-            reply_markup=menu_kb(),
-        )
-        return
-
-    if not dl.groups:
-        await vk_svc.cleanup_meta(nonce)
-        await message.answer(
-            "У вас нет групп VK, в которых вы администратор или редактор.",
             reply_markup=menu_kb(),
         )
         return
@@ -229,15 +224,26 @@ async def _handle_vk_deep_link(
         await message.answer("Проект не найден.", reply_markup=menu_kb())
         return
 
-    if len(dl.groups) == 1:
-        group = dl.groups[0]
-        await _create_vk_connection(message, user, db, http_client, project, dl, group)
-        await vk_svc.cleanup_meta(nonce)
+    if dl.step == "community":
+        # Step 2 complete — create connection with community token
+        await _create_vk_connection_from_community(
+            message, user, db, http_client, project, dl,
+        )
+        await vk_svc.cleanup(nonce)
         if dl.from_pipeline:
             await _return_to_pipeline(message, state, user, db, redis, http_client, project)
         return
 
-    # Multiple groups — store result back and show picker
+    # Step 1 — show group picker
+    if not dl.groups:
+        await vk_svc.cleanup_meta(nonce)
+        await message.answer(
+            "У вас нет групп VK, в которых вы администратор или редактор.",
+            reply_markup=menu_kb(),
+        )
+        return
+
+    # Store groups + meta for group selection callback
     await vk_svc.restore_result_for_group_select(nonce, dl.raw_result)
     await _show_vk_group_picker(message, project, dl.groups, nonce)
 
@@ -265,18 +271,17 @@ async def _show_vk_group_picker(
     )
 
 
-async def _create_vk_connection(
+async def _create_vk_connection_from_community(
     message: Message,
     user: User,
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
     project: Project,
     dl: VKDeepLinkResult,
-    group: dict[str, Any],
 ) -> None:
-    """Create VK connection from OAuth result — delegates to ConnectionService."""
-    group_id = str(group["id"])
-    group_name = group.get("name", f"Группа {group_id}")
+    """Create VK connection from community token (step 2 result)."""
+    group_id = str(dl.group_id or 0)
+    group_name = dl.group_name or f"Группа {group_id}"
     conn_svc = ConnectionService(db, http_client)
 
     try:
@@ -285,9 +290,7 @@ async def _create_vk_connection(
             group_id=group_id,
             group_name=group_name,
             access_token=dl.access_token,
-            refresh_token=dl.refresh_token,
             expires_at=dl.expires_at,
-            device_id=dl.device_id,
         )
     except Exception:
         log.exception("vk_create_connection_failed", project_id=project.id, user_id=user.id)
@@ -325,7 +328,11 @@ async def vk_group_select_deeplink(
     redis: RedisClient,
     http_client: httpx.AsyncClient,
 ) -> None:
-    """Handle VK group selection from deep-link flow — thin, delegates to services."""
+    """Handle VK group selection — trigger step 2 OAuth with group_ids.
+
+    After user picks a group from step 1, we send them to VK again
+    with group_ids=ID to get a community token (not user token).
+    """
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -341,7 +348,7 @@ async def vk_group_select_deeplink(
 
     vk_svc = _build_vk_oauth_service(http_client, redis)
 
-    # Read stored result
+    # Read stored step-1 result (groups list)
     result = await vk_svc.get_stored_result(nonce)
     if not result:
         await callback.answer("Сессия авторизации истекла.", show_alert=True)
@@ -353,78 +360,37 @@ async def vk_group_select_deeplink(
         await callback.answer("Группа не найдена.", show_alert=True)
         return
 
-    # Read project from meta
+    group_name = group.get("name", f"Группа {group_id}")
+
+    # Generate new nonce for step 2 OAuth
+    new_nonce = vk_svc.generate_nonce()
+
+    # Copy meta from old nonce to new nonce (project_id, from_pipeline)
     meta = await vk_svc.get_meta(nonce)
-    project_id: int | None = None
     if meta:
-        with contextlib.suppress(ValueError, TypeError, KeyError):
-            project_id = int(meta["project_id"])
+        await vk_svc.store_meta(new_nonce, int(meta["project_id"]), extra=meta)
 
-    if not project_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
-        return
-
-    projects_repo = ProjectsRepository(db)
-    project = await projects_repo.get_by_id(project_id)
-    if not project or project.user_id != user.id:
-        await callback.answer("Проект не найден.", show_alert=True)
-        return
-
-    from datetime import UTC, datetime, timedelta
-
-    expires_in = int(result.get("expires_in") or 0)
-    expires_at = (
-        (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
-        if expires_in > 0
-        else ""
+    # Store step-2 auth session with group info
+    await vk_svc.store_auth(
+        new_nonce, user.id, step="community", group_id=group_id, group_name=group_name,
     )
 
-    conn_svc = ConnectionService(db, http_client)
-    group_id_str = str(group["id"])
-    group_name = group.get("name", f"Группа {group_id_str}")
+    # Build step-2 OAuth URL with group_ids (goes through /api/auth/vk redirect)
+    oauth_url = vk_svc.build_oauth_url(user.id, new_nonce, group_ids=group_id)
 
-    try:
-        conn = await conn_svc.create_vk_from_oauth(
-            project_id=project.id,
-            group_id=group_id_str,
-            group_name=group_name,
-            access_token=str(result.get("access_token", "")),
-            refresh_token=str(result.get("refresh_token", "")),
-            expires_at=expires_at,
-            device_id=str(result.get("device_id", "")),
-        )
-    except Exception:
-        log.exception("vk_create_connection_failed", project_id=project.id, user_id=user.id)
-        await msg.answer(
-            "Не удалось создать подключение VK. Возможно, оно уже существует.",
-            reply_markup=menu_kb(),
-        )
-        await callback.answer()
-        return
-
-    safe_name = html.escape(project.name)
-    await msg.answer(
-        f"VK-группа «{html.escape(group_name)}» подключена к проекту «{safe_name}»!",
-        reply_markup=menu_kb(),
-    )
-    log.info(
-        "vk_connected_via_deeplink",
-        connection_id=conn.id,
-        project_id=project.id,
-        group_id=group_id_str,
-        user_id=user.id,
-    )
-
-    # Cleanup
+    # Cleanup old nonce data
     await vk_svc.cleanup(nonce)
 
-    # Return to social pipeline if OAuth was triggered from pipeline flow
-    from_pipeline = False
-    if meta:
-        from_pipeline = meta.get("from_pipeline") is True
-    if from_pipeline and project:
-        await _return_to_pipeline(msg, state, user, db, redis, http_client, project)
-
+    await msg.answer(
+        f"Отлично! Теперь нужно дать доступ к группе «{html.escape(group_name)}».\n\n"
+        "Нажмите кнопку ниже — VK попросит подтвердить права на публикацию.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Подтвердить доступ к группе", url=oauth_url)],
+                [InlineKeyboardButton(text="Отмена", callback_data="nav:dashboard")],
+            ]
+        ),
+    )
     await callback.answer()
 
 

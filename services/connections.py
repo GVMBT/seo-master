@@ -160,13 +160,12 @@ class ConnectionService:
         group_id: str,
         group_name: str,
         access_token: str,
-        refresh_token: str,
-        expires_at: str,
-        device_id: str,
+        expires_at: str = "",
     ) -> PlatformConnection:
-        """Create VK connection from OAuth result.
+        """Create VK connection from community token.
 
-        Extracted from router deep-link logic to keep routers thin (CR-118).
+        Community token (oauth.vk.ru + group_ids) is permanent with offline scope.
+        No refresh_token needed — VK community tokens don't expire.
         """
         return await self._repo.create(
             PlatformConnectionCreate(
@@ -177,9 +176,7 @@ class ConnectionService:
             ),
             raw_credentials={
                 "access_token": access_token,
-                "refresh_token": refresh_token,
                 "expires_at": expires_at,
-                "device_id": device_id,
                 "group_id": group_id,
             },
         )

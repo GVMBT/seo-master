@@ -1,7 +1,7 @@
-"""Tests for services/oauth/vk.py — VK OAuth service.
+"""Tests for services/oauth/vk.py — VK OAuth service (two-step community token flow).
 
-Covers: authorize URL, code exchange, groups fetch,
-Redis storage, single-use nonce, error handling.
+Covers: authorize URL (step 1 + step 2), code exchange, groups fetch,
+community token extraction, Redis storage, single-use nonce, error handling.
 """
 
 from __future__ import annotations
@@ -64,14 +64,26 @@ def _make_service(
 
 
 class TestBuildAuthorizeUrl:
-    def test_returns_url_with_params(self) -> None:
+    def test_step1_groups_scope(self) -> None:
+        """Step 1 (no group_ids): scope=groups for fetching admin groups."""
         service, _ = _make_service()
         nonce = _nonce()
         url, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        assert "oauth.vk.com/authorize" in url
+        assert "oauth.vk.ru/authorize" in url
         assert "response_type=code" in url
         assert "client_id=123456" in url
-        assert "scope=wall,groups,photos,offline" in url
+        assert "scope=groups" in url
+        assert "group_ids" not in url
+        assert nonce in state
+
+    def test_step2_community_token_scope(self) -> None:
+        """Step 2 (with group_ids): scope=wall,photos,offline for community token."""
+        service, _ = _make_service()
+        nonce = _nonce()
+        url, state = service.build_authorize_url(user_id=42, nonce=nonce, group_ids=12345)
+        assert "oauth.vk.ru/authorize" in url
+        assert "scope=wall,photos,offline" in url
+        assert "group_ids=12345" in url
         assert nonce in state
 
     def test_state_contains_user_id_and_nonce(self) -> None:
@@ -90,7 +102,7 @@ class TestBuildAuthorizeUrl:
 
 
 class TestStoreAuth:
-    async def test_stores_user_id_in_redis(self) -> None:
+    async def test_stores_step1_auth(self) -> None:
         service, redis = _make_service()
         await service.store_auth("nonce123", 42)
         redis.set.assert_called_once()
@@ -98,61 +110,63 @@ class TestStoreAuth:
         data = json.loads(redis.set.call_args[0][1])
         assert key == CacheKeys.vk_auth("nonce123")
         assert data["user_id"] == 42
+        assert data["step"] == "groups"
+
+    async def test_stores_step2_auth_with_group(self) -> None:
+        service, redis = _make_service()
+        await service.store_auth("nonce456", 42, step="community", group_id=999, group_name="My Group")
+        data = json.loads(redis.set.call_args[0][1])
+        assert data["step"] == "community"
+        assert data["group_id"] == 999
+        assert data["group_name"] == "My Group"
 
 
 # ---------------------------------------------------------------------------
-# handle_callback
+# handle_callback — step 1 (groups)
 # ---------------------------------------------------------------------------
 
 
-class TestHandleCallback:
-    async def test_happy_path(self) -> None:
-        """Full callback flow: verify state -> exchange code -> fetch groups -> store."""
-        service, redis = _make_service(handler=self._mock_vk_api)
+class TestHandleCallbackStep1:
+    async def test_step1_fetches_groups(self) -> None:
+        """Step 1: exchange code -> user token -> groups.get -> store groups."""
+        service, redis = _make_service(handler=self._mock_step1_api)
 
         nonce = _nonce()
         _, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        auth_data = json.dumps({"user_id": 42})
+        auth_data = json.dumps({"user_id": 42, "step": "groups"})
 
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
         redis.delete = AsyncMock()
 
-        user_id, parsed_nonce = await service.handle_callback(
-            code="auth_code_123",
-            state=state,
-        )
+        user_id, parsed_nonce = await service.handle_callback(code="auth_code", state=state)
         assert user_id == 42
         assert parsed_nonce == nonce
 
+        # Verify groups were stored
         set_calls = [c for c in redis.set.call_args_list if "vk_oauth:" in str(c)]
         assert len(set_calls) >= 1
+        stored = json.loads(set_calls[0][0][1])
+        assert stored["step"] == "groups"
+        assert len(stored["groups"]) == 2
 
     async def test_invalid_state_raises(self) -> None:
         service, redis = _make_service()
         redis.set = AsyncMock(return_value=True)
 
         with pytest.raises(VKOAuthError):
-            await service.handle_callback(
-                code="code",
-                state="invalid_state_too_short",
-            )
+            await service.handle_callback(code="code", state="invalid_state_too_short")
 
     async def test_replay_attack_blocked(self) -> None:
         """Second use of same state should fail (H10)."""
         service, redis = _make_service()
-
         nonce = _nonce()
         _, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        auth_data = json.dumps({"user_id": 42})
-        redis.get = AsyncMock(return_value=auth_data)
+        redis.get = AsyncMock(return_value=json.dumps({"user_id": 42}))
         redis.set = AsyncMock(return_value=False)
 
         with pytest.raises(VKOAuthError, match="replay"):
-            await service.handle_callback(
-                code="code",
-                state=state,
-            )
+            await service.handle_callback(code="code", state=state)
 
     async def test_expired_session_raises(self) -> None:
         """Missing vk_auth:{nonce} in Redis -> expired."""
@@ -163,17 +177,14 @@ class TestHandleCallback:
         redis.get = AsyncMock(return_value=None)
 
         with pytest.raises(VKOAuthError, match="expired"):
-            await service.handle_callback(
-                code="code",
-                state=state,
-            )
+            await service.handle_callback(code="code", state=state)
 
     @staticmethod
-    async def _mock_vk_api(request: httpx.Request) -> httpx.Response:
+    async def _mock_step1_api(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "oauth.vk.com/access_token" in url:
+        if "oauth.vk.ru/access_token" in url:
             return httpx.Response(200, json={
-                "access_token": "new_access_token",
+                "access_token": "user_token_123",
                 "expires_in": 86400,
                 "user_id": 42,
             })
@@ -191,13 +202,80 @@ class TestHandleCallback:
 
 
 # ---------------------------------------------------------------------------
+# handle_callback — step 2 (community token)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleCallbackStep2:
+    async def test_step2_stores_community_token(self) -> None:
+        """Step 2: exchange code -> community token (access_token_GROUP_ID) -> store."""
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "oauth.vk.ru/access_token" in str(request.url):
+                return httpx.Response(200, json={
+                    "access_token_100": "community_token_for_100",
+                    "expires_in": 0,
+                })
+            return httpx.Response(404)
+
+        service, redis = _make_service(handler=handler)
+        nonce = _nonce()
+        _, state = service.build_authorize_url(user_id=42, nonce=nonce, group_ids=100)
+
+        auth_data = json.dumps({
+            "user_id": 42, "step": "community", "group_id": 100, "group_name": "Group A",
+        })
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
+        redis.delete = AsyncMock()
+
+        user_id, parsed_nonce = await service.handle_callback(code="code", state=state)
+        assert user_id == 42
+        assert parsed_nonce == nonce
+
+        # Verify community token was stored
+        set_calls = [c for c in redis.set.call_args_list if "vk_oauth:" in str(c)]
+        assert len(set_calls) >= 1
+        stored = json.loads(set_calls[0][0][1])
+        assert stored["step"] == "community"
+        assert stored["access_token"] == "community_token_for_100"
+        assert stored["group_id"] == 100
+        assert stored["group_name"] == "Group A"
+
+
+# ---------------------------------------------------------------------------
+# _extract_community_token
+# ---------------------------------------------------------------------------
+
+
+class TestExtractCommunityToken:
+    def test_extracts_by_group_id(self) -> None:
+        token = VKOAuthService._extract_community_token(
+            {"access_token_100": "tok100", "access_token_200": "tok200"}, 100,
+        )
+        assert token == "tok100"
+
+    def test_fallback_to_any_access_token_key(self) -> None:
+        token = VKOAuthService._extract_community_token(
+            {"access_token_999": "tok999"}, None,
+        )
+        assert token == "tok999"
+
+    def test_fallback_to_plain_access_token(self) -> None:
+        token = VKOAuthService._extract_community_token(
+            {"access_token": "plain_tok"}, 100,
+        )
+        assert token == "plain_tok"
+
+
+# ---------------------------------------------------------------------------
 # get_oauth_result
 # ---------------------------------------------------------------------------
 
 
 class TestGetOAuthResult:
     async def test_returns_and_deletes_atomically(self) -> None:
-        result = {"access_token": "tok", "groups": [{"id": 1, "name": "G"}]}
+        result = {"step": "community", "access_token": "tok", "group_id": 1}
         service, redis = _make_service()
         redis.getdel = AsyncMock(return_value=json.dumps(result))
 
@@ -229,7 +307,7 @@ class TestGetOAuthResult:
 class TestExchangeErrors:
     async def test_http_error_during_exchange(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth.vk.com/access_token" in str(request.url):
+            if "oauth.vk.ru/access_token" in str(request.url):
                 raise httpx.ConnectError("VK down")
             return httpx.Response(404)
 
@@ -244,7 +322,7 @@ class TestExchangeErrors:
 
     async def test_non_200_response(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth.vk.com/access_token" in str(request.url):
+            if "oauth.vk.ru/access_token" in str(request.url):
                 return httpx.Response(400, json={"error": "invalid_code"})
             return httpx.Response(404)
 
@@ -259,7 +337,7 @@ class TestExchangeErrors:
 
     async def test_no_access_token_in_response(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "oauth.vk.com/access_token" in str(request.url):
+            if "oauth.vk.ru/access_token" in str(request.url):
                 return httpx.Response(200, json={"error": "invalid_grant"})
             return httpx.Response(404)
 
@@ -274,7 +352,7 @@ class TestExchangeErrors:
 
 
 # ---------------------------------------------------------------------------
-# groups.get API errors
+# groups.get API errors (step 1)
 # ---------------------------------------------------------------------------
 
 
@@ -284,7 +362,7 @@ class TestFetchGroupsErrors:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             url = str(request.url)
-            if "oauth.vk.com/access_token" in url:
+            if "oauth.vk.ru/access_token" in url:
                 return httpx.Response(200, json={
                     "access_token": "tok",
                     "expires_in": 86400,
@@ -302,7 +380,7 @@ class TestFetchGroupsErrors:
         service, redis = _make_service(handler=handler)
         nonce = _nonce()
         _, state = service.build_authorize_url(user_id=42, nonce=nonce)
-        auth_data = json.dumps({"user_id": 42})
+        auth_data = json.dumps({"user_id": 42, "step": "groups"})
         redis.set = AsyncMock(return_value=True)
         redis.get = AsyncMock(side_effect=lambda key: auth_data if "vk_auth:" in key else None)
         redis.delete = AsyncMock()
@@ -312,3 +390,22 @@ class TestFetchGroupsErrors:
         )
         assert user_id == 42
         assert parsed_nonce == nonce
+
+
+# ---------------------------------------------------------------------------
+# build_oauth_url
+# ---------------------------------------------------------------------------
+
+
+class TestBuildOAuthUrl:
+    def test_without_group_ids(self) -> None:
+        service, _ = _make_service()
+        url = service.build_oauth_url(42, "nonce123")
+        assert "user_id=42" in url
+        assert "nonce=nonce123" in url
+        assert "group_ids" not in url
+
+    def test_with_group_ids(self) -> None:
+        service, _ = _make_service()
+        url = service.build_oauth_url(42, "nonce123", group_ids=555)
+        assert "group_ids=555" in url

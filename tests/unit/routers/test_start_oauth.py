@@ -2,6 +2,10 @@
 
 Verifies P0 fix: after VK/Pinterest OAuth deep-link, user returns
 to social pipeline instead of Dashboard (FSM_SPEC.md:419-423).
+
+VK uses two-step community token flow:
+- Step 1: groups list → show picker
+- Step 2: community token → create connection
 """
 
 from __future__ import annotations
@@ -167,12 +171,13 @@ class TestPinterestDeepLinkPipeline:
 
 
 # ---------------------------------------------------------------------------
-# _handle_vk_deep_link — from_pipeline (single group)
+# _handle_vk_deep_link — step 2 (community token) + from_pipeline
 # ---------------------------------------------------------------------------
 
 
 class TestVKDeepLinkPipeline:
-    async def test_single_group_from_pipeline_calls_return(self) -> None:
+    async def test_community_token_from_pipeline_calls_return(self) -> None:
+        """Step 2 result (community token) with from_pipeline → return to pipeline."""
         from services.oauth.vk import VKDeepLinkResult
 
         msg = _make_message()
@@ -187,12 +192,12 @@ class TestVKDeepLinkPipeline:
         project = make_project(id=1, name="Test")
 
         dl = VKDeepLinkResult(
-            groups=[{"id": 100, "name": "Group"}],
+            step="community",
+            group_id=100,
+            group_name="Group",
             project_id=1,
-            access_token="tok",
-            refresh_token="ref",
-            expires_at="2026-12-31T00:00:00",
-            device_id="dev",
+            access_token="community_tok",
+            expires_at="",
             raw_result={},
             from_pipeline=True,
         )
@@ -200,12 +205,12 @@ class TestVKDeepLinkPipeline:
         with (
             patch(f"{_MODULE}._build_vk_oauth_service") as vk_svc_mock,
             patch(f"{_MODULE}.ProjectsRepository") as projects_cls,
-            patch(f"{_MODULE}._create_vk_connection", new_callable=AsyncMock),
+            patch(f"{_MODULE}._create_vk_connection_from_community", new_callable=AsyncMock),
             patch(f"{_MODULE}._return_to_pipeline", new_callable=AsyncMock) as ret_mock,
         ):
             svc = MagicMock()
             svc.process_deep_link = AsyncMock(return_value=dl)
-            svc.cleanup_meta = AsyncMock()
+            svc.cleanup = AsyncMock()
             vk_svc_mock.return_value = svc
             projects_cls.return_value.get_by_id = AsyncMock(return_value=project)
 
@@ -213,7 +218,8 @@ class TestVKDeepLinkPipeline:
 
         ret_mock.assert_awaited_once()
 
-    async def test_single_group_no_pipeline_no_return(self) -> None:
+    async def test_community_token_no_pipeline_no_return(self) -> None:
+        """Step 2 result without from_pipeline → no pipeline return."""
         from services.oauth.vk import VKDeepLinkResult
 
         msg = _make_message()
@@ -228,12 +234,12 @@ class TestVKDeepLinkPipeline:
         project = make_project(id=1, name="Test")
 
         dl = VKDeepLinkResult(
-            groups=[{"id": 100, "name": "Group"}],
+            step="community",
+            group_id=100,
+            group_name="Group",
             project_id=1,
-            access_token="tok",
-            refresh_token="ref",
-            expires_at="2026-12-31T00:00:00",
-            device_id="dev",
+            access_token="community_tok",
+            expires_at="",
             raw_result={},
             from_pipeline=False,
         )
@@ -241,12 +247,12 @@ class TestVKDeepLinkPipeline:
         with (
             patch(f"{_MODULE}._build_vk_oauth_service") as vk_svc_mock,
             patch(f"{_MODULE}.ProjectsRepository") as projects_cls,
-            patch(f"{_MODULE}._create_vk_connection", new_callable=AsyncMock),
+            patch(f"{_MODULE}._create_vk_connection_from_community", new_callable=AsyncMock),
             patch(f"{_MODULE}._return_to_pipeline", new_callable=AsyncMock) as ret_mock,
         ):
             svc = MagicMock()
             svc.process_deep_link = AsyncMock(return_value=dl)
-            svc.cleanup_meta = AsyncMock()
+            svc.cleanup = AsyncMock()
             vk_svc_mock.return_value = svc
             projects_cls.return_value.get_by_id = AsyncMock(return_value=project)
 
@@ -254,14 +260,53 @@ class TestVKDeepLinkPipeline:
 
         ret_mock.assert_not_awaited()
 
+    async def test_step1_groups_shows_picker(self) -> None:
+        """Step 1 result (groups list) → show group picker, no connection created."""
+        from services.oauth.vk import VKDeepLinkResult
+
+        msg = _make_message()
+        state = _make_state()
+        user = make_user()
+        db = MagicMock()
+        redis = MagicMock()
+        redis.get = AsyncMock(return_value=None)
+        redis.set = AsyncMock()
+        redis.delete = AsyncMock()
+        http = _mock_http_client()
+        project = make_project(id=1, name="Test")
+
+        dl = VKDeepLinkResult(
+            step="groups",
+            groups=[{"id": 100, "name": "Group A"}, {"id": 200, "name": "Group B"}],
+            project_id=1,
+            raw_result={"step": "groups", "groups": [{"id": 100}, {"id": 200}]},
+            from_pipeline=False,
+        )
+
+        with (
+            patch(f"{_MODULE}._build_vk_oauth_service") as vk_svc_mock,
+            patch(f"{_MODULE}.ProjectsRepository") as projects_cls,
+            patch(f"{_MODULE}._show_vk_group_picker", new_callable=AsyncMock) as picker_mock,
+        ):
+            svc = MagicMock()
+            svc.process_deep_link = AsyncMock(return_value=dl)
+            svc.restore_result_for_group_select = AsyncMock()
+            vk_svc_mock.return_value = svc
+            projects_cls.return_value.get_by_id = AsyncMock(return_value=project)
+
+            await _handle_vk_deep_link(msg, state, user, db, redis, http, "nonce1")
+
+        picker_mock.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
-# vk_group_select_deeplink — from_pipeline
+# vk_group_select_deeplink — triggers step 2 OAuth (not connection creation)
 # ---------------------------------------------------------------------------
 
 
 class TestVKGroupSelectPipeline:
-    async def test_group_select_from_pipeline_calls_return(self) -> None:
+    async def test_group_select_triggers_step2_oauth(self) -> None:
+        """Group selection should trigger step 2 OAuth with group_ids, not create connection."""
         callback = MagicMock()
         callback.data = "vk_auth:nonce1:100"
         callback.answer = AsyncMock()
@@ -274,39 +319,44 @@ class TestVKGroupSelectPipeline:
         redis.set = AsyncMock()
         redis.delete = AsyncMock()
         http = _mock_http_client()
-        project = make_project(id=1, name="Test")
 
         stored_result = {
-            "groups": [{"id": 100, "name": "Group"}],
-            "access_token": "tok",
-            "refresh_token": "ref",
-            "expires_in": 3600,
-            "device_id": "dev",
+            "step": "groups",
+            "groups": [{"id": 100, "name": "Group A"}],
         }
         meta = {"project_id": 1, "from_pipeline": True}
 
-        with (
-            patch(f"{_MODULE}._build_vk_oauth_service") as vk_svc_mock,
-            patch(f"{_MODULE}.ProjectsRepository") as projects_cls,
-            patch(f"{_MODULE}.ConnectionService") as conn_svc_cls,
-            patch(f"{_MODULE}._return_to_pipeline", new_callable=AsyncMock) as ret_mock,
-        ):
+        with patch(f"{_MODULE}._build_vk_oauth_service") as vk_svc_mock:
             svc = MagicMock()
             svc.get_stored_result = AsyncMock(return_value=stored_result)
             svc.get_meta = AsyncMock(return_value=meta)
+            svc.generate_nonce.return_value = "new_nonce"
+            svc.store_auth = AsyncMock()
+            svc.store_meta = AsyncMock()
+            svc.build_oauth_url.return_value = "https://example.com/api/auth/vk?group_ids=100"
             svc.cleanup = AsyncMock()
             vk_svc_mock.return_value = svc
 
-            projects_cls.return_value.get_by_id = AsyncMock(return_value=project)
-            conn_svc_cls.return_value.create_vk_from_oauth = AsyncMock(
-                return_value=MagicMock(id=99)
-            )
-
             await vk_group_select_deeplink(callback, state, user, db, redis, http)
 
-        ret_mock.assert_awaited_once()
+        # Verify step 2 auth stored with group info
+        svc.store_auth.assert_awaited_once()
+        call_kwargs = svc.store_auth.call_args
+        assert call_kwargs[1]["step"] == "community"
+        assert call_kwargs[1]["group_id"] == 100
 
-    async def test_group_select_no_pipeline_no_return(self) -> None:
+        # Verify OAuth URL includes group_ids
+        svc.build_oauth_url.assert_called_once_with(
+            user.id, "new_nonce", group_ids=100,
+        )
+
+        # Verify message sent to user with OAuth button
+        callback.message.answer.assert_awaited_once()
+        answer_text = callback.message.answer.call_args[0][0]
+        assert "Group A" in answer_text
+
+    async def test_group_select_expired_session(self) -> None:
+        """Expired session → alert, no OAuth triggered."""
         callback = MagicMock()
         callback.data = "vk_auth:nonce1:100"
         callback.answer = AsyncMock()
@@ -319,34 +369,13 @@ class TestVKGroupSelectPipeline:
         redis.set = AsyncMock()
         redis.delete = AsyncMock()
         http = _mock_http_client()
-        project = make_project(id=1, name="Test")
 
-        stored_result = {
-            "groups": [{"id": 100, "name": "Group"}],
-            "access_token": "tok",
-            "refresh_token": "ref",
-            "expires_in": 3600,
-            "device_id": "dev",
-        }
-        meta = {"project_id": 1}  # no from_pipeline
-
-        with (
-            patch(f"{_MODULE}._build_vk_oauth_service") as vk_svc_mock,
-            patch(f"{_MODULE}.ProjectsRepository") as projects_cls,
-            patch(f"{_MODULE}.ConnectionService") as conn_svc_cls,
-            patch(f"{_MODULE}._return_to_pipeline", new_callable=AsyncMock) as ret_mock,
-        ):
+        with patch(f"{_MODULE}._build_vk_oauth_service") as vk_svc_mock:
             svc = MagicMock()
-            svc.get_stored_result = AsyncMock(return_value=stored_result)
-            svc.get_meta = AsyncMock(return_value=meta)
-            svc.cleanup = AsyncMock()
+            svc.get_stored_result = AsyncMock(return_value=None)  # expired
             vk_svc_mock.return_value = svc
-
-            projects_cls.return_value.get_by_id = AsyncMock(return_value=project)
-            conn_svc_cls.return_value.create_vk_from_oauth = AsyncMock(
-                return_value=MagicMock(id=99)
-            )
 
             await vk_group_select_deeplink(callback, state, user, db, redis, http)
 
-        ret_mock.assert_not_awaited()
+        callback.answer.assert_awaited_once()
+        assert "истекла" in callback.answer.call_args[0][0]
