@@ -20,7 +20,7 @@ class PaymentsRepository(BaseRepository):
 
     async def create(self, data: PaymentCreate) -> Payment:
         """Create a new payment record."""
-        resp = await self._table(_PAYMENTS_TABLE).insert(data.model_dump()).execute()
+        resp = await self._table(_PAYMENTS_TABLE).insert(data.model_dump(mode="json")).execute()
         row = self._require_first(resp)
         return Payment(**row)
 
@@ -137,7 +137,7 @@ class PaymentsRepository(BaseRepository):
 
     async def create_expense(self, data: TokenExpenseCreate) -> TokenExpense:
         """Create a token expense record."""
-        resp = await self._table(_EXPENSES_TABLE).insert(data.model_dump()).execute()
+        resp = await self._table(_EXPENSES_TABLE).insert(data.model_dump(mode="json")).execute()
         row = self._require_first(resp)
         return TokenExpense(**row)
 

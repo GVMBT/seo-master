@@ -148,6 +148,15 @@ CRITIQUE_SCHEMA: dict[str, Any] = {
     },
 }
 
+def truncate_seo_fields(seo_title: str, meta_description: str) -> tuple[str, str]:
+    """Safety-net: seo_title <=60, meta_description <=160. Truncate at word boundary."""
+    if len(seo_title) > 60:
+        seo_title = seo_title[:60].rsplit(" ", 1)[0].rstrip()
+    if len(meta_description) > 160:
+        meta_description = meta_description[:160].rsplit(" ", 1)[0].rstrip()
+    return seo_title, meta_description
+
+
 RESEARCH_SCHEMA: dict[str, Any] = {
     "name": "research_response",
     "strict": True,

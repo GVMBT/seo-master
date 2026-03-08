@@ -81,7 +81,7 @@ class ConnectionsRepository(BaseRepository):
 
     async def update(self, connection_id: int, data: PlatformConnectionUpdate) -> PlatformConnection | None:
         """Partial update (status, metadata). Does NOT update credentials — use update_credentials."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return await self.get_by_id(connection_id)
         resp = await self._table(_TABLE).update(payload).eq("id", connection_id).execute()

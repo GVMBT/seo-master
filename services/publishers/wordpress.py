@@ -156,6 +156,42 @@ class WordPressPublisher(BasePublisher):
             platform_post_id=str(post["id"]),
         )
 
+    async def resolve_wp_category(
+        self, base_url: str, auth: httpx.BasicAuth, category_name: str
+    ) -> int | None:
+        """Search WP categories by name → create if missing → return ID.
+
+        Returns None on error (graceful degradation → "Без рубрики").
+        """
+        try:
+            # Search existing categories
+            resp = await self._client.get(
+                f"{base_url}/categories",
+                params={"search": category_name, "per_page": 10},
+                auth=auth,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            cats = resp.json()
+
+            # Case-insensitive exact match
+            for cat in cats:
+                if cat.get("name", "").lower() == category_name.lower():
+                    return int(cat["id"])
+
+            # Not found — create
+            resp = await self._client.post(
+                f"{base_url}/categories",
+                json={"name": category_name},
+                auth=auth,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return int(resp.json()["id"])
+        except (httpx.HTTPError, KeyError, ValueError):
+            log.warning("wp_category_resolve_failed", category=category_name, exc_info=True)
+            return None
+
     async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         creds = connection.credentials
         base = self._base_url(creds)
