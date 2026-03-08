@@ -34,6 +34,14 @@ if TYPE_CHECKING:
 log = structlog.get_logger()
 
 
+def _safe_int(value: Any, default: int) -> int:
+    """Parse value to int, returning default on failure."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class ArticleContent:
     """Result of article generation pipeline."""
@@ -275,7 +283,7 @@ class PreviewService:
 
         # Word count warning: log if significantly below target (not a hard block)
         text_settings = (category.text_settings or {}) if category else {}
-        words_min = int(text_settings.get("words_min", 1500))
+        words_min = _safe_int(text_settings.get("words_min"), 1500)
         if word_count < int(words_min * 0.8):
             log.warning(
                 "article_word_count_below_target",

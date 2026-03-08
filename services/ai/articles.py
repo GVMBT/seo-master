@@ -148,15 +148,6 @@ CRITIQUE_SCHEMA: dict[str, Any] = {
     },
 }
 
-def truncate_seo_fields(seo_title: str, meta_description: str) -> tuple[str, str]:
-    """Safety-net: seo_title <=60, meta_description <=160. Truncate at word boundary."""
-    if len(seo_title) > 60:
-        seo_title = seo_title[:60].rsplit(" ", 1)[0].rstrip()
-    if len(meta_description) > 160:
-        meta_description = meta_description[:160].rsplit(" ", 1)[0].rstrip()
-    return seo_title, meta_description
-
-
 RESEARCH_SCHEMA: dict[str, Any] = {
     "name": "research_response",
     "strict": True,
@@ -347,7 +338,7 @@ _JSONLD_RE = re.compile(
 )
 
 # Quality score thresholds (API_CONTRACTS.md §5 step 8)
-# >=80: pass, 60-79: critique, 40-59: warn (pass with log), <40: block
+# >=80: pass, 55-79: critique, <55: block
 CRITIQUE_THRESHOLD = 80
 CRITIQUE_MIN = 55
 BLOCK_THRESHOLD = 55
