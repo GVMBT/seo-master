@@ -37,6 +37,8 @@ user: |
   <<current_news>>
   <% endif %>
 
+  <% if lsi_keywords %>LSI-фразы (распредели по разделам): <<lsi_keywords>><% endif %>
+
   Требования к плану:
   - Title (заголовок статьи): содержит "<<main_phrase>>"
   - 3-6 H2: каждый решает конкретную проблему читателя, включают дополнительные фразы
@@ -110,6 +112,9 @@ variables:
     required: false
     default: ""
   - name: current_news
+    required: false
+    default: ""
+  - name: lsi_keywords
     required: false
     default: ""
   - name: language
