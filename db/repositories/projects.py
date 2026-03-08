@@ -38,7 +38,7 @@ class ProjectsRepository(BaseRepository):
 
     async def update(self, project_id: int, data: ProjectUpdate) -> Project | None:
         """Partial update. Returns None if project not found."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return await self.get_by_id(project_id)
         resp = await self._table(_TABLE).update(payload).eq("id", project_id).execute()

@@ -43,7 +43,7 @@ class PromptsRepository(BaseRepository):
 
     async def update_stats(self, prompt_id: int, data: PromptVersionUpdate) -> PromptVersion | None:
         """Update prompt stats (success_rate, avg_quality, is_active)."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return None
         resp = await self._table(_TABLE).update(payload).eq("id", prompt_id).execute()

@@ -1,7 +1,8 @@
 """Seed prompt_versions table from YAML files in services/ai/prompts/.
 
 Usage:
-    uv run python scripts/seed_prompts.py
+    uv run python scripts/seed_prompts.py          # skip existing
+    uv run python scripts/seed_prompts.py --force   # overwrite existing
 
 Requires: SUPABASE_URL and SUPABASE_KEY env vars (or .env file).
 Skips existing (task_type, version) pairs — safe to re-run.
@@ -64,8 +65,10 @@ async def main() -> None:
         },
     )
 
+    force = "--force" in sys.argv
     prompts_dir = Path(__file__).resolve().parent.parent / "services" / "ai" / "prompts"
     seeded = 0
+    updated = 0
     skipped = 0
 
     for filename, (task_type, version) in _PROMPT_MAP.items():
@@ -78,14 +81,24 @@ async def main() -> None:
         yaml_content = filepath.read_text(encoding="utf-8")
         is_active = (task_type, version) in _ACTIVE
 
-        # Upsert: skip if exists
         try:
             resp = await (
                 client.from_("prompt_versions").select("id").eq("task_type", task_type).eq("version", version).execute()
             )
             if resp.data:
-                print(f"  EXISTS {task_type}/{version} — skip")
-                skipped += 1
+                if force:
+                    row_id = resp.data[0]["id"]
+                    await (
+                        client.from_("prompt_versions")
+                        .update({"prompt_yaml": yaml_content, "is_active": is_active})
+                        .eq("id", row_id)
+                        .execute()
+                    )
+                    print(f"  UPDATE {task_type}/{version}")
+                    updated += 1
+                else:
+                    print(f"  EXISTS {task_type}/{version} — skip (use --force to overwrite)")
+                    skipped += 1
                 continue
 
             await (
@@ -107,7 +120,7 @@ async def main() -> None:
             print(f"  ERROR {task_type}/{version}: {e}")
 
     await client.aclose()
-    print(f"\nDone: {seeded} seeded, {skipped} skipped")
+    print(f"\nDone: {seeded} seeded, {updated} updated, {skipped} skipped")
 
 
 if __name__ == "__main__":

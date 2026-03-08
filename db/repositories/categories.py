@@ -67,7 +67,7 @@ class CategoriesRepository(BaseRepository):
 
     async def update(self, category_id: int, data: CategoryUpdate) -> Category | None:
         """Partial update. Returns None if not found."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return await self.get_by_id(category_id)
         resp = await self._table(_TABLE).update(payload).eq("id", category_id).execute()
@@ -138,7 +138,7 @@ class CategoriesRepository(BaseRepository):
         self, override_id: int, data: PlatformContentOverrideUpdate
     ) -> PlatformContentOverride | None:
         """Update existing override."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return None
         resp = await self._table(_OVERRIDES_TABLE).update(payload).eq("id", override_id).execute()

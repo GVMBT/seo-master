@@ -38,7 +38,13 @@ class SchedulesRepository(BaseRepository):
 
     async def get_by_connection_cross_post(self, connection_id: int) -> list[PlatformSchedule]:
         """Get schedules where connection_id is in cross_post_connection_ids."""
-        resp = await self._table(_TABLE).select("*").contains("cross_post_connection_ids", [connection_id]).execute()
+        # postgrest contains() calls ",".join(value) — needs str, not int
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .contains("cross_post_connection_ids", [str(connection_id)])
+            .execute()
+        )
         return [PlatformSchedule(**row) for row in self._rows(resp)]
 
     async def get_enabled(self) -> list[PlatformSchedule]:

@@ -14,7 +14,7 @@ class AuditsRepository(BaseRepository):
 
     async def upsert_audit(self, data: SiteAuditCreate) -> SiteAudit:
         """Create or update site audit (UNIQUE on project_id)."""
-        resp = await self._table(_AUDITS_TABLE).upsert(data.model_dump(), on_conflict="project_id").execute()
+        resp = await self._table(_AUDITS_TABLE).upsert(data.model_dump(mode="json"), on_conflict="project_id").execute()
         row = self._require_first(resp)
         return SiteAudit(**row)
 
@@ -28,7 +28,11 @@ class AuditsRepository(BaseRepository):
 
     async def upsert_branding(self, data: SiteBrandingCreate) -> SiteBranding:
         """Create or update site branding (UNIQUE on project_id)."""
-        resp = await self._table(_BRANDINGS_TABLE).upsert(data.model_dump(), on_conflict="project_id").execute()
+        resp = (
+            await self._table(_BRANDINGS_TABLE)
+            .upsert(data.model_dump(mode="json"), on_conflict="project_id")
+            .execute()
+        )
         row = self._require_first(resp)
         return SiteBranding(**row)
 

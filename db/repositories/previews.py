@@ -13,7 +13,7 @@ class PreviewsRepository(BaseRepository):
 
     async def create(self, data: ArticlePreviewCreate) -> ArticlePreview:
         """Create a new article preview."""
-        resp = await self._table(_TABLE).insert(data.model_dump()).execute()
+        resp = await self._table(_TABLE).insert(data.model_dump(mode="json")).execute()
         row = self._require_first(resp)
         return ArticlePreview(**row)
 
@@ -39,7 +39,7 @@ class PreviewsRepository(BaseRepository):
 
     async def update(self, preview_id: int, data: ArticlePreviewUpdate) -> ArticlePreview | None:
         """Partial update of preview."""
-        payload = data.model_dump(exclude_none=True)
+        payload = data.model_dump(exclude_none=True, mode="json")
         if not payload:
             return await self.get_by_id(preview_id)
         resp = await self._table(_TABLE).update(payload).eq("id", preview_id).execute()
