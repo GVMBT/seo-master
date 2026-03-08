@@ -698,24 +698,24 @@ def keywords_cluster_delete_list_kb(
 
 
 def keywords_quantity_kb(cat_id: int) -> InlineKeyboardMarkup:
-    """Keyword quantity selection (UX_TOOLBOX section 9.5)."""
+    """Keyword quantity selection (UX_TOOLBOX section 9.5). Keywords are free."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="50 фраз \u2014 50 токенов", callback_data=f"kw:{cat_id}:qty_50")],
-            [InlineKeyboardButton(text="100 фраз \u2014 100 токенов", callback_data=f"kw:{cat_id}:qty_100")],
-            [InlineKeyboardButton(text="150 фраз \u2014 150 токенов", callback_data=f"kw:{cat_id}:qty_150")],
-            [InlineKeyboardButton(text="200 фраз \u2014 200 токенов", callback_data=f"kw:{cat_id}:qty_200")],
+            [InlineKeyboardButton(text="50 фраз", callback_data=f"kw:{cat_id}:qty_50")],
+            [InlineKeyboardButton(text="100 фраз", callback_data=f"kw:{cat_id}:qty_100")],
+            [InlineKeyboardButton(text="150 фраз", callback_data=f"kw:{cat_id}:qty_150")],
+            [InlineKeyboardButton(text="200 фраз", callback_data=f"kw:{cat_id}:qty_200")],
         ]
     )
 
 
-def keywords_confirm_kb(cat_id: int, cost: int, balance: int) -> InlineKeyboardMarkup:
-    """Keyword generation cost confirmation."""
+def keywords_confirm_kb(cat_id: int) -> InlineKeyboardMarkup:
+    """Keyword generation confirmation (keywords are free)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Да, сгенерировать",
+                    text="Подобрать",
                     callback_data=f"kw:{cat_id}:confirm_yes",
                     style=ButtonStyle.SUCCESS,
                 ),

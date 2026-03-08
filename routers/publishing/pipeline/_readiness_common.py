@@ -4,14 +4,15 @@ Extracts the keyword generation pipeline, description generation logic,
 and readiness sub-flow handler registration factory that were duplicated
 between readiness.py and social/readiness.py.
 Differences are passed via ReadinessConfig and parameters.
+
+Keyword wizard handlers (products/geo/qty/confirm/cancel/city/upload) are
+now delegated to routers.shared.keyword_wizard -- only entry points
+(menu, auto, configure, upload_start) remain here.
 """
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import html
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -20,7 +21,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.state import State
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.helpers import safe_edit_text, safe_message
 from db.models import User
@@ -33,9 +34,15 @@ from keyboards.pipeline import (
     pipeline_keywords_options_kb,
     pipeline_keywords_qty_kb,
 )
+from routers.shared.keyword_wizard import (
+    KeywordWizardConfig,
+    register_keyword_wizard,
+)
+from routers.shared.keyword_wizard import (
+    run_keyword_generation as _wizard_run_keyword_generation,
+)
 from services.ai.description import DescriptionService
 from services.categories import CategoryService
-from services.keywords import KeywordService
 
 if TYPE_CHECKING:
     from aiogram.fsm.context import FSMContext
@@ -48,13 +55,72 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
-# Limits for keyword upload (shared between article and social readiness)
-MAX_KEYWORD_PHRASES = 500
-MAX_KEYWORD_FILE_SIZE = 1 * 1024 * 1024  # 1 MB
+
+# ---------------------------------------------------------------------------
+# Backward-compatible run_keyword_generation wrapper
+# ---------------------------------------------------------------------------
+
+
+async def run_keyword_generation(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    *,
+    category_id: int,
+    project_id: int,
+    products: str,
+    geography: str,
+    quantity: int,
+    ai_orchestrator: AIOrchestrator,
+    dataforseo_client: DataForSEOClient,
+    log_prefix: str,
+    readiness_state: State,
+    back_kb_prefix: str = "pipeline:readiness",
+    on_success: Callable[[Message, FSMContext, User, SupabaseClient, RedisClient], Awaitable[None]],
+) -> None:
+    """Backward-compatible wrapper around the unified keyword wizard's run_keyword_generation.
+
+    Constructs a minimal KeywordWizardConfig from the old-style parameters and
+    delegates to the shared implementation.
+    """
+    compat_cfg = KeywordWizardConfig(
+        state_products=State(),  # unused by run_keyword_generation
+        state_geo=State(),
+        state_qty=State(),
+        state_generating=State(),
+        prefix=back_kb_prefix,
+        log_prefix=log_prefix,
+        cancel_cb_fn=lambda _data: "",
+        on_done=lambda cb, st, u, d, r: on_success(cb.message, st, u, d, r),  # type: ignore[arg-type]
+        on_done_msg=on_success,
+        qty_kb_fn=lambda _data: InlineKeyboardMarkup(inline_keyboard=[]),
+        confirm_kb_fn=lambda _data: InlineKeyboardMarkup(inline_keyboard=[]),
+        cancel_nav_kb_fn=lambda _data: InlineKeyboardMarkup(inline_keyboard=[]),
+        error_state=readiness_state,
+        error_kb_fn=lambda _data: pipeline_back_to_checklist_kb(prefix=back_kb_prefix),
+    )
+
+    await _wizard_run_keyword_generation(
+        callback=callback,
+        state=state,
+        user=user,
+        db=db,
+        redis=redis,
+        cfg=compat_cfg,
+        category_id=category_id,
+        project_id=project_id,
+        products=products,
+        geography=geography,
+        quantity=quantity,
+        ai_orchestrator=ai_orchestrator,
+        dataforseo_client=dataforseo_client,
+    )
 
 
 # ---------------------------------------------------------------------------
-# ReadinessConfig — parameterizes differences between article/social
+# ReadinessConfig -- parameterizes differences between article/social
 # ---------------------------------------------------------------------------
 
 
@@ -112,164 +178,6 @@ class ReadinessConfig:
 
 
 # ---------------------------------------------------------------------------
-# Keyword generation pipeline (shared between article and social readiness)
-# ---------------------------------------------------------------------------
-
-
-async def run_keyword_generation(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    *,
-    category_id: int,
-    project_id: int,
-    products: str,
-    geography: str,
-    quantity: int,
-    ai_orchestrator: AIOrchestrator,
-    dataforseo_client: DataForSEOClient,
-    log_prefix: str,
-    readiness_state: State,
-    back_kb_prefix: str = "pipeline:readiness",
-    on_success: Callable[[Message, FSMContext, User, SupabaseClient, RedisClient], Awaitable[None]],
-) -> None:
-    """Run keyword pipeline: fetch -> cluster -> enrich -> save -> return to checklist.
-
-    This is the shared core of both article and social readiness keyword generation.
-    AI clustering (DeepSeek) can take 60-90 seconds. Progress updates use _safe_edit
-    (tolerates Telegram errors) and the final result is sent as a NEW message.
-
-    Args:
-        log_prefix: e.g. "pipeline.readiness" or "pipeline.social.readiness"
-        readiness_state: FSM state to set on error (e.g. ArticlePipelineFSM.readiness_check)
-        back_kb_prefix: prefix for the back-to-checklist button
-        on_success: async callback to show readiness checklist after success
-    """
-    msg = safe_message(callback)
-    if not msg:
-        return
-
-    async def _safe_edit(text: str) -> None:
-        """Edit message, silently ignoring Telegram errors (expired message, etc.)."""
-        try:
-            await safe_edit_text(msg, text)
-        except Exception:
-            log.debug(f"{log_prefix}.edit_failed", text=text[:50])
-
-    try:
-        kw_service = KeywordService(
-            orchestrator=ai_orchestrator,
-            dataforseo=dataforseo_client,
-            db=db,
-        )
-
-        # Step 1: Fetch raw phrases from DataForSEO (~1-3s)
-        raw_phrases = await kw_service.fetch_raw_phrases(
-            products=products,
-            geography=geography,
-            quantity=quantity,
-            project_id=project_id,
-            user_id=user.id,
-        )
-
-        if raw_phrases:
-            # Step 2a: DataForSEO had data -> AI clustering (~60-90s)
-            await _safe_edit(f"Получено {len(raw_phrases)} фраз. Группирую по интенту (до 1.5 мин)...")
-            clusters = await kw_service.cluster_phrases(
-                raw_phrases=raw_phrases,
-                products=products,
-                geography=geography,
-                quantity=quantity,
-                project_id=project_id,
-                user_id=user.id,
-            )
-        else:
-            # Step 2b: DataForSEO empty -> single AI call generates clusters directly
-            await _safe_edit("DataForSEO без данных. Генерирую фразы через AI (до 1.5 мин)...")
-            clusters = await kw_service.generate_clusters_direct(
-                products=products,
-                geography=geography,
-                quantity=quantity,
-                project_id=project_id,
-                user_id=user.id,
-            )
-
-        # Step 3: Enrich with metrics (~3s)
-        await _safe_edit(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
-        enriched = await kw_service.enrich_clusters(clusters)
-
-        # Filter AI-invented zero-volume junk
-        enriched = kw_service.filter_low_quality(enriched)
-
-        # Save (MERGE with existing)
-        cat_svc = CategoryService(db=db)
-        category = await cat_svc.get_owned_category(category_id, user.id)
-        if not category:
-            raise RuntimeError("keywords_save_failed.ownership")
-        existing: list[dict[str, Any]] = category.keywords or []
-        merged = existing + enriched
-        saved = await cat_svc.update_keywords(category_id, user.id, merged)
-        if not saved:
-            raise RuntimeError("keywords_save_failed.update")
-
-        total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
-        total_volume = sum(c.get("total_volume", 0) for c in enriched)
-
-        log.info(
-            f"{log_prefix}.keywords_generated",
-            user_id=user.id,
-            category_id=category_id,
-            clusters=len(enriched),
-            phrases=total_phrases,
-        )
-
-    except Exception:
-        log.exception(
-            f"{log_prefix}.keywords_failed",
-            user_id=user.id,
-            category_id=category_id,
-        )
-        # Send error as new message (original may be expired)
-        with contextlib.suppress(Exception):
-            await msg.delete()
-        bot = msg.bot
-        if not bot:
-            return
-        await bot.send_message(
-            chat_id=msg.chat.id,
-            text="Ошибка при подборе фраз. Попробуйте позже.",
-            reply_markup=pipeline_back_to_checklist_kb(prefix=back_kb_prefix),
-        )
-        await state.set_state(readiness_state)
-        return
-
-    # Post-success UI
-    try:
-        await msg.delete()
-    except Exception:
-        log.debug(f"{log_prefix}.delete_progress_failed")
-
-    bot = msg.bot
-    if not bot:
-        return
-    with contextlib.suppress(Exception):
-        await bot.send_message(
-            chat_id=msg.chat.id,
-            text=(
-                f"Готово! Добавлено:\n"
-                f"Кластеров: {len(enriched)}\n"
-                f"Фраз: {total_phrases}\n"
-                f"Общий объём: {total_volume:,}/мес"
-            ),
-        )
-    await asyncio.sleep(1)
-    with contextlib.suppress(Exception):
-        await on_success(msg, state, user, db, redis)
-
-
-# ---------------------------------------------------------------------------
 # Description AI generation (shared between article and social readiness)
 # ---------------------------------------------------------------------------
 
@@ -285,14 +193,7 @@ async def generate_description_ai(
     log_prefix: str,
     on_success: Callable[[CallbackQuery, FSMContext, User, SupabaseClient, RedisClient], Awaitable[None]],
 ) -> None:
-    """Generate category description via AI (free for user) and return to checklist.
-
-    Shared between article and social readiness description:ai handlers.
-
-    Args:
-        log_prefix: e.g. "pipeline.readiness" or "pipeline.social.readiness"
-        on_success: async callback to show readiness checklist after success
-    """
+    """Generate category description via AI (free for user) and return to checklist."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -352,23 +253,59 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
     Uses programmatic registration (router.callback_query / router.message)
     instead of decorators so the same logic can serve both article and social pipelines.
 
-    Returns a dict mapping handler names to handler functions (for test imports).
+    Keyword wizard handlers (products text, upload file, geo, qty, confirm, cancel,
+    city select) are delegated to register_keyword_wizard(). Only entry points
+    (menu, auto, configure, upload_start) remain here.
 
-    Note: C901 complexity is expected -- this is a factory function that defines
-    18 handler functions. Splitting would reduce cohesion without improving readability.
+    Returns a dict mapping handler names to handler functions (for test imports).
     """
     fsm = cfg.fsm_class
     prefix = cfg.prefix
     cancel_cb = cfg.cancel_cb
     log_prefix = cfg.log_prefix
 
-    # Build regex for qty callback to match e.g. "pipeline:readiness:keywords:qty_100"
-    # We need to escape prefix for regex since it contains colons
-    prefix_escaped = re.escape(prefix)
-    qty_pattern = rf"^{prefix_escaped}:keywords:qty_(\d+)$"
+    # -----------------------------------------------------------------------
+    # Construct KeywordWizardConfig and register wizard handlers
+    # -----------------------------------------------------------------------
+
+    def _pipeline_qty_kb(_data: dict[str, Any]) -> InlineKeyboardMarkup:
+        return pipeline_keywords_qty_kb(prefix=prefix)
+
+    def _pipeline_confirm_kb(_data: dict[str, Any]) -> InlineKeyboardMarkup:
+        return pipeline_keywords_confirm_kb(prefix=prefix)
+
+    def _pipeline_cancel_nav_kb(_data: dict[str, Any]) -> InlineKeyboardMarkup:
+        return pipeline_back_to_checklist_kb(prefix=prefix)
+
+    def _pipeline_error_kb(_data: dict[str, Any]) -> InlineKeyboardMarkup:
+        return pipeline_back_to_checklist_kb(prefix=prefix)
+
+    kw_cfg = KeywordWizardConfig(
+        state_products=fsm.readiness_keywords_products,
+        state_geo=fsm.readiness_keywords_geo,
+        state_qty=fsm.readiness_keywords_qty,
+        state_generating=fsm.readiness_keywords_generating,
+        prefix=prefix,
+        log_prefix=log_prefix,
+        cancel_cb_fn=lambda _data: cancel_cb,
+        # Use lambdas to enable test patching of cfg.show_check/show_check_msg
+        # (tests mutate _article_readiness_config attrs via object.__setattr__)
+        on_done=lambda cb, st, u, d, r: cfg.show_check(cb, st, u, d, r),
+        on_done_msg=lambda msg, st, u, d, r: cfg.show_check_msg(msg, st, u, d, r),
+        qty_kb_fn=_pipeline_qty_kb,
+        confirm_kb_fn=_pipeline_confirm_kb,
+        cancel_nav_kb_fn=_pipeline_cancel_nav_kb,
+        error_state=fsm.readiness_check,
+        error_kb_fn=_pipeline_error_kb,
+        auto_mode=True,
+        saved_answers=False,
+        upload_enriches=False,
+    )
+
+    wizard_handlers = register_keyword_wizard(router, kw_cfg)
 
     # -----------------------------------------------------------------------
-    # Keywords sub-flow
+    # Keywords entry points (stay here -- they set FSM state and kw_mode)
     # -----------------------------------------------------------------------
 
     async def readiness_keywords_menu(callback: CallbackQuery) -> None:
@@ -378,7 +315,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             "Ключевые фразы\n\nВыберите способ добавления:",
             reply_markup=pipeline_keywords_options_kb(prefix=prefix),
         )
@@ -428,7 +366,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await state.set_state(fsm.readiness_keywords_geo)
             await state.update_data(kw_products=products, kw_mode="auto")
 
-            await safe_edit_text(msg, 
+            await safe_edit_text(
+                msg,
                 "В каком городе ваш бизнес?\n<i>Для точных SEO-фраз</i>",
                 reply_markup=pipeline_keywords_city_kb(prefix=prefix),
             )
@@ -444,7 +383,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             kw_quantity=quantity,
         )
 
-        await safe_edit_text(msg,
+        await safe_edit_text(
+            msg,
             f"Автоподбор ключевых фраз\n\n"
             f"Тема: {html.escape(products)}\n"
             f"География: {html.escape(geography)}\n"
@@ -472,7 +412,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         await state.set_state(fsm.readiness_keywords_products)
         await state.update_data(kw_mode="configure")
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             "Какие товары или услуги продвигаете?\n"
             "<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>\n\n"
             "От 3 до 1000 символов.",
@@ -496,7 +437,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             "Загрузите TXT-файл с ключевыми фразами.\n"
             "Одна фраза на строку, максимум 500 фраз, до 1 МБ.\n\n"
             "Или отправьте фразы текстом (каждая с новой строки).",
@@ -512,396 +454,6 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         F.data == f"{prefix}:keywords:upload",
     )
 
-    async def readiness_keywords_upload_file(
-        message: Message,
-        state: FSMContext,
-        user: User,
-        db: SupabaseClient,
-        redis: RedisClient,
-        category_service_factory: CategoryServiceFactory,
-    ) -> None:
-        """Process uploaded TXT file with keyword phrases."""
-        doc = message.document
-        if not doc:
-            await message.answer("Файл не найден.")
-            return
-
-        filename = doc.file_name or ""
-        if not filename.lower().endswith(".txt"):
-            await message.answer(
-                "Нужен .txt файл (UTF-8), одна фраза на строку.",
-                reply_markup=cancel_kb(cancel_cb),
-            )
-            return
-
-        if doc.file_size and doc.file_size > MAX_KEYWORD_FILE_SIZE:
-            await message.answer(
-                "Файл слишком большой (макс. 1 МБ).",
-                reply_markup=cancel_kb(cancel_cb),
-            )
-            return
-
-        file = await message.bot.download(doc)  # type: ignore[union-attr]
-        if file is None:
-            await message.answer("Не удалось загрузить файл.")
-            return
-
-        content = file.read().decode("utf-8", errors="replace")
-        phrases = [line.strip() for line in content.splitlines() if line.strip()]
-
-        if not phrases:
-            await message.answer(
-                "Файл пустой. Добавьте фразы (одна на строку).",
-                reply_markup=cancel_kb(cancel_cb),
-            )
-            return
-
-        if len(phrases) > MAX_KEYWORD_PHRASES:
-            await message.answer(
-                f"Максимум {MAX_KEYWORD_PHRASES} фраз. Сейчас: {len(phrases)}.",
-                reply_markup=cancel_kb(cancel_cb),
-            )
-            return
-
-        # Save as flat keyword format
-        data = await state.get_data()
-        category_id = data.get("category_id")
-        if not category_id:
-            await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
-            return
-
-        keywords = [{"phrase": p, "volume": 0, "cpc": 0.0} for p in phrases]
-        cat_svc = category_service_factory(db)
-        saved = await cat_svc.update_keywords(category_id, user.id, keywords)
-        if not saved:
-            log.error(f"{log_prefix}.keywords_upload_failed", category_id=category_id, user_id=user.id)
-            await message.answer("Не удалось сохранить фразы. Попробуйте снова.")
-            return
-
-        log.info(
-            f"{log_prefix}.keywords_uploaded",
-            user_id=user.id,
-            category_id=category_id,
-            phrase_count=len(phrases),
-        )
-
-        await message.answer(f"Загружено {len(phrases)} фраз.")
-        await cfg.show_check_msg(message, state, user, db, redis)
-
-    router.message.register(
-        readiness_keywords_upload_file,
-        fsm.readiness_keywords_products,
-        F.document,
-    )
-
-    async def _handle_configure_products(message: Message, state: FSMContext) -> None:
-        """Validate products input for configure keyword path (3-1000 chars)."""
-        text = (message.text or "").strip()
-        if len(text) < 3 or len(text) > 1000:
-            await message.answer(
-                "Введите от 3 до 1000 символов.",
-                reply_markup=pipeline_back_to_checklist_kb(prefix=prefix),
-            )
-            return
-
-        await state.set_state(fsm.readiness_keywords_geo)
-        await state.update_data(kw_products=text)
-
-        await message.answer(
-            "Укажите географию продвижения:\n<i>Например: Москва, Россия, СНГ</i>\n\nОт 2 до 200 символов.",
-            reply_markup=pipeline_back_to_checklist_kb(prefix=prefix),
-        )
-
-    async def readiness_keywords_text_input(
-        message: Message,
-        state: FSMContext,
-        user: User,
-        db: SupabaseClient,
-        redis: RedisClient,
-        category_service_factory: CategoryServiceFactory,
-    ) -> None:
-        """Handle text input -- route by kw_mode (configure=products, upload=phrases)."""
-        data = await state.get_data()
-        kw_mode = data.get("kw_mode", "upload")
-
-        if kw_mode == "configure":
-            await _handle_configure_products(message, state)
-            return
-
-        # Upload mode: process text as keyword phrases (one per line)
-        text = (message.text or "").strip()
-        if not text:
-            await message.answer(
-                "Отправьте TXT-файл или введите фразы текстом (каждая с новой строки).",
-                reply_markup=cancel_kb(cancel_cb),
-            )
-            return
-
-        phrases = [line.strip() for line in text.splitlines() if line.strip()]
-        if not phrases:
-            await message.answer(
-                "Не удалось распознать фразы. Каждая фраза -- с новой строки.",
-                reply_markup=cancel_kb(cancel_cb),
-            )
-            return
-
-        if len(phrases) > MAX_KEYWORD_PHRASES:
-            await message.answer(
-                f"Максимум {MAX_KEYWORD_PHRASES} фраз. Сейчас: {len(phrases)}.",
-                reply_markup=cancel_kb(cancel_cb),
-            )
-            return
-
-        category_id = data.get("category_id")
-        if not category_id:
-            await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
-            return
-
-        keywords = [{"phrase": p, "volume": 0, "cpc": 0.0} for p in phrases]
-        cat_svc = category_service_factory(db)
-        saved = await cat_svc.update_keywords(category_id, user.id, keywords)
-        if not saved:
-            log.error(f"{log_prefix}.keywords_text_failed", category_id=category_id, user_id=user.id)
-            await message.answer("Не удалось сохранить фразы. Попробуйте снова.")
-            return
-
-        log.info(
-            f"{log_prefix}.keywords_text",
-            user_id=user.id,
-            category_id=category_id,
-            phrase_count=len(phrases),
-        )
-
-        await message.answer(f"Сохранено {len(phrases)} фраз.")
-        await cfg.show_check_msg(message, state, user, db, redis)
-
-    router.message.register(
-        readiness_keywords_text_input,
-        fsm.readiness_keywords_products,
-        F.text,
-    )
-
-    # -----------------------------------------------------------------------
-    # Keywords: configure sub-flow (products -> geo -> qty -> confirm -> generate)
-    # -----------------------------------------------------------------------
-
-    async def readiness_keywords_city_select(
-        callback: CallbackQuery,
-        state: FSMContext,
-        user: User,
-        db: SupabaseClient,
-        project_service_factory: ProjectServiceFactory,
-    ) -> None:
-        """Quick city selection for auto-keywords (UX_PIPELINE SS4a).
-
-        Saves city to project and proceeds to confirm screen.
-        """
-        msg = safe_message(callback)
-        if not msg:
-            await callback.answer()
-            return
-
-        if not callback.data:
-            await callback.answer()
-            return
-
-        city = callback.data.split(":")[-1]
-        data = await state.get_data()
-        kw_mode = data.get("kw_mode", "")
-        products = data.get("kw_products", "")
-        project_id = data.get("project_id")
-
-        # Save city to project for future use
-        if project_id:
-            from db.models import ProjectUpdate
-
-            proj_svc = project_service_factory(db)
-            await proj_svc.update_project(project_id, user.id, ProjectUpdate(company_city=city))
-
-        if kw_mode == "auto":
-            # Auto path: city selected -> go straight to confirm (100 phrases)
-            quantity = 100
-
-            await state.set_state(fsm.readiness_keywords_qty)
-            await state.update_data(
-                kw_geography=city,
-                kw_quantity=quantity,
-            )
-
-            await safe_edit_text(msg,
-                f"Автоподбор ключевых фраз\n\n"
-                f"Тема: {html.escape(products)}\n"
-                f"География: {html.escape(city)}\n"
-                f"Количество: {quantity} фраз",
-                reply_markup=pipeline_keywords_confirm_kb(prefix=prefix),
-            )
-        else:
-            # Configure path: city selected -> go to qty selection
-            await state.set_state(fsm.readiness_keywords_qty)
-            await state.update_data(kw_geography=city)
-
-            await safe_edit_text(msg, 
-                "Сколько ключевых фраз подобрать?",
-                reply_markup=pipeline_keywords_qty_kb(prefix=prefix),
-            )
-
-        await callback.answer()
-
-    router.callback_query.register(
-        readiness_keywords_city_select,
-        fsm.readiness_keywords_geo,
-        F.data.startswith(f"{prefix}:keywords:city:"),
-    )
-
-    async def readiness_keywords_geo_input(
-        message: Message,
-        state: FSMContext,
-    ) -> None:
-        """Geography text input for configure keyword path (2-200 chars)."""
-        text = (message.text or "").strip()
-        if len(text) < 2 or len(text) > 200:
-            await message.answer(
-                "Введите от 2 до 200 символов.",
-                reply_markup=pipeline_back_to_checklist_kb(prefix=prefix),
-            )
-            return
-
-        await state.set_state(fsm.readiness_keywords_qty)
-        await state.update_data(kw_geography=text)
-
-        await message.answer(
-            "Сколько ключевых фраз подобрать?",
-            reply_markup=pipeline_keywords_qty_kb(prefix=prefix),
-        )
-
-    router.message.register(
-        readiness_keywords_geo_input,
-        fsm.readiness_keywords_geo,
-        F.text,
-    )
-
-    async def readiness_keywords_qty_select(
-        callback: CallbackQuery,
-        state: FSMContext,
-        user: User,
-        db: SupabaseClient,
-    ) -> None:
-        """Select keyword quantity and show cost confirmation."""
-        msg = safe_message(callback)
-        if not msg:
-            await callback.answer()
-            return
-
-        if not callback.data:
-            await callback.answer()
-            return
-
-        try:
-            quantity = int(callback.data.split("_")[-1])
-        except ValueError:
-            await callback.answer()
-            return
-
-        if quantity not in (50, 100, 150, 200):
-            await callback.answer("Недопустимое количество.", show_alert=True)
-            return
-
-        data = await state.get_data()
-        products = data.get("kw_products", "")
-        geography = data.get("kw_geography", "")
-
-        await state.update_data(kw_quantity=quantity)
-
-        await safe_edit_text(msg,
-            f"Подбор ключевых фраз\n\n"
-            f"Тема: {html.escape(products)}\n"
-            f"География: {html.escape(geography)}\n"
-            f"Количество: {quantity} фраз",
-            reply_markup=pipeline_keywords_confirm_kb(prefix=prefix),
-        )
-        await callback.answer()
-
-    router.callback_query.register(
-        readiness_keywords_qty_select,
-        fsm.readiness_keywords_qty,
-        F.data.regexp(qty_pattern),
-    )
-
-    async def readiness_keywords_confirm(
-        callback: CallbackQuery,
-        state: FSMContext,
-        user: User,
-        db: SupabaseClient,
-        redis: RedisClient,
-        ai_orchestrator: AIOrchestrator,
-        dataforseo_client: DataForSEOClient,
-    ) -> None:
-        """Confirm keyword generation (free for user — platform expense)."""
-        msg = safe_message(callback)
-        if not msg:
-            await callback.answer()
-            return
-
-        data = await state.get_data()
-        quantity = int(data.get("kw_quantity", 100))
-        products = str(data.get("kw_products", ""))
-        geography = str(data.get("kw_geography", ""))
-        category_id = data.get("category_id")
-        project_id = data.get("project_id")
-
-        if not category_id or not project_id:
-            await callback.answer("Данные не найдены. Начните заново.", show_alert=True)
-            return
-
-        await state.set_state(fsm.readiness_keywords_generating)
-        await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
-        await callback.answer()
-
-        await run_keyword_generation(
-            callback=callback,
-            state=state,
-            user=user,
-            db=db,
-            redis=redis,
-            category_id=category_id,
-            project_id=project_id,
-            products=products,
-            geography=geography,
-            quantity=quantity,
-            ai_orchestrator=ai_orchestrator,
-            dataforseo_client=dataforseo_client,
-            log_prefix=log_prefix,
-            readiness_state=fsm.readiness_check,
-            back_kb_prefix=prefix,
-            on_success=cfg.show_check_msg,
-        )
-
-    router.callback_query.register(
-        readiness_keywords_confirm,
-        fsm.readiness_keywords_qty,
-        F.data == f"{prefix}:keywords:confirm",
-    )
-
-    async def readiness_keywords_cancel(
-        callback: CallbackQuery,
-        state: FSMContext,
-        user: User,
-        db: SupabaseClient,
-        redis: RedisClient,
-    ) -> None:
-        """Cancel keyword generation -- return to readiness checklist."""
-        await cfg.show_check(callback, state, user, db, redis)
-        await callback.answer()
-
-    router.callback_query.register(
-        readiness_keywords_cancel,
-        StateFilter(
-            fsm.readiness_keywords_geo,
-            fsm.readiness_keywords_qty,
-        ),
-        F.data == f"{prefix}:keywords:cancel",
-    )
-
     # -----------------------------------------------------------------------
     # Description sub-flow
     # -----------------------------------------------------------------------
@@ -913,7 +465,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             "Описание компании/категории\n\nAI напишет точнее с контекстом о вашей компании.",
             reply_markup=pipeline_description_options_kb(prefix=prefix),
         )
@@ -961,7 +514,8 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             f"Введите описание компании/категории (10-2000 символов).\n\n"
             f"Чем подробнее -- тем точнее будут {cfg.description_hint}.",
             reply_markup=pipeline_back_to_checklist_kb(prefix=prefix),
@@ -1071,20 +625,38 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
     # article and social pipelines (article checks image_count, social passes
     # pipeline_type="social"). Each pipeline registers its own done handler.
 
-    # Return handler functions for test imports
-    return {
+    # -----------------------------------------------------------------------
+    # Backward-compatible _handle_configure_products (old 2-arg signature)
+    # -----------------------------------------------------------------------
+
+    async def _handle_configure_products(message: Message, state: FSMContext) -> None:
+        """Validate products input for configure keyword path (3-1000 chars).
+
+        Backward-compatible thin wrapper -- old tests call this with (message, state).
+        """
+        text = (message.text or "").strip()
+        if len(text) < 3 or len(text) > 1000:
+            await message.answer(
+                "Введите от 3 до 1000 символов.",
+                reply_markup=pipeline_back_to_checklist_kb(prefix=prefix),
+            )
+            return
+
+        await state.set_state(fsm.readiness_keywords_geo)
+        await state.update_data(kw_products=text)
+
+        await message.answer(
+            "Укажите географию продвижения:\n<i>Например: Москва, Россия, СНГ</i>\n\nОт 2 до 200 символов.",
+            reply_markup=pipeline_back_to_checklist_kb(prefix=prefix),
+        )
+
+    # Return handler functions for test imports (include wizard handlers)
+    result: dict[str, Any] = {
         "readiness_keywords_menu": readiness_keywords_menu,
         "readiness_keywords_auto": readiness_keywords_auto,
         "readiness_keywords_configure": readiness_keywords_configure,
         "readiness_keywords_upload_start": readiness_keywords_upload_start,
-        "readiness_keywords_upload_file": readiness_keywords_upload_file,
-        "readiness_keywords_text_input": readiness_keywords_text_input,
         "_handle_configure_products": _handle_configure_products,
-        "readiness_keywords_city_select": readiness_keywords_city_select,
-        "readiness_keywords_geo_input": readiness_keywords_geo_input,
-        "readiness_keywords_qty_select": readiness_keywords_qty_select,
-        "readiness_keywords_confirm": readiness_keywords_confirm,
-        "readiness_keywords_cancel": readiness_keywords_cancel,
         "readiness_description_menu": readiness_description_menu,
         "readiness_description_ai": readiness_description_ai,
         "readiness_description_manual_start": readiness_description_manual_start,
@@ -1092,3 +664,16 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         "readiness_back_from_input": readiness_back_from_input,
         "readiness_back": readiness_back,
     }
+    # Include wizard handlers for backward-compatible test imports
+    for old_name, new_name in [
+        ("readiness_keywords_upload_file", "wizard_upload_file"),
+        ("readiness_keywords_text_input", "wizard_products_text"),
+        ("readiness_keywords_city_select", "wizard_city_select"),
+        ("readiness_keywords_geo_input", "wizard_geo_input"),
+        ("readiness_keywords_qty_select", "wizard_qty_select"),
+        ("readiness_keywords_confirm", "wizard_confirm"),
+        ("readiness_keywords_cancel", "wizard_cancel"),
+    ]:
+        if new_name in wizard_handlers:
+            result[old_name] = wizard_handlers[new_name]
+    return result

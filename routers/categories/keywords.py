@@ -1,13 +1,16 @@
 """Keyword management: AI generation, file upload, cluster CRUD, CSV export.
 
-Source of truth: UX_TOOLBOX.md section 9, FSM_SPEC.md (KeywordGenerationFSM,
-KeywordUploadFSM), EDGE_CASES.md E01/E03/E16/E36.
+Source of truth: UX_TOOLBOX.md section 9, FSM_SPEC.md (KeywordGenerationFSM),
+EDGE_CASES.md E01/E03/E16/E36.
+
+Keyword generation is FREE (no token charging).
+The wizard sub-flow (products -> geo -> qty -> confirm) is delegated to
+routers.shared.keyword_wizard for code sharing with the pipeline readiness flow.
 """
 
 import csv
 import html
 import io
-import time
 from typing import Any
 
 import structlog
@@ -17,11 +20,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
+    InlineKeyboardMarkup,
     Message,
 )
 
-from bot.config import get_settings
-from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from db.client import SupabaseClient
@@ -37,12 +39,14 @@ from keyboards.inline import (
     keywords_delete_all_confirm_kb,
     keywords_empty_kb,
     keywords_quantity_kb,
-    keywords_results_kb,
     keywords_saved_answers_kb,
     keywords_summary_kb,
     menu_kb,
 )
-from services.tokens import TokenService, estimate_keywords_cost
+from routers.shared.keyword_wizard import (
+    KeywordWizardConfig,
+    register_keyword_wizard,
+)
 
 log = structlog.get_logger()
 router = Router()
@@ -70,18 +74,10 @@ def _csv_safe(value: str) -> str:
 class KeywordGenerationFSM(StatesGroup):
     products = State()  # Q1: goods/services (3-1000 chars)
     geography = State()  # Q2: geography (2-200 chars)
-    quantity = State()  # Button: 50/100/150/200
-    confirm = State()  # Cost confirmation
+    quantity = State()  # Button: 50/100/150/200 + confirm
     fetching = State()  # DataForSEO fetch (progress msg)
     clustering = State()  # AI clustering (progress msg)
     enriching = State()  # DataForSEO enrich (progress msg)
-    results = State()  # Show results
-
-
-class KeywordUploadFSM(StatesGroup):
-    file_upload = State()  # TXT file (.txt, UTF-8, ≤500 phrases, ≤1MB)
-    enriching = State()  # DataForSEO enrich (progress msg)
-    clustering = State()  # AI clustering (progress msg)
     results = State()  # Show results
 
 
@@ -130,6 +126,108 @@ def _build_keywords_summary(category: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Wizard return callbacks
+# ---------------------------------------------------------------------------
+
+
+async def _return_to_keywords(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    _redis: Any,
+) -> None:
+    """Return to keywords screen after wizard completion (callback sub-flow)."""
+    data = await state.get_data()
+    cat_id = int(data.get("kw_cat_id", 0))
+
+    cats_repo = CategoriesRepository(db)
+    category = await cats_repo.get_by_id(cat_id)
+    if not category:
+        await callback.answer("Категория не найдена.", show_alert=True)
+        return
+
+    text = _build_keywords_summary(category)
+    clusters = category.keywords or []
+    kb = keywords_summary_kb(cat_id) if clusters else keywords_empty_kb(cat_id)
+
+    msg = safe_message(callback)
+    if msg:
+        await safe_edit_text(msg, text, reply_markup=kb)
+    await callback.answer()
+
+
+async def _return_to_keywords_msg(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    _redis: Any,
+) -> None:
+    """Return to keywords screen after wizard completion (message sub-flow)."""
+    data = await state.get_data()
+    cat_id = int(data.get("kw_cat_id", 0))
+
+    cats_repo = CategoriesRepository(db)
+    category = await cats_repo.get_by_id(cat_id)
+    if not category:
+        return
+
+    text = _build_keywords_summary(category)
+    clusters = category.keywords or []
+    kb = keywords_summary_kb(cat_id) if clusters else keywords_empty_kb(cat_id)
+    await message.answer(text, reply_markup=kb)
+
+
+# ---------------------------------------------------------------------------
+# Register keyword wizard
+# ---------------------------------------------------------------------------
+
+
+def _toolbox_qty_kb(data: dict[str, Any]) -> InlineKeyboardMarkup:
+    cat_id = int(data.get("kw_cat_id", 0))
+    return keywords_quantity_kb(cat_id)
+
+
+def _toolbox_confirm_kb(data: dict[str, Any]) -> InlineKeyboardMarkup:
+    cat_id = int(data.get("kw_cat_id", 0))
+    return keywords_confirm_kb(cat_id)
+
+
+def _toolbox_cancel_nav_kb(data: dict[str, Any]) -> InlineKeyboardMarkup:
+    cat_id = int(data.get("kw_cat_id", 0))
+    return cancel_kb(f"kw:{cat_id}:gen_cancel")
+
+
+def _toolbox_error_kb(data: dict[str, Any]) -> InlineKeyboardMarkup:
+    cat_id = int(data.get("kw_cat_id", 0))
+    return keywords_empty_kb(cat_id)
+
+
+_toolbox_kw_config = KeywordWizardConfig(
+    state_products=KeywordGenerationFSM.products,
+    state_geo=KeywordGenerationFSM.geography,
+    state_qty=KeywordGenerationFSM.quantity,
+    state_generating=KeywordGenerationFSM.fetching,
+    prefix="kw",
+    log_prefix="toolbox.keywords",
+    cancel_cb_fn=lambda data: f"kw:{data.get('kw_cat_id', 0)}:gen_cancel",
+    on_done=_return_to_keywords,
+    on_done_msg=_return_to_keywords_msg,
+    qty_kb_fn=_toolbox_qty_kb,
+    confirm_kb_fn=_toolbox_confirm_kb,
+    cancel_nav_kb_fn=_toolbox_cancel_nav_kb,
+    error_state=None,  # clear state on error
+    error_kb_fn=_toolbox_error_kb,
+    auto_mode=False,
+    saved_answers=True,
+    upload_enriches=True,
+)
+
+_wizard_handlers = register_keyword_wizard(router, _toolbox_kw_config)
+
+
+# ---------------------------------------------------------------------------
 # 1. Show keywords screen
 # ---------------------------------------------------------------------------
 
@@ -162,7 +260,7 @@ async def show_keywords(
 
 
 # ---------------------------------------------------------------------------
-# 2. Start generation (with saved answers check)
+# 2. Start generation (with saved answers check) -- entry points
 # ---------------------------------------------------------------------------
 
 
@@ -173,7 +271,7 @@ async def start_generation(
     user: User,
     db: SupabaseClient,
 ) -> None:
-    """Start keyword generation — check for saved answers first."""
+    """Start keyword generation -- check for saved answers first."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -199,12 +297,12 @@ async def start_generation(
         # Offer to use saved answers
         await state.set_state(KeywordGenerationFSM.products)
         await state.update_data(
-            last_update_time=time.time(),
             kw_cat_id=cat_id,
             kw_project_id=project_id,
         )
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             f"Найдены сохранённые ответы:\n"
             f"Товары/услуги: <i>{html.escape(saved_products)}</i>\n"
             f"География: <i>{html.escape(saved_geography)}</i>\n\n"
@@ -215,12 +313,13 @@ async def start_generation(
         # Start fresh
         await state.set_state(KeywordGenerationFSM.products)
         await state.update_data(
-            last_update_time=time.time(),
             kw_cat_id=cat_id,
             kw_project_id=project_id,
+            kw_mode="configure",
         )
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
             reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
         )
@@ -249,12 +348,13 @@ async def start_fresh_generation(
 
     await state.set_state(KeywordGenerationFSM.products)
     await state.update_data(
-        last_update_time=time.time(),
         kw_cat_id=cat_id,
         kw_project_id=project_id,
+        kw_mode="configure",
     )
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
         reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
     )
@@ -283,368 +383,18 @@ async def use_saved_answers(
     await state.update_data(
         kw_products=products,
         kw_geography=geography,
-        last_update_time=time.time(),
     )
 
-    await safe_edit_text(msg, 
-        "Сколько ключевых фраз подобрать?",
-        reply_markup=keywords_quantity_kb(cat_id),
-    )
-    await callback.answer()
-
-
-# ---------------------------------------------------------------------------
-# 3. Products input
-# ---------------------------------------------------------------------------
-
-
-@router.message(KeywordGenerationFSM.products, F.text)
-async def process_products(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Validate products text (3-1000 chars)."""
-    text = (message.text or "").strip()
-
-    if len(text) < 3 or len(text) > 1000:
-        await message.answer("Введите от 3 до 1000 символов.")
-        return
-
-    await state.set_state(KeywordGenerationFSM.geography)
-    data = await state.update_data(kw_products=text, last_update_time=time.time())
-    cat_id = data.get("kw_cat_id", 0)
-
-    await message.answer(
-        "Укажите географию продвижения:\n<i>Например: Москва, Россия, СНГ</i>",
-        reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
-    )
-
-
-# ---------------------------------------------------------------------------
-# 4. Geography input
-# ---------------------------------------------------------------------------
-
-
-@router.message(KeywordGenerationFSM.geography, F.text)
-async def process_geography(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Validate geography (2-200 chars)."""
-    text = (message.text or "").strip()
-
-    if len(text) < 2 or len(text) > 200:
-        await message.answer("Введите от 2 до 200 символов.")
-        return
-
-    data = await state.get_data()
-    cat_id = int(data["kw_cat_id"])
-
-    await state.set_state(KeywordGenerationFSM.quantity)
-    await state.update_data(kw_geography=text, last_update_time=time.time())
-
-    await message.answer(
-        "Сколько ключевых фраз подобрать?",
-        reply_markup=keywords_quantity_kb(cat_id),
-    )
-
-
-# ---------------------------------------------------------------------------
-# 5. Quantity selection
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(KeywordGenerationFSM.quantity, F.data.regexp(r"^kw:\d+:qty_\d+$"))
-async def select_quantity(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-) -> None:
-    """Select keyword quantity and show cost confirmation."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    # callback_data = "kw:{cat_id}:qty_{n}"
-    action = callback.data.split(":")[2]  # type: ignore[union-attr]
-    quantity = int(action.split("_")[1])
-    if quantity not in (50, 100, 150, 200):
-        await callback.answer("Недопустимое количество.", show_alert=True)
-        return
-
-    cost = estimate_keywords_cost(quantity)
-
-    settings = get_settings()
-    token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-    balance = await token_service.get_balance(user.id)
-
-    data = await state.get_data()
-    cat_id = int(data["kw_cat_id"])
-
-    await state.set_state(KeywordGenerationFSM.confirm)
-    await state.update_data(
-        kw_quantity=quantity,
-        kw_cost=cost,
-        last_update_time=time.time(),
-    )
-
-    products = data.get("kw_products", "")
-    geography = data.get("kw_geography", "")
-
-    await safe_edit_text(msg, 
-        f"Подбор ключевых фраз:\n"
-        f"Товары: <i>{html.escape(products)}</i>\n"
-        f"География: <i>{html.escape(geography)}</i>\n"
-        f"Количество: {quantity}\n\n"
-        f"Стоимость: {cost} токенов. Баланс: {balance}.",
-        reply_markup=keywords_confirm_kb(cat_id, cost, balance),
-    )
-    await callback.answer()
-
-
-# ---------------------------------------------------------------------------
-# 6. Confirm generation
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(KeywordGenerationFSM.confirm, F.data.regexp(r"^kw:\d+:confirm_yes$"))
-async def confirm_generation(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    ai_orchestrator: Any,
-    dataforseo_client: Any,
-) -> None:
-    """Confirm: E01 balance check → run pipeline → charge on success."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    cost = int(data["kw_cost"])
-    quantity = int(data["kw_quantity"])
-    cat_id = int(data["kw_cat_id"])
-    project_id = int(data["kw_project_id"])
-    products = str(data.get("kw_products", ""))
-    geography = str(data.get("kw_geography", ""))
-
-    settings = get_settings()
-    token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-
-    # E01: balance check (fail-fast, actual charge after success)
-    has_balance = await token_service.check_balance(user.id, cost)
-    if not has_balance:
-        balance = await token_service.get_balance(user.id)
-        insufficient_msg = token_service.format_insufficient_msg(cost, balance)
-        await safe_edit_text(msg, insufficient_msg)
-        await state.clear()
-        await callback.answer()
-        return
-
-    # Save answers for future reuse
-    saved_answers = {f"kw_products_{cat_id}": products, f"kw_geography_{cat_id}": geography}
-    await state.update_data(saved_answers)
-
-    # Answer callback BEFORE the long-running pipeline (~60s) to avoid "query is too old"
-    await callback.answer()
-
-    # Run pipeline with progress messages
-    await _run_generation_pipeline(
+    await safe_edit_text(
         msg,
-        state,
-        user,
-        db,
-        cat_id=cat_id,
-        project_id=project_id,
-        products=products,
-        geography=geography,
-        quantity=quantity,
-        cost=cost,
-        token_service=token_service,
-        ai_orchestrator=ai_orchestrator,
-        dataforseo_client=dataforseo_client,
-    )
-    log.info(
-        "keyword_generation_started",
-        cat_id=cat_id,
-        user_id=user.id,
-        quantity=quantity,
-    )
-
-
-@router.callback_query(KeywordGenerationFSM.confirm, F.data.regexp(r"^kw:\d+:confirm_no$"))
-async def cancel_generation(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-) -> None:
-    """Cancel generation — return to category card."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    cat_id = int(data["kw_cat_id"])
-    await state.clear()
-
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
-    if not category:
-        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
-        await callback.answer()
-        return
-
-    safe_name = html.escape(category.name)
-    await safe_edit_text(msg, 
-        f"<b>{safe_name}</b>",
-        reply_markup=category_card_kb(cat_id, category.project_id),
+        "Сколько ключевых фраз подобрать?",
+        reply_markup=keywords_quantity_kb(cat_id),
     )
     await callback.answer()
 
 
 # ---------------------------------------------------------------------------
-# 7. Generation pipeline (internal)
-# ---------------------------------------------------------------------------
-
-
-async def _run_generation_pipeline(
-    msg: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    *,
-    cat_id: int,
-    project_id: int,
-    products: str,
-    geography: str,
-    quantity: int,
-    cost: int,
-    token_service: TokenService,
-    ai_orchestrator: Any,
-    dataforseo_client: Any,
-) -> None:
-    """Run keyword pipeline: fetch → cluster → enrich → save."""
-    from services.keywords import KeywordService
-
-    try:
-        kw_service = KeywordService(
-            orchestrator=ai_orchestrator,
-            dataforseo=dataforseo_client,
-            db=db,
-        )
-
-        # Step 1: Fetch raw phrases from DataForSEO
-        await state.set_state(KeywordGenerationFSM.fetching)
-        await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
-
-        raw_phrases = await kw_service.fetch_raw_phrases(
-            products=products,
-            geography=geography,
-            quantity=quantity,
-            project_id=project_id,
-            user_id=user.id,
-        )
-
-        # Step 2: AI clustering
-        await state.set_state(KeywordGenerationFSM.clustering)
-        if raw_phrases:
-            await safe_edit_text(msg, f"Получено {len(raw_phrases)} фраз. Группирую по интенту...")
-            clusters = await kw_service.cluster_phrases(
-                raw_phrases=raw_phrases,
-                products=products,
-                geography=geography,
-                quantity=quantity,
-                project_id=project_id,
-                user_id=user.id,
-            )
-        else:
-            await safe_edit_text(msg, f"{EMOJI_PROGRESS} DataForSEO без данных. Генерирую фразы через AI...")
-            clusters = await kw_service.generate_clusters_direct(
-                products=products,
-                geography=geography,
-                quantity=quantity,
-                project_id=project_id,
-                user_id=user.id,
-            )
-
-        # Step 3: Enrich with metrics
-        await state.set_state(KeywordGenerationFSM.enriching)
-        await safe_edit_text(msg, f"Создано {len(clusters)} кластеров. Обогащаю данными...")
-
-        enriched = await kw_service.enrich_clusters(clusters)
-
-        # Filter AI-invented zero-volume junk
-        enriched = kw_service.filter_low_quality(enriched)
-
-        # Save to category (MERGE with existing)
-        cats_repo = CategoriesRepository(db)
-        category = await cats_repo.get_by_id(cat_id)
-        existing: list[dict[str, Any]] = (category.keywords if category else []) or []
-        merged = existing + enriched
-        await cats_repo.update_keywords(cat_id, merged)
-
-        # Show results
-        await state.set_state(KeywordGenerationFSM.results)
-
-        total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
-        total_volume = sum(c.get("total_volume", 0) for c in enriched)
-
-        quality_note = ""
-        if total_volume < 100:
-            quality_note = (
-                "\n\n⚠ Низкий объём поиска по этой нише — фразы могут быть "
-                "менее надёжными. Попробуйте более конкретные товары/услуги."
-            )
-
-        # Charge tokens AFTER successful generation + save
-        try:
-            await token_service.charge(
-                user_id=user.id,
-                amount=cost,
-                operation_type="keywords",
-                description=f"Подбор ключевых фраз ({quantity} шт., категория #{cat_id})",
-            )
-            cost_note = f"\n\nСписано {cost} токенов."
-        except Exception:
-            log.exception("keyword_charge_failed", cat_id=cat_id, user_id=user.id, cost=cost)
-            cost_note = ""
-
-        await safe_edit_text(msg, 
-            f"Готово! Добавлено:\n"
-            f"Кластеров: {len(enriched)}\n"
-            f"Фраз: {total_phrases}\n"
-            f"Общий объём: {total_volume:,}/мес{cost_note}{quality_note}",
-            reply_markup=keywords_results_kb(cat_id),
-        )
-        # Use set_state(None) instead of clear() to preserve saved answers
-        # (kw_products_{cat_id}, kw_geography_{cat_id}) for "Use saved" flow
-        await state.set_state(None)
-
-        log.info(
-            "keyword_generation_complete",
-            cat_id=cat_id,
-            user_id=user.id,
-            clusters=len(enriched),
-            phrases=total_phrases,
-        )
-
-    except Exception:
-        log.exception("keyword_pipeline_failed", cat_id=cat_id, user_id=user.id)
-        await state.clear()
-        await safe_edit_text(msg, 
-            "Ошибка при подборе фраз. Попробуйте позже.",
-            reply_markup=keywords_empty_kb(cat_id),
-        )
-
-
-# ---------------------------------------------------------------------------
-# 8. File upload flow
+# 8. File upload entry point
 # ---------------------------------------------------------------------------
 
 
@@ -672,190 +422,21 @@ async def start_upload(
     if interrupted:
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
-    await state.set_state(KeywordUploadFSM.file_upload)
+    await state.set_state(KeywordGenerationFSM.products)
     await state.update_data(
-        last_update_time=time.time(),
         kw_cat_id=cat_id,
         kw_project_id=project_id,
+        kw_mode="upload",
     )
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         "Загрузите текстовый файл (.txt) с ключевыми фразами.\n"
         "Каждая фраза на отдельной строке.\n\n"
         f"Максимум: {_MAX_PHRASES} фраз, {_MAX_FILE_SIZE // (1024 * 1024)} МБ.",
         reply_markup=cancel_kb(f"kw:{cat_id}:upl_cancel"),
     )
     await callback.answer()
-
-
-@router.message(KeywordUploadFSM.file_upload, F.text)
-async def handle_text_in_upload(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Handle text message while waiting for file upload."""
-    text = (message.text or "").strip()
-    if text == "Отмена":
-        await state.clear()
-        await message.answer("Загрузка отменена.", reply_markup=menu_kb())
-        return
-
-    await message.answer("Ожидается файл .txt. Для отмены напишите «Отмена».")
-
-
-@router.message(KeywordUploadFSM.file_upload, F.document)
-async def process_file(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    ai_orchestrator: Any,
-    dataforseo_client: Any,
-) -> None:
-    """Process uploaded TXT file with keywords."""
-    doc = message.document
-    if not doc:
-        await message.answer("Файл не найден. Загрузите .txt файл.")
-        return
-
-    # Validate extension
-    filename = doc.file_name or ""
-    if not filename.lower().endswith(".txt"):
-        await message.answer("Неверный формат. Загрузите файл с расширением .txt.")
-        return
-
-    # Validate size
-    if doc.file_size and doc.file_size > _MAX_FILE_SIZE:
-        await message.answer(f"Файл слишком большой. Максимум {_MAX_FILE_SIZE // (1024 * 1024)} МБ.")
-        return
-
-    # Download
-    bot = message.bot
-    if not bot:
-        await message.answer("Внутренняя ошибка.")
-        return
-
-    file_bytes_io = await bot.download(doc)
-    if not file_bytes_io:
-        await message.answer("Не удалось скачать файл.")
-        return
-
-    raw_bytes = file_bytes_io.read()
-
-    # Decode UTF-8
-    try:
-        content = raw_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        await message.answer("Файл должен быть в кодировке UTF-8.")
-        await state.clear()
-        return
-
-    # Parse phrases
-    phrases = [line.strip() for line in content.splitlines() if line.strip()]
-
-    if not phrases:
-        await message.answer("Файл пуст или не содержит фраз.")
-        return
-
-    if len(phrases) > _MAX_PHRASES:
-        await message.answer(f"Максимум {_MAX_PHRASES} фраз. В файле: {len(phrases)}.")
-        return
-
-    data = await state.get_data()
-    cat_id = int(data["kw_cat_id"])
-    project_id = int(data["kw_project_id"])
-
-    # Build raw phrases list (no volume data — will be enriched)
-    raw_phrases = [{"phrase": p, "volume": 0, "cpc": 0.0, "ai_suggested": False} for p in phrases]
-
-    # Run pipeline: cluster → enrich → save
-    await _run_upload_pipeline(
-        message,
-        state,
-        user,
-        db,
-        cat_id=cat_id,
-        project_id=project_id,
-        raw_phrases=raw_phrases,
-        ai_orchestrator=ai_orchestrator,
-        dataforseo_client=dataforseo_client,
-    )
-
-
-async def _run_upload_pipeline(
-    msg: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    *,
-    cat_id: int,
-    project_id: int,
-    raw_phrases: list[dict[str, Any]],
-    ai_orchestrator: Any,
-    dataforseo_client: Any,
-) -> None:
-    """Upload pipeline: cluster → enrich → save (no charge — upload is free)."""
-    from services.keywords import KeywordService
-
-    try:
-        kw_service = KeywordService(
-            orchestrator=ai_orchestrator,
-            dataforseo=dataforseo_client,
-            db=db,
-        )
-
-        # Step 1: Cluster
-        await state.set_state(KeywordUploadFSM.clustering)
-        progress_msg = await msg.answer(f"Загружено {len(raw_phrases)} фраз. Группирую по интенту...")
-
-        clusters = await kw_service.cluster_phrases(
-            raw_phrases=raw_phrases,
-            products="",
-            geography="",
-            quantity=len(raw_phrases),
-            project_id=project_id,
-            user_id=user.id,
-        )
-
-        # Step 2: Enrich
-        await state.set_state(KeywordUploadFSM.enriching)
-        await safe_edit_text(progress_msg, f"Создано {len(clusters)} кластеров. Обогащаю данными...")
-
-        enriched = await kw_service.enrich_clusters(clusters)
-
-        # Save (MERGE with existing)
-        cats_repo = CategoriesRepository(db)
-        category = await cats_repo.get_by_id(cat_id)
-        existing: list[dict[str, Any]] = (category.keywords if category else []) or []
-        merged = existing + enriched
-        await cats_repo.update_keywords(cat_id, merged)
-
-        # Show results
-        await state.set_state(KeywordUploadFSM.results)
-
-        total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
-        total_volume = sum(c.get("total_volume", 0) for c in enriched)
-
-        await safe_edit_text(progress_msg, 
-            f"Готово! Загружено:\nКластеров: {len(enriched)}\nФраз: {total_phrases}\nОбщий объём: {total_volume:,}/мес",
-            reply_markup=keywords_results_kb(cat_id),
-        )
-        await state.clear()
-
-        log.info(
-            "keyword_upload_complete",
-            cat_id=cat_id,
-            user_id=user.id,
-            clusters=len(enriched),
-        )
-
-    except Exception:
-        log.exception("keyword_upload_failed", cat_id=cat_id, user_id=user.id)
-        await state.clear()
-        await msg.answer(
-            "Ошибка при обработке файла. Попробуйте позже.",
-            reply_markup=keywords_empty_kb(cat_id),
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -887,7 +468,8 @@ async def show_cluster_list(
         await callback.answer("Нет кластеров.", show_alert=True)
         return
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         f"Кластеры ({len(clusters)}):",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=1),
     )
@@ -916,7 +498,8 @@ async def paginate_clusters(
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         f"Кластеры ({len(clusters)}):",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=page),
     )
@@ -1057,7 +640,7 @@ async def download_csv(
 
 
 # ---------------------------------------------------------------------------
-# 12. Delete cluster (two-step: show list → delete single)
+# 12. Delete cluster (two-step: show list -> delete single)
 # ---------------------------------------------------------------------------
 
 
@@ -1085,7 +668,8 @@ async def show_delete_cluster_list(
         await callback.answer("Нет кластеров для удаления.", show_alert=True)
         return
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         "Выберите кластер для удаления:",
         reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=1),
     )
@@ -1114,7 +698,8 @@ async def paginate_delete_clusters(
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         "Выберите кластер для удаления:",
         reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=page),
     )
@@ -1154,12 +739,14 @@ async def delete_single_cluster(
     log.info("cluster_deleted", cat_id=cat_id, cluster=removed_name, user_id=user.id)
 
     if clusters:
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             f"Кластер «{html.escape(removed_name)}» удалён.\n\nВыберите кластер для удаления:",
             reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=1),
         )
     else:
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             f"Кластер «{html.escape(removed_name)}» удалён. Фразы закончились.",
             reply_markup=keywords_empty_kb(cat_id),
         )
@@ -1194,7 +781,8 @@ async def delete_all_ask(
     clusters: list[dict[str, Any]] = category.keywords or []
     total = sum(len(c.get("phrases", [])) for c in clusters)
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         f"Удалить все ключевые фразы ({total} фраз, {len(clusters)} кластеров)?\nЭто действие необратимо.",
         reply_markup=keywords_delete_all_confirm_kb(cat_id),
     )
@@ -1225,7 +813,8 @@ async def delete_all_confirm(
     log.info("keywords_deleted_all", cat_id=cat_id, user_id=user.id)
 
     safe_name = html.escape(category.name)
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         f"<b>Ключевые фразы</b> — {safe_name}\n\nВсе фразы удалены.",
         reply_markup=keywords_empty_kb(cat_id),
     )
@@ -1244,7 +833,7 @@ async def cancel_generation_inline(
     user: User,
     db: SupabaseClient,
 ) -> None:
-    """Cancel keyword generation via inline button — return to category card."""
+    """Cancel keyword generation via inline button -- return to category card."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -1256,7 +845,8 @@ async def cancel_generation_inline(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if category:
         safe_name = html.escape(category.name)
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )
@@ -1274,7 +864,7 @@ async def cancel_upload_inline(
     user: User,
     db: SupabaseClient,
 ) -> None:
-    """Cancel keyword upload via inline button — return to category card."""
+    """Cancel keyword upload via inline button -- return to category card."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -1286,7 +876,8 @@ async def cancel_upload_inline(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if category:
         safe_name = html.escape(category.name)
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             f"<b>{safe_name}</b>",
             reply_markup=category_card_kb(cat_id, category.project_id),
         )

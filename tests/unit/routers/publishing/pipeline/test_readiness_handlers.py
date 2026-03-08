@@ -52,6 +52,7 @@ from services.readiness import ReadinessReport
 
 _MODULE = "routers.publishing.pipeline.readiness"
 _COMMON = "routers.publishing.pipeline._readiness_common"
+_WIZARD = "routers.shared.keyword_wizard"
 
 # Config object for closure-based handler testing.
 # Closures capture cfg (the ReadinessConfig instance), so patching module-level
@@ -1548,7 +1549,7 @@ class TestQtySelectHandler:
             return_value=_make_state_data(kw_products="Мебель", kw_geography="Москва"),
         )
 
-        await readiness_keywords_qty_select(mock_callback, mock_state, user, mock_db)
+        await readiness_keywords_qty_select(mock_callback, mock_state)
 
         update_kwargs = mock_state.update_data.call_args.kwargs
         assert update_kwargs["kw_quantity"] == 50
@@ -1569,7 +1570,7 @@ class TestQtySelectHandler:
             return_value=_make_state_data(kw_products="SEO", kw_geography="Россия"),
         )
 
-        await readiness_keywords_qty_select(mock_callback, mock_state, user, mock_db)
+        await readiness_keywords_qty_select(mock_callback, mock_state)
 
         assert mock_state.update_data.call_args.kwargs["kw_quantity"] == 200
 
@@ -1582,7 +1583,7 @@ class TestQtySelectHandler:
     ) -> None:
         """Invalid quantity (e.g. 999) -> show_alert error."""
         mock_callback.data = "pipeline:readiness:keywords:qty_999"
-        await readiness_keywords_qty_select(mock_callback, mock_state, user, mock_db)
+        await readiness_keywords_qty_select(mock_callback, mock_state)
         mock_callback.answer.assert_called_once()
         assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
         mock_state.update_data.assert_not_called()
@@ -1612,7 +1613,7 @@ class TestConfirmHandler:
                 kw_geography="Москва",
             ),
         )
-        p_pipeline = patch(f"{_COMMON}.run_keyword_generation", new_callable=AsyncMock)
+        p_pipeline = patch(f"{_WIZARD}.run_keyword_generation", new_callable=AsyncMock)
 
         with p_pipeline as mock_pipeline:
             await readiness_keywords_confirm(
@@ -1744,11 +1745,11 @@ class TestRunPipelineKeywordGeneration:
         kw_mock = self._make_kw_service_mock()
         cat_obj = MagicMock()
         cat_obj.keywords = []
-        p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
+        p_kw = patch(f"{_WIZARD}.KeywordService", return_value=kw_mock)
         cat_svc_mock = MagicMock()
         cat_svc_mock.get_owned_category = AsyncMock(return_value=cat_obj)
         cat_svc_mock.update_keywords = AsyncMock(return_value=True)
-        p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_svc_mock)
+        p_cats = patch(f"{_WIZARD}.CategoryService", return_value=cat_svc_mock)
         mock_show = AsyncMock()
         # Mock msg.bot.send_message
         mock_callback.message.bot = MagicMock()
@@ -1793,11 +1794,11 @@ class TestRunPipelineKeywordGeneration:
         kw_mock = self._make_kw_service_mock(raw_phrases=[])
         cat_obj = MagicMock()
         cat_obj.keywords = []
-        p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
+        p_kw = patch(f"{_WIZARD}.KeywordService", return_value=kw_mock)
         cat_svc_mock = MagicMock()
         cat_svc_mock.get_owned_category = AsyncMock(return_value=cat_obj)
         cat_svc_mock.update_keywords = AsyncMock(return_value=True)
-        p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_svc_mock)
+        p_cats = patch(f"{_WIZARD}.CategoryService", return_value=cat_svc_mock)
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()
         mock_callback.message.delete = AsyncMock()
@@ -1835,7 +1836,7 @@ class TestRunPipelineKeywordGeneration:
         """Generation error -> show error, return to readiness_check (no refund, free)."""
         kw_mock = MagicMock()
         kw_mock.fetch_raw_phrases = AsyncMock(side_effect=RuntimeError("API down"))
-        p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
+        p_kw = patch(f"{_WIZARD}.KeywordService", return_value=kw_mock)
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()
         mock_callback.message.delete = AsyncMock()
@@ -1886,11 +1887,11 @@ class TestRunPipelineKeywordGeneration:
         kw_mock = self._make_kw_service_mock(enriched=new_enriched)
         cat_obj = MagicMock()
         cat_obj.keywords = existing_kw
-        p_kw = patch(f"{_COMMON}.KeywordService", return_value=kw_mock)
+        p_kw = patch(f"{_WIZARD}.KeywordService", return_value=kw_mock)
         cat_svc_mock = MagicMock()
         cat_svc_mock.get_owned_category = AsyncMock(return_value=cat_obj)
         cat_svc_mock.update_keywords = AsyncMock(return_value=True)
-        p_cats = patch(f"{_COMMON}.CategoryService", return_value=cat_svc_mock)
+        p_cats = patch(f"{_WIZARD}.CategoryService", return_value=cat_svc_mock)
         mock_callback.message.bot = MagicMock()
         mock_callback.message.bot.send_message = AsyncMock()
         mock_callback.message.delete = AsyncMock()
