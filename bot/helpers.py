@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, LinkPreviewOptions, Message
 
 from db.client import SupabaseClient
 from db.models import Category, Project
@@ -46,6 +46,9 @@ def safe_message(callback: CallbackQuery) -> Message | None:
 # ---------------------------------------------------------------------------
 
 
+_NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
+
+
 async def safe_edit_text(
     msg: Message,
     text: str,
@@ -56,7 +59,9 @@ async def safe_edit_text(
 
     Photo messages don't support edit_text (Telegram API limitation).
     This helper catches that error and does delete+answer instead.
+    Link previews are disabled by default (U5/U9).
     """
+    kwargs.setdefault("link_preview_options", _NO_PREVIEW)
     try:
         return cast("Message", await msg.edit_text(text, reply_markup=reply_markup, **kwargs))
     except TelegramBadRequest as e:

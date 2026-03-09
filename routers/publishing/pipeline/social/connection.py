@@ -27,6 +27,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    LinkPreviewOptions,
     Message,
 )
 
@@ -584,6 +585,7 @@ async def pipeline_start_connect_vk(
         "• https://vk.com/mygroup\n"
         "• 123456 (ID группы)",
         reply_markup=cancel_kb("pipeline:social:cancel"),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     await callback.answer()
 
@@ -605,6 +607,7 @@ async def pipeline_connect_vk_group_url(
             "Не удалось распознать группу.\n\n"
             "Примеры: https://vk.com/club123456, https://vk.com/mygroup, 123456",
             reply_markup=cancel_kb("pipeline:social:cancel"),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
         return
 
