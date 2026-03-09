@@ -101,15 +101,9 @@ async def _show_prices_screen(
     safe_name = html.escape(category_name)
 
     if prices:
-        # Count lines for display
         lines = [ln for ln in prices.splitlines() if ln.strip()]
         count = len(lines)
-        # Show first 10 lines as preview
-        preview_lines = lines[:10]
-        preview = "\n".join(f"  \u2022 {html.escape(ln)}" for ln in preview_lines)
-        if count > 10:
-            preview += f"\n  ... ещё {count - 10}"
-        text = f"<b>Цены \u2014 {safe_name}</b>\n\nТекущий прайс ({count} позиций):\n{preview}"
+        text = f"<b>Цены \u2014 {safe_name}</b>\n\n\U0001f4ce Файл загружен ({count} позиций)"
     else:
         text = (
             f"<b>Цены \u2014 {safe_name}</b>\n\nПрайс-лист не загружен. Добавьте \u2014 в статьях будут реальные цены."
