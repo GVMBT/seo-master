@@ -12,6 +12,8 @@ Rules: .claude/rules/pipeline.md -- inline handlers, NOT FSM delegation.
 
 from __future__ import annotations
 
+import base64 as b64mod
+import contextlib
 import html
 import time
 from typing import Any, Literal
@@ -30,6 +32,8 @@ from bot.helpers import safe_edit_text, safe_message
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
+from db.repositories.categories import CategoriesRepository
+from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from keyboards.inline import menu_kb
 from keyboards.pipeline import (
@@ -45,6 +49,7 @@ from routers.publishing.pipeline._common import (
     select_keyword,
     try_refund,
 )
+from services.ai.images import ImageService
 from services.ai.orchestrator import AIOrchestrator
 from services.ai.rate_limiter import RateLimiter
 from services.connections import ConnectionService
@@ -355,17 +360,11 @@ async def _run_social_generation(
             hashtags = []
 
         # Generate 1 image for social post (B2 fix)
-        import contextlib
-
         image_b64: str | None = None
         with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await safe_edit_text(message, _social_progress_text(_SOCIAL_STEPS, 2))
 
         try:
-            from db.repositories.categories import CategoriesRepository
-            from db.repositories.projects import ProjectsRepository
-            from services.ai.images import ImageService
-
             image_service = ImageService(ai_orchestrator)
             cat = await CategoriesRepository(db).get_by_id(category_id)
             proj = await ProjectsRepository(db).get_by_id(project_id)
@@ -377,8 +376,6 @@ async def _run_social_generation(
             }
             images = await image_service.generate(user_id=user.id, context=img_context, count=1)
             if images:
-                import base64 as b64mod
-
                 image_b64 = b64mod.b64encode(images[0].data).decode("ascii")
                 log.info("social_image_generated", size=len(images[0].data), user_id=user.id)
         except Exception:
@@ -554,8 +551,6 @@ async def publish_social_post(
         publish_images: list[bytes] = []
         image_b64_stored = data.get("generated_image_b64")
         if image_b64_stored:
-            import base64 as b64mod
-
             publish_images = [b64mod.b64decode(image_b64_stored)]
 
         try:
