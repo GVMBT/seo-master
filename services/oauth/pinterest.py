@@ -69,14 +69,20 @@ class PinterestOAuthService:
         """
         user_id, nonce = parse_and_verify_state(state, self._encryption_key)
 
-        # H10: prevent replay attacks — state can only be used once
+        # Exchange code for tokens BEFORE setting NX lock — if exchange fails,
+        # user can retry without being blocked by the replay lock
         lock_key = f"oauth_state_used:{nonce}"
+        try:
+            tokens = await self._exchange_code(code)
+        except PinterestOAuthError:
+            # Don't set NX lock on exchange failure — allow retry
+            raise
+
+        # H10: prevent replay attacks — state can only be used once (set AFTER successful exchange)
         already_used = not await self._redis.set(lock_key, "1", ex=_OAUTH_STATE_LOCK_TTL, nx=True)
         if already_used:
             log.warning("pinterest_oauth_state_replay", user_id=user_id, nonce=nonce)
             raise PinterestOAuthError("OAuth state already used (replay)")
-
-        tokens = await self._exchange_code(code)
 
         await self._store_tokens(nonce, tokens)
 

@@ -26,7 +26,7 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import cancel_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
+from keyboards.inline import cancel_kb, connection_manage_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -149,7 +149,10 @@ async def _handle_pinterest_deep_link(
     await redis.delete(CacheKeys.pinterest_oauth(nonce))
 
     safe_name = html.escape(project.name)
-    await message.answer(f"Pinterest подключён к проекту «{safe_name}»!")
+    await message.answer(
+        f"Pinterest подключён к проекту «{safe_name}»!",
+        reply_markup=connection_manage_kb(conn.id, project_id),
+    )
     log.info(
         "pinterest_connected_via_deeplink",
         connection_id=conn.id,
@@ -506,6 +509,12 @@ async def cmd_start(
     args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
 
     # OAuth deep-links: handle without clearing FSM and return early
+    if args == "pinterest_error":
+        await message.answer(
+            "Не удалось подключить Pinterest. Попробуйте ещё раз.",
+            reply_markup=menu_kb(),
+        )
+        return
     if args.startswith("pinterest_auth_"):
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, state, user, db, redis, http_client, nonce)
@@ -566,17 +575,24 @@ async def consent_accept(
         await callback.answer()
         return
 
-    # Save consent + invalidate cache via service layer (CR-109)
-    users_svc = UsersService(db)
-    await users_svc.accept_terms(user.id, redis)
+    try:
+        # Save consent + invalidate cache via service layer (CR-109)
+        users_svc = UsersService(db)
+        await users_svc.accept_terms(user.id, redis)
 
-    # Show dashboard (admin button included in inline kb via user.role check)
-    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    await msg.answer(
-        "Условия приняты!\n\n" + text + "\n\nВыберите действие:",
-        reply_markup=kb,
-    )
-    await callback.answer()
+        # Show dashboard (admin button included in inline kb via user.role check)
+        text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
+        await msg.answer(
+            "Условия приняты!\n\n" + text + "\n\nВыберите действие:",
+            reply_markup=kb,
+        )
+        await callback.answer()
+    except Exception:
+        log.exception("consent_accept_failed", user_id=user.id)
+        await callback.answer(
+            "Не удалось сохранить. Нажмите «Принимаю» ещё раз.",
+            show_alert=True,
+        )
 
 
 # ---------------------------------------------------------------------------
