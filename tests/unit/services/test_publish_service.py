@@ -1152,3 +1152,158 @@ async def test_publish_sequential_with_director(
 
     assert result.status == "ok"
     svc._generate_article.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Pinterest hashtags in description (auto-publish + cross-post)
+# ---------------------------------------------------------------------------
+
+
+@patch("services.ai.content_validator.ContentValidator", autospec=True)
+@patch("services.ai.social_posts.SocialPostService", autospec=True)
+@patch("services.ai.images.ImageService", autospec=True)
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_autopublish_pinterest_hashtags_in_description(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+    mock_image_cls: MagicMock,
+    mock_social_cls: MagicMock,
+    mock_validator_cls: MagicMock,
+) -> None:
+    """Pinterest is included in hashtag append logic during auto-publish.
+
+    When platform is pinterest, hashtags from generation result should be
+    appended to the content text before publishing.
+    """
+    svc = _make_service()
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(
+        return_value=_make_category(
+            keywords=[{"cluster_name": "Pins", "cluster_type": "social", "main_phrase": "pin tips"}],
+            image_settings={"count": 0},
+        )
+    )
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("pin tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://pin.it/123"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[]))
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=60)
+
+    # Social generation returns text + hashtags
+    social_result = MagicMock()
+    social_result.content = {
+        "text": "Great pin description",
+        "hashtags": ["pinterest", "seo", "marketing"],
+        "pin_title": "Pin Title",
+    }
+    mock_social_inst = MagicMock()
+    mock_social_inst.generate = AsyncMock(return_value=social_result)
+    mock_social_cls.return_value = mock_social_inst
+
+    # Validator passes
+    mock_val_inst = MagicMock()
+    mock_val_inst.validate.return_value = MagicMock(is_valid=True, errors=[], warnings=[])
+    mock_validator_cls.return_value = mock_val_inst
+
+    # Image service returns nothing (count=0)
+    mock_image_inst = MagicMock()
+    mock_image_inst.generate = AsyncMock(return_value=[])
+    mock_image_cls.return_value = mock_image_inst
+
+    # Publisher captures what content was passed
+    mock_publisher = MagicMock()
+    mock_publisher.publish = AsyncMock(return_value=MagicMock(success=True, post_url="https://pin.it/123"))
+    svc._get_publisher = MagicMock(return_value=mock_publisher)
+
+    # Pinterest connection
+    pin_conn = _make_connection(platform_type="pinterest", identifier="my-board")
+    mock_conn = MagicMock()
+    mock_conn.get_by_id = AsyncMock(return_value=pin_conn)
+    mock_conn_cls.return_value = mock_conn
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    result = await svc.execute(_make_payload(platform_type="pinterest", connection_id=pin_conn.id))
+    assert result.status == "ok"
+
+    # Verify hashtags were appended to content
+    publish_call = mock_publisher.publish.call_args[0][0]
+    assert "#pinterest" in publish_call.content
+    assert "#seo" in publish_call.content
+    assert "#marketing" in publish_call.content
+    assert "Great pin description" in publish_call.content
+
+
+@patch("services.ai.content_validator.ContentValidator", autospec=True)
+@patch("services.ai.social_posts.SocialPostService", autospec=True)
+@patch("services.publish.get_settings")
+@patch("services.publish.CredentialManager")
+@patch("services.publish.ConnectionsRepository")
+async def test_crosspost_pinterest_hashtags_in_description(
+    mock_conn_cls: MagicMock,
+    mock_cm_cls: MagicMock,
+    mock_settings: MagicMock,
+    mock_social_cls: MagicMock,
+    mock_validator_cls: MagicMock,
+) -> None:
+    """Pinterest cross-post appends hashtags to adapted description.
+
+    When cross-posting to Pinterest, hashtags from adapted content should
+    be included in the published description.
+    """
+    svc = _make_service()
+    svc._users.get_by_id = AsyncMock(return_value=_make_user())
+    svc._categories.get_by_id = AsyncMock(return_value=_make_category())
+    svc._publications.get_rotation_keyword = AsyncMock(return_value=("seo tips", False))
+    svc._publications.create_log = AsyncMock(return_value=MagicMock(post_url="https://t.me/post"))
+    svc._schedules.update = AsyncMock(return_value=None)
+    svc._schedules.get_by_id = AsyncMock(return_value=_make_schedule(cross_post_connection_ids=[30]))
+    svc._tokens.check_balance = AsyncMock(return_value=True)
+    svc._tokens.charge = AsyncMock(return_value=680)
+
+    # Lead generates with text
+    gen = MagicMock()
+    gen.content = {"text": "Lead post text", "images_meta": []}
+    svc._generate_and_publish = AsyncMock(return_value=(gen, _make_pub_result(), 0))
+
+    # Cross-post connection is Pinterest
+    pin_conn = _make_connection(id=30, platform_type="pinterest", identifier="Board")
+    conn_repo = MagicMock()
+    conn_repo.get_by_id = AsyncMock(side_effect=lambda cid: {5: _make_connection(), 30: pin_conn}[cid])
+    mock_conn_cls.return_value = conn_repo
+    mock_settings.return_value = MagicMock(encryption_key=MagicMock(get_secret_value=MagicMock(return_value="key")))
+
+    # SocialPostService.adapt_for_platform returns adapted content with hashtags
+    adapted = MagicMock()
+    adapted.content = {
+        "text": "Adapted pin description",
+        "hashtags": ["pinboard", "tips"],
+        "pin_title": "Pin Tips",
+    }
+    mock_social_inst = MagicMock()
+    mock_social_inst.adapt_for_platform = AsyncMock(return_value=adapted)
+    mock_social_cls.return_value = mock_social_inst
+
+    # Validator passes
+    mock_val_inst = MagicMock()
+    mock_val_inst.validate.return_value = MagicMock(is_valid=True, errors=[])
+    mock_validator_cls.return_value = mock_val_inst
+
+    # Publisher captures content
+    mock_publisher = MagicMock()
+    mock_publisher.publish = AsyncMock(return_value=MagicMock(success=True, post_url="https://pin.it/456"))
+    svc._get_publisher = MagicMock(return_value=mock_publisher)
+
+    result = await svc.execute(_make_payload(platform_type="telegram"))
+    assert result.status == "ok"
+    assert len(result.cross_post_results) == 1
+    assert result.cross_post_results[0].status == "ok"
+
+    # Verify hashtags were appended for Pinterest cross-post
+    publish_call = mock_publisher.publish.call_args[0][0]
+    assert "#pinboard" in publish_call.content
+    assert "#tips" in publish_call.content
+    assert "Adapted pin description" in publish_call.content

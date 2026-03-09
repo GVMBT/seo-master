@@ -134,6 +134,10 @@ class SocialPostService:
                 attributes=_SOCIAL_ATTRS,
             )
 
+        # Enforce Pinterest hard limits (API: 500 description, 100 title)
+        if platform == "pinterest" and isinstance(result.content, dict):
+            _enforce_pinterest_limits(result.content)
+
         return result
 
     async def adapt_for_platform(
@@ -183,3 +187,68 @@ class SocialPostService:
             )
 
         return result
+
+
+# ---------------------------------------------------------------------------
+# Pinterest hard limits
+# ---------------------------------------------------------------------------
+
+_PINTEREST_TEXT_LIMIT = 500
+_PINTEREST_TITLE_LIMIT = 100
+_PINTEREST_MAX_HASHTAGS = 5
+
+
+def _enforce_pinterest_limits(content: dict[str, Any]) -> None:
+    """Enforce Pinterest API limits on generated content (mutates in-place).
+
+    - text: max 500 chars (truncate at sentence/word boundary)
+    - pin_title: max 100 chars, fallback to text[:97]+'...' if empty
+    - hashtags: max 5
+    """
+    # Truncate text
+    text = content.get("text", "")
+    if len(text) > _PINTEREST_TEXT_LIMIT:
+        text = _truncate_at_boundary(text, _PINTEREST_TEXT_LIMIT)
+        content["text"] = text
+
+    # pin_title: fallback + truncate
+    pin_title = content.get("pin_title", "")
+    if not pin_title:
+        if len(text) > _PINTEREST_TITLE_LIMIT:
+            pin_title = _truncate_at_boundary(text, _PINTEREST_TITLE_LIMIT - 3) + "..."
+        else:
+            pin_title = text
+    elif len(pin_title) > _PINTEREST_TITLE_LIMIT:
+        pin_title = _truncate_at_boundary(pin_title, _PINTEREST_TITLE_LIMIT)
+    content["pin_title"] = pin_title
+
+    # Limit hashtags
+    hashtags = content.get("hashtags", [])
+    if len(hashtags) > _PINTEREST_MAX_HASHTAGS:
+        content["hashtags"] = hashtags[:_PINTEREST_MAX_HASHTAGS]
+
+
+def _truncate_at_boundary(text: str, limit: int) -> str:
+    """Truncate text at sentence/word boundary within limit."""
+    if len(text) <= limit:
+        return text
+
+    truncated = text[:limit]
+
+    # Try sentence boundary (period)
+    dot_pos = truncated.rfind(".")
+    if dot_pos > limit // 2:
+        return truncated[: dot_pos + 1]
+
+    # Try newline boundary
+    nl_pos = truncated.rfind("\n")
+    if nl_pos > limit // 2:
+        return truncated[:nl_pos]
+
+    # Try word boundary (space)
+    space_pos = truncated.rfind(" ")
+    if space_pos > limit // 2:
+        return truncated[:space_pos] + "..."
+
+    # Hard cut
+    return truncated[: limit - 3] + "..."
