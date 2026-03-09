@@ -1,5 +1,6 @@
 """Dashboard, /start, /cancel, navigation callbacks, reply text dispatch."""
 
+import contextlib
 import html
 import json
 from typing import Any
@@ -9,7 +10,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
 
 from bot.assets import asset_photo, cache_file_id, edit_screen
 from bot.config import get_settings
@@ -552,6 +553,11 @@ async def cmd_start(
     if user.accepted_terms_at is None:
         await message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
         return
+
+    # Remove any lingering reply keyboard (from old bot versions or other bots)
+    remove_msg = await message.answer("\u200b", reply_markup=ReplyKeyboardRemove())
+    with contextlib.suppress(Exception):
+        await remove_msg.delete()
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     full_text = text + "\n\nВыберите действие:"
