@@ -378,8 +378,10 @@ async def _run_social_generation(
             if images:
                 image_b64 = b64mod.b64encode(images[0].data).decode("ascii")
                 log.info("social_image_generated", size=len(images[0].data), user_id=user.id)
+        except RateLimitError:
+            raise  # Re-raise to respect rate limits
         except Exception:
-            # Graceful degradation: proceed without image (except Pinterest checked at publish)
+            # Graceful degradation for TG/VK; Pinterest validated at publish
             log.warning("social_image_generation_failed", exc_info=True, user_id=user.id)
 
         # E38: store in FSM state.data (not DB), acceptable to lose on timeout
@@ -389,9 +391,8 @@ async def _run_social_generation(
             "generated_keyword": keyword,
             "generated_model": result.model_used,
             "generated_prompt_version": result.prompt_version,
+            "generated_image_b64": image_b64,
         }
-        if image_b64:
-            update_data["generated_image_b64"] = image_b64
         await state.update_data(**update_data)
         await state.set_state(SocialPipelineFSM.review)
 
@@ -552,6 +553,21 @@ async def publish_social_post(
         image_b64_stored = data.get("generated_image_b64")
         if image_b64_stored:
             publish_images = [b64mod.b64decode(image_b64_stored)]
+
+        # Pinterest requires at least one image
+        if platform_type == "pinterest" and not publish_images:
+            await safe_edit_text(
+                msg,
+                "Для Pinterest требуется изображение, но оно не было сгенерировано.\n"
+                "Попробуйте перегенерировать пост.",
+                reply_markup=social_review_kb(
+                    regen_count=data.get("regen_count", 0),
+                    regen_cost=tokens_charged,
+                ),
+            )
+            await state.set_state(SocialPipelineFSM.review)
+            await callback.answer()
+            return
 
         try:
             pub_result: PublishResult = await publisher.publish(
