@@ -566,16 +566,25 @@ async def consent_accept(
         await callback.answer()
         return
 
-    # Save consent + invalidate cache via service layer (CR-109)
-    users_svc = UsersService(db)
-    await users_svc.accept_terms(user.id, redis)
+    try:
+        # Save consent + invalidate cache via service layer (CR-109)
+        users_svc = UsersService(db)
+        await users_svc.accept_terms(user.id, redis)
 
-    # Show dashboard (admin button included in inline kb via user.role check)
-    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    await msg.answer(
-        "Условия приняты!\n\n" + text + "\n\nВыберите действие:",
-        reply_markup=kb,
-    )
+        # Show dashboard (admin button included in inline kb via user.role check)
+        text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
+        await msg.answer(
+            "Условия приняты!\n\n" + text + "\n\nВыберите действие:",
+            reply_markup=kb,
+        )
+    except Exception:
+        log.exception("consent_accept_failed", user_id=user.id)
+        await callback.answer(
+            "Не удалось сохранить. Нажмите \u00abПринимаю\u00bb ещё раз.",
+            show_alert=True,
+        )
+        return
+
     await callback.answer()
 
 

@@ -68,7 +68,7 @@ async def _show_list(
         await edit_screen(
             msg,
             "project_card.png",
-            f"\U0001f4c1 Мои проекты ({len(projects)}):",
+            f"\U0001f4c1 Проекты ({len(projects)}):",
             reply_markup=kb,
         )
     await callback.answer()
