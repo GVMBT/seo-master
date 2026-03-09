@@ -1570,7 +1570,13 @@ class TestPipelineArticleCancel:
     ) -> None:
         """Cancel -> message edited to 'Публикация отменена.'."""
         await pipeline_article_cancel(mock_callback, mock_state, user, mock_redis)
-        mock_callback.message.edit_text.assert_called_with("Публикация отменена.", reply_markup=menu_kb())
+        from aiogram.types import LinkPreviewOptions
+
+        mock_callback.message.edit_text.assert_called_with(
+            "Публикация отменена.",
+            reply_markup=menu_kb(),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
 
     async def test_answers_callback(
         self,

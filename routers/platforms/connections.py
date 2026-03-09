@@ -15,6 +15,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    LinkPreviewOptions,
     Message,
 )
 
@@ -752,6 +753,7 @@ async def start_vk_connect(
                 [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
             ]
         ),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     await callback.answer()
 
@@ -781,6 +783,7 @@ async def vk_process_group_url(
             "• https://vk.com/club123456\n"
             "• https://vk.com/mygroup\n"
             "• 123456",
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
         return
 
@@ -842,6 +845,7 @@ async def vk_process_group_url(
                 [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
             ]
         ),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
 
@@ -915,6 +919,7 @@ async def start_pinterest_connect(
                 [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:list")],
             ]
         ),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     await callback.answer()
 

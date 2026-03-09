@@ -3,7 +3,7 @@
 import structlog
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
 
 from bot.assets import edit_screen
 from bot.config import get_settings
@@ -184,6 +184,7 @@ async def cmd_privacy(message: Message) -> None:
     """Send privacy policy link (152-FZ compliant)."""
     await message.answer(
         f'<a href="{PRIVACY_POLICY_URL}">Политика конфиденциальности</a>',
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
 
@@ -192,6 +193,7 @@ async def cmd_terms(message: Message) -> None:
     """Send terms of service / public offer link."""
     await message.answer(
         f'<a href="{TERMS_OF_SERVICE_URL}">Публичная оферта</a>',
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
 
