@@ -66,6 +66,20 @@ MAX_REGENERATIONS_FREE = 2
 # Publish lock TTL (E07: double-click prevention)
 _PUBLISH_LOCK_TTL = 60
 
+# Platform display names (Russian)
+_PLATFORM_NAMES: dict[str, str] = {
+    "telegram": "Telegram",
+    "vk": "ВКонтакте",
+    "pinterest": "Pinterest",
+}
+
+# Publish progress steps (platform name inserted at runtime)
+_SOCIAL_PUBLISH_STEPS = [
+    ("Подготовка контента", "Контент подготовлен"),
+    ("Публикация в {platform}", "Опубликовано в {platform}"),
+    ("Сохранение результата", "Результат сохранён"),
+]
+
 # Progress steps for cumulative social loader
 _SOCIAL_STEPS = [
     ("Подбор ключевых фраз", "Фразы подобраны"),
@@ -78,6 +92,20 @@ def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
     """Build cumulative progress text for social post generation."""
     lines = ["\U0001f4dd Генерация поста", ""]
     for i, (active_label, done_label) in enumerate(steps):
+        if i < current:
+            lines.append(f"{EMOJI_DONE} {done_label}")
+        elif i == current:
+            lines.append(f"{EMOJI_PROGRESS} {active_label}...")
+    return "\n".join(lines)
+
+
+def _social_publish_progress(platform: str, current: int) -> str:
+    """Build cumulative progress text for social post publishing."""
+    name = _PLATFORM_NAMES.get(platform, platform.title())
+    lines = ["\U0001f4e4 Публикация поста", ""]
+    for i, (active_tpl, done_tpl) in enumerate(_SOCIAL_PUBLISH_STEPS):
+        active_label = active_tpl.format(platform=name)
+        done_label = done_tpl.format(platform=name)
         if i < current:
             lines.append(f"{EMOJI_DONE} {done_label}")
         elif i == current:
@@ -562,14 +590,14 @@ async def publish_social_post(
         return
 
     await state.set_state(SocialPipelineFSM.publishing)
-    await safe_edit_text(msg, "Публикую пост...")
+    await safe_edit_text(msg, _social_publish_progress(platform_type, 0))
 
     try:
         # Load connection
         conn_svc = ConnectionService(db, http_client)
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
-            await safe_edit_text(msg, 
+            await safe_edit_text(msg,
                 "Подключение не найдено. Проверьте настройки.",
                 reply_markup=menu_kb(),
             )
@@ -631,6 +659,10 @@ async def publish_social_post(
             await callback.answer()
             return
 
+        # Step 2: Publishing to platform
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+            await safe_edit_text(msg, _social_publish_progress(platform_type, 1))
+
         try:
             pub_result: PublishResult = await publisher.publish(
                 PublishRequest(
@@ -665,6 +697,10 @@ async def publish_social_post(
             await state.set_state(SocialPipelineFSM.review)
             await callback.answer()
             return
+
+        # Step 3: Saving result
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+            await safe_edit_text(msg, _social_publish_progress(platform_type, 2))
 
         # Log publication
         pub_repo = PublicationsRepository(db)
@@ -719,6 +755,20 @@ async def publish_social_post(
             platform=platform_type,
             post_url=pub_result.post_url,
         )
+    except Exception:
+        log.exception("pipeline.social.publish_unhandled", user_id=user.id)
+        # Ensure user is never stuck: reset to review with error message
+        with contextlib.suppress(Exception):
+            await msg.answer(
+                "Ошибка публикации. Попробуйте снова.",
+                reply_markup=social_review_kb(
+                    regen_count=data.get("regen_count", 0),
+                    regen_cost=tokens_charged,
+                ),
+            )
+        await state.set_state(SocialPipelineFSM.review)
+        with contextlib.suppress(Exception):
+            await callback.answer()
     finally:
         await redis.delete(lock_key)
 
