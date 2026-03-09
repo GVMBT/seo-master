@@ -27,7 +27,7 @@ _DATAFORSEO_SEMAPHORE = asyncio.Semaphore(5)
 # Ukraine (2804) + language_code="ru" is primary, Kazakhstan (2398) is fallback.
 _DEFAULT_LOCATION = 2804  # Ukraine
 _FALLBACK_LOCATION = 2398  # Kazakhstan
-_MAX_SUGGESTIONS = 700  # DataForSEO API max for keyword_suggestions
+_MAX_SUGGESTIONS = 1000  # DataForSEO API max for keyword_suggestions/related
 
 # Schema for AI seed normalization (structured output)
 SEED_NORMALIZE_SCHEMA: dict[str, Any] = {
@@ -233,7 +233,7 @@ class KeywordService:
                     self._dataforseo.related_keywords(
                         seed,
                         location_code=location,
-                        limit=100,
+                        limit=_MAX_SUGGESTIONS,
                     ),
                 )
                 return [*suggestions, *related]

@@ -64,10 +64,7 @@ def _csv_safe(value: str) -> str:
 
 
 class KeywordGenerationFSM(StatesGroup):
-    products = State()  # Q1: goods/services (3-1000 chars)
-    geography = State()  # Q2: geography (2-200 chars)
-    quantity = State()  # Button: 50/100/150/200
-    confirm = State()  # Cost confirmation
+    geography = State()  # City input (only if project.company_city not set)
     fetching = State()  # DataForSEO fetch (progress msg)
     clustering = State()  # AI clustering (progress msg)
     enriching = State()  # DataForSEO enrich (progress msg)
