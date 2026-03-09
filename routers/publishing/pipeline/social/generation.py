@@ -12,6 +12,8 @@ Rules: .claude/rules/pipeline.md -- inline handlers, NOT FSM delegation.
 
 from __future__ import annotations
 
+import base64 as b64mod
+import contextlib
 import html
 import time
 from typing import Any, Literal
@@ -30,6 +32,8 @@ from bot.helpers import safe_edit_text, safe_message
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
+from db.repositories.categories import CategoriesRepository
+from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from keyboards.inline import menu_kb
 from keyboards.pipeline import (
@@ -45,6 +49,7 @@ from routers.publishing.pipeline._common import (
     select_keyword,
     try_refund,
 )
+from services.ai.images import ImageService
 from services.ai.orchestrator import AIOrchestrator
 from services.ai.rate_limiter import RateLimiter
 from services.connections import ConnectionService
@@ -65,6 +70,7 @@ _PUBLISH_LOCK_TTL = 60
 _SOCIAL_STEPS = [
     ("Подбор ключевых фраз", "Фразы подобраны"),
     ("Генерация поста", "Пост сгенерирован"),
+    ("Генерация изображения", "Изображение готово"),
 ]
 
 
@@ -353,14 +359,41 @@ async def _run_social_generation(
             post_text = str(result.content)
             hashtags = []
 
+        # Generate 1 image for social post (B2 fix)
+        image_b64: str | None = None
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+            await safe_edit_text(message, _social_progress_text(_SOCIAL_STEPS, 2))
+
+        try:
+            image_service = ImageService(ai_orchestrator)
+            cat = await CategoriesRepository(db).get_by_id(category_id)
+            proj = await ProjectsRepository(db).get_by_id(project_id)
+            img_context: dict[str, Any] = {
+                "keyword": keyword,
+                "company_name": (proj.company_name or "") if proj else "",
+                "specialization": (proj.specialization or "") if proj else "",
+                "image_settings": (cat.image_settings or {}) if cat else {},
+            }
+            images = await image_service.generate(user_id=user.id, context=img_context, count=1)
+            if images:
+                image_b64 = b64mod.b64encode(images[0].data).decode("ascii")
+                log.info("social_image_generated", size=len(images[0].data), user_id=user.id)
+        except RateLimitError:
+            raise  # Re-raise to respect rate limits
+        except Exception:
+            # Graceful degradation for TG/VK; Pinterest validated at publish
+            log.warning("social_image_generation_failed", exc_info=True, user_id=user.id)
+
         # E38: store in FSM state.data (not DB), acceptable to lose on timeout
-        await state.update_data(
-            generated_text=post_text,
-            generated_hashtags=hashtags,
-            generated_keyword=keyword,
-            generated_model=result.model_used,
-            generated_prompt_version=result.prompt_version,
-        )
+        update_data: dict[str, Any] = {
+            "generated_text": post_text,
+            "generated_hashtags": hashtags,
+            "generated_keyword": keyword,
+            "generated_model": result.model_used,
+            "generated_prompt_version": result.prompt_version,
+            "generated_image_b64": image_b64,
+        }
+        await state.update_data(**update_data)
         await state.set_state(SocialPipelineFSM.review)
 
         # Build review screen text (show inline, no Telegraph for social posts)
@@ -515,6 +548,27 @@ async def publish_social_post(
         if platform_type == "pinterest":
             pub_metadata["pin_title"] = keyword[:100]
 
+        # Decode image from FSM state (B2 fix)
+        publish_images: list[bytes] = []
+        image_b64_stored = data.get("generated_image_b64")
+        if image_b64_stored:
+            publish_images = [b64mod.b64decode(image_b64_stored)]
+
+        # Pinterest requires at least one image
+        if platform_type == "pinterest" and not publish_images:
+            await safe_edit_text(
+                msg,
+                "Для Pinterest требуется изображение, но оно не было сгенерировано.\n"
+                "Попробуйте перегенерировать пост.",
+                reply_markup=social_review_kb(
+                    regen_count=data.get("regen_count", 0),
+                    regen_cost=tokens_charged,
+                ),
+            )
+            await state.set_state(SocialPipelineFSM.review)
+            await callback.answer()
+            return
+
         try:
             pub_result: PublishResult = await publisher.publish(
                 PublishRequest(
@@ -522,6 +576,7 @@ async def publish_social_post(
                     content=publish_text,
                     content_type=content_type,
                     metadata=pub_metadata,
+                    images=publish_images,
                 )
             )
         except Exception as exc:
@@ -560,7 +615,7 @@ async def publish_social_post(
                 connection_id=connection_id,
                 keyword=keyword,
                 content_type="social_post",
-                images_count=0,
+                images_count=len(publish_images),
                 post_url=pub_result.post_url,
                 word_count=len(generated_text.split()),
                 tokens_spent=tokens_charged,
