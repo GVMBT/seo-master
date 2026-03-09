@@ -26,7 +26,14 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import cancel_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
+from keyboards.inline import (
+    cancel_kb,
+    connection_manage_kb,
+    consent_kb,
+    dashboard_kb,
+    dashboard_resume_kb,
+    menu_kb,
+)
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -149,7 +156,10 @@ async def _handle_pinterest_deep_link(
     await redis.delete(CacheKeys.pinterest_oauth(nonce))
 
     safe_name = html.escape(project.name)
-    await message.answer(f"Pinterest подключён к проекту «{safe_name}»!")
+    await message.answer(
+        f"Pinterest подключён к проекту «{safe_name}»!",
+        reply_markup=connection_manage_kb(conn.id, project_id),
+    )
     log.info(
         "pinterest_connected_via_deeplink",
         connection_id=conn.id,
@@ -506,6 +516,18 @@ async def cmd_start(
     args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
 
     # OAuth deep-links: handle without clearing FSM and return early
+    if args == "pinterest_error":
+        await message.answer(
+            "Не удалось подключить Pinterest.\n"
+            "Авторизация была отклонена или произошла ошибка.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Попробовать снова", callback_data="nav:projects")],
+                    [InlineKeyboardButton(text="На главную", callback_data="nav:dashboard")],
+                ]
+            ),
+        )
+        return
     if args.startswith("pinterest_auth_"):
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, state, user, db, redis, http_client, nonce)

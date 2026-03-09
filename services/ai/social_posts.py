@@ -51,11 +51,24 @@ SOCIAL_POST_SCHEMA: dict[str, Any] = {
 class SocialPostService:
     """Generates social media posts for TG/VK/Pinterest."""
 
-    def __init__(self, orchestrator: AIOrchestrator, db: SupabaseClient) -> None:
+    def __init__(
+        self,
+        orchestrator: AIOrchestrator,
+        db: SupabaseClient,
+        *,
+        skip_rate_limit: bool = False,
+    ) -> None:
         self._orchestrator = orchestrator
         self._db = db
+        self._skip_rate_limit = skip_rate_limit
         self._projects = ProjectsRepository(db)
         self._categories = CategoriesRepository(db)
+
+    async def _call_orchestrator(self, request: GenerationRequest) -> GenerationResult:
+        """Call orchestrator, bypassing rate limit when skip_rate_limit is set."""
+        if self._skip_rate_limit:
+            return await self._orchestrator.generate_without_rate_limit(request)
+        return await self._orchestrator.generate(request)
 
     async def generate(
         self,
@@ -110,7 +123,7 @@ class SocialPostService:
             response_schema=SOCIAL_POST_SCHEMA,
         )
 
-        result = await self._orchestrator.generate(request)
+        result = await self._call_orchestrator(request)
 
         # Sanitize generated text with nh3 (ARCHITECTURE.md §5.8)
         if isinstance(result.content, dict) and "text" in result.content:
@@ -158,7 +171,7 @@ class SocialPostService:
             response_schema=SOCIAL_POST_SCHEMA,
         )
 
-        result = await self._orchestrator.generate(request)
+        result = await self._call_orchestrator(request)
 
         # Sanitize with nh3 for target platform
         if isinstance(result.content, dict) and "text" in result.content:

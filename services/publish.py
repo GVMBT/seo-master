@@ -471,7 +471,8 @@ class PublishService:
         from services.ai.images import ImageService
         from services.publishers.wordpress import WordPressPublisher
 
-        article_service = ArticleService(self._ai_orchestrator, self._db)
+        # Auto-publish is a system cron (QStash), not user UI — bypass rate limits
+        article_service = ArticleService(self._ai_orchestrator, self._db, skip_rate_limit=True)
         image_service = ImageService(self._ai_orchestrator)
         publisher = WordPressPublisher(self._http_client)
 
@@ -603,7 +604,7 @@ class PublishService:
                 for idx in block_indices
                 if idx < len(blocks)
             ]
-            director_service = ImageDirectorService(self._ai_orchestrator)
+            director_service = ImageDirectorService(self._ai_orchestrator, skip_rate_limit=True)
             director_ctx = ImageDirectorContext(
                 article_title=title,
                 article_summary=content_markdown,
@@ -723,7 +724,7 @@ class PublishService:
         """
         from services.ai.social_posts import SocialPostService
 
-        social_service = SocialPostService(self._ai_orchestrator, self._db)
+        social_service = SocialPostService(self._ai_orchestrator, self._db, skip_rate_limit=True)
         result = await social_service.generate(
             user_id=user_id,
             project_id=project_id,
@@ -823,7 +824,7 @@ class PublishService:
         settings = get_settings()
         cm = CredentialManager(settings.encryption_key.get_secret_value())
         conn_repo = ConnectionsRepository(self._db, cm)
-        social_service = SocialPostService(self._ai_orchestrator, self._db)
+        social_service = SocialPostService(self._ai_orchestrator, self._db, skip_rate_limit=True)
         category = await self._categories.get_by_id(category_id)
         results: list[CrossPostResult] = []
 

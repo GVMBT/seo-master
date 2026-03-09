@@ -51,6 +51,15 @@ async def pinterest_redirect(request: web.Request) -> web.Response:
 
 async def pinterest_callback(request: web.Request) -> web.Response:
     """GET /api/auth/pinterest/callback?code=xxx&state=user_id_nonce_hmac."""
+    bot_username: str = request.app["bot_username"]
+
+    # Pinterest redirects with ?error=... when user denies or an error occurs
+    error = request.query.get("error", "")
+    if error:
+        log.warning("pinterest_callback_error_param", error=error)
+        deep_link = f"tg://resolve?domain={quote(bot_username)}&start=pinterest_error"
+        raise web.HTTPFound(location=deep_link)
+
     code = request.query.get("code", "")
     state = request.query.get("state", "")
     if not code or not state:
@@ -69,11 +78,11 @@ async def pinterest_callback(request: web.Request) -> web.Response:
 
     try:
         _user_id, nonce = await service.handle_callback(code, state)
-    except PinterestOAuthError:
+    except PinterestOAuthError as exc:
         log.exception("pinterest_callback_failed")
         sentry_sdk.capture_exception()
-        return web.Response(status=403, text="Authorization failed. Please try again.")
+        err_link = f"tg://resolve?domain={quote(bot_username)}&start=pinterest_error"
+        raise web.HTTPFound(location=err_link) from exc
 
-    bot_username: str = request.app["bot_username"]
     deep_link = f"tg://resolve?domain={quote(bot_username)}&start=pinterest_auth_{quote(nonce)}"
     raise web.HTTPFound(location=deep_link)

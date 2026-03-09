@@ -25,6 +25,7 @@ from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.validators import TG_CHANNEL_RE, URL_RE
 from cache.client import RedisClient
+from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.models import PlatformConnectionCreate, User
 from keyboards.inline import (
@@ -894,8 +895,8 @@ async def start_pinterest_connect(
         return
     oauth_url = f"{base_url}/api/auth/pinterest?user_id={user.id}&nonce={nonce}"
 
-    # Store nonce → project_id mapping in Redis (10 min TTL)
-    await redis.set(f"pinterest_oauth:{nonce}", str(project_id), ex=600)
+    # Store nonce → project_id mapping in Redis (30 min TTL, matches pinterest_auth TTL)
+    await redis.set(CacheKeys.pinterest_oauth(nonce), str(project_id), ex=PINTEREST_AUTH_TTL)
 
     await state.set_state(ConnectPinterestFSM.oauth_callback)
     await state.update_data(
@@ -952,7 +953,6 @@ async def _cancel_connection_wizard(
     # Clean up VK OAuth Redis keys if cancel during VK flow
     vk_nonce = data.get("vk_nonce")
     if vk_nonce and redis:
-        from cache.keys import CacheKeys
         await redis.delete(CacheKeys.vk_auth(vk_nonce))
         await redis.delete(CacheKeys.vk_oauth(vk_nonce))
         await redis.delete(CacheKeys.vk_oauth_meta(vk_nonce))
