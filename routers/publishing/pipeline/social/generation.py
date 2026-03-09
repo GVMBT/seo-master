@@ -370,6 +370,7 @@ async def _run_social_generation(
             proj = await ProjectsRepository(db).get_by_id(project_id)
             img_context: dict[str, Any] = {
                 "keyword": keyword,
+                "content_type": "social_post",
                 "company_name": (proj.company_name or "") if proj else "",
                 "specialization": (proj.specialization or "") if proj else "",
                 "image_settings": (cat.image_settings or {}) if cat else {},
