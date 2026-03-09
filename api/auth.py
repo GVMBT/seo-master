@@ -20,7 +20,7 @@ from services.oauth.state import build_state
 log = structlog.get_logger()
 
 _PINTEREST_AUTHORIZE_URL = "https://www.pinterest.com/oauth/"
-_PINTEREST_SCOPES = "boards:read,pins:read,pins:write"
+_PINTEREST_SCOPES = "boards:read,boards:write,pins:read,pins:write"
 
 
 async def pinterest_redirect(request: web.Request) -> web.Response:
