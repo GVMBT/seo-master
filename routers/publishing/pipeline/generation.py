@@ -14,6 +14,7 @@ Rules: .claude/rules/pipeline.md — inline handlers, NOT FSM delegation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import html
 import json
 import re
@@ -83,6 +84,13 @@ _ARTICLE_STEPS = [
 
 # Delays before each step's progress message appears (seconds)
 _ARTICLE_STEP_DELAYS = [0, 5, 15, 50]
+
+# Publish progress steps for WordPress article
+_ARTICLE_PUBLISH_STEPS = [
+    ("Подготовка к публикации", "Публикация подготовлена"),
+    ("Загрузка на WordPress", "Загружено на WordPress"),
+    ("Сохранение результата", "Результат сохранён"),
+]
 
 
 def _progress_text(title: str, steps: list[tuple[str, str]], current: int) -> str:
@@ -664,19 +672,27 @@ async def publish_article(
 
     await state.update_data(last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.publishing)
-    await safe_edit_text(msg, "Публикую на WordPress...")
+    await safe_edit_text(
+        msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 0),
+    )
 
     try:
         # Load WP connection
         conn_svc = ConnectionService(db, http_client)
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
-            await safe_edit_text(msg, 
+            await safe_edit_text(msg,
                 "WordPress-подключение не найдено. Проверьте настройки.",
                 reply_markup=menu_kb(),
             )
             await callback.answer()
             return
+
+        # Step 2: Uploading to WordPress
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+            await safe_edit_text(
+                msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 1),
+            )
 
         try:
             preview_svc = PreviewService(
@@ -702,6 +718,12 @@ async def publish_article(
             await state.set_state(ArticlePipelineFSM.preview)
             await callback.answer()
             return
+
+        # Step 3: Saving result
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+            await safe_edit_text(
+                msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 2),
+            )
 
         # Log publication
         pub_repo = PublicationsRepository(db)

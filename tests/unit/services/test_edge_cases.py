@@ -61,7 +61,6 @@ class TestE03DataForSEOUnavailable:
         raw = await service.fetch_raw_phrases(
             products="obscure niche",
             geography="Moscow",
-            quantity=100,
             project_id=1,
             user_id=1,
         )
@@ -89,7 +88,6 @@ class TestE03DataForSEOUnavailable:
             clusters = await service.generate_clusters_direct(
                 products="obscure niche",
                 geography="Moscow",
-                quantity=50,
                 project_id=1,
                 user_id=1,
             )
@@ -117,7 +115,6 @@ class TestE03DataForSEOUnavailable:
         raw = await service.fetch_raw_phrases(
             products="test",
             geography="Moscow",
-            quantity=100,
             project_id=1,
             user_id=1,
         )

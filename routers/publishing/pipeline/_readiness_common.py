@@ -127,7 +127,6 @@ async def run_keyword_generation(
     project_id: int,
     products: str,
     geography: str,
-    quantity: int,
     ai_orchestrator: AIOrchestrator,
     dataforseo_client: DataForSEOClient,
     log_prefix: str,
@@ -169,7 +168,6 @@ async def run_keyword_generation(
         raw_phrases = await kw_service.fetch_raw_phrases(
             products=products,
             geography=geography,
-            quantity=quantity,
             project_id=project_id,
             user_id=user.id,
         )
@@ -181,17 +179,15 @@ async def run_keyword_generation(
                 raw_phrases=raw_phrases,
                 products=products,
                 geography=geography,
-                quantity=quantity,
                 project_id=project_id,
                 user_id=user.id,
             )
         else:
             # Step 2b: DataForSEO empty -> single AI call generates clusters directly
-            await _safe_edit("DataForSEO без данных. Генерирую фразы через AI (до 1.5 мин)...")
+            await _safe_edit("Генерирую ключевые фразы через AI (до 1.5 мин)...")
             clusters = await kw_service.generate_clusters_direct(
                 products=products,
                 geography=geography,
-                quantity=quantity,
                 project_id=project_id,
                 user_id=user.id,
             )
@@ -843,7 +839,6 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             return
 
         data = await state.get_data()
-        quantity = int(data.get("kw_quantity", 100))
         products = str(data.get("kw_products", ""))
         geography = str(data.get("kw_geography", ""))
         category_id = data.get("category_id")
@@ -867,7 +862,6 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             project_id=project_id,
             products=products,
             geography=geography,
-            quantity=quantity,
             ai_orchestrator=ai_orchestrator,
             dataforseo_client=dataforseo_client,
             log_prefix=log_prefix,
