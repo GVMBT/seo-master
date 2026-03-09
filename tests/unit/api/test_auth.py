@@ -67,6 +67,23 @@ def _mock_settings() -> MagicMock:
 
 
 class TestPinterestCallback:
+    async def test_error_param_redirects_to_deep_link(self) -> None:
+        """Pinterest error query param redirects to pinterest_error deep link."""
+        query_string = "error=access_denied&error_description=user_denied"
+        app = MagicMock()
+        app.__getitem__ = MagicMock(
+            side_effect=lambda key: {"bot_username": "testbot"}[key]
+        )
+        request = make_mocked_request(
+            "GET",
+            f"/api/auth/pinterest/callback?{query_string}",
+            app=app,
+        )
+        with pytest.raises(web.HTTPFound) as exc_info:
+            await pinterest_callback(request)
+        assert "pinterest_error" in exc_info.value.location
+        assert "testbot" in exc_info.value.location
+
     async def test_missing_code_returns_400(self) -> None:
         request = _make_request(code="", state="some_state")
         with patch("api.auth.get_settings", return_value=_mock_settings()):
@@ -87,8 +104,9 @@ class TestPinterestCallback:
             response = await pinterest_callback(request)
         assert response.status == 400
 
-    async def test_oauth_error_returns_403(self) -> None:
-        request = _make_request(code="bad_code", state="bad_state")
+    async def test_oauth_error_redirects_to_deep_link(self) -> None:
+        """OAuth service error redirects to pinterest_error deep link (E21)."""
+        request = _make_request(code="bad_code", state="bad_state", bot_username="testbot")
 
         mock_service = AsyncMock()
         mock_service.handle_callback = AsyncMock(side_effect=PinterestOAuthError("HMAC failed"))
@@ -96,10 +114,11 @@ class TestPinterestCallback:
         with (
             patch("api.auth.get_settings", return_value=_mock_settings()),
             patch("api.auth.PinterestOAuthService", return_value=mock_service),
+            pytest.raises(web.HTTPFound) as exc_info,
         ):
-            response = await pinterest_callback(request)
-        assert response.status == 403
-        assert "failed" in response.text.lower()
+            await pinterest_callback(request)
+        assert "pinterest_error" in exc_info.value.location
+        assert "testbot" in exc_info.value.location
 
     async def test_success_redirects_to_deep_link(self) -> None:
         request = _make_request(code="good_code", state="valid_state", bot_username="testbot")
