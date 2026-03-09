@@ -776,10 +776,10 @@ def keywords_delete_all_confirm_kb(cat_id: int) -> InlineKeyboardMarkup:
 
 def description_kb(cat_id: int, has_description: bool) -> InlineKeyboardMarkup:
     """Description screen actions (UX_TOOLBOX section 10 / 10.3)."""
-    gen_label = f"Сгенерировать AI ({COST_DESCRIPTION} токенов)"
+    ai_label = f"✨ Улучшить с ИИ ({COST_DESCRIPTION} токенов)"
     rows: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(text=gen_label, callback_data=f"desc:{cat_id}:generate")],
         [InlineKeyboardButton(text="Написать вручную", callback_data=f"desc:{cat_id}:manual")],
+        [InlineKeyboardButton(text=ai_label, callback_data=f"desc:{cat_id}:generate")],
     ]
     if has_description:
         rows.append(

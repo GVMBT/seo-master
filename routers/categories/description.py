@@ -73,7 +73,12 @@ async def _show_description_screen(
         safe_desc = html.escape(category.description or "")
         text = f"<b>Описание</b> — {safe_name}\n\nТекущее описание:\n<i>{safe_desc}</i>"
     else:
-        text = f"<b>Описание</b> — {safe_name}\n\nОписание не заполнено. Добавьте для лучшего качества статей."
+        text = (
+            f"<b>Описание</b> — {safe_name}\n\n"
+            "Опишите своими словами, чем занимается ваш бизнес в этой категории. "
+            "Можно тезисно, через запятую.\n"
+            "После ввода можно улучшить текст с помощью ИИ."
+        )
 
     await safe_edit_text(msg, 
         text,
