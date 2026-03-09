@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 from typing import Any
 
 import structlog
@@ -28,6 +27,7 @@ _DATAFORSEO_SEMAPHORE = asyncio.Semaphore(5)
 # Ukraine (2804) + language_code="ru" is primary, Kazakhstan (2398) is fallback.
 _DEFAULT_LOCATION = 2804  # Ukraine
 _FALLBACK_LOCATION = 2398  # Kazakhstan
+_MAX_SUGGESTIONS = 700  # DataForSEO API max for keyword_suggestions
 
 # Schema for AI seed normalization (structured output)
 SEED_NORMALIZE_SCHEMA: dict[str, Any] = {
@@ -138,7 +138,6 @@ class KeywordService:
         self,
         products: str,
         geography: str,
-        quantity: int,
         project_id: int,
         user_id: int,
     ) -> list[dict[str, Any]]:
@@ -184,7 +183,6 @@ class KeywordService:
             results = await self._fetch_seeds_parallel(
                 capped_seeds,
                 location,
-                quantity,
             )
 
             for kw_list in results:
@@ -210,13 +208,12 @@ class KeywordService:
         if not raw:
             log.info("dataforseo_empty_fallback_to_ai", seeds=seeds[:5])
 
-        return raw[:quantity]
+        return raw
 
     async def _fetch_seeds_parallel(
         self,
         seeds: list[str],
         location: int,
-        quantity: int,
     ) -> list[list[Any]]:
         """Fetch suggestions + related for all seeds in parallel (C19).
 
@@ -231,12 +228,12 @@ class KeywordService:
                     self._dataforseo.keyword_suggestions(
                         seed,
                         location_code=location,
-                        limit=quantity,
+                        limit=_MAX_SUGGESTIONS,
                     ),
                     self._dataforseo.related_keywords(
                         seed,
                         location_code=location,
-                        limit=min(quantity, 100),
+                        limit=100,
                     ),
                 )
                 return [*suggestions, *related]
@@ -249,7 +246,6 @@ class KeywordService:
         raw_phrases: list[dict[str, Any]],
         products: str,
         geography: str,
-        quantity: int,
         project_id: int,
         user_id: int,
     ) -> list[dict[str, Any]]:
@@ -261,7 +257,7 @@ class KeywordService:
         context = {
             "raw_count": len(raw_phrases),
             "raw_keywords_json": json.dumps(raw_phrases, ensure_ascii=False),
-            "extra_count": math.ceil(quantity * 0.15),
+            "extra_count": max(10, int(len(raw_phrases) * 0.1)),
             "products": products,
             "geography": geography,
             "company_name": company_name,
@@ -399,7 +395,6 @@ class KeywordService:
         self,
         products: str,
         geography: str,
-        quantity: int,
         project_id: int,
         user_id: int,
     ) -> list[dict[str, Any]]:
@@ -416,7 +411,7 @@ class KeywordService:
         context = {
             "raw_count": 0,
             "raw_keywords_json": "[]",
-            "extra_count": min(quantity, 50),
+            "extra_count": 50,
             "products": products,
             "geography": geography,
             "company_name": company_name,

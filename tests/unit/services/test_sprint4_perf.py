@@ -100,7 +100,6 @@ class TestC19ParallelDataForSEO:
         result = await service.fetch_raw_phrases(
             products="a, b, c",
             geography="Moscow",
-            quantity=100,
             project_id=1,
             user_id=1,
         )
@@ -134,7 +133,7 @@ class TestC19ParallelDataForSEO:
         )
         svc = KeywordService(orchestrator=orch, dataforseo=dfs, db=MagicMock())
 
-        results = await svc._fetch_seeds_parallel(["seed1", "seed2"], 2804, 100)
+        results = await svc._fetch_seeds_parallel(["seed1", "seed2"], 2804)
 
         assert len(results) == 2  # 2 seeds
         assert len(results[0]) == 2  # suggestions + related for seed1
@@ -159,7 +158,7 @@ class TestC19ParallelDataForSEO:
         dfs.related_keywords.return_value = []
 
         svc = KeywordService(orchestrator=orch, dataforseo=dfs, db=MagicMock())
-        result = await svc.fetch_raw_phrases(products="test", geography="Moscow", quantity=100, project_id=1, user_id=1)
+        result = await svc.fetch_raw_phrases(products="test", geography="Moscow", project_id=1, user_id=1)
         assert len(result) >= 1
         assert result[0]["phrase"] == "kz_result"
 

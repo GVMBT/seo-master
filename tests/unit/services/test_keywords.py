@@ -153,7 +153,7 @@ class TestFetchRawPhrases:
         ]
 
         result = await service.fetch_raw_phrases(
-            products="SEO", geography="Moscow", quantity=100, project_id=1, user_id=1
+            products="SEO", geography="Moscow", project_id=1, user_id=1
         )
 
         assert len(result) == 3
@@ -168,7 +168,7 @@ class TestFetchRawPhrases:
         mock_dataforseo.related_keywords.return_value = [_make_suggestion("seo tips", 200)]
 
         result = await service.fetch_raw_phrases(
-            products="SEO", geography="Moscow", quantity=100, project_id=1, user_id=1
+            products="SEO", geography="Moscow", project_id=1, user_id=1
         )
 
         assert len(result) == 1
@@ -192,7 +192,7 @@ class TestFetchRawPhrases:
         mock_dataforseo.related_keywords.return_value = []
 
         result = await service.fetch_raw_phrases(
-            products="test", geography="Moscow", quantity=100, project_id=1, user_id=1
+            products="test", geography="Moscow", project_id=1, user_id=1
         )
 
         assert len(result) >= 1
@@ -207,23 +207,24 @@ class TestFetchRawPhrases:
         mock_dataforseo.related_keywords.return_value = []
 
         result = await service.fetch_raw_phrases(
-            products="obscure niche", geography="Moscow", quantity=100, project_id=1, user_id=1
+            products="obscure niche", geography="Moscow", project_id=1, user_id=1
         )
 
         assert result == []
 
-    async def test_respects_quantity_limit(
+    async def test_fetch_raw_no_quantity_limit(
         self, service: KeywordService, mock_dataforseo: AsyncMock, mock_orchestrator: AsyncMock
     ) -> None:
+        """All DataForSEO results are returned without truncation."""
         mock_orchestrator.generate_without_rate_limit.return_value = _make_gen_result({"variants": []})
         mock_dataforseo.keyword_suggestions.return_value = [_make_suggestion(f"kw{i}", 100) for i in range(50)]
         mock_dataforseo.related_keywords.return_value = []
 
         result = await service.fetch_raw_phrases(
-            products="test", geography="Moscow", quantity=10, project_id=1, user_id=1
+            products="test", geography="Moscow", project_id=1, user_id=1
         )
 
-        assert len(result) <= 10
+        assert len(result) == 50
 
     async def test_parses_comma_separated_products(
         self, service: KeywordService, mock_dataforseo: AsyncMock, mock_orchestrator: AsyncMock
@@ -235,7 +236,6 @@ class TestFetchRawPhrases:
         await service.fetch_raw_phrases(
             products="keyword A, keyword B, keyword C",
             geography="Moscow",
-            quantity=100,
             project_id=1,
             user_id=1,
         )
@@ -252,7 +252,7 @@ class TestFetchRawPhrases:
         mock_dataforseo.related_keywords.return_value = []
 
         await service.fetch_raw_phrases(
-            products="ai keyword", geography="Moscow", quantity=100, project_id=1, user_id=1
+            products="ai keyword", geography="Moscow", project_id=1, user_id=1
         )
 
         # "ai keyword" appears once in seeds (deduplication)
@@ -293,7 +293,6 @@ class TestClusterPhrases:
                     raw_phrases=[{"phrase": "seo optimization", "volume": 500}],
                     products="SEO",
                     geography="Moscow",
-                    quantity=50,
                     project_id=1,
                     user_id=1,
                 )
@@ -320,7 +319,6 @@ class TestClusterPhrases:
                     raw_phrases=[],
                     products="test",
                     geography="Moscow",
-                    quantity=50,
                     project_id=1,
                     user_id=1,
                 )
@@ -341,7 +339,6 @@ class TestClusterPhrases:
                     raw_phrases=[],
                     products="test",
                     geography="Moscow",
-                    quantity=50,
                     project_id=1,
                     user_id=1,
                 )
@@ -442,7 +439,7 @@ class TestGenerateClustersDirect:
             with pytest.MonkeyPatch.context() as m:
                 m.setattr("services.keywords.ProjectsRepository", lambda db: mock_proj_repo)
                 result = await service.generate_clusters_direct(
-                    products="test", geography="Moscow", quantity=50, project_id=1, user_id=1
+                    products="test", geography="Moscow", project_id=1, user_id=1
                 )
 
         assert len(result) == 1
@@ -470,7 +467,7 @@ class TestGenerateClustersDirect:
             with pytest.MonkeyPatch.context() as m:
                 m.setattr("services.keywords.ProjectsRepository", lambda db: mock_proj_repo)
                 result = await service.generate_clusters_direct(
-                    products="test", geography="Moscow", quantity=50, project_id=1, user_id=1
+                    products="test", geography="Moscow", project_id=1, user_id=1
                 )
 
         p = result[0]["phrases"][0]
@@ -488,7 +485,7 @@ class TestGenerateClustersDirect:
             with pytest.MonkeyPatch.context() as m:
                 m.setattr("services.keywords.ProjectsRepository", lambda db: mock_proj_repo)
                 await service.generate_clusters_direct(
-                    products="test", geography="Moscow", quantity=50, project_id=1, user_id=1
+                    products="test", geography="Moscow", project_id=1, user_id=1
                 )
 
         call_args = mock_orchestrator.generate.call_args[0][0]

@@ -20,12 +20,12 @@ from aiogram.types import (
     Message,
 )
 
-from bot.config import get_settings
 from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
+from bot.service_factory import ProjectServiceFactory
 from db.client import SupabaseClient
-from db.models import Category, User
+from db.models import Category, ProjectUpdate, User
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
@@ -33,16 +33,12 @@ from keyboards.inline import (
     category_card_kb,
     keywords_cluster_delete_list_kb,
     keywords_cluster_list_kb,
-    keywords_confirm_kb,
     keywords_delete_all_confirm_kb,
     keywords_empty_kb,
-    keywords_quantity_kb,
     keywords_results_kb,
-    keywords_saved_answers_kb,
     keywords_summary_kb,
     menu_kb,
 )
-from services.tokens import TokenService, estimate_keywords_cost
 
 log = structlog.get_logger()
 router = Router()
@@ -121,12 +117,14 @@ def _build_keywords_summary(category: Any) -> str:
     total_volume = sum(c.get("total_volume", 0) for c in clusters)
     cluster_count = len(clusters)
 
-    return (
+    text = (
         f"<b>Ключевые фразы</b> — {safe_name}\n\n"
         f"Кластеров: {cluster_count}\n"
-        f"Фраз: {total_phrases}\n"
-        f"Общий объём: {total_volume:,}/мес"
+        f"Фраз: {total_phrases}"
     )
+    if total_volume > 0:
+        text += f"\nОбщий объём: {total_volume:,}/мес"
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +170,11 @@ async def start_generation(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
+    ai_orchestrator: Any,
+    dataforseo_client: Any,
 ) -> None:
-    """Start keyword generation — check for saved answers first."""
+    """Start keyword generation — auto-fill from category/project, no questions."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -182,7 +183,7 @@ async def start_generation(
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     _, category, project_id = await _check_category_ownership(cat_id, user, db)
 
-    if not category:
+    if not category or project_id is None:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
@@ -190,138 +191,44 @@ async def start_generation(
     if interrupted:
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
-    # Check for saved answers in state or category metadata
-    saved_data = await state.get_data()
-    saved_products = saved_data.get(f"kw_products_{cat_id}")
-    saved_geography = saved_data.get(f"kw_geography_{cat_id}")
+    # Auto-fill products from category description/name
+    products = category.description or category.name
 
-    if saved_products and saved_geography:
-        # Offer to use saved answers
-        await state.set_state(KeywordGenerationFSM.products)
+    # Auto-fill geography from project
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
+    geography = project.company_city if project and project.company_city else None
+
+    if not geography:
+        # Only question: city (if not set on project)
+        await state.set_state(KeywordGenerationFSM.geography)
         await state.update_data(
             last_update_time=time.time(),
             kw_cat_id=cat_id,
             kw_project_id=project_id,
+            kw_products=products,
         )
-
-        await safe_edit_text(msg, 
-            f"Найдены сохранённые ответы:\n"
-            f"Товары/услуги: <i>{html.escape(saved_products)}</i>\n"
-            f"География: <i>{html.escape(saved_geography)}</i>\n\n"
-            "Использовать или начать заново?",
-            reply_markup=keywords_saved_answers_kb(cat_id),
-        )
-    else:
-        # Start fresh
-        await state.set_state(KeywordGenerationFSM.products)
-        await state.update_data(
-            last_update_time=time.time(),
-            kw_cat_id=cat_id,
-            kw_project_id=project_id,
-        )
-
-        await safe_edit_text(msg, 
-            "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
+        await safe_edit_text(
+            msg,
+            "В каком городе ваш бизнес?\n<i>Для точных SEO-фраз</i>",
             reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
         )
-
-    await callback.answer()
-
-
-@router.callback_query(F.data.regexp(r"^kw:\d+:generate:new$"))
-async def start_fresh_generation(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-) -> None:
-    """Start generation from scratch, ignoring saved answers."""
-    msg = safe_message(callback)
-    if not msg:
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category, project_id = await _check_category_ownership(cat_id, user, db)
-    if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    await state.set_state(KeywordGenerationFSM.products)
-    await state.update_data(
-        last_update_time=time.time(),
-        kw_cat_id=cat_id,
-        kw_project_id=project_id,
-    )
-
-    await safe_edit_text(msg, 
-        "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
-        reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
-    )
+    # Everything available — start pipeline immediately
     await callback.answer()
-
-
-@router.callback_query(F.data.regexp(r"^kw:\d+:use_saved$"))
-async def use_saved_answers(
-    callback: CallbackQuery,
-    state: FSMContext,
-) -> None:
-    """Skip to quantity selection using saved answers."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    cat_id = int(data["kw_cat_id"])
-
-    # Move saved answers to active
-    products = data.get(f"kw_products_{cat_id}", "")
-    geography = data.get(f"kw_geography_{cat_id}", "")
-
-    await state.set_state(KeywordGenerationFSM.quantity)
-    await state.update_data(
-        kw_products=products,
-        kw_geography=geography,
-        last_update_time=time.time(),
-    )
-
-    await safe_edit_text(msg, 
-        "Сколько ключевых фраз подобрать?",
-        reply_markup=keywords_quantity_kb(cat_id),
-    )
-    await callback.answer()
-
-
-# ---------------------------------------------------------------------------
-# 3. Products input
-# ---------------------------------------------------------------------------
-
-
-@router.message(KeywordGenerationFSM.products, F.text)
-async def process_products(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Validate products text (3-1000 chars)."""
-    text = (message.text or "").strip()
-
-    if len(text) < 3 or len(text) > 1000:
-        await message.answer("Введите от 3 до 1000 символов.")
-        return
-
-    await state.set_state(KeywordGenerationFSM.geography)
-    data = await state.update_data(kw_products=text, last_update_time=time.time())
-    cat_id = data.get("kw_cat_id", 0)
-
-    await message.answer(
-        "Укажите географию продвижения:\n<i>Например: Москва, Россия, СНГ</i>",
-        reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
+    await _run_generation_pipeline(
+        msg, state, user, db,
+        cat_id=cat_id, project_id=project_id,
+        products=products, geography=geography,
+        ai_orchestrator=ai_orchestrator,
+        dataforseo_client=dataforseo_client,
     )
 
 
 # ---------------------------------------------------------------------------
-# 4. Geography input
+# 3. Geography input (only asked if project.company_city is not set)
 # ---------------------------------------------------------------------------
 
 
@@ -329,8 +236,13 @@ async def process_products(
 async def process_geography(
     message: Message,
     state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
+    ai_orchestrator: Any,
+    dataforseo_client: Any,
 ) -> None:
-    """Validate geography (2-200 chars)."""
+    """Validate geography, save to project, start pipeline immediately."""
     text = (message.text or "").strip()
 
     if len(text) < 2 or len(text) > 200:
@@ -339,177 +251,25 @@ async def process_geography(
 
     data = await state.get_data()
     cat_id = int(data["kw_cat_id"])
-
-    await state.set_state(KeywordGenerationFSM.quantity)
-    await state.update_data(kw_geography=text, last_update_time=time.time())
-
-    await message.answer(
-        "Сколько ключевых фраз подобрать?",
-        reply_markup=keywords_quantity_kb(cat_id),
-    )
-
-
-# ---------------------------------------------------------------------------
-# 5. Quantity selection
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(KeywordGenerationFSM.quantity, F.data.regexp(r"^kw:\d+:qty_\d+$"))
-async def select_quantity(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-) -> None:
-    """Select keyword quantity and show cost confirmation."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    # callback_data = "kw:{cat_id}:qty_{n}"
-    action = callback.data.split(":")[2]  # type: ignore[union-attr]
-    quantity = int(action.split("_")[1])
-    if quantity not in (50, 100, 150, 200):
-        await callback.answer("Недопустимое количество.", show_alert=True)
-        return
-
-    cost = estimate_keywords_cost(quantity)
-
-    settings = get_settings()
-    token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-    balance = await token_service.get_balance(user.id)
-
-    data = await state.get_data()
-    cat_id = int(data["kw_cat_id"])
-
-    await state.set_state(KeywordGenerationFSM.confirm)
-    await state.update_data(
-        kw_quantity=quantity,
-        kw_cost=cost,
-        last_update_time=time.time(),
-    )
-
-    products = data.get("kw_products", "")
-    geography = data.get("kw_geography", "")
-
-    await safe_edit_text(msg, 
-        f"Подбор ключевых фраз:\n"
-        f"Товары: <i>{html.escape(products)}</i>\n"
-        f"География: <i>{html.escape(geography)}</i>\n"
-        f"Количество: {quantity}\n\n"
-        f"Стоимость: {cost} токенов. Баланс: {balance}.",
-        reply_markup=keywords_confirm_kb(cat_id, cost, balance),
-    )
-    await callback.answer()
-
-
-# ---------------------------------------------------------------------------
-# 6. Confirm generation
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(KeywordGenerationFSM.confirm, F.data.regexp(r"^kw:\d+:confirm_yes$"))
-async def confirm_generation(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    ai_orchestrator: Any,
-    dataforseo_client: Any,
-) -> None:
-    """Confirm: E01 balance check → run pipeline → charge on success."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    cost = int(data["kw_cost"])
-    quantity = int(data["kw_quantity"])
-    cat_id = int(data["kw_cat_id"])
     project_id = int(data["kw_project_id"])
     products = str(data.get("kw_products", ""))
-    geography = str(data.get("kw_geography", ""))
 
-    settings = get_settings()
-    token_service = TokenService(db=db, admin_ids=settings.admin_ids)
+    # Save city to project for future use
+    proj_svc = project_service_factory(db)
+    await proj_svc.update_project(project_id, user.id, ProjectUpdate(company_city=text))
 
-    # E01: balance check (fail-fast, actual charge after success)
-    has_balance = await token_service.check_balance(user.id, cost)
-    if not has_balance:
-        balance = await token_service.get_balance(user.id)
-        insufficient_msg = token_service.format_insufficient_msg(cost, balance)
-        await safe_edit_text(msg, insufficient_msg)
-        await state.clear()
-        await callback.answer()
-        return
-
-    # Save answers for future reuse
-    saved_answers = {f"kw_products_{cat_id}": products, f"kw_geography_{cat_id}": geography}
-    await state.update_data(saved_answers)
-
-    # Answer callback BEFORE the long-running pipeline (~60s) to avoid "query is too old"
-    await callback.answer()
-
-    # Run pipeline with progress messages
+    # Start pipeline immediately
     await _run_generation_pipeline(
-        msg,
-        state,
-        user,
-        db,
-        cat_id=cat_id,
-        project_id=project_id,
-        products=products,
-        geography=geography,
-        quantity=quantity,
-        cost=cost,
-        token_service=token_service,
+        message, state, user, db,
+        cat_id=cat_id, project_id=project_id,
+        products=products, geography=text,
         ai_orchestrator=ai_orchestrator,
         dataforseo_client=dataforseo_client,
     )
-    log.info(
-        "keyword_generation_started",
-        cat_id=cat_id,
-        user_id=user.id,
-        quantity=quantity,
-    )
-
-
-@router.callback_query(KeywordGenerationFSM.confirm, F.data.regexp(r"^kw:\d+:confirm_no$"))
-async def cancel_generation(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-) -> None:
-    """Cancel generation — return to category card."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    cat_id = int(data["kw_cat_id"])
-    await state.clear()
-
-    cats_repo = CategoriesRepository(db)
-    category = await cats_repo.get_by_id(cat_id)
-    if not category:
-        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
-        await callback.answer()
-        return
-
-    safe_name = html.escape(category.name)
-    await safe_edit_text(msg, 
-        f"<b>{safe_name}</b>",
-        reply_markup=category_card_kb(cat_id, category.project_id),
-    )
-    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
-# 7. Generation pipeline (internal)
+# 4. Generation pipeline (internal)
 # ---------------------------------------------------------------------------
 
 
@@ -523,13 +283,10 @@ async def _run_generation_pipeline(
     project_id: int,
     products: str,
     geography: str,
-    quantity: int,
-    cost: int,
-    token_service: TokenService,
     ai_orchestrator: Any,
     dataforseo_client: Any,
 ) -> None:
-    """Run keyword pipeline: fetch → cluster → enrich → save."""
+    """Run keyword pipeline: fetch → cluster → enrich → save (free, no token charge)."""
     from services.keywords import KeywordService
 
     try:
@@ -539,14 +296,13 @@ async def _run_generation_pipeline(
             db=db,
         )
 
-        # Step 1: Fetch raw phrases from DataForSEO
+        # Step 1: Fetch raw phrases from DataForSEO (all available, no limit)
         await state.set_state(KeywordGenerationFSM.fetching)
         await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
 
         raw_phrases = await kw_service.fetch_raw_phrases(
             products=products,
             geography=geography,
-            quantity=quantity,
             project_id=project_id,
             user_id=user.id,
         )
@@ -559,16 +315,14 @@ async def _run_generation_pipeline(
                 raw_phrases=raw_phrases,
                 products=products,
                 geography=geography,
-                quantity=quantity,
                 project_id=project_id,
                 user_id=user.id,
             )
         else:
-            await safe_edit_text(msg, f"{EMOJI_PROGRESS} DataForSEO без данных. Генерирую фразы через AI...")
+            await safe_edit_text(msg, f"{EMOJI_PROGRESS} Генерирую ключевые фразы...")
             clusters = await kw_service.generate_clusters_direct(
                 products=products,
                 geography=geography,
-                quantity=quantity,
                 project_id=project_id,
                 user_id=user.id,
             )
@@ -595,36 +349,16 @@ async def _run_generation_pipeline(
         total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
         total_volume = sum(c.get("total_volume", 0) for c in enriched)
 
-        quality_note = ""
-        if total_volume < 100:
-            quality_note = (
-                "\n\n⚠ Низкий объём поиска по этой нише — фразы могут быть "
-                "менее надёжными. Попробуйте более конкретные товары/услуги."
-            )
-
-        # Charge tokens AFTER successful generation + save
-        try:
-            await token_service.charge(
-                user_id=user.id,
-                amount=cost,
-                operation_type="keywords",
-                description=f"Подбор ключевых фраз ({quantity} шт., категория #{cat_id})",
-            )
-            cost_note = f"\n\nСписано {cost} токенов."
-        except Exception:
-            log.exception("keyword_charge_failed", cat_id=cat_id, user_id=user.id, cost=cost)
-            cost_note = ""
-
-        await safe_edit_text(msg, 
+        result_text = (
             f"Готово! Добавлено:\n"
             f"Кластеров: {len(enriched)}\n"
-            f"Фраз: {total_phrases}\n"
-            f"Общий объём: {total_volume:,}/мес{cost_note}{quality_note}",
-            reply_markup=keywords_results_kb(cat_id),
+            f"Фраз: {total_phrases}"
         )
-        # Use set_state(None) instead of clear() to preserve saved answers
-        # (kw_products_{cat_id}, kw_geography_{cat_id}) for "Use saved" flow
-        await state.set_state(None)
+        if total_volume > 0:
+            result_text += f"\nОбщий объём: {total_volume:,}/мес"
+
+        await safe_edit_text(msg, result_text, reply_markup=keywords_results_kb(cat_id))
+        await state.clear()
 
         log.info(
             "keyword_generation_complete",
@@ -664,7 +398,7 @@ async def start_upload(
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     _, category, project_id = await _check_category_ownership(cat_id, user, db)
 
-    if not category:
+    if not category or project_id is None:
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
@@ -812,7 +546,6 @@ async def _run_upload_pipeline(
             raw_phrases=raw_phrases,
             products="",
             geography="",
-            quantity=len(raw_phrases),
             project_id=project_id,
             user_id=user.id,
         )
@@ -960,16 +693,23 @@ async def show_cluster_detail(
     phrases = cluster.get("phrases", [])
     total_volume = cluster.get("total_volume", 0)
 
+    header = f"Фраз: {len(phrases)}"
+    if total_volume > 0:
+        header += f" | Объём: {total_volume:,}/мес"
+
     lines = [
         f"<b>{name}</b>",
         f"Тип: {cluster_type}" if cluster_type else "",
-        f"Фраз: {len(phrases)} | Объём: {total_volume:,}/мес\n",
+        f"{header}\n",
     ]
 
     for p in phrases[:50]:  # limit display
         phrase = html.escape(p.get("phrase", ""))
         vol = p.get("volume", 0)
-        lines.append(f"  \u2022 {phrase} ({vol:,}/мес)")
+        if vol > 0:
+            lines.append(f"  \u2022 {phrase} ({vol:,}/мес)")
+        else:
+            lines.append(f"  \u2022 {phrase}")
 
     if len(phrases) > 50:
         lines.append(f"\n  ... ещё {len(phrases) - 50}")
