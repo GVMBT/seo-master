@@ -555,8 +555,8 @@ async def cmd_start(
         return
 
     # Remove any lingering reply keyboard (from old bot versions or other bots)
-    remove_msg = await message.answer("\u200b", reply_markup=ReplyKeyboardRemove())
     with contextlib.suppress(Exception):
+        remove_msg = await message.answer(".", reply_markup=ReplyKeyboardRemove())
         await remove_msg.delete()
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)

@@ -337,7 +337,10 @@ class AIOrchestrator:
         # Budget tasks use price sorting
         if request.task in BUDGET_TASKS:
             extra_body["provider"]["sort"] = "price"
-        else:
+        elif request.task != "image":
+            # Image task uses modalities/image_config — require_parameters
+            # causes 404 "No endpoints found" on OpenRouter (providers don't
+            # declare support for these non-standard params).
             extra_body["provider"]["require_parameters"] = True
 
         # Structured output tasks need providers that support json_schema,
