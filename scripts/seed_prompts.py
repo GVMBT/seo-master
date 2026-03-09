@@ -33,6 +33,7 @@ _PROMPT_MAP: dict[str, tuple[str, str]] = {
     "cross_post_v1.yaml": ("cross_post", "v1"),
     "seed_normalize.yaml": ("seed_normalize", "v1"),
     "research_v1.yaml": ("article_research", "v1"),
+    "image_director_v1.yaml": ("image_director", "v1"),
 }
 
 # Which versions are active by default
@@ -48,6 +49,7 @@ _ACTIVE: set[tuple[str, str]] = {
     ("description", "v1"),
     ("seed_normalize", "v1"),
     ("article_research", "v1"),
+    ("image_director", "v1"),
 }
 
 
@@ -85,9 +87,11 @@ async def main() -> None:
             resp = await (
                 client.from_("prompt_versions").select("id").eq("task_type", task_type).eq("version", version).execute()
             )
-            if resp.data:
+            rows = resp.data
+            if rows and isinstance(rows, list):
                 if force:
-                    row_id = resp.data[0]["id"]
+                    first_row: dict[str, int] = rows[0]  # type: ignore[assignment]
+                    row_id = first_row["id"]
                     await (
                         client.from_("prompt_versions")
                         .update({"prompt_yaml": yaml_content, "is_active": is_active})
