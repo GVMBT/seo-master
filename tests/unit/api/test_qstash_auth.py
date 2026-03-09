@@ -155,7 +155,7 @@ async def test_verify_signature_with_public_url_uses_public_url(
 
     request = _make_request()
     # Simulate Railway proxy: request.url is internal, but settings has public URL
-    request.url = "http://0.0.0.0:8080/api/publish"  # noqa: S104
+    request.url = "http://0.0.0.0:8080/api/publish"
     request.path = "/api/publish"
 
     await _sample_handler(request)
@@ -174,7 +174,7 @@ async def test_verify_signature_without_public_url_falls_back_to_request_url(
     mock_receiver_cls.return_value = mock_receiver
 
     request = _make_request()
-    request.url = "http://0.0.0.0:8080/api/publish"  # noqa: S104
+    request.url = "http://0.0.0.0:8080/api/publish"
     # Override settings to have empty public URL
     settings = _make_settings()
     settings.railway_public_url = ""
@@ -187,5 +187,5 @@ async def test_verify_signature_without_public_url_falls_back_to_request_url(
     mock_receiver.verify.assert_called_once()
     assert (
         mock_receiver.verify.call_args.kwargs["url"]
-        == "http://0.0.0.0:8080/api/publish"  # noqa: S104
+        == "http://0.0.0.0:8080/api/publish"
     )

@@ -11,7 +11,6 @@ from routers.categories.content_settings import (
     _recommend_preset,
 )
 
-
 # ---------------------------------------------------------------------------
 # 1. image_presets_kb layout
 # ---------------------------------------------------------------------------
@@ -186,7 +185,7 @@ def test_image_custom_kb_buttons() -> None:
 
 def test_preset_names_list_matches_presets() -> None:
     """_IMAGE_PRESET_NAMES must match _IMAGE_PRESETS names."""
-    assert _IMAGE_PRESET_NAMES == [p["name"] for p in _IMAGE_PRESETS]
+    assert [p["name"] for p in _IMAGE_PRESETS] == _IMAGE_PRESET_NAMES
 
 
 def test_preset_count() -> None:

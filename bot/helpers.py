@@ -7,6 +7,7 @@ safe_edit_text: graceful photo→text transition (delete+resend).
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any, cast
 
 from aiogram.exceptions import TelegramBadRequest
@@ -84,10 +85,8 @@ async def safe_edit_text(
         if "there is no text in the message" not in str(e):
             raise
         # Photo message — delete and resend as text
-        try:
-            await msg.delete()
-        except TelegramBadRequest:
-            pass  # Message too old to delete — send new one anyway
+        with contextlib.suppress(TelegramBadRequest):
+            await msg.delete()  # Message too old to delete — send new one anyway
         return await msg.answer(
             text,
             reply_markup=reply_markup,
