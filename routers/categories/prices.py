@@ -233,14 +233,7 @@ async def process_text(
 
     log.info("prices_updated_text", category_id=cat_id, lines=len(lines), user_id=user.id)
 
-    safe_name = html.escape(result.name)
-    count = len(lines)
-    preview_lines = lines[:10]
-    preview = "\n".join(f"  \u2022 {html.escape(ln)}" for ln in preview_lines)
-    if count > 10:
-        preview += f"\n  ... ещё {count - 10}"
-
-    result_text = f"<b>Цены \u2014 {safe_name}</b>\n\nПрайс сохранён ({count} позиций):\n{preview}"
+    result_text = f"\U0001f4ce Прайс сохранён ({len(lines)} позиций)"
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 
 
@@ -431,14 +424,7 @@ async def process_excel(
 
     log.info("prices_updated_excel", category_id=cat_id, lines=len(lines), user_id=user.id)
 
-    safe_name = html.escape(updated.name)
-    count = len(lines)
-    preview_lines = lines[:10]
-    preview = "\n".join(f"  \u2022 {html.escape(ln)}" for ln in preview_lines)
-    if count > 10:
-        preview += f"\n  ... ещё {count - 10}"
-
-    result_text = f"<b>Цены \u2014 {safe_name}</b>\n\nПрайс загружен из Excel ({count} позиций):\n{preview}"
+    result_text = f"\U0001f4ce Файл загружен ({len(lines)} позиций)"
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 
 

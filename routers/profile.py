@@ -82,7 +82,12 @@ async def show_notifications(
         await callback.answer()
         return
 
-    text = "<b>\U0001f514 Уведомления</b>\n\nНажмите для переключения:"
+    text = (
+        "<b>\U0001f514 Уведомления</b>\n\n"
+        "<b>Баланс</b> — уведомления при низком балансе и пополнениях\n"
+        "<b>Публикации</b> — уведомления о статусе автопубликаций\n\n"
+        "Нажмите для переключения:"
+    )
 
     await safe_edit_text(
         msg,
@@ -123,9 +128,14 @@ async def toggle_notification(
         await callback.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", show_alert=True)
         return
 
-    text = "<b>\U0001f514 Уведомления</b>\n\nНажмите для переключения:"
+    text = (
+        "<b>\U0001f514 Уведомления</b>\n\n"
+        "<b>Баланс</b> — уведомления при низком балансе и пополнениях\n"
+        "<b>Публикации</b> — уведомления о статусе автопубликаций\n\n"
+        "Нажмите для переключения:"
+    )
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(msg,
         text,
         reply_markup=notifications_kb(
             notify_publications=updated_user.notify_publications,

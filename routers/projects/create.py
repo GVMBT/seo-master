@@ -274,8 +274,25 @@ async def show_edit_screen(
         return
 
     text = _build_edit_text(project)
-    await safe_edit_text(msg, text, reply_markup=project_edit_kb(project_id))
+    await safe_edit_text(msg, text, reply_markup=project_edit_kb(project_id, _build_completed(project)))
     await callback.answer()
+
+
+def _build_completed(project: Project) -> dict[str, bool]:
+    """Build field completion map for checkmark display."""
+    return {
+        "name": bool(project.name),
+        "company_name": bool(project.company_name),
+        "specialization": bool(project.specialization),
+        "description": bool(project.description),
+        "advantages": bool(project.advantages),
+        "experience": bool(project.experience),
+        "website_url": bool(project.website_url),
+        "company_city": bool(project.company_city),
+        "company_phone": bool(project.company_phone),
+        "company_email": bool(project.company_email),
+        "company_address": bool(project.company_address),
+    }
 
 
 def _build_edit_text(project: Project) -> str:
@@ -292,7 +309,6 @@ def _build_edit_text(project: Project) -> str:
         ("Адрес", project.company_address or "—"),
         ("Телефон", project.company_phone or "—"),
         ("Email", project.company_email or "—"),
-        ("Часовой пояс", project.timezone),
     ]
 
     safe_name = html.escape(project.name)
@@ -371,7 +387,8 @@ async def process_field_value(
             project = await proj_svc.get_owned_project(int(project_id), user.id)
             if project:
                 edit_text = _build_edit_text(project)
-                await message.answer(edit_text, reply_markup=project_edit_kb(int(project_id)))
+                kb = project_edit_kb(int(project_id), _build_completed(project))
+                await message.answer(edit_text, reply_markup=kb)
                 return
         await message.answer("Редактирование отменено.", reply_markup=menu_kb())
         return
@@ -409,7 +426,7 @@ async def process_field_value(
     if project:
         label = _FIELD_LABELS.get(field, field)
         edit_text = f"Поле «{label}» обновлено.\n\n" + _build_edit_text(project)
-        await message.answer(edit_text, reply_markup=project_edit_kb(project_id))
+        await message.answer(edit_text, reply_markup=project_edit_kb(project_id, _build_completed(project)))
     else:
         await message.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", reply_markup=menu_kb())
 
@@ -460,7 +477,8 @@ async def cancel_edit(
         project = await proj_svc.get_owned_project(int(project_id), user.id)
         if project:
             edit_text = _build_edit_text(project)
-            await safe_edit_text(msg, edit_text, reply_markup=project_edit_kb(int(project_id)))
+            kb = project_edit_kb(int(project_id), _build_completed(project))
+            await safe_edit_text(msg, edit_text, reply_markup=kb)
             await callback.answer()
             return
 

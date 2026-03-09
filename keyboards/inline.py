@@ -119,7 +119,7 @@ def dashboard_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="Мои проекты",
+                text="Проекты",
                 callback_data="nav:projects",
             ),
             InlineKeyboardButton(
@@ -266,20 +266,29 @@ _EDIT_FIELDS: list[tuple[str, str]] = [
     ("company_phone", "Телефон"),
     ("company_email", "Эл. почта"),
     ("company_address", "Адрес"),
-    ("timezone", "Часовой пояс"),
+    # timezone removed from UI (U10) — kept in DB, default Europe/Moscow
 ]
 
 
-def project_edit_kb(project_id: int) -> InlineKeyboardMarkup:
-    """Edit screen: field buttons in 2-column grid + delete + back."""
+def project_edit_kb(
+    project_id: int,
+    completed: dict[str, bool] | None = None,
+) -> InlineKeyboardMarkup:
+    """Edit screen: field buttons in 2-column grid + delete + back.
+
+    Args:
+        completed: map field_name -> True if filled. Filled fields get ✅ prefix.
+    """
     pid = project_id
+    filled = completed or {}
     rows: list[list[InlineKeyboardButton]] = []
 
     # 2-column layout for fields
     for i in range(0, len(_EDIT_FIELDS), 2):
         row: list[InlineKeyboardButton] = []
         for field, label in _EDIT_FIELDS[i : i + 2]:
-            row.append(InlineKeyboardButton(text=label, callback_data=f"project:{pid}:edit:{field}"))
+            prefix = "✅ " if filled.get(field) else ""
+            row.append(InlineKeyboardButton(text=f"{prefix}{label}", callback_data=f"project:{pid}:edit:{field}"))
         rows.append(row)
 
     rows.append(
