@@ -30,13 +30,18 @@ class TestTruncateAtBoundary:
         assert result == "First sentence. Second sentence."
 
     def test_truncate_at_word_boundary_no_period(self) -> None:
-        """Text without periods truncates at word boundary + ellipsis."""
+        """Text without periods truncates at word boundary + ellipsis, within limit."""
         text = "This is a long text without any periods that keeps going on and on"
         result = _truncate_at_boundary(text, 40)
         assert result.endswith("...")
-        assert len(result) <= 43  # word boundary + "..."
-        # Should not cut mid-word
-        assert " " not in result[-4:-3] or result.endswith("...")
+        assert len(result) <= 40  # strict: result fits within limit
+
+    def test_word_boundary_result_within_limit(self) -> None:
+        """Ellipsis included, total length must not exceed limit."""
+        text = "word " * 100  # 500 chars
+        for limit in (10, 50, 100, 200):
+            result = _truncate_at_boundary(text, limit)
+            assert len(result) <= limit, f"limit={limit}, got len={len(result)}"
 
     def test_truncate_at_newline_boundary(self) -> None:
         """Truncates at newline when no suitable period exists."""

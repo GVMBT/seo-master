@@ -186,6 +186,10 @@ class SocialPostService:
                 attributes=_SOCIAL_ATTRS,
             )
 
+        # Enforce Pinterest hard limits for cross-posting too
+        if target_platform == "pinterest" and isinstance(result.content, dict):
+            _enforce_pinterest_limits(result.content)
+
         return result
 
 
@@ -229,26 +233,27 @@ def _enforce_pinterest_limits(content: dict[str, Any]) -> None:
 
 
 def _truncate_at_boundary(text: str, limit: int) -> str:
-    """Truncate text at sentence/word boundary within limit."""
+    """Truncate text at sentence/word boundary. Result guaranteed <= limit chars."""
     if len(text) <= limit:
         return text
 
     truncated = text[:limit]
 
-    # Try sentence boundary (period)
+    # Try sentence boundary (period) — no ellipsis needed
     dot_pos = truncated.rfind(".")
     if dot_pos > limit // 2:
         return truncated[: dot_pos + 1]
 
-    # Try newline boundary
+    # Try newline boundary — no ellipsis needed
     nl_pos = truncated.rfind("\n")
     if nl_pos > limit // 2:
         return truncated[:nl_pos]
 
-    # Try word boundary (space)
-    space_pos = truncated.rfind(" ")
+    # Try word boundary (space) — with ellipsis, must fit in limit
+    cut_limit = limit - 3  # Reserve space for "..."
+    space_pos = text[:cut_limit].rfind(" ") if cut_limit > 0 else -1
     if space_pos > limit // 2:
-        return truncated[:space_pos] + "..."
+        return text[:space_pos] + "..."
 
-    # Hard cut
-    return truncated[: limit - 3] + "..."
+    # Hard cut with ellipsis
+    return text[: max(cut_limit, 0)] + "..."

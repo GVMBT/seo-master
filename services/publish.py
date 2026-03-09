@@ -737,6 +737,12 @@ class PublishService:
         # Social post content is a dict {text, hashtags, pin_title} — extract text
         content = result.content.get("text", "") if isinstance(result.content, dict) else result.content
 
+        # Unescape HTML entities for non-Telegram platforms (nh3 encodes & → &amp;)
+        if connection.platform_type != "telegram" and isinstance(content, str):
+            import html as _html
+
+            content = _html.unescape(content)
+
         # Append hashtags for all social platforms (Pinterest includes in description)
         if isinstance(result.content, dict) and connection.platform_type in ("vk", "telegram", "pinterest"):
             hashtags = result.content.get("hashtags", [])
@@ -872,6 +878,12 @@ class PublishService:
                 adapted_text = ""
                 if isinstance(adapted.content, dict):
                     adapted_text = adapted.content.get("text", "")
+
+                # Unescape HTML entities for non-Telegram platforms
+                if conn.platform_type != "telegram" and adapted_text:
+                    import html as _html
+
+                    adapted_text = _html.unescape(adapted_text)
 
                 # Append hashtags for all social platforms
                 if isinstance(adapted.content, dict) and conn.platform_type in ("vk", "telegram", "pinterest"):

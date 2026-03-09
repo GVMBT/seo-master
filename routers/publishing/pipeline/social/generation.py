@@ -415,7 +415,7 @@ async def _run_social_generation(
         review_text = _build_review_text(post_text, hashtags, keyword, tokens_charged, platform_type)
 
         review_kb = social_review_kb(regen_count=regen_count, regen_cost=cost)
-        await _show_review(message, review_text, review_kb, image_b64)
+        await _show_review(message, review_text, review_kb, image_b64, state=state)
         await save_checkpoint(
             redis,
             user.id,
@@ -453,12 +453,24 @@ async def _show_review(
     review_text: str,
     review_kb: InlineKeyboardMarkup,
     image_b64: str | None,
+    state: FSMContext | None = None,
 ) -> None:
     """Show review screen with optional photo preview.
 
     If image_b64 is provided, sends photo+caption. Falls back to text
     if caption exceeds Telegram's 1024-char limit (photo first, then text+KB).
+    When split (photo + separate text), saves photo message_id in state
+    so regen/cancel/publish handlers can clean it up.
     """
+    # Clean up any previously orphaned photo message
+    if state:
+        data = await state.get_data()
+        old_photo_id = data.get("_photo_message_id")
+        if old_photo_id and message.bot:
+            with contextlib.suppress(TelegramBadRequest):
+                await message.bot.delete_message(message.chat.id, old_photo_id)
+            await state.update_data(_photo_message_id=None)
+
     if not image_b64:
         await safe_edit_text(message, review_text, reply_markup=review_kb)
         return
@@ -476,10 +488,16 @@ async def _show_review(
             caption=review_text,
             reply_markup=review_kb,
         )
+        # Photo+caption is a single message — callback handles it
+        if state:
+            await state.update_data(_photo_message_id=None)
     else:
         # Photo without caption, then text with keyboard
-        await message.answer_photo(photo=photo)
+        photo_msg = await message.answer_photo(photo=photo)
         await message.answer(review_text, reply_markup=review_kb)
+        # Track orphaned photo so regen/cancel can delete it
+        if state:
+            await state.update_data(_photo_message_id=photo_msg.message_id)
 
 
 def _build_review_text(
@@ -541,6 +559,14 @@ async def publish_social_post(
         return
 
     data = await state.get_data()
+
+    # Clean up orphaned photo from split preview
+    photo_mid = data.get("_photo_message_id")
+    if photo_mid and msg.bot:
+        with contextlib.suppress(TelegramBadRequest):
+            await msg.bot.delete_message(msg.chat.id, photo_mid)
+        await state.update_data(_photo_message_id=None)
+
     connection_id = data.get("connection_id")
     generated_text = data.get("generated_text", "")
     generated_hashtags: list[str] = data.get("generated_hashtags", [])
@@ -598,11 +624,13 @@ async def publish_social_post(
         publisher = _get_publisher(platform_type, http_client, _settings, on_token_refresh=_on_refresh)
         content_type = _get_content_type(platform_type)
 
+        # Unescape HTML entities for non-Telegram (nh3 encodes & → &amp;)
+        publish_text = generated_text if platform_type == "telegram" else html.unescape(generated_text)
+
         # Append hashtags for all social platforms (Pinterest uses description field)
-        publish_text = generated_text
         if generated_hashtags:
             tags_str = " ".join(f"#{h.lstrip('#')}" for h in generated_hashtags)
-            publish_text = f"{generated_text}\n\n{tags_str}"
+            publish_text = f"{publish_text}\n\n{tags_str}"
 
         # Pinterest metadata: use AI-generated pin_title, fallback to keyword
         pub_metadata: dict[str, Any] = {}
@@ -791,6 +819,13 @@ async def regenerate_social(
     )
     await state.set_state(SocialPipelineFSM.regenerating)
 
+    # Clean up orphaned photo from split preview (if any)
+    photo_mid = data.get("_photo_message_id")
+    if photo_mid and msg.bot:
+        with contextlib.suppress(TelegramBadRequest):
+            await msg.bot.delete_message(msg.chat.id, photo_mid)
+        await state.update_data(_photo_message_id=None)
+
     # Previous review may be a photo message — delete and send fresh text
     with contextlib.suppress(TelegramBadRequest):
         await msg.delete()
@@ -837,6 +872,13 @@ async def cancel_refund_social(
         return
 
     data = await state.get_data()
+
+    # Clean up orphaned photo from split preview
+    photo_mid = data.get("_photo_message_id")
+    if photo_mid and msg.bot:
+        with contextlib.suppress(TelegramBadRequest):
+            await msg.bot.delete_message(msg.chat.id, photo_mid)
+
     tokens_charged = data.get("tokens_charged", 0)
 
     if tokens_charged and tokens_charged > 0:
