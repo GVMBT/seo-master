@@ -526,7 +526,7 @@ MODEL_CHAINS = {
     "article":              ["anthropic/claude-sonnet-4.5", "openai/gpt-5.2", "deepseek/deepseek-v3.2"],
     "article_outline":      ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # Stage 1: outline generation (budget)
     "article_critique":     ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # Stage 3: conditional critique (budget, only if score < 80)
-    "article_research":     ["perplexity/sonar-pro"],                              # Web research: current facts, trends, statistics
+    "article_research":     ["perplexity/sonar-pro-search"],                       # Web research: agentic multi-step search, structured outputs
     "social_post":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "keywords":             ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # AI clustering (keywords_cluster.yaml v3), NOT data fetching
     "review":               ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
@@ -1386,7 +1386,7 @@ def sanitize_variables(context: dict) -> dict:
 Шаг 1.  Выбор кластера (не одной фразы) → rotation по кластерам (§6)
 Шаг 2.  ПАРАЛЛЕЛЬНО:
          2a. Serper search(main_phrase) → топ-5 URL + People Also Ask + Related
-         2b. RESEARCH: Perplexity Sonar Pro → актуальные факты, тренды, статистика (research_v1.yaml)
+         2b. RESEARCH: Perplexity Sonar Pro Search → актуальные факты, тренды, статистика (research_v1.yaml)
              → JSON Schema: {facts[], trends[], statistics[], summary}
              → Redis кеш: research:{md5(main_phrase)[:12]}, TTL 7 дней
              → Graceful degradation: при ошибке Sonar — pipeline продолжает БЕЗ research (E53)
@@ -1422,7 +1422,7 @@ def sanitize_variables(context: dict) -> dict:
 **Стоимость multi-step + research:**
 | Шаг | Модель | Стоимость | Примечание |
 |-----|--------|-----------|------------|
-| Research (шаг 2b) | Perplexity Sonar Pro | ~$0.01 | Всегда (кеш 7д, amortized ~$0.005) |
+| Research (шаг 2b) | Perplexity Sonar Pro Search | ~$0.02 | Всегда (кеш 7д, amortized ~$0.01) |
 | Outline (шаг 5) | DeepSeek V3.2 | ~$0.01 | Всегда |
 | Expand (шаг 6) | Claude 4.5 Sonnet | ~$0.12 | Всегда |
 | Critique (шаг 8) | DeepSeek V3.2 | ~$0.02 | Только ~30% статей (score < 80) |
@@ -1743,7 +1743,7 @@ def calculate_target_length(
 "Статья похожа на ранее опубликованную. Рекомендуем переформулировать."
 Хранение: `publication_logs.content_hash BIGINT` (simhash).
 
-**Решено (Phase 10.1):** Web Research step — выделенный шаг исследования через Perplexity Sonar Pro.
+**Решено (Phase 10.1):** Web Research step — выделенный шаг исследования через Perplexity Sonar Pro Search.
 Вместо встраивания web search в Critique — выделенный Research step (шаг 2b), результат которого
 передаётся во ВСЕ три AI-шага (Outline, Expand, Critique) как `<<current_research>>`.
 Это даёт актуальные факты 2025-2026 уже на этапе планирования, а не только при проверке.
@@ -1783,7 +1783,7 @@ Google Images = 20-30% трафика для коммерческих ниш. Б
 | Обогащение volume/difficulty (разовое) | DataForSEO enrich | ~$0.02/200 фраз | Создание категории |
 | Кластеризация (разовая) | DeepSeek v3.2 | ~$0.001 | Создание категории |
 | Serper search | Serper | ~$0.001 | На статью |
-| **Web Research** | **Perplexity Sonar Pro** | **~$0.01** | **На статью (кеш 7д)** |
+| **Web Research** | **Perplexity Sonar Pro Search** | **~$0.02** | **На статью (кеш 7д)** |
 | Скрейпинг конкурентов (3 URL) | Firecrawl /scrape | $0.003 | На статью |
 | Outline (шаг 5) | DeepSeek V3.2 | ~$0.01 | На статью |
 | Expand (шаг 6) | Claude 4.5 Sonnet | ~$0.12 | На статью |
@@ -2654,22 +2654,22 @@ def post_process_image(img: Image.Image) -> Image.Image:
 
 ---
 
-## 7a. Web Research Pipeline (Perplexity Sonar Pro)
+## 7a. Web Research Pipeline (Perplexity Sonar Pro Search)
 
-Выделенный шаг исследования через Perplexity Sonar Pro для актуализации данных в статьях.
-Sonar Pro — модель с встроенным веб-поиском, возвращает факты с источниками (citations).
+Выделенный шаг исследования через Perplexity Sonar Pro Search для актуализации данных в статьях.
+Sonar Pro Search — agentic модель с multi-step web search, возвращает факты с источниками (citations).
 
 ### 7a.1 Модель и маршрутизация
 
 ```python
-MODEL_CHAINS["article_research"] = ["perplexity/sonar-pro"]
-# Без fallback — Sonar Pro единственная модель с нативным web search.
+MODEL_CHAINS["article_research"] = ["perplexity/sonar-pro-search"]
+# Без fallback — Sonar Pro Search единственная модель с нативным agentic web search.
 # При недоступности — graceful degradation (E53): pipeline продолжает без research.
 
-# Sonar Pro параметры:
-# - Встроенный web search (НЕ plugin, НЕ :online suffix)
+# Sonar Pro Search параметры:
+# - Agentic multi-step web search (НЕ plugin, НЕ :online suffix)
 # - Поддерживает JSON Schema structured outputs
-# - $3/M input, $15/M output, $5/1K search queries
+# - $3/M input, $15/M output, $18/1K search queries
 # - context: 200K tokens
 # - search_context_size: "high" для максимальной глубины
 ```
@@ -2795,7 +2795,7 @@ cached = await redis.get(cache_key)
 if cached:
     return ResearchData.model_validate_json(cached)
 
-# Fetch from Sonar Pro
+# Fetch from Sonar Pro Search
 result = await orchestrator.generate(research_request)
 research = ResearchData.model_validate_json(result.text)
 
@@ -2847,7 +2847,7 @@ def format_research_for_prompt(research: ResearchData | None, step: str) -> str:
 
 ### 7a.6 Graceful Degradation (E53)
 
-При недоступности Sonar Pro — pipeline продолжает без research-данных:
+При недоступности Sonar Pro Search — pipeline продолжает без research-данных:
 - `current_research = ""` → Jinja2 conditional block не рендерится
 - Логирование: `research_skipped`, причина в metadata
 - Статья генерируется на основе знаний модели + Serper + Firecrawl (как было до Research step)

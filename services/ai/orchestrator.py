@@ -54,7 +54,7 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "openai/gpt-5.2",
     ],
     "article_research": [
-        "perplexity/sonar-pro",
+        "perplexity/sonar-pro-search",
     ],
     "social_post": [
         "deepseek/deepseek-v3.2",
@@ -100,7 +100,6 @@ BUDGET_TASKS: set[str] = {
     "cross_post",
     "article_outline",
     "article_critique",
-    "article_research",
     "image_director",
 }
 
