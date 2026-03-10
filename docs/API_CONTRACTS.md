@@ -526,7 +526,7 @@ MODEL_CHAINS = {
     "article":              ["anthropic/claude-sonnet-4.5", "openai/gpt-5.2", "deepseek/deepseek-v3.2"],
     "article_outline":      ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # Stage 1: outline generation (budget)
     "article_critique":     ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # Stage 3: conditional critique (budget, only if score < 80)
-    "article_research":     ["perplexity/sonar-pro"],                              # Web research: current facts, trends, statistics
+    "article_research":     ["perplexity/sonar-pro-search"],                       # Web research: agentic multi-step search, structured outputs
     "social_post":          ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
     "keywords":             ["deepseek/deepseek-v3.2", "openai/gpt-5.2"],         # AI clustering (keywords_cluster.yaml v3), NOT data fetching
     "review":               ["deepseek/deepseek-v3.2", "anthropic/claude-sonnet-4.5"],
@@ -2662,8 +2662,8 @@ Sonar Pro — модель с встроенным веб-поиском, воз
 ### 7a.1 Модель и маршрутизация
 
 ```python
-MODEL_CHAINS["article_research"] = ["perplexity/sonar-pro"]
-# Без fallback — Sonar Pro единственная модель с нативным web search.
+MODEL_CHAINS["article_research"] = ["perplexity/sonar-pro-search"]
+# Без fallback — Sonar Pro Search единственная модель с нативным agentic web search.
 # При недоступности — graceful degradation (E53): pipeline продолжает без research.
 
 # Sonar Pro параметры:

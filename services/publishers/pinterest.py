@@ -139,6 +139,12 @@ class PinterestPublisher(BasePublisher):
                 status=exc.response.status_code,
                 body=exc.response.text[:500],
             )
+            # Detect missing scopes — user needs to reconnect Pinterest
+            if exc.response.status_code == 401 and "Missing" in exc.response.text:
+                return PublishResult(
+                    success=False,
+                    error="Недостаточно прав. Удалите подключение Pinterest и подключите заново.",
+                )
             return PublishResult(success=False, error=str(exc))
         except httpx.HTTPError as exc:
             log.error("pinterest_publish_error", error=str(exc))

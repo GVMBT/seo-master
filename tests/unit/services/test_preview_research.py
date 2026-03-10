@@ -34,7 +34,7 @@ def mock_orchestrator() -> AsyncMock:
     orch = AsyncMock()
     orch.generate_without_rate_limit.return_value = GenerationResult(
         content=_SAMPLE_RESEARCH,
-        model_used="perplexity/sonar-pro",
+        model_used="perplexity/sonar-pro-search",
         prompt_version="v1",
         fallback_used=False,
         input_tokens=100,
@@ -173,7 +173,7 @@ class TestFetchResearchGracefulDegradation:
         """When API returns non-dict content, returns None."""
         mock_orchestrator.generate_without_rate_limit.return_value = GenerationResult(
             content="not a dict",
-            model_used="perplexity/sonar-pro",
+            model_used="perplexity/sonar-pro-search",
             prompt_version="v1",
             fallback_used=False,
             input_tokens=100,

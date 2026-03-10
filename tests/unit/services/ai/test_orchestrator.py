@@ -702,8 +702,8 @@ class TestModelChains:
             if task not in single_model_tasks:
                 assert len(chain) >= 2, f"Task {task} has fewer than 2 models"
 
-    def test_article_research_uses_sonar_pro(self) -> None:
-        assert MODEL_CHAINS["article_research"] == ["perplexity/sonar-pro"]
+    def test_article_research_uses_sonar_pro_search(self) -> None:
+        assert MODEL_CHAINS["article_research"] == ["perplexity/sonar-pro-search"]
 
     def test_article_primary_is_claude(self) -> None:
         assert MODEL_CHAINS["article"][0] == "anthropic/claude-sonnet-4.5"
@@ -811,7 +811,7 @@ class TestGenerateExtraBody:
         """article_research task includes search_context_size=high in extra_body."""
         mock_openai_client.chat.completions.create.return_value = _make_openai_response(
             content='{"facts": [], "trends": [], "statistics": [], "summary": "test"}',
-            model="perplexity/sonar-pro",
+            model="perplexity/sonar-pro-search",
         )
 
         request = GenerationRequest(
