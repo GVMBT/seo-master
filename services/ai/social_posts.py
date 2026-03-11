@@ -10,6 +10,7 @@ import nh3
 import structlog
 
 from db.client import SupabaseClient
+from db.models import Project
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from services.ai.orchestrator import AIOrchestrator, GenerationRequest, GenerationResult
@@ -67,7 +68,7 @@ _SOCIAL_WORD_LIMITS: dict[str, tuple[int, int]] = {
 }
 
 
-def _get_social_link(project: Any, platform: str) -> str:
+def _get_social_link(project: Project, platform: str) -> str:
     """Get platform-specific social link from project (e.g. VK group URL)."""
     field = _PLATFORM_SOCIAL_FIELDS.get(platform, "")
     if not field:
