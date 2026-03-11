@@ -590,7 +590,8 @@ async def publish_social_post(
         return
 
     await state.set_state(SocialPipelineFSM.publishing)
-    await safe_edit_text(msg, _social_publish_progress(platform_type, 0))
+    # Capture return: safe_edit_text may delete photo and send new text msg
+    msg = await safe_edit_text(msg, _social_publish_progress(platform_type, 0))
 
     try:
         # Load connection
