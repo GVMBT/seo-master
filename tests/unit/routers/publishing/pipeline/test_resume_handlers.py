@@ -111,6 +111,8 @@ async def test_resume_valid_checkpoint(
         category_id=10,
         category_name="Test Cat",
         preview_id=99,
+        platform_type="",
+        connection_identifier="",
     )
     mock_route.assert_called_once()
     call_kwargs = mock_route.call_args[1]

@@ -850,6 +850,18 @@ async def pipeline_resume(
         cat = await cats_repo.get_by_id(category_id)
         category_name = cat.name if cat else ""
 
+    # Social pipeline needs platform_type + connection_identifier for readiness/confirm screens
+    platform_type = ""
+    connection_identifier = ""
+    if pipeline_type == "social" and connection_id:
+        settings = get_settings()
+        cm = CredentialManager(settings.encryption_key.get_secret_value())
+        conn_repo = ConnectionsRepository(db, cm)
+        conn = await conn_repo.get_by_id(connection_id)
+        if conn:
+            platform_type = conn.platform_type
+            connection_identifier = conn.identifier
+
     await state.update_data(
         project_id=project_id,
         project_name=project_name,
@@ -857,6 +869,8 @@ async def pipeline_resume(
         category_id=category_id,
         category_name=category_name,
         preview_id=preview_id,
+        platform_type=platform_type,
+        connection_identifier=connection_identifier,
     )
 
     if pipeline_type == "social":
@@ -907,20 +921,95 @@ async def _route_social_to_step(
     connection_id: int | None,
 ) -> None:
     """Route user to the correct social pipeline screen based on checkpoint step."""
+    from routers.publishing.pipeline._common import SocialPipelineFSM
+
     msg = safe_message(callback)
     if not msg:
         return
 
-    # Steps 1-3: re-run from selection screen
-    # Social pipeline is not production-ready (F6.3 not implemented).
-    # Clear checkpoint and redirect to Dashboard with explanation.
-    log.info("pipeline.social.resume_not_ready", step=step, user_id=user.id)
+    # Steps 1-2: project/connection selection — restart from project list
+    if step in ("select_project", "", "select_connection"):
+        projects_repo = ProjectsRepository(db)
+        projects = await projects_repo.get_by_user(user.id)
+        if not projects:
+            await safe_edit_text(
+                msg,
+                "Пост (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+                reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
+            )
+        else:
+            await safe_edit_text(
+                msg,
+                "Пост (1/5) — Проект\n\nДля какого проекта?",
+                reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
+            )
+        await state.set_state(SocialPipelineFSM.select_project)
+        return
+
+    # Step 3: category selection
+    if step == "select_category":
+        if not project_id:
+            await _expire_social_checkpoint(msg, redis, state, user)
+            return
+        cats_repo = CategoriesRepository(db)
+        categories = await cats_repo.get_by_project(project_id)
+        if not categories:
+            await safe_edit_text(
+                msg,
+                "Пост (3/5) — Тема\n\nО чём будет пост? Назовите тему.",
+                reply_markup=cancel_kb("pipeline:social:cancel"),
+            )
+            await state.set_state(SocialPipelineFSM.create_category_name)
+        elif len(categories) == 1:
+            cat = categories[0]
+            await state.update_data(category_id=cat.id, category_name=cat.name)
+            from routers.publishing.pipeline.social.readiness import show_social_readiness_check
+
+            await show_social_readiness_check(callback, state, user, db, redis)
+        else:
+            await safe_edit_text(
+                msg,
+                "Пост (3/5) — Тема\n\nКакая тема?",
+                reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
+            )
+            await state.set_state(SocialPipelineFSM.select_category)
+        return
+
+    # Steps 4-5: readiness or confirm cost — re-run readiness check
+    if step in ("readiness_check", "confirm_cost"):
+        from routers.publishing.pipeline.social.readiness import show_social_readiness_check
+
+        await show_social_readiness_check(callback, state, user, db, redis)
+        return
+
+    # Step 6-7 (review/publishing): FSM data (generated text) was cleared by /start.
+    # Can't restore the generated post — redirect to readiness so user re-confirms + regenerates.
+    if step in ("review", "generating", "publishing"):
+        log.info("pipeline.social.resume_review_expired", step=step, user_id=user.id)
+        from routers.publishing.pipeline.social.readiness import show_social_readiness_check
+
+        await show_social_readiness_check(callback, state, user, db, redis)
+        return
+
+    # Fallback: unknown step — clear and show dashboard
+    log.warning("pipeline.social.resume_unknown_step", step=step, user_id=user.id)
+    await _expire_social_checkpoint(msg, redis, state, user)
+
+
+async def _expire_social_checkpoint(
+    msg: Message,
+    redis: RedisClient,
+    state: FSMContext,
+    user: User,
+) -> None:
+    """Clear social checkpoint and show expiry message."""
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await state.clear()
-    text, kb = await _build_dashboard(
-        user, is_new_user=False, db=db, redis=redis, dashboard_service_factory=dashboard_service_factory
+    await safe_edit_text(
+        msg,
+        "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.",
+        reply_markup=menu_kb(),
     )
-    await edit_screen(msg, "welcome.png", text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "pipeline:restart")
