@@ -1,6 +1,6 @@
 """Social post generation service — platform-specific posts.
 
-Source of truth: API_CONTRACTS.md section 5 (social_v3.yaml).
+Source of truth: API_CONTRACTS.md section 5 (social_v4.yaml).
 Zero Telegram/Aiogram dependencies.
 """
 
@@ -10,6 +10,7 @@ import nh3
 import structlog
 
 from db.client import SupabaseClient
+from db.models import Project
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from services.ai.orchestrator import AIOrchestrator, GenerationRequest, GenerationResult
@@ -46,6 +47,56 @@ SOCIAL_POST_SCHEMA: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+
+_PLATFORM_SOCIAL_FIELDS: dict[str, str] = {
+    "vk": "company_vk",
+    "telegram": "company_telegram",
+    "pinterest": "company_pinterest",
+}
+
+_MAX_REVIEWS_FOR_CONTEXT = 3
+
+# Platform-specific word limits for social posts (aligned with social_v4.yaml prompts).
+# Article-level text_settings.words_min/max are intentionally ignored here.
+_DEFAULT_WORDS_MIN = 100
+_DEFAULT_WORDS_MAX = 300
+_SOCIAL_WORD_LIMITS: dict[str, tuple[int, int]] = {
+    "pinterest": (30, 60),
+    "telegram": (100, 200),
+    "vk": (100, 300),
+}
+
+
+def _get_social_link(project: Project, platform: str) -> str:
+    """Get platform-specific social link from project (e.g. VK group URL)."""
+    field = _PLATFORM_SOCIAL_FIELDS.get(platform, "")
+    if not field:
+        return ""
+    return str(getattr(project, field, "") or "")
+
+
+def _build_reviews_excerpt(reviews: list[dict[str, Any]]) -> str:
+    """Summarize reviews into a compact excerpt for AI context."""
+    if not reviews:
+        return ""
+    total = len(reviews)
+    ratings = [r.get("rating", 0) for r in reviews if r.get("rating")]
+    avg_rating = sum(ratings) / len(ratings) if ratings else 0
+
+    parts: list[str] = []
+    if avg_rating > 0:
+        parts.append(f"Средняя оценка: {avg_rating:.1f}/5 ({total} отзывов)")
+
+    for review in reviews[:_MAX_REVIEWS_FOR_CONTEXT]:
+        text = review.get("text", "")
+        if text:
+            # Truncate long reviews
+            snippet = text[:150] + "..." if len(text) > 150 else text
+            author = review.get("author", "Клиент")
+            parts.append(f"{author}: \"{snippet}\"")
+
+    return "; ".join(parts)
 
 
 class SocialPostService:
@@ -100,6 +151,16 @@ class SocialPostService:
             legacy = text_settings.get("style")
             styles = [legacy] if legacy else ["Разговорный"]
 
+        # Social-specific word limits per platform (ignore article-level settings).
+        # The prompt already constrains length, but words_min/max must not conflict.
+        words_min, words_max = _SOCIAL_WORD_LIMITS.get(platform, (_DEFAULT_WORDS_MIN, _DEFAULT_WORDS_MAX))
+
+        # Platform-specific social link (VK group, TG channel, Pinterest profile)
+        social_link = _get_social_link(project, platform)
+
+        # Reviews excerpt: summarize for AI context (first 3 reviews, key stats)
+        reviews_excerpt = _build_reviews_excerpt(category.reviews)
+
         context: dict[str, Any] = {
             "keyword": keyword,
             "platform": platform,
@@ -109,10 +170,15 @@ class SocialPostService:
             "company_description": project.description or "",
             "experience": project.experience or "",
             "website_url": project.website_url or "",
+            "company_city": project.company_city or "",
+            "company_phone": project.company_phone or "",
+            "category_description": category.description or "",
+            "reviews_excerpt": reviews_excerpt,
+            "social_link": social_link,
             "language": "ru",
             "text_style": ", ".join(s for s in styles if s) or "Разговорный",
-            "words_min": text_settings.get("words_min", 100),
-            "words_max": text_settings.get("words_max", 300),
+            "words_min": words_min,
+            "words_max": words_max,
             "prices_excerpt": (category.prices or "")[:300],
         }
 
@@ -156,6 +222,8 @@ class SocialPostService:
 
             raise AIGenerationError(message="Project not found")
 
+        social_link = _get_social_link(project, target_platform)
+
         context: dict[str, Any] = {
             "original_text": original_text,
             "source_platform": source_platform,
@@ -165,6 +233,9 @@ class SocialPostService:
             "specialization": project.specialization,
             "company_description": project.description or "",
             "website_url": project.website_url or "",
+            "company_city": project.company_city or "",
+            "company_phone": project.company_phone or "",
+            "social_link": social_link,
             "language": "ru",
         }
 
