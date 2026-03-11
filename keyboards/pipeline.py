@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -1001,14 +999,14 @@ def social_review_kb(regen_count: int = 0, regen_cost: int = 40) -> InlineKeyboa
 
 def social_result_kb(
     post_url: str | None,
-    crosspost_connections: list[dict[str, Any]] | None = None,
+    has_crosspost_targets: bool = False,
 ) -> InlineKeyboardMarkup:
     """Result keyboard after successful social post publication.
 
     Args:
         post_url: Direct link to the published post (None if unavailable).
-        crosspost_connections: List of dicts with 'id' and 'platform' keys
-            for cross-posting options.
+        has_crosspost_targets: True if there are other social connections
+            available for cross-posting.
     """
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -1022,40 +1020,18 @@ def social_result_kb(
             ]
         )
 
-    # Cross-post buttons
-    if crosspost_connections:
-        platform_labels = {
-            "telegram": "Телеграм",
-            "vk": "ВКонтакте",
-            "pinterest": "Пинтерест",
-        }
-        for conn in crosspost_connections:
-            label = platform_labels.get(conn["platform"], conn["platform"])
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        text=f"Адаптировать для {label} (~10 ток.)",
-                        callback_data=f"pipeline:crosspost:{conn['id']}",
-                    ),
-                ]
-            )
+    if has_crosspost_targets:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Кросс-пост (~10 ток.)",
+                    callback_data="pipeline:crosspost:start",
+                ),
+            ]
+        )
 
     rows.append(
         [
-            InlineKeyboardButton(
-                text="Ещё пост",
-                callback_data="pipeline:social:more",
-                style=ButtonStyle.PRIMARY,
-            ),
-        ]
-    )
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="Настроить автопубликацию",
-                callback_data="nav:scheduler",
-            ),
             InlineKeyboardButton(
                 text="\U0001f4cb Главное меню",
                 callback_data="nav:dashboard",

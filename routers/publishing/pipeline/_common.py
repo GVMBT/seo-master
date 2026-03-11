@@ -192,7 +192,8 @@ async def select_keyword(
     """Select a keyword from category for generation.
 
     Supports both flat format [{phrase}] and cluster format [{main_phrase, phrases}].
-    For articles: prefers cluster_type="article", falls back to all clusters with warning.
+    For articles (content_type="article"): only cluster_type="article" clusters, warns if none.
+    For social posts (content_type="social"): all cluster types are valid (API_CONTRACTS §6.1).
     Sorts by total_volume DESC (highest traffic first).
     """
     cat_svc = CategoryService(db=db)
@@ -213,17 +214,20 @@ async def select_keyword(
         elif isinstance(kw, str):
             flat_phrases.append(kw)
 
-    # For cluster-format: filter by cluster_type matching content_type
+    # For cluster-format: articles filter by cluster_type="article", social posts use all
     if clusters:
-        matching = [c for c in clusters if c.get("cluster_type") == content_type]
-        if not matching:
-            log.warning(
-                "no_matching_cluster_type",
-                category_id=category_id,
-                content_type=content_type,
-                available_types=[c.get("cluster_type") for c in clusters],
-            )
-            # Fallback: use all clusters
+        if content_type == "article":
+            matching = [c for c in clusters if c.get("cluster_type") == content_type]
+            if not matching:
+                log.warning(
+                    "no_matching_cluster_type",
+                    category_id=category_id,
+                    content_type=content_type,
+                    available_types=[c.get("cluster_type") for c in clusters],
+                )
+                matching = clusters
+        else:
+            # Social posts: all cluster types are valid (API_CONTRACTS §6.1)
             matching = clusters
 
         # Sort by total_volume DESC (highest traffic first)
