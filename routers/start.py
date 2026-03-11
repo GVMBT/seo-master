@@ -913,27 +913,8 @@ async def _route_social_to_step(
     if not msg:
         return
 
-    # Step 1: project selection
-    if step in ("select_project", ""):
-        projects_repo = ProjectsRepository(db)
-        projects = await projects_repo.get_by_user(user.id)
-        if not projects:
-            await safe_edit_text(
-                msg,
-                "Пост (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
-                reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
-            )
-        else:
-            await safe_edit_text(
-                msg,
-                "Пост (1/5) — Проект\n\nДля какого проекта?",
-                reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
-            )
-        await state.set_state(SocialPipelineFSM.select_project)
-        return
-
-    # Step 2: connection selection — restart from project (auto-skips to connection)
-    if step == "select_connection":
+    # Steps 1-2: project/connection selection — restart from project list
+    if step in ("select_project", "", "select_connection"):
         projects_repo = ProjectsRepository(db)
         projects = await projects_repo.get_by_user(user.id)
         if not projects:
