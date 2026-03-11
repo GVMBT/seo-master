@@ -850,6 +850,18 @@ async def pipeline_resume(
         cat = await cats_repo.get_by_id(category_id)
         category_name = cat.name if cat else ""
 
+    # Social pipeline needs platform_type + connection_identifier for readiness/confirm screens
+    platform_type = ""
+    connection_identifier = ""
+    if pipeline_type == "social" and connection_id:
+        settings = get_settings()
+        cm = CredentialManager(settings.encryption_key.get_secret_value())
+        conn_repo = ConnectionsRepository(db, cm)
+        conn = await conn_repo.get_by_id(connection_id)
+        if conn:
+            platform_type = conn.platform_type
+            connection_identifier = conn.identifier
+
     await state.update_data(
         project_id=project_id,
         project_name=project_name,
@@ -857,6 +869,8 @@ async def pipeline_resume(
         category_id=category_id,
         category_name=category_name,
         preview_id=preview_id,
+        platform_type=platform_type,
+        connection_identifier=connection_identifier,
     )
 
     if pipeline_type == "social":
