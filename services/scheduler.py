@@ -337,6 +337,17 @@ class SchedulerService:
             return None
         return await self._conn_repo().get_by_project(project_id)
 
+    async def get_wp_connections(
+        self,
+        project_id: int,
+        user_id: int,
+    ) -> list[PlatformConnection] | None:
+        """List active WordPress connections for an owned project. Returns None if not owned."""
+        conns = await self.get_project_connections(project_id, user_id)
+        if conns is None:
+            return None
+        return [c for c in conns if c.platform_type == "wordpress" and c.status == "active"]
+
     async def get_social_connections(
         self,
         project_id: int,
@@ -359,6 +370,16 @@ class SchedulerService:
             return None
         conns = await self._conn_repo().get_by_project(ctx.project.id)
         return self._filter_social(conns)
+
+    async def get_connection(self, conn_id: int, user_id: int) -> PlatformConnection | None:
+        """Get a connection by ID with ownership verification."""
+        conn = await self._conn_repo().get_by_id(conn_id)
+        if not conn:
+            return None
+        project = await self._projects.get_by_id(conn.project_id)
+        if not project or project.user_id != user_id:
+            return None
+        return conn
 
     async def get_category_schedules_map(
         self,

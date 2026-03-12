@@ -434,13 +434,7 @@ class TestPipelinePreviewNoWpKb:
 
 
 class TestPipelineResultKb:
-    """pipeline_result_kb has PRIMARY 'ещё статью'."""
-
-    def test_another_article_button_primary(self) -> None:
-        kb = pipeline_result_kb()
-        buttons = _flatten_buttons(kb)
-        another_btn = next(b for b in buttons if b.callback_data == "pipeline:article:more")
-        assert another_btn.style == ButtonStyle.PRIMARY
+    """pipeline_result_kb — simplified: URL + main menu."""
 
     def test_post_url_when_provided(self) -> None:
         kb = pipeline_result_kb(post_url="https://example.com/my-article")
@@ -453,15 +447,15 @@ class TestPipelineResultKb:
         buttons = _flatten_buttons(kb)
         assert not any(b.url for b in buttons)
 
-    def test_scheduler_nav_button(self) -> None:
-        kb = pipeline_result_kb()
-        buttons = _flatten_buttons(kb)
-        assert any(b.callback_data == "nav:scheduler" for b in buttons)
-
     def test_dashboard_nav_button(self) -> None:
         kb = pipeline_result_kb()
         buttons = _flatten_buttons(kb)
         assert any(b.callback_data == "nav:dashboard" for b in buttons)
+
+    def test_no_scheduler_button(self) -> None:
+        kb = pipeline_result_kb()
+        buttons = _flatten_buttons(kb)
+        assert not any(b.callback_data == "nav:scheduler" for b in buttons)
 
 
 # ---------------------------------------------------------------------------

@@ -187,11 +187,11 @@ def test_crosspost_kb_shows_selected_checkmarks() -> None:
     kb = scheduler_crosspost_kb(cat_id=10, conn_id=1, social_connections=conns, selected_ids=[2])
     texts = _get_all_texts(kb)
 
-    vk_texts = [t for t in texts if "VK" in t and "Group" in t]
+    vk_texts = [t for t in texts if "ВКонтакте" in t]
     assert len(vk_texts) == 1
     assert vk_texts[0].startswith("\u2713")  # checkmark
 
-    pin_texts = [t for t in texts if "Board" in t]
+    pin_texts = [t for t in texts if "Пинтерест" in t]
     assert len(pin_texts) == 1
     assert not pin_texts[0].startswith("\u2713")  # no checkmark
 

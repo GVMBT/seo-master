@@ -29,7 +29,6 @@ from routers.publishing.scheduler import (
     scheduler_crosspost_config,
     scheduler_crosspost_save,
     scheduler_disable,
-    scheduler_entry,
     scheduler_manual,
     scheduler_preset,
     scheduler_social_connection,
@@ -253,64 +252,6 @@ class TestExtractSelectedFromKeyboard:
 # ---------------------------------------------------------------------------
 
 
-class TestSchedulerEntry:
-    @patch("routers.publishing.scheduler.scheduler_cat_list_kb", return_value=MagicMock())
-    async def test_happy_path(
-        self,
-        mock_kb: MagicMock,
-        mock_callback: MagicMock,
-        user: User,
-        scheduler_service: AsyncMock,
-    ) -> None:
-        mock_callback.data = "project:1:scheduler"
-
-        await scheduler_entry(mock_callback, user, scheduler_service)
-
-        mock_callback.message.edit_text.assert_awaited_once()
-        mock_callback.answer.assert_awaited_once()
-
-    async def test_project_not_found(
-        self,
-        mock_callback: MagicMock,
-        user: User,
-        scheduler_service: AsyncMock,
-    ) -> None:
-        scheduler_service.get_project_categories.return_value = None
-        mock_callback.data = "project:1:scheduler"
-
-        await scheduler_entry(mock_callback, user, scheduler_service)
-
-        mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)
-
-    async def test_no_categories(
-        self,
-        mock_callback: MagicMock,
-        user: User,
-        scheduler_service: AsyncMock,
-    ) -> None:
-        scheduler_service.get_project_categories.return_value = []
-        mock_callback.data = "project:1:scheduler"
-
-        await scheduler_entry(mock_callback, user, scheduler_service)
-
-        mock_callback.answer.assert_awaited_with("Сначала создайте категорию в карточке проекта", show_alert=True)
-
-    async def test_inaccessible_message(
-        self,
-        mock_callback: MagicMock,
-        user: User,
-        scheduler_service: AsyncMock,
-    ) -> None:
-        from aiogram.types import InaccessibleMessage
-
-        mock_callback.message = MagicMock(spec=InaccessibleMessage)
-        mock_callback.data = "project:1:scheduler"
-
-        await scheduler_entry(mock_callback, user, scheduler_service)
-
-        mock_callback.answer.assert_awaited_once()
-
-
 # ---------------------------------------------------------------------------
 # Social entry
 # ---------------------------------------------------------------------------
@@ -389,7 +330,7 @@ class TestSchedulerCategory:
 
         await scheduler_category(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Нет подключений. Добавьте платформу.", show_alert=True)
+        mock_callback.answer.assert_awaited_with("Нет WordPress-подключений. Добавьте платформу.", show_alert=True)
 
     async def test_project_not_found(
         self,
@@ -768,23 +709,36 @@ class TestScheduleTimesDone:
 class TestScheduleCancel:
     @patch("routers.publishing.scheduler.scheduler_config_kb", return_value=MagicMock())
     async def test_cancel_clears_state(
-        self, mock_kb: MagicMock, mock_callback: MagicMock, mock_state: MagicMock
+        self,
+        mock_kb: MagicMock,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
     ) -> None:
         mock_state.get_data.return_value = {"sched_cat_id": 10, "sched_conn_id": 5, "sched_has_schedule": False}
         mock_callback.data = "sched:cancel"
+        wp_conn = MagicMock(platform_type="wordpress")
+        scheduler_service.get_connection.return_value = wp_conn
 
-        await schedule_cancel(mock_callback, mock_state)
+        await schedule_cancel(mock_callback, mock_state, user, scheduler_service)
 
         mock_state.clear.assert_awaited_once()
         mock_callback.message.edit_text.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "отменена" in text
 
-    async def test_cancel_without_context(self, mock_callback: MagicMock, mock_state: MagicMock) -> None:
+    async def test_cancel_without_context(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
         mock_state.get_data.return_value = {}
         mock_callback.data = "sched:cancel"
 
-        await schedule_cancel(mock_callback, mock_state)
+        await schedule_cancel(mock_callback, mock_state, user, scheduler_service)
 
         mock_state.clear.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]

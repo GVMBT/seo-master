@@ -397,7 +397,7 @@ def pipeline_preview_no_wp_kb(
 
 
 def pipeline_result_kb(post_url: str | None = None) -> InlineKeyboardMarkup:
-    """Result keyboard after successful publication."""
+    """Result keyboard after successful article publication."""
     rows: list[list[InlineKeyboardButton]] = []
 
     if post_url:
@@ -412,20 +412,6 @@ def pipeline_result_kb(post_url: str | None = None) -> InlineKeyboardMarkup:
 
     rows.append(
         [
-            InlineKeyboardButton(
-                text="Ещё статью",
-                callback_data="pipeline:article:more",
-                style=ButtonStyle.PRIMARY,
-            ),
-        ]
-    )
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="Настроить автопубликацию",
-                callback_data="nav:scheduler",
-            ),
             InlineKeyboardButton(
                 text="\U0001f4cb Главное меню",
                 callback_data="nav:dashboard",
