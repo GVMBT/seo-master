@@ -6,6 +6,7 @@ from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.models import Category, PlatformConnection, Project
+from keyboards.inline import format_connection_display
 from keyboards.pagination import paginate
 from services.readiness import ReadinessReport
 from services.tokens import COST_PER_IMAGE
@@ -738,18 +739,7 @@ def social_connections_kb(
     rows: list[list[InlineKeyboardButton]] = []
 
     for conn in connections:
-        platform_labels = {
-            "telegram": "Телеграм",
-            "vk": "ВКонтакте",
-            "pinterest": "Пинтерест",
-        }
-        label = platform_labels.get(conn.platform_type, conn.platform_type)
-        # P2-7: Show group_name for VK instead of raw club123456
-        metadata = conn.metadata or {}
-        if conn.platform_type == "vk" and metadata.get("group_name"):
-            display = f"{label}: {metadata['group_name']}"
-        else:
-            display = f"{label}: {conn.identifier}"
+        display = format_connection_display(conn)
         rows.append(
             [
                 InlineKeyboardButton(
@@ -1032,13 +1022,6 @@ def social_result_kb(
 # Cross-post: platform selection (F6.4, UX_PIPELINE.md §6)
 # ---------------------------------------------------------------------------
 
-_PLATFORM_ICONS: dict[str, str] = {
-    "telegram": "TG",
-    "vk": "VK",
-    "pinterest": "Pin",
-}
-
-
 def crosspost_select_kb(
     connections: list[PlatformConnection],
     selected_ids: set[int],
@@ -1051,12 +1034,12 @@ def crosspost_select_kb(
     """
     rows: list[list[InlineKeyboardButton]] = []
     for conn in connections:
-        icon = _PLATFORM_ICONS.get(conn.platform_type, conn.platform_type)
+        display = format_connection_display(conn)
         check = "\u2705 " if conn.id in selected_ids else ""
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{check}{icon}: {conn.identifier}",
+                    text=f"{check}{display}",
                     callback_data=f"pipeline:crosspost:toggle:{conn.id}",
                 ),
             ]
