@@ -330,7 +330,7 @@ class TestSchedulerCategory:
 
         await scheduler_category(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Нет подключений. Добавьте платформу.", show_alert=True)
+        mock_callback.answer.assert_awaited_with("Нет WordPress-подключений. Добавьте платформу.", show_alert=True)
 
     async def test_project_not_found(
         self,

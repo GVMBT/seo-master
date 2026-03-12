@@ -1241,8 +1241,6 @@ def scheduler_conn_list_kb(
     """Article (WordPress) connection list with schedule summaries."""
     rows: list[list[InlineKeyboardButton]] = []
     for conn in connections:
-        if conn.platform_type != "wordpress":
-            continue
         sched = schedules.get(conn.id)
         display = format_connection_display(conn)
         if sched and sched.enabled:

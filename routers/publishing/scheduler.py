@@ -141,19 +141,19 @@ async def scheduler_category(
     project_id = int(parts[1])
     cat_id = int(parts[3])
 
-    connections = await scheduler_service.get_project_connections(project_id, user.id)
-    if connections is None:
+    wp_connections = await scheduler_service.get_wp_connections(project_id, user.id)
+    if wp_connections is None:
         await callback.answer("Проект не найден", show_alert=True)
         return
-    if not connections:
-        await callback.answer("Нет подключений. Добавьте платформу.", show_alert=True)
+    if not wp_connections:
+        await callback.answer("Нет WordPress-подключений. Добавьте платформу.", show_alert=True)
         return
 
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
     await safe_edit_text(msg,
         "<b>Статьи — Подключения</b>\n\nВыберите подключение для настройки расписания:",
-        reply_markup=scheduler_conn_list_kb(connections, schedules_map, cat_id, project_id),
+        reply_markup=scheduler_conn_list_kb(wp_connections, schedules_map, cat_id, project_id),
     )
     await callback.answer()
 
@@ -181,12 +181,12 @@ async def scheduler_conn_list_back(
         await callback.answer("Категория не найдена", show_alert=True)
         return
 
-    connections = await scheduler_service.get_project_connections(ctx.project.id, user.id)
+    wp_connections = await scheduler_service.get_wp_connections(ctx.project.id, user.id)
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
     await safe_edit_text(msg,
         "<b>Статьи — Подключения</b>\n\nВыберите подключение для настройки расписания:",
-        reply_markup=scheduler_conn_list_kb(connections or [], schedules_map, cat_id, ctx.project.id),
+        reply_markup=scheduler_conn_list_kb(wp_connections or [], schedules_map, cat_id, ctx.project.id),
     )
     await callback.answer()
 
@@ -283,7 +283,7 @@ async def scheduler_preset(
         await callback.answer("Категория или подключение не найдены", show_alert=True)
         return
 
-    display = format_connection_display(result.connection)
+    display = html_mod.escape(format_connection_display(result.connection))
     is_social = result.connection.platform_type != "wordpress"
 
     if is_social:
@@ -335,7 +335,7 @@ async def scheduler_disable(
         await callback.answer("Категория не найдена", show_alert=True)
         return
 
-    conn = await scheduler_service.get_connection(conn_id)
+    conn = await scheduler_service.get_connection(conn_id, user.id)
     is_social = conn is not None and conn.platform_type != "wordpress"
 
     if is_social:
@@ -748,7 +748,7 @@ async def scheduler_crosspost_config(
         await callback.answer("Категория или подключение не найдены", show_alert=True)
         return
 
-    lead_display = format_connection_display(config.lead_connection)
+    lead_display = html_mod.escape(format_connection_display(config.lead_connection))
     text = (
         f"<b>Кросс-постинг</b>\n\n"
         f"Ведущая платформа: {html_mod.escape(lead_display)}\n\n"
@@ -877,7 +877,7 @@ async def schedule_cancel(
 
     if cat_id and conn_id:
         cat_id_int, conn_id_int = int(cat_id), int(conn_id)
-        conn = await scheduler_service.get_connection(conn_id_int)
+        conn = await scheduler_service.get_connection(conn_id_int, user.id)
         is_social = conn is not None and conn.platform_type != "wordpress"
 
         if is_social:
