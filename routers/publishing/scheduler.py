@@ -880,15 +880,26 @@ async def schedule_cancel(
         conn = await scheduler_service.get_connection(conn_id_int, user.id)
         is_social = conn is not None and conn.platform_type != "wordpress"
 
+        # Re-read current schedule to restore active preset display
+        schedules_map = await scheduler_service.get_category_schedules_map(cat_id_int)
+        existing = schedules_map.get(conn_id_int)
+        sched_days = existing.schedule_days if existing and existing.enabled else None
+        sched_ppd = existing.posts_per_day if existing and existing.enabled else 0
+        has_sched = existing is not None and existing.enabled
+
         if is_social:
             social_conns = await scheduler_service.get_social_connections_by_category(cat_id_int, user.id)
             has_other = len(social_conns or []) > 1
             reply_markup = scheduler_social_config_kb(
                 cat_id_int, conn_id_int,
-                has_schedule=bool(has_schedule), has_other_social=has_other,
+                has_schedule=has_sched, has_other_social=has_other,
+                schedule_days=sched_days, posts_per_day=sched_ppd,
             )
         else:
-            reply_markup = scheduler_config_kb(cat_id_int, conn_id_int, has_schedule=bool(has_schedule))
+            reply_markup = scheduler_config_kb(
+                cat_id_int, conn_id_int, has_schedule=has_sched,
+                schedule_days=sched_days, posts_per_day=sched_ppd,
+            )
 
         await safe_edit_text(msg,
             "Настройка расписания отменена.",
