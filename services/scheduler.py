@@ -376,7 +376,7 @@ class SchedulerService:
         conn = await self._conn_repo().get_by_id(conn_id)
         if not conn:
             return None
-        project = await self._projects.get_by_id(conn.project_id)
+        project = await ProjectsRepository(self._db).get_by_id(conn.project_id)
         if not project or project.user_id != user_id:
             return None
         return conn
