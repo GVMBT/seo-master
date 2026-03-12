@@ -479,13 +479,6 @@ def category_created_kb(category_id: int, project_id: int) -> InlineKeyboardMark
 # Connection list
 # ---------------------------------------------------------------------------
 
-_PLATFORM_ICONS: dict[str, str] = {
-    "wordpress": "WP",
-    "telegram": "TG",
-    "vk": "VK",
-    "pinterest": "Pin",
-}
-
 _PLATFORM_LABELS_RU: dict[str, str] = {
     "wordpress": "WordPress",
     "telegram": "Телеграм",
@@ -494,15 +487,26 @@ _PLATFORM_LABELS_RU: dict[str, str] = {
 }
 
 
-def format_connection_display(conn: Any) -> str:
+def format_connection_display(conn: Any, *, with_status: bool = False) -> str:
     """Human-readable connection label.
 
-    For WordPress shows domain (useful), for social shows Russian platform name.
+    WordPress: domain (e.g. "smoketest.instawp.site")
+    Social: Russian name (e.g. "ВКонтакте", "Пинтерест", "Телеграм")
+    VK with group_name in metadata: "ВКонтакте: Group Name"
     """
     label: str = _PLATFORM_LABELS_RU.get(conn.platform_type, conn.platform_type)
     if conn.platform_type == "wordpress":
-        return str(conn.identifier)
-    return label
+        text = str(conn.identifier)
+    elif conn.platform_type == "vk":
+        metadata = getattr(conn, "metadata", None) or {}
+        group_name = metadata.get("group_name") if isinstance(metadata, dict) else None
+        text = f"{label}: {group_name}" if group_name else label
+    else:
+        text = label
+    if with_status:
+        status = "\u2713" if getattr(conn, "status", None) == "active" else "\u2717"
+        return f"{status} {text}"
+    return text
 
 
 def connection_list_kb(connections: list[PlatformConnection], project_id: int) -> InlineKeyboardMarkup:
@@ -517,9 +521,7 @@ def connection_list_kb(connections: list[PlatformConnection], project_id: int) -
     connected_types = {conn.platform_type for conn in connections}
 
     for conn in connections:
-        icon = _PLATFORM_ICONS.get(conn.platform_type, conn.platform_type)
-        status = "\u2713" if conn.status == "active" else "\u2717"
-        text = f"{status} {icon}: {conn.identifier}"
+        text = format_connection_display(conn, with_status=True)
         rows.append([InlineKeyboardButton(text=text, callback_data=f"conn:{conn.id}:manage")])
 
     # Add platform buttons — only for types NOT yet connected
