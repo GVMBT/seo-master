@@ -497,9 +497,16 @@ class ArticleService:
     8. Content validation
     """
 
-    def __init__(self, orchestrator: AIOrchestrator, db: SupabaseClient) -> None:
+    def __init__(
+        self,
+        orchestrator: AIOrchestrator,
+        db: SupabaseClient,
+        *,
+        skip_rate_limit: bool = False,
+    ) -> None:
         self._orchestrator = orchestrator
         self._db = db
+        self._skip_rate_limit = skip_rate_limit
         self._projects = ProjectsRepository(db)
         self._categories = CategoriesRepository(db)
         self._validator = ContentValidator()
@@ -804,6 +811,12 @@ class ArticleService:
             log.warning("critique_failed", keyword=keyword, exc_info=True)
         return original_result, content_markdown, content_html, quality_score
 
+    async def _call_orchestrator(self, request: GenerationRequest) -> GenerationResult:
+        """Call orchestrator, bypassing rate limit when skip_rate_limit is set."""
+        if self._skip_rate_limit:
+            return await self._orchestrator.generate_without_rate_limit(request)
+        return await self._orchestrator.generate(request)
+
     async def _generate_outline(
         self,
         user_id: int,
@@ -816,7 +829,7 @@ class ArticleService:
             user_id=user_id,
             response_schema=OUTLINE_SCHEMA,
         )
-        return await self._orchestrator.generate(request)
+        return await self._call_orchestrator(request)
 
     async def _generate_article(
         self,
@@ -830,7 +843,7 @@ class ArticleService:
             user_id=user_id,
             response_schema=ARTICLE_SCHEMA,
         )
-        return await self._orchestrator.generate(request)
+        return await self._call_orchestrator(request)
 
     async def _generate_critique(
         self,
@@ -855,7 +868,7 @@ class ArticleService:
             user_id=user_id,
             response_schema=CRITIQUE_SCHEMA,
         )
-        return await self._orchestrator.generate(request)
+        return await self._call_orchestrator(request)
 
     @staticmethod
     def _render_to_html(markdown_text: str, branding: dict[str, str], keyword: str) -> str:

@@ -20,7 +20,7 @@ class ArticleService:
   article: claude-sonnet-4.5 → gpt-5.2 → deepseek-v3.2
   article_outline: deepseek-v3.2 → gpt-5.2
   article_critique: deepseek-v3.2 → gpt-5.2
-  article_research: perplexity/sonar-pro (web research, JSON Schema, кеш 7д, graceful degradation E53)
+  article_research: perplexity/sonar-pro-search (agentic web research, structured outputs, кеш 7д, E53)
   social_post: deepseek-v3.2 → claude-sonnet-4.5
   cross_post: deepseek-v3.2 → gpt-5.2
   keywords: deepseek-v3.2 → gpt-5.2

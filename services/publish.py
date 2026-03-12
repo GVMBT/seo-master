@@ -471,7 +471,8 @@ class PublishService:
         from services.ai.images import ImageService
         from services.publishers.wordpress import WordPressPublisher
 
-        article_service = ArticleService(self._ai_orchestrator, self._db)
+        # Auto-publish is a system cron (QStash), not user UI — bypass rate limits
+        article_service = ArticleService(self._ai_orchestrator, self._db, skip_rate_limit=True)
         image_service = ImageService(self._ai_orchestrator)
         publisher = WordPressPublisher(self._http_client)
 
@@ -603,7 +604,7 @@ class PublishService:
                 for idx in block_indices
                 if idx < len(blocks)
             ]
-            director_service = ImageDirectorService(self._ai_orchestrator)
+            director_service = ImageDirectorService(self._ai_orchestrator, skip_rate_limit=True)
             director_ctx = ImageDirectorContext(
                 article_title=title,
                 article_summary=content_markdown,
@@ -723,7 +724,7 @@ class PublishService:
         """
         from services.ai.social_posts import SocialPostService
 
-        social_service = SocialPostService(self._ai_orchestrator, self._db)
+        social_service = SocialPostService(self._ai_orchestrator, self._db, skip_rate_limit=True)
         result = await social_service.generate(
             user_id=user_id,
             project_id=project_id,
@@ -736,8 +737,8 @@ class PublishService:
         # Social post content is a dict {text, hashtags, pin_title} — extract text
         content = result.content.get("text", "") if isinstance(result.content, dict) else result.content
 
-        # Append hashtags for VK/Telegram (not for Pinterest which uses pin_title)
-        if isinstance(result.content, dict) and connection.platform_type in ("vk", "telegram"):
+        # Append hashtags for all social platforms (Pinterest includes in description)
+        if isinstance(result.content, dict) and connection.platform_type in ("vk", "telegram", "pinterest"):
             hashtags = result.content.get("hashtags", [])
             if hashtags:
                 tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
@@ -772,12 +773,16 @@ class PublishService:
 
                 image_service = ImageService(self._ai_orchestrator)
                 project = await self._projects.get_by_id(project_id)
+                img_settings = dict(category.image_settings or {})
+                # Pinterest: vertical 2:3 aspect ratio
+                if connection.platform_type == "pinterest":
+                    img_settings["formats"] = ["2:3"]
                 image_context: dict[str, Any] = {
                     "keyword": keyword,
                     "content_type": "social_post",
                     "company_name": (project.company_name or "") if project else "",
                     "specialization": (project.specialization or "") if project else "",
-                    "image_settings": category.image_settings or {},
+                    "image_settings": img_settings,
                 }
                 image_results = await image_service.generate(
                     user_id=user_id,
@@ -823,7 +828,7 @@ class PublishService:
         settings = get_settings()
         cm = CredentialManager(settings.encryption_key.get_secret_value())
         conn_repo = ConnectionsRepository(self._db, cm)
-        social_service = SocialPostService(self._ai_orchestrator, self._db)
+        social_service = SocialPostService(self._ai_orchestrator, self._db, skip_rate_limit=True)
         category = await self._categories.get_by_id(category_id)
         results: list[CrossPostResult] = []
 
@@ -868,8 +873,8 @@ class PublishService:
                 if isinstance(adapted.content, dict):
                     adapted_text = adapted.content.get("text", "")
 
-                # Append hashtags for VK/Telegram
-                if isinstance(adapted.content, dict) and conn.platform_type in ("vk", "telegram"):
+                # Append hashtags for all social platforms
+                if isinstance(adapted.content, dict) and conn.platform_type in ("vk", "telegram", "pinterest"):
                     hashtags = adapted.content.get("hashtags", [])
                     if hashtags:
                         tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)

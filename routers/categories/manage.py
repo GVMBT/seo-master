@@ -7,7 +7,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.assets import edit_screen
 from bot.fsm_utils import ensure_no_active_fsm
@@ -148,6 +148,20 @@ async def start_category_create(
     project = await get_owned_project(db, project_id, user.id)
     if not project:
         await callback.answer("Проект не найден.", show_alert=True)
+        return
+
+    # U14: block category creation if project website_url is not set
+    if not project.website_url:
+        await safe_edit_text(
+            msg,
+            "Сначала заполните информацию о проекте (укажите сайт).",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="К проекту", callback_data=f"project:{project_id}:edit")],
+                ]
+            ),
+        )
+        await callback.answer()
         return
 
     # H17: enforce category limit per project

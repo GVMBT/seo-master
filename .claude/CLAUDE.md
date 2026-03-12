@@ -145,7 +145,7 @@ uv run vulture bot/ services/ db/ api/ cache/ platform_rules/ --min-confidence 8
 - **Auto-publish notifications**: Russian templates per EDGE_CASES.md (_REASON_TEMPLATES in api/publish.py); no_keywords/connection_inactive/insufficient_balance all use `notify_publications` preference
 
 Решено (Phase 10.1 — Research step):
-- **Web Research**: Perplexity Sonar Pro (perplexity/sonar-pro) через OpenRouter. JSON Schema structured output
+- **Web Research**: Perplexity Sonar Pro Search (perplexity/sonar-pro-search) через OpenRouter. Agentic multi-step search, structured outputs
 - **Pipeline**: Research параллельно с Serper (шаг 2b). current_research → Outline + Expand + Critique (3 разных wording)
 - **Cache**: Redis `research:{md5(keyword)[:12]}`, TTL 7 дней. Cost ~$0.01/req, amortized ~$0.005
 - **Graceful degradation**: E53 — Sonar недоступен → pipeline продолжает без research, warning в лог

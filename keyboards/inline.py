@@ -119,7 +119,7 @@ def dashboard_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="Мои проекты",
+                text="Проекты",
                 callback_data="nav:projects",
             ),
             InlineKeyboardButton(
@@ -266,20 +266,33 @@ _EDIT_FIELDS: list[tuple[str, str]] = [
     ("company_phone", "Телефон"),
     ("company_email", "Эл. почта"),
     ("company_address", "Адрес"),
-    ("timezone", "Часовой пояс"),
 ]
 
 
-def project_edit_kb(project_id: int) -> InlineKeyboardMarkup:
-    """Edit screen: field buttons in 2-column grid + delete + back."""
+def project_edit_kb(
+    project_id: int,
+    completed: dict[str, bool] | None = None,
+) -> InlineKeyboardMarkup:
+    """Edit screen: field buttons in 2-column grid + delete + back.
+
+    ``completed`` maps field names to filled status; filled fields get a
+    checkmark prefix on the button label.
+    """
     pid = project_id
+    filled = completed or {}
     rows: list[list[InlineKeyboardButton]] = []
 
     # 2-column layout for fields
     for i in range(0, len(_EDIT_FIELDS), 2):
         row: list[InlineKeyboardButton] = []
         for field, label in _EDIT_FIELDS[i : i + 2]:
-            row.append(InlineKeyboardButton(text=label, callback_data=f"project:{pid}:edit:{field}"))
+            prefix = "\u2705 " if filled.get(field) else ""
+            row.append(
+                InlineKeyboardButton(
+                    text=f"{prefix}{label}",
+                    callback_data=f"project:{pid}:edit:{field}",
+                )
+            )
         rows.append(row)
 
     rows.append(
@@ -742,7 +755,6 @@ def keywords_saved_answers_kb(cat_id: int) -> InlineKeyboardMarkup:
         ]
     )
 
-
 def keywords_results_kb(cat_id: int) -> InlineKeyboardMarkup:
     """Post-generation results navigation."""
     return InlineKeyboardMarkup(
@@ -776,10 +788,14 @@ def keywords_delete_all_confirm_kb(cat_id: int) -> InlineKeyboardMarkup:
 
 def description_kb(cat_id: int, has_description: bool) -> InlineKeyboardMarkup:
     """Description screen actions (UX_TOOLBOX section 10 / 10.3)."""
-    gen_label = f"Сгенерировать AI ({COST_DESCRIPTION} токенов)"
     rows: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(text=gen_label, callback_data=f"desc:{cat_id}:generate")],
         [InlineKeyboardButton(text="Написать вручную", callback_data=f"desc:{cat_id}:manual")],
+        [
+            InlineKeyboardButton(
+                text=f"✨ Улучшить с ИИ ({COST_DESCRIPTION} токенов)",
+                callback_data=f"desc:{cat_id}:generate",
+            ),
+        ],
     ]
     if has_description:
         rows.append(
@@ -1090,8 +1106,8 @@ def notifications_kb(
         return InlineKeyboardButton(text=f"{mark} {label}", callback_data=f"profile:notify:{key}")
 
     rows = [
-        [_toggle("Публикации", notify_publications, "publications")],
-        [_toggle("Баланс", notify_balance, "balance")],
+        [_toggle("Публикации \u2014 статус автопубликаций", notify_publications, "publications")],
+        [_toggle("Баланс \u2014 при низком балансе и пополнениях", notify_balance, "balance")],
         [_toggle("Новости", notify_news, "news")],
         [InlineKeyboardButton(text="\u2b05\ufe0f К профилю", callback_data="nav:profile")],
     ]

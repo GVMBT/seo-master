@@ -6,9 +6,9 @@ import pytest
 
 from bot.exceptions import AppError
 from services.admin import (
-    APIStatusReport,
     AdminPanelStats,
     AdminService,
+    APIStatusReport,
     BalanceAdjustResult,
     UserCard,
 )

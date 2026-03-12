@@ -1,5 +1,6 @@
 """Dashboard, /start, /cancel, navigation callbacks, reply text dispatch."""
 
+import contextlib
 import html
 import json
 from typing import Any
@@ -9,7 +10,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
 
 from bot.assets import asset_photo, cache_file_id, edit_screen
 from bot.config import get_settings
@@ -26,7 +27,14 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
-from keyboards.inline import cancel_kb, consent_kb, dashboard_kb, dashboard_resume_kb, menu_kb
+from keyboards.inline import (
+    cancel_kb,
+    connection_manage_kb,
+    consent_kb,
+    dashboard_kb,
+    dashboard_resume_kb,
+    menu_kb,
+)
 from keyboards.pipeline import (
     pipeline_categories_kb,
     pipeline_no_projects_kb,
@@ -149,7 +157,10 @@ async def _handle_pinterest_deep_link(
     await redis.delete(CacheKeys.pinterest_oauth(nonce))
 
     safe_name = html.escape(project.name)
-    await message.answer(f"Pinterest подключён к проекту «{safe_name}»!")
+    await message.answer(
+        f"Pinterest подключён к проекту «{safe_name}»!",
+        reply_markup=connection_manage_kb(conn.id, project_id),
+    )
     log.info(
         "pinterest_connected_via_deeplink",
         connection_id=conn.id,
@@ -506,6 +517,18 @@ async def cmd_start(
     args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
 
     # OAuth deep-links: handle without clearing FSM and return early
+    if args == "pinterest_error":
+        await message.answer(
+            "Не удалось подключить Pinterest.\n"
+            "Авторизация была отклонена или произошла ошибка.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Попробовать снова", callback_data="nav:projects")],
+                    [InlineKeyboardButton(text="На главную", callback_data="nav:dashboard")],
+                ]
+            ),
+        )
+        return
     if args.startswith("pinterest_auth_"):
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, state, user, db, redis, http_client, nonce)
@@ -530,6 +553,11 @@ async def cmd_start(
     if user.accepted_terms_at is None:
         await message.answer(LEGAL_NOTICE, reply_markup=consent_kb())
         return
+
+    # Remove any lingering reply keyboard (from old bot versions or other bots)
+    with contextlib.suppress(Exception):
+        remove_msg = await message.answer(".", reply_markup=ReplyKeyboardRemove())
+        await remove_msg.delete()
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     full_text = text + "\n\nВыберите действие:"
@@ -566,16 +594,25 @@ async def consent_accept(
         await callback.answer()
         return
 
-    # Save consent + invalidate cache via service layer (CR-109)
-    users_svc = UsersService(db)
-    await users_svc.accept_terms(user.id, redis)
+    try:
+        # Save consent + invalidate cache via service layer (CR-109)
+        users_svc = UsersService(db)
+        await users_svc.accept_terms(user.id, redis)
 
-    # Show dashboard (admin button included in inline kb via user.role check)
-    text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    await msg.answer(
-        "Условия приняты!\n\n" + text + "\n\nВыберите действие:",
-        reply_markup=kb,
-    )
+        # Show dashboard (admin button included in inline kb via user.role check)
+        text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
+        await msg.answer(
+            "Условия приняты!\n\n" + text + "\n\nВыберите действие:",
+            reply_markup=kb,
+        )
+    except Exception:
+        log.exception("consent_accept_failed", user_id=user.id)
+        await callback.answer(
+            "Не удалось сохранить. Нажмите \u00abПринимаю\u00bb ещё раз.",
+            show_alert=True,
+        )
+        return
+
     await callback.answer()
 
 
@@ -813,6 +850,18 @@ async def pipeline_resume(
         cat = await cats_repo.get_by_id(category_id)
         category_name = cat.name if cat else ""
 
+    # Social pipeline needs platform_type + connection_identifier for readiness/confirm screens
+    platform_type = ""
+    connection_identifier = ""
+    if pipeline_type == "social" and connection_id:
+        settings = get_settings()
+        cm = CredentialManager(settings.encryption_key.get_secret_value())
+        conn_repo = ConnectionsRepository(db, cm)
+        conn = await conn_repo.get_by_id(connection_id)
+        if conn:
+            platform_type = conn.platform_type
+            connection_identifier = conn.identifier
+
     await state.update_data(
         project_id=project_id,
         project_name=project_name,
@@ -820,6 +869,8 @@ async def pipeline_resume(
         category_id=category_id,
         category_name=category_name,
         preview_id=preview_id,
+        platform_type=platform_type,
+        connection_identifier=connection_identifier,
     )
 
     if pipeline_type == "social":
@@ -870,20 +921,95 @@ async def _route_social_to_step(
     connection_id: int | None,
 ) -> None:
     """Route user to the correct social pipeline screen based on checkpoint step."""
+    from routers.publishing.pipeline._common import SocialPipelineFSM
+
     msg = safe_message(callback)
     if not msg:
         return
 
-    # Steps 1-3: re-run from selection screen
-    # Social pipeline is not production-ready (F6.3 not implemented).
-    # Clear checkpoint and redirect to Dashboard with explanation.
-    log.info("pipeline.social.resume_not_ready", step=step, user_id=user.id)
+    # Steps 1-2: project/connection selection — restart from project list
+    if step in ("select_project", "", "select_connection"):
+        projects_repo = ProjectsRepository(db)
+        projects = await projects_repo.get_by_user(user.id)
+        if not projects:
+            await safe_edit_text(
+                msg,
+                "Пост (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+                reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
+            )
+        else:
+            await safe_edit_text(
+                msg,
+                "Пост (1/5) — Проект\n\nДля какого проекта?",
+                reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
+            )
+        await state.set_state(SocialPipelineFSM.select_project)
+        return
+
+    # Step 3: category selection
+    if step == "select_category":
+        if not project_id:
+            await _expire_social_checkpoint(msg, redis, state, user)
+            return
+        cats_repo = CategoriesRepository(db)
+        categories = await cats_repo.get_by_project(project_id)
+        if not categories:
+            await safe_edit_text(
+                msg,
+                "Пост (3/5) — Тема\n\nО чём будет пост? Назовите тему.",
+                reply_markup=cancel_kb("pipeline:social:cancel"),
+            )
+            await state.set_state(SocialPipelineFSM.create_category_name)
+        elif len(categories) == 1:
+            cat = categories[0]
+            await state.update_data(category_id=cat.id, category_name=cat.name)
+            from routers.publishing.pipeline.social.readiness import show_social_readiness_check
+
+            await show_social_readiness_check(callback, state, user, db, redis)
+        else:
+            await safe_edit_text(
+                msg,
+                "Пост (3/5) — Тема\n\nКакая тема?",
+                reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
+            )
+            await state.set_state(SocialPipelineFSM.select_category)
+        return
+
+    # Steps 4-5: readiness or confirm cost — re-run readiness check
+    if step in ("readiness_check", "confirm_cost"):
+        from routers.publishing.pipeline.social.readiness import show_social_readiness_check
+
+        await show_social_readiness_check(callback, state, user, db, redis)
+        return
+
+    # Step 6-7 (review/publishing): FSM data (generated text) was cleared by /start.
+    # Can't restore the generated post — redirect to readiness so user re-confirms + regenerates.
+    if step in ("review", "generating", "publishing"):
+        log.info("pipeline.social.resume_review_expired", step=step, user_id=user.id)
+        from routers.publishing.pipeline.social.readiness import show_social_readiness_check
+
+        await show_social_readiness_check(callback, state, user, db, redis)
+        return
+
+    # Fallback: unknown step — clear and show dashboard
+    log.warning("pipeline.social.resume_unknown_step", step=step, user_id=user.id)
+    await _expire_social_checkpoint(msg, redis, state, user)
+
+
+async def _expire_social_checkpoint(
+    msg: Message,
+    redis: RedisClient,
+    state: FSMContext,
+    user: User,
+) -> None:
+    """Clear social checkpoint and show expiry message."""
     await redis.delete(CacheKeys.pipeline_state(user.id))
     await state.clear()
-    text, kb = await _build_dashboard(
-        user, is_new_user=False, db=db, redis=redis, dashboard_service_factory=dashboard_service_factory
+    await safe_edit_text(
+        msg,
+        "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.",
+        reply_markup=menu_kb(),
     )
-    await edit_screen(msg, "welcome.png", text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "pipeline:restart")

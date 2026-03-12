@@ -7,10 +7,17 @@ safe_edit_text: graceful photo→text transition (delete+resend).
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any, cast
 
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InaccessibleMessage,
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    Message,
+)
 
 from db.client import SupabaseClient
 from db.models import Category, Project
@@ -46,28 +53,46 @@ def safe_message(callback: CallbackQuery) -> Message | None:
 # ---------------------------------------------------------------------------
 
 
+_NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
+
+
 async def safe_edit_text(
     msg: Message,
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
+    link_preview_options: LinkPreviewOptions | None = _NO_PREVIEW,
     **kwargs: Any,
 ) -> Message:
     """Edit text; if message has media, fallback to delete+resend.
 
     Photo messages don't support edit_text (Telegram API limitation).
     This helper catches that error and does delete+answer instead.
+
+    Link previews are disabled by default to keep messages compact.
+    Pass ``link_preview_options=None`` to re-enable previews for a specific call.
     """
     try:
-        return cast("Message", await msg.edit_text(text, reply_markup=reply_markup, **kwargs))
+        return cast(
+            "Message",
+            await msg.edit_text(
+                text,
+                reply_markup=reply_markup,
+                link_preview_options=link_preview_options,
+                **kwargs,
+            ),
+        )
     except TelegramBadRequest as e:
         if "there is no text in the message" not in str(e):
             raise
         # Photo message — delete and resend as text
-        try:
-            await msg.delete()
-        except TelegramBadRequest:
-            pass  # Message too old to delete — send new one anyway
-        return await msg.answer(text, reply_markup=reply_markup, **kwargs)
+        with contextlib.suppress(TelegramBadRequest):
+            await msg.delete()  # Message too old to delete — send new one anyway
+        return await msg.answer(
+            text,
+            reply_markup=reply_markup,
+            link_preview_options=link_preview_options,
+            **kwargs,
+        )
 
 
 # ---------------------------------------------------------------------------

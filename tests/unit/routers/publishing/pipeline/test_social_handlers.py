@@ -1,4 +1,4 @@
-"""Tests for routers/publishing/pipeline/social/social.py handlers.
+"""Tests for routers/publishing/pipeline/social/ handlers.
 
 Covers steps 1 and 3 of the Social Pipeline (F6.1):
 - pipeline_social_start: 0/1/>1 projects
@@ -9,6 +9,11 @@ Covers steps 1 and 3 of the Social Pipeline (F6.1):
 - pipeline_select_category: ownership check
 - pipeline_create_category_name: inline creation + validation
 - pipeline_social_cancel: clears FSM and checkpoint
+
+Steps 5-7 (F6.3): generation.py
+- _build_review_text: HTML escaping per platform
+- _show_review: photo vs text, long caption split, delete failure
+- regenerate_social: deletes old photo message, sends progress text
 """
 
 from __future__ import annotations
@@ -17,6 +22,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from routers.publishing.pipeline._common import SocialPipelineFSM, save_checkpoint
+from routers.publishing.pipeline.social.generation import (
+    _build_review_text,
+    _show_review,
+)
 from routers.publishing.pipeline.social.social import (
     pipeline_create_category_name,
     pipeline_create_project_company,
@@ -469,3 +478,219 @@ class TestSocialCheckpoint:
 
         data = json.loads(mock_redis.set.call_args[0][1])
         assert data["step_label"] == "ревью"
+
+
+# ---------------------------------------------------------------------------
+# _build_review_text: HTML escaping per platform
+# ---------------------------------------------------------------------------
+
+_GEN_MODULE = "routers.publishing.pipeline.social.generation"
+
+
+class TestBuildReviewText:
+    def test_pinterest_no_double_escape(self) -> None:
+        """VK/Pinterest: nh3 output with &amp; normalizes to single &amp; for Telegram display."""
+        # nh3 strips tags for pinterest and outputs HTML entities (& -> &amp;)
+        post_text = "Rock &amp; Roll music"
+        result = _build_review_text(post_text, [], "test keyword", 40, "pinterest")
+        # html.unescape("&amp;") -> "&" -> html.escape("&") -> "&amp;"
+        # So the final output should have exactly one level of &amp;, not &amp;amp;
+        assert "&amp;amp;" not in result
+        assert "&amp;" in result
+        assert "Rock &amp; Roll" in result
+
+    def test_vk_no_double_escape(self) -> None:
+        """VK platform also normalizes HTML entities."""
+        post_text = "Tom &amp; Jerry &lt;3"
+        result = _build_review_text(post_text, [], "test keyword", 40, "vk")
+        assert "&amp;amp;" not in result
+        assert "&amp;" in result
+        assert "&lt;" in result
+
+    def test_telegram_preserves_tags(self) -> None:
+        """Telegram: nh3-preserved <b> tags are kept as-is (no escaping)."""
+        post_text = "This is <b>bold</b> and <i>italic</i> text"
+        result = _build_review_text(post_text, [], "seo", 40, "telegram")
+        # Telegram path appends post_text directly, preserving HTML tags
+        assert "<b>bold</b>" in result
+        assert "<i>italic</i>" in result
+
+    def test_telegram_does_not_escape_tags(self) -> None:
+        """Telegram path does NOT html.escape the tags — they are valid Telegram HTML."""
+        post_text = "<b>Important</b> news"
+        result = _build_review_text(post_text, [], "news", 30, "telegram")
+        # Should NOT contain escaped angle brackets
+        assert "&lt;b&gt;" not in result
+        assert "<b>Important</b>" in result
+
+    def test_hashtags_appended(self) -> None:
+        """Hashtags are appended with # prefix and escaped."""
+        result = _build_review_text("Text", ["seo", "marketing"], "kw", 40, "vk")
+        assert "#seo" in result
+        assert "#marketing" in result
+
+    def test_hashtags_with_leading_hash_stripped(self) -> None:
+        """Hashtags already starting with # get lstrip-ed."""
+        result = _build_review_text("Text", ["#seo", "##double"], "kw", 40, "pinterest")
+        assert "##seo" not in result
+        assert "#seo" in result
+        assert "###double" not in result
+        assert "#double" in result
+
+    def test_no_hashtags(self) -> None:
+        """Empty hashtags list does not add a hashtag section."""
+        result = _build_review_text("Text", [], "kw", 40, "telegram")
+        assert "#" not in result.split("---")[-1].strip()  # after last ---
+
+
+# ---------------------------------------------------------------------------
+# _show_review: photo vs text display
+# ---------------------------------------------------------------------------
+
+
+class TestShowReview:
+    async def test_show_review_without_image(self) -> None:
+        """Without image, falls back to safe_edit_text."""
+        message = MagicMock()
+        message.delete = AsyncMock()
+        message.answer_photo = AsyncMock()
+        kb = MagicMock()
+
+        with patch(f"{_GEN_MODULE}.safe_edit_text", new_callable=AsyncMock) as mock_edit:
+            await _show_review(message, "Review text", kb, image_b64=None)
+            mock_edit.assert_awaited_once_with(message, "Review text", reply_markup=kb)
+
+        message.delete.assert_not_awaited()
+        message.answer_photo.assert_not_awaited()
+
+    async def test_show_review_with_image(self) -> None:
+        """With image_b64: deletes old message, sends photo with caption."""
+        import base64
+
+        message = MagicMock()
+        message.delete = AsyncMock()
+        message.answer_photo = AsyncMock()
+        message.answer = AsyncMock()
+        kb = MagicMock()
+
+        img_data = base64.b64encode(b"\x89PNG_fake_image").decode("ascii")
+        short_review = "Short review"
+
+        await _show_review(message, short_review, kb, image_b64=img_data)
+
+        message.delete.assert_awaited_once()
+        message.answer_photo.assert_awaited_once()
+        call_kwargs = message.answer_photo.call_args[1]
+        assert call_kwargs["caption"] == short_review
+        assert call_kwargs["reply_markup"] is kb
+
+    async def test_show_review_long_caption_splits(self) -> None:
+        """When review_text > 1024 chars, sends photo without caption + text with keyboard."""
+        import base64
+
+        message = MagicMock()
+        message.delete = AsyncMock()
+        message.answer_photo = AsyncMock()
+        message.answer = AsyncMock()
+        kb = MagicMock()
+
+        img_data = base64.b64encode(b"\x89PNG_fake").decode("ascii")
+        long_review = "A" * 1100  # > 1024
+
+        await _show_review(message, long_review, kb, image_b64=img_data)
+
+        message.delete.assert_awaited_once()
+        # Photo sent without caption (no reply_markup, no caption)
+        photo_call = message.answer_photo.call_args_list[0]
+        assert "caption" not in photo_call[1] or photo_call[1].get("caption") is None
+        # Text sent with keyboard
+        message.answer.assert_awaited_once_with(long_review, reply_markup=kb)
+
+    async def test_show_review_delete_fails_gracefully(self) -> None:
+        """message.delete() raises TelegramBadRequest but answer_photo still called."""
+        import base64
+
+        from aiogram.exceptions import TelegramBadRequest
+
+        message = MagicMock()
+        message.delete = AsyncMock(
+            side_effect=TelegramBadRequest(method=MagicMock(), message="message can't be deleted")
+        )
+        message.answer_photo = AsyncMock()
+        message.answer = AsyncMock()
+        kb = MagicMock()
+
+        img_data = base64.b64encode(b"\x89PNG_fake").decode("ascii")
+
+        await _show_review(message, "Short", kb, image_b64=img_data)
+
+        # Delete failed, but photo still sent
+        message.delete.assert_awaited_once()
+        message.answer_photo.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# regenerate_social: deletes old photo message, sends new progress text
+# ---------------------------------------------------------------------------
+
+
+class TestRegenerateSocial:
+    async def test_regen_after_photo_deletes_and_sends_new(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: Any,
+        mock_redis: MagicMock,
+    ) -> None:
+        """regenerate_social deletes old message and sends new progress text."""
+        from routers.publishing.pipeline.social.generation import regenerate_social
+
+        msg = MagicMock()
+        msg.delete = AsyncMock()
+        progress_msg = MagicMock()
+        msg.answer = AsyncMock(return_value=progress_msg)
+        mock_callback.message = msg
+
+        mock_state.get_data = AsyncMock(
+            return_value={
+                "regen_count": 0,
+                "tokens_charged": 40,
+                "category_id": 10,
+                "project_id": 1,
+                "connection_id": 5,
+                "platform_type": "vk",
+            }
+        )
+
+        mock_ai = MagicMock()
+        mock_db = MagicMock()
+
+        # Patch _run_social_generation to avoid full pipeline execution
+        with (
+            patch(
+                f"{_GEN_MODULE}.get_settings",
+                return_value=MagicMock(admin_ids=[]),
+            ),
+            patch(
+                f"{_GEN_MODULE}.RateLimiter",
+                return_value=MagicMock(check=AsyncMock()),
+            ),
+            patch(
+                f"{_GEN_MODULE}._run_social_generation",
+                new_callable=AsyncMock,
+            ) as mock_run_gen,
+        ):
+            await regenerate_social(mock_callback, mock_state, user, mock_db, mock_redis, mock_ai)
+
+        # Old message deleted (suppresses TelegramBadRequest)
+        msg.delete.assert_awaited_once()
+        # New progress message sent
+        msg.answer.assert_awaited_once()
+        # Generation started with the new progress message
+        mock_run_gen.assert_awaited_once()
+        # State updated with incremented regen_count
+        mock_state.update_data.assert_any_await(
+            regen_count=1,
+            tokens_charged=40,
+            last_update_time=mock_state.update_data.call_args_list[0][1]["last_update_time"],
+        )

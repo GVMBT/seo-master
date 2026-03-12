@@ -54,7 +54,7 @@ MODEL_CHAINS: dict[str, list[str]] = {
         "openai/gpt-5.2",
     ],
     "article_research": [
-        "perplexity/sonar-pro",
+        "perplexity/sonar-pro-search",
     ],
     "social_post": [
         "deepseek/deepseek-v3.2",
@@ -100,7 +100,6 @@ BUDGET_TASKS: set[str] = {
     "cross_post",
     "article_outline",
     "article_critique",
-    "article_research",
     "image_director",
 }
 
@@ -337,7 +336,10 @@ class AIOrchestrator:
         # Budget tasks use price sorting
         if request.task in BUDGET_TASKS:
             extra_body["provider"]["sort"] = "price"
-        else:
+        elif request.task != "image":
+            # Image task uses modalities/image_config — require_parameters
+            # causes 404 "No endpoints found" on OpenRouter (providers don't
+            # declare support for these non-standard params).
             extra_body["provider"]["require_parameters"] = True
 
         # Structured output tasks need providers that support json_schema,

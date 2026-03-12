@@ -130,8 +130,9 @@ class ImageDirectorService:
     falls back to mechanical prompts.
     """
 
-    def __init__(self, orchestrator: AIOrchestrator) -> None:
+    def __init__(self, orchestrator: AIOrchestrator, *, skip_rate_limit: bool = False) -> None:
         self._orchestrator = orchestrator
+        self._skip_rate_limit = skip_rate_limit
 
     async def plan_images(
         self,
@@ -153,7 +154,10 @@ class ImageDirectorService:
         )
 
         try:
-            result = await self._orchestrator.generate(request)
+            if self._skip_rate_limit:
+                result = await self._orchestrator.generate_without_rate_limit(request)
+            else:
+                result = await self._orchestrator.generate(request)
         except Exception:
             log.warning("image_director_skipped", reason="ai_error", exc_info=True)
             return None

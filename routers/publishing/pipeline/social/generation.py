@@ -12,6 +12,8 @@ Rules: .claude/rules/pipeline.md -- inline handlers, NOT FSM delegation.
 
 from __future__ import annotations
 
+import base64 as b64mod
+import contextlib
 import html
 import time
 from typing import Any, Literal
@@ -21,7 +23,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.config import get_settings
 from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
@@ -30,6 +32,8 @@ from bot.helpers import safe_edit_text, safe_message
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
+from db.repositories.categories import CategoriesRepository
+from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from keyboards.inline import menu_kb
 from keyboards.pipeline import (
@@ -45,6 +49,7 @@ from routers.publishing.pipeline._common import (
     select_keyword,
     try_refund,
 )
+from services.ai.images import ImageService
 from services.ai.orchestrator import AIOrchestrator
 from services.ai.rate_limiter import RateLimiter
 from services.connections import ConnectionService
@@ -61,10 +66,25 @@ MAX_REGENERATIONS_FREE = 2
 # Publish lock TTL (E07: double-click prevention)
 _PUBLISH_LOCK_TTL = 60
 
+# Platform display names (Russian)
+_PLATFORM_NAMES: dict[str, str] = {
+    "telegram": "Telegram",
+    "vk": "ВКонтакте",
+    "pinterest": "Pinterest",
+}
+
+# Publish progress steps (platform name inserted at runtime)
+_SOCIAL_PUBLISH_STEPS = [
+    ("Подготовка контента", "Контент подготовлен"),
+    ("Публикация в {platform}", "Опубликовано в {platform}"),
+    ("Сохранение результата", "Результат сохранён"),
+]
+
 # Progress steps for cumulative social loader
 _SOCIAL_STEPS = [
     ("Подбор ключевых фраз", "Фразы подобраны"),
     ("Генерация поста", "Пост сгенерирован"),
+    ("Генерация изображения", "Изображение готово"),
 ]
 
 
@@ -72,6 +92,20 @@ def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
     """Build cumulative progress text for social post generation."""
     lines = ["\U0001f4dd Генерация поста", ""]
     for i, (active_label, done_label) in enumerate(steps):
+        if i < current:
+            lines.append(f"{EMOJI_DONE} {done_label}")
+        elif i == current:
+            lines.append(f"{EMOJI_PROGRESS} {active_label}...")
+    return "\n".join(lines)
+
+
+def _social_publish_progress(platform: str, current: int) -> str:
+    """Build cumulative progress text for social post publishing."""
+    name = _PLATFORM_NAMES.get(platform, platform.title())
+    lines = ["\U0001f4e4 Публикация поста", ""]
+    for i, (active_tpl, done_tpl) in enumerate(_SOCIAL_PUBLISH_STEPS):
+        active_label = active_tpl.format(platform=name)
+        done_label = done_tpl.format(platform=name)
         if i < current:
             lines.append(f"{EMOJI_DONE} {done_label}")
         elif i == current:
@@ -353,14 +387,52 @@ async def _run_social_generation(
             post_text = str(result.content)
             hashtags = []
 
+        # Generate 1 image for social post (B2 fix)
+        image_b64: str | None = None
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+            await safe_edit_text(message, _social_progress_text(_SOCIAL_STEPS, 2))
+
+        try:
+            image_service = ImageService(ai_orchestrator)
+            cat = await CategoriesRepository(db).get_by_id(category_id)
+            proj = await ProjectsRepository(db).get_by_id(project_id)
+            img_settings = dict((cat.image_settings or {}) if cat else {})
+            # Pinterest: vertical 2:3 aspect ratio
+            if platform_type == "pinterest":
+                img_settings["formats"] = ["2:3"]
+            img_context: dict[str, Any] = {
+                "keyword": keyword,
+                "content_type": "social_post",
+                "company_name": (proj.company_name or "") if proj else "",
+                "specialization": (proj.specialization or "") if proj else "",
+                "image_settings": img_settings,
+            }
+            images = await image_service.generate(user_id=user.id, context=img_context, count=1)
+            if images:
+                image_b64 = b64mod.b64encode(images[0].data).decode("ascii")
+                log.info("social_image_generated", size=len(images[0].data), user_id=user.id)
+        except RateLimitError:
+            raise  # Re-raise to respect rate limits
+        except Exception:
+            # Graceful degradation for TG/VK; Pinterest validated at publish
+            log.warning("social_image_generation_failed", exc_info=True, user_id=user.id)
+
+        # Extract pin_title from AI response
+        pin_title = ""
+        if isinstance(result.content, dict):
+            pin_title = result.content.get("pin_title", "")
+
         # E38: store in FSM state.data (not DB), acceptable to lose on timeout
-        await state.update_data(
-            generated_text=post_text,
-            generated_hashtags=hashtags,
-            generated_keyword=keyword,
-            generated_model=result.model_used,
-            generated_prompt_version=result.prompt_version,
-        )
+        update_data: dict[str, Any] = {
+            "generated_text": post_text,
+            "generated_hashtags": hashtags,
+            "generated_keyword": keyword,
+            "generated_model": result.model_used,
+            "generated_prompt_version": result.prompt_version,
+            "generated_image_b64": image_b64,
+            "generated_pin_title": pin_title,
+        }
+        await state.update_data(**update_data)
         await state.set_state(SocialPipelineFSM.review)
 
         # Build review screen text (show inline, no Telegraph for social posts)
@@ -368,12 +440,10 @@ async def _run_social_generation(
         regen_count = data.get("regen_count", 0)
         tokens_charged = data.get("tokens_charged", cost)
 
-        review_text = _build_review_text(post_text, hashtags, keyword, tokens_charged)
+        review_text = _build_review_text(post_text, hashtags, keyword, tokens_charged, platform_type)
 
-        await safe_edit_text(message, 
-            review_text,
-            reply_markup=social_review_kb(regen_count=regen_count, regen_cost=cost),
-        )
+        review_kb = social_review_kb(regen_count=regen_count, regen_cost=cost)
+        await _show_review(message, review_text, review_kb, image_b64)
         await save_checkpoint(
             redis,
             user.id,
@@ -403,22 +473,74 @@ async def _run_social_generation(
         await state.set_state(SocialPipelineFSM.confirm_cost)
 
 
+_CAPTION_LIMIT = 1024
+
+
+async def _show_review(
+    message: Message,
+    review_text: str,
+    review_kb: InlineKeyboardMarkup,
+    image_b64: str | None,
+) -> None:
+    """Show review screen with optional photo preview.
+
+    If image_b64 is provided, sends photo+caption. Falls back to text
+    if caption exceeds Telegram's 1024-char limit (photo first, then text+KB).
+    """
+    if not image_b64:
+        await safe_edit_text(message, review_text, reply_markup=review_kb)
+        return
+
+    image_bytes = b64mod.b64decode(image_b64)
+    photo = BufferedInputFile(image_bytes, filename="preview.webp")
+
+    # Delete previous message (could be progress text or old photo)
+    with contextlib.suppress(TelegramBadRequest):
+        await message.delete()
+
+    if len(review_text) <= _CAPTION_LIMIT:
+        await message.answer_photo(
+            photo=photo,
+            caption=review_text,
+            reply_markup=review_kb,
+        )
+    else:
+        # Photo without caption, then text with keyboard
+        await message.answer_photo(photo=photo)
+        await message.answer(review_text, reply_markup=review_kb)
+
+
 def _build_review_text(
     post_text: str,
     hashtags: list[str],
     keyword: str,
     tokens_charged: int,
+    platform: str,
 ) -> str:
-    """Build review display text for social post."""
+    """Build review display text for social post.
+
+    Escaping strategy differs by platform:
+    - Telegram: nh3 preserved <b>,<i> tags — already valid HTML for parse_mode=HTML.
+    - VK/Pinterest: nh3 stripped all tags, output has HTML entities (& → &amp;).
+      We unescape then re-escape to normalize for Telegram's parse_mode=HTML display.
+    """
     lines = [
         "Пост готов!\n",
         f"Ключевая фраза: {html.escape(keyword)}",
         f"Списано: {tokens_charged} ток.\n",
         "---",
-        html.escape(post_text),
     ]
+    if platform == "telegram":
+        # nh3 left <b>,<i> — already valid HTML for parse_mode=HTML
+        lines.append(post_text)
+    else:
+        # nh3 output has HTML entities (e.g. &amp;) — normalize for display
+        lines.append(html.escape(html.unescape(post_text)))
+
     if hashtags:
-        lines.append("\n" + " ".join(f"#{html.escape(h.lstrip('#'))}" for h in hashtags))
+        lines.append("\n" + " ".join(
+            f"#{html.escape(h.lstrip('#'))}" for h in hashtags
+        ))
     lines.append("---")
     return "\n".join(lines)
 
@@ -468,14 +590,15 @@ async def publish_social_post(
         return
 
     await state.set_state(SocialPipelineFSM.publishing)
-    await safe_edit_text(msg, "Публикую пост...")
+    # Capture return: safe_edit_text may delete photo and send new text msg
+    msg = await safe_edit_text(msg, _social_publish_progress(platform_type, 0))
 
     try:
         # Load connection
         conn_svc = ConnectionService(db, http_client)
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
-            await safe_edit_text(msg, 
+            await safe_edit_text(msg,
                 "Подключение не найдено. Проверьте настройки.",
                 reply_markup=menu_kb(),
             )
@@ -504,16 +627,42 @@ async def publish_social_post(
         publisher = _get_publisher(platform_type, http_client, _settings, on_token_refresh=_on_refresh)
         content_type = _get_content_type(platform_type)
 
-        # Append hashtags for VK/Telegram
+        # Append hashtags for all social platforms (Pinterest uses description field)
         publish_text = generated_text
-        if generated_hashtags and platform_type in ("vk", "telegram"):
+        if generated_hashtags:
             tags_str = " ".join(f"#{h.lstrip('#')}" for h in generated_hashtags)
             publish_text = f"{generated_text}\n\n{tags_str}"
 
-        # Pinterest metadata
+        # Pinterest metadata: use AI-generated pin_title, fallback to keyword
         pub_metadata: dict[str, Any] = {}
         if platform_type == "pinterest":
-            pub_metadata["pin_title"] = keyword[:100]
+            pin_title = data.get("generated_pin_title") or keyword[:100]
+            pub_metadata["pin_title"] = pin_title
+
+        # Decode image from FSM state (B2 fix)
+        publish_images: list[bytes] = []
+        image_b64_stored = data.get("generated_image_b64")
+        if image_b64_stored:
+            publish_images = [b64mod.b64decode(image_b64_stored)]
+
+        # Pinterest requires at least one image
+        if platform_type == "pinterest" and not publish_images:
+            await safe_edit_text(
+                msg,
+                "Для Pinterest требуется изображение, но оно не было сгенерировано.\n"
+                "Попробуйте перегенерировать пост.",
+                reply_markup=social_review_kb(
+                    regen_count=data.get("regen_count", 0),
+                    regen_cost=tokens_charged,
+                ),
+            )
+            await state.set_state(SocialPipelineFSM.review)
+            await callback.answer()
+            return
+
+        # Step 2: Publishing to platform
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+            await safe_edit_text(msg, _social_publish_progress(platform_type, 1))
 
         try:
             pub_result: PublishResult = await publisher.publish(
@@ -522,6 +671,7 @@ async def publish_social_post(
                     content=publish_text,
                     content_type=content_type,
                     metadata=pub_metadata,
+                    images=publish_images,
                 )
             )
         except Exception as exc:
@@ -549,6 +699,10 @@ async def publish_social_post(
             await callback.answer()
             return
 
+        # Step 3: Saving result
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+            await safe_edit_text(msg, _social_publish_progress(platform_type, 2))
+
         # Log publication
         pub_repo = PublicationsRepository(db)
         await pub_repo.create_log(
@@ -560,7 +714,7 @@ async def publish_social_post(
                 connection_id=connection_id,
                 keyword=keyword,
                 content_type="social_post",
-                images_count=0,
+                images_count=len(publish_images),
                 post_url=pub_result.post_url,
                 word_count=len(generated_text.split()),
                 tokens_spent=tokens_charged,
@@ -602,6 +756,20 @@ async def publish_social_post(
             platform=platform_type,
             post_url=pub_result.post_url,
         )
+    except Exception:
+        log.exception("pipeline.social.publish_unhandled", user_id=user.id)
+        # Ensure user is never stuck: reset to review with error message
+        with contextlib.suppress(Exception):
+            await msg.answer(
+                "Ошибка публикации. Попробуйте снова.",
+                reply_markup=social_review_kb(
+                    regen_count=data.get("regen_count", 0),
+                    regen_cost=tokens_charged,
+                ),
+            )
+        await state.set_state(SocialPipelineFSM.review)
+        with contextlib.suppress(Exception):
+            await callback.answer()
     finally:
         await redis.delete(lock_key)
 
@@ -673,7 +841,11 @@ async def regenerate_social(
         last_update_time=time.time(),
     )
     await state.set_state(SocialPipelineFSM.regenerating)
-    await safe_edit_text(msg, _social_progress_text(_SOCIAL_STEPS, 0))
+
+    # Previous review may be a photo message — delete and send fresh text
+    with contextlib.suppress(TelegramBadRequest):
+        await msg.delete()
+    progress_msg = await msg.answer(_social_progress_text(_SOCIAL_STEPS, 0))
     await callback.answer()
 
     log.info(
@@ -687,7 +859,7 @@ async def regenerate_social(
     data = await state.get_data()
 
     await _run_social_generation(
-        msg,
+        progress_msg,
         state,
         user,
         db,
