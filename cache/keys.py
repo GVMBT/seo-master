@@ -2,7 +2,7 @@
 
 # TTL values in seconds
 FSM_TTL = 86400  # 24 hours
-PUBLISH_LOCK_TTL = 300  # 5 minutes
+PUBLISH_LOCK_TTL = 600  # 10 minutes (article pipeline takes 300-400s)
 CLEANUP_LOCK_TTL = 300  # 5 minutes
 NOTIFY_LOCK_TTL = 300  # 5 minutes
 RENEW_LOCK_TTL = 3600  # 1 hour (API_CONTRACTS.md §2.5)

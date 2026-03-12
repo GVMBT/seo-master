@@ -94,47 +94,55 @@ async def publish_handler(request: web.Request) -> web.Response:
         log.warning("publish_invalid_payload", body=request["verified_body"])
         return web.json_response({"status": "error", "reason": "invalid_payload"})
 
-    # 4. Semaphore with timeout (backpressure)
+    # 4. Acquire semaphore with timeout (backpressure).
+    #    Timeout covers ONLY semaphore wait, NOT the pipeline itself.
+    #    Article pipeline takes 300-400s (outline+expand+critique+images+WP).
+    #    Wrapping pipeline in 300s timeout caused CancelledError that bypassed
+    #    except-Exception logging, returned 503, and triggered infinite QStash retries.
     try:
         async with asyncio.timeout(300):
-            async with PUBLISH_SEMAPHORE:
-                # 5. Post-semaphore shutdown check
-                if SHUTDOWN_EVENT.is_set():
-                    await redis.delete(lock_key)
-                    return web.Response(status=503, headers={"Retry-After": "60"})
-
-                # 6. Execute pipeline
-                service = PublishService(
-                    db=request.app["db"],
-                    redis=request.app["redis"],
-                    http_client=request.app["http_client"],
-                    ai_orchestrator=request.app["ai_orchestrator"],
-                    image_storage=request.app["image_storage"],
-                    admin_ids=request.app["settings"].admin_ids,
-                    scheduler_service=request.app.get("scheduler_service"),
-                    serper_client=request.app.get("serper_client"),
-                    firecrawl_client=request.app.get("firecrawl_client"),
-                    settings=request.app["settings"],
-                )
-                result = await service.execute(payload)
-
-                # 7. Notify user if configured (EDGE_CASES.md notification table)
-                if result.notify and result.user_id:
-                    bot = request.app["bot"]
-                    try:
-                        text = _build_notification_text(result)
-                        await bot.send_message(result.user_id, text, parse_mode="HTML")
-                    except Exception:
-                        log.warning("publish_notify_failed", user_id=result.user_id)
-
-                return web.json_response({"status": result.status, "reason": result.reason})
-
+            await PUBLISH_SEMAPHORE.acquire()
     except TimeoutError:
         await redis.delete(lock_key)
         return web.Response(status=503, headers={"Retry-After": "120"})
+
+    try:
+        # 5. Post-semaphore shutdown check
+        if SHUTDOWN_EVENT.is_set():
+            await redis.delete(lock_key)
+            return web.Response(status=503, headers={"Retry-After": "60"})
+
+        # 6. Execute pipeline (no timeout — pipeline has own per-step timeouts)
+        service = PublishService(
+            db=request.app["db"],
+            redis=request.app["redis"],
+            http_client=request.app["http_client"],
+            ai_orchestrator=request.app["ai_orchestrator"],
+            image_storage=request.app["image_storage"],
+            admin_ids=request.app["settings"].admin_ids,
+            scheduler_service=request.app.get("scheduler_service"),
+            serper_client=request.app.get("serper_client"),
+            firecrawl_client=request.app.get("firecrawl_client"),
+            settings=request.app["settings"],
+        )
+        result = await service.execute(payload)
+
+        # 7. Notify user if configured (EDGE_CASES.md notification table)
+        if result.notify and result.user_id:
+            bot = request.app["bot"]
+            try:
+                text = _build_notification_text(result)
+                await bot.send_message(result.user_id, text, parse_mode="HTML")
+            except Exception:
+                log.warning("publish_notify_failed", user_id=result.user_id)
+
+        return web.json_response({"status": result.status, "reason": result.reason})
+
     except Exception:
         log.exception("publish_handler_error")
         # Don't delete lock — prevents double publish on QStash retry.
         # Return 200 to stop QStash retries (aiohttp-handlers rule).
         # Lock expires via TTL (5 min).
         return web.json_response({"status": "error", "reason": "internal_error"})
+    finally:
+        PUBLISH_SEMAPHORE.release()
