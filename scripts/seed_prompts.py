@@ -72,6 +72,7 @@ async def main() -> None:
     seeded = 0
     updated = 0
     skipped = 0
+    errors = 0
 
     for filename, (task_type, version) in _PROMPT_MAP.items():
         filepath = prompts_dir / filename
@@ -122,9 +123,12 @@ async def main() -> None:
             seeded += 1
         except Exception as e:
             print(f"  ERROR {task_type}/{version}: {e}")
+            errors += 1
 
     await client.aclose()
-    print(f"\nDone: {seeded} seeded, {updated} updated, {skipped} skipped")
+    print(f"\nDone: {seeded} seeded, {updated} updated, {skipped} skipped, {errors} errors")
+    if errors:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
