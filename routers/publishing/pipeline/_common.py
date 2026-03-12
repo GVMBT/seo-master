@@ -69,12 +69,12 @@ class ArticlePipelineFSM(StatesGroup):
 
 
 # ---------------------------------------------------------------------------
-# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 24 states)
+# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 28 states)
 # ---------------------------------------------------------------------------
 
 
 class SocialPipelineFSM(StatesGroup):
-    """Social pipeline FSM — 25 states for social post creation."""
+    """Social pipeline FSM — 28 states (25 base + 3 cross-post F6.4)."""
 
     # Step 1: Project selection
     select_project = State()
@@ -110,6 +110,11 @@ class SocialPipelineFSM(StatesGroup):
     review = State()
     publishing = State()
     regenerating = State()
+
+    # Step 8: Cross-posting (F6.4)
+    cross_post_select = State()  # Platform selection (toggle checkboxes)
+    cross_post_running = State()  # AI adaptation + publish in progress
+    cross_post_result = State()  # Final result
 
 
 # ---------------------------------------------------------------------------
