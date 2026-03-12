@@ -12,6 +12,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -26,14 +27,15 @@ _PROMPT_MAP: dict[str, tuple[str, str]] = {
     "article_outline_v1.yaml": ("article_outline", "v1"),
     "article_critique_v1.yaml": ("article_critique", "v1"),
     "social_v3.yaml": ("social_post", "v3"),
+    "social_v4.yaml": ("social_post", "v4"),
     "keywords_cluster_v3.yaml": ("keywords", "v3"),
     "image_v1.yaml": ("image", "v1"),
     "review_v1.yaml": ("review", "v1"),
     "description_v1.yaml": ("description", "v1"),
     "cross_post_v1.yaml": ("cross_post", "v1"),
+    "cross_post_v2.yaml": ("cross_post", "v2"),
     "seed_normalize.yaml": ("seed_normalize", "v1"),
     "research_v1.yaml": ("article_research", "v1"),
-    "image_director_v1.yaml": ("image_director", "v1"),
 }
 
 # Which versions are active by default
@@ -41,15 +43,14 @@ _ACTIVE: set[tuple[str, str]] = {
     ("article", "v7"),
     ("article_outline", "v1"),
     ("article_critique", "v1"),
-    ("social_post", "v3"),
-    ("cross_post", "v1"),
+    ("social_post", "v4"),
+    ("cross_post", "v2"),
     ("keywords", "v3"),
     ("image", "v1"),
     ("review", "v1"),
     ("description", "v1"),
     ("seed_normalize", "v1"),
     ("article_research", "v1"),
-    ("image_director", "v1"),
 }
 
 
@@ -72,7 +73,6 @@ async def main() -> None:
     seeded = 0
     updated = 0
     skipped = 0
-    errors = 0
 
     for filename, (task_type, version) in _PROMPT_MAP.items():
         filepath = prompts_dir / filename
@@ -88,11 +88,10 @@ async def main() -> None:
             resp = await (
                 client.from_("prompt_versions").select("id").eq("task_type", task_type).eq("version", version).execute()
             )
-            rows = resp.data
-            if rows and isinstance(rows, list):
+            rows: list[dict[str, Any]] = resp.data if isinstance(resp.data, list) else []  # type: ignore[assignment]
+            if rows:
                 if force:
-                    first_row: dict[str, int] = rows[0]  # type: ignore[assignment]
-                    row_id = first_row["id"]
+                    row_id = rows[0]["id"]
                     await (
                         client.from_("prompt_versions")
                         .update({"prompt_yaml": yaml_content, "is_active": is_active})
@@ -123,12 +122,9 @@ async def main() -> None:
             seeded += 1
         except Exception as e:
             print(f"  ERROR {task_type}/{version}: {e}")
-            errors += 1
 
     await client.aclose()
-    print(f"\nDone: {seeded} seeded, {updated} updated, {skipped} skipped, {errors} errors")
-    if errors:
-        raise SystemExit(1)
+    print(f"\nDone: {seeded} seeded, {updated} updated, {skipped} skipped")
 
 
 if __name__ == "__main__":

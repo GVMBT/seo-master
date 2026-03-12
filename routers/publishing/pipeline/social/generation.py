@@ -351,7 +351,7 @@ async def _run_social_generation(
         return
 
     # Select keyword for generation
-    keyword = await select_keyword(db, category_id)
+    keyword = await select_keyword(db, category_id, content_type="social")
     if not keyword:
         await try_refund(db, user, cost, "Нет ключевых фраз")
         await safe_edit_text(message, 
@@ -723,17 +723,14 @@ async def publish_social_post(
             )
         )
 
-        # Get cross-post connections (other social platforms for same project)
-        crosspost_conns: list[dict[str, Any]] | None = None
+        # Check if there are other social connections for cross-posting
+        has_crosspost = False
         if project_id:
             all_connections = await conn_svc.get_by_project(project_id)
-            crosspost_conns = [
-                {"id": c.id, "platform": c.platform_type}
+            has_crosspost = any(
+                c.id != connection_id and c.platform_type != "wordpress"
                 for c in all_connections
-                if c.id != connection_id and c.platform_type != "wordpress"
-            ]
-            if not crosspost_conns:
-                crosspost_conns = None
+            )
 
         # Show result
         balance = await TokenService(db=db, admin_ids=get_settings().admin_ids).get_balance(user.id)
@@ -743,9 +740,9 @@ async def publish_social_post(
             f"Ключевая фраза: {html.escape(keyword)}\n"
             f"Списано: {tokens_charged} ток. | Баланс: {balance} ток."
         )
-        await safe_edit_text(msg, 
+        await safe_edit_text(msg,
             result_text,
-            reply_markup=social_result_kb(pub_result.post_url, crosspost_conns),
+            reply_markup=social_result_kb(pub_result.post_url, has_crosspost),
         )
         await clear_checkpoint(redis, user.id)
         await callback.answer()
@@ -904,84 +901,6 @@ async def cancel_refund_social(
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "pipeline:social:more")
-async def more_posts_social(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-) -> None:
-    """Write another post -- jump to category selection step (step 3).
-
-    Keeps project and connection, clears generation-specific data.
-    """
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
-
-    if not project_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
-        return
-
-    # Clear generation-specific data, keep project + connection
-    await state.update_data(
-        category_id=None,
-        category_name=None,
-        generated_text=None,
-        generated_hashtags=None,
-        generated_keyword=None,
-        generated_model=None,
-        generated_prompt_version=None,
-        tokens_charged=None,
-        regen_count=None,
-    )
-
-    from services.categories import CategoryService
-
-    cat_svc = CategoryService(db=db)
-    categories = await cat_svc.list_by_project(project_id, user.id) or []
-
-    from keyboards.pipeline import pipeline_categories_kb
-
-    if not categories:
-        from keyboards.inline import cancel_kb
-
-        await safe_edit_text(msg, 
-            "Пост (3/5) -- Тема\n\nО чём будет пост? Назовите тему.",
-            reply_markup=cancel_kb("pipeline:social:cancel"),
-        )
-        await state.set_state(SocialPipelineFSM.create_category_name)
-    elif len(categories) == 1:
-        cat = categories[0]
-        await state.update_data(category_id=cat.id, category_name=cat.name)
-        from routers.publishing.pipeline.social.readiness import show_social_readiness_check
-
-        await show_social_readiness_check(callback, state, user, db, redis)
-    else:
-        await safe_edit_text(msg, 
-            "Пост (3/5) -- Тема\n\nКакая тема?",
-            reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
-        )
-        await state.set_state(SocialPipelineFSM.select_category)
-
-    await save_checkpoint(
-        redis,
-        user.id,
-        current_step="select_category",
-        pipeline_type="social",
-        project_id=project_id,
-        project_name=project_name,
-        connection_id=data.get("connection_id"),
-    )
-    await callback.answer()
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1018,9 +937,9 @@ def _get_content_type(platform_type: str) -> Literal["html", "telegram_html", "p
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data.startswith("pipeline:crosspost:"))
+@router.callback_query(F.data == "pipeline:crosspost:start")
 async def crosspost_stub(callback: CallbackQuery) -> None:
-    """Stub handler for cross-post buttons until F6.4 is implemented."""
+    """Stub handler for cross-post button until F6.4 is implemented."""
     await callback.answer(
         "Кросс-постинг будет доступен в следующем обновлении.",
         show_alert=True,

@@ -1,0 +1,110 @@
+meta:
+  task_type: cross_post
+  version: v2
+  model_tier: budget
+  max_tokens: 2000
+  temperature: 0.7
+
+system: |
+  Ты — контент-менеджер в штате компании <<company_name>>. Пиши на <<language>>.
+  Специализация: <<specialization>>.
+  <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if website_url %>Сайт: <<website_url>>.<% endif %>
+  <% if company_city %>Город: <<company_city>>.<% endif %>
+
+  Ты адаптируешь пост из одной соцсети в другую — сохраняя суть, но меняя формат и стиль.
+  Пиши от лица компании как свой сотрудник, живым языком.
+
+  ЗАПРЕЩЁННЫЕ фразы (AI-штампы):
+  - "в современном мире", "не секрет что", "давайте разберёмся", "важно отметить"
+  - "уникальное предложение", "индивидуальный подход", "широкий ассортимент"
+  - "идеальное решение", "хотите узнать больше?", "не упустите шанс"
+  - "подводя итог", "таким образом", "безусловно", "представляет собой"
+
+user: |
+  Адаптируй пост из <<source_platform>> для <<target_platform>>.
+
+  Оригинальный текст:
+  ---
+  <<original_text>>
+  ---
+
+  Требования:
+  - Сохрани смысл и ключевую фразу "<<keyword>>"
+  - НЕ копируй текст дословно — перефразируй, измени структуру
+  - Используй разговорные частицы ("же", "ведь", "вот") для естественности
+
+  <% if target_platform == "pinterest" %>
+  ФОРМАТ: Pinterest pin (ранжирование по ключевым словам, НЕ хештегам)
+  - pin_title (до 100 символов): ключевик + конкретика (цена, срок, цифра)
+  - text: 2-3 предложения, оптимум 200-250 символов (макс. 500)
+  - Вписывай ключевые слова естественно в текст описания
+  - hashtags: 0-3 узконишевых (или вообще без них)
+  <% elif target_platform == "telegram" %>
+  ФОРМАТ: Telegram-канал
+  - HTML-разметка: <b> для акцентов, <i> для пояснений, <a href="..."> для ссылок
+  - Хук в первом предложении (до 180 символов — виден в push), короткие абзацы, CTA в конце
+  <% if social_link %>- Ссылка на канал: <<social_link>><% endif %>
+  - hashtags: 1-3 рубрикатора (#кейс, #советы)
+  - pin_title: пустая строка ""
+  <% elif target_platform == "vk" %>
+  ФОРМАТ: VK-сообщество
+  - Plain text, макс. 16 384 символов
+  - Первые 2 строки — хук (до 350 символов, видны до "Показать полностью")
+  - Короткие абзацы, разделённые пустыми строками. Одна мысль = один абзац.
+  <% if company_phone %>- CTA: звоните <<company_phone>><% endif %>
+  <% if social_link %>- Группа: <<social_link>><% endif %>
+  - hashtags: 3-5 нишевых
+  - pin_title: пустая строка ""
+  <% endif %>
+
+  Формат ответа — JSON:
+  {
+    "text": "текст поста",
+    "hashtags": ["#тег1", "#тег2"],
+    "pin_title": "заголовок пина (или пустая строка для VK/TG)"
+  }
+
+variables:
+  - name: original_text
+    source: lead post text
+    required: true
+  - name: source_platform
+    source: lead connection platform_type
+    required: true
+  - name: target_platform
+    source: target connection platform_type
+    required: true
+  - name: keyword
+    source: categories.keywords (selected phrase)
+    required: true
+  - name: company_name
+    source: projects.company_name
+    required: true
+  - name: specialization
+    source: projects.specialization
+    required: true
+  - name: company_description
+    source: projects.description
+    required: false
+    default: ""
+  - name: website_url
+    source: projects.website_url
+    required: false
+    default: ""
+  - name: company_city
+    source: projects.company_city
+    required: false
+    default: ""
+  - name: company_phone
+    source: projects.company_phone
+    required: false
+    default: ""
+  - name: social_link
+    source: projects.company_vk / company_telegram / company_pinterest
+    required: false
+    default: ""
+  - name: language
+    source: users.language
+    required: true
+    default: "ru"
