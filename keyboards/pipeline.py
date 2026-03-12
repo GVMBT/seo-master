@@ -1026,3 +1026,72 @@ def social_result_kb(
     )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# Cross-post: platform selection (F6.4, UX_PIPELINE.md §6)
+# ---------------------------------------------------------------------------
+
+_PLATFORM_ICONS: dict[str, str] = {
+    "telegram": "TG",
+    "vk": "VK",
+    "pinterest": "Pin",
+}
+
+
+def crosspost_select_kb(
+    connections: list[PlatformConnection],
+    selected_ids: set[int],
+) -> InlineKeyboardMarkup:
+    """Toggle-checkboxes for cross-post platform selection.
+
+    Args:
+        connections: Other social connections (lead excluded).
+        selected_ids: Currently selected connection IDs.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+    for conn in connections:
+        icon = _PLATFORM_ICONS.get(conn.platform_type, conn.platform_type)
+        check = "\u2705 " if conn.id in selected_ids else ""
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{check}{icon}: {conn.identifier}",
+                    callback_data=f"pipeline:crosspost:toggle:{conn.id}",
+                ),
+            ]
+        )
+
+    action_row: list[InlineKeyboardButton] = []
+    if selected_ids:
+        cost = len(selected_ids) * 10
+        action_row.append(
+            InlineKeyboardButton(
+                text=f"Адаптировать (~{cost} ток.)",
+                callback_data="pipeline:crosspost:go",
+                style=ButtonStyle.SUCCESS,
+            )
+        )
+    action_row.append(
+        InlineKeyboardButton(
+            text="Отмена",
+            callback_data="pipeline:crosspost:cancel",
+        )
+    )
+    rows.append(action_row)
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def crosspost_result_kb() -> InlineKeyboardMarkup:
+    """Result keyboard after cross-posting is done."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="\U0001f4cb Главное меню",
+                    callback_data="nav:dashboard",
+                ),
+            ]
+        ]
+    )

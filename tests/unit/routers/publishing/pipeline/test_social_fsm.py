@@ -44,13 +44,17 @@ _EXPECTED_STATES = [
     "review",
     "publishing",
     "regenerating",
+    # Step 8: Cross-posting (F6.4)
+    "cross_post_select",
+    "cross_post_running",
+    "cross_post_result",
 ]
 
 
 class TestSocialPipelineFSMDefinition:
     def test_state_count(self) -> None:
         states = [attr for attr in dir(SocialPipelineFSM) if isinstance(getattr(SocialPipelineFSM, attr), State)]
-        assert len(states) == 25  # +connect_vk_group_url (2-step VK OAuth)
+        assert len(states) == 28  # 25 base + 3 cross-post (F6.4)
 
     def test_all_expected_states_exist(self) -> None:
         for name in _EXPECTED_STATES:
