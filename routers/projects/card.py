@@ -72,8 +72,6 @@ async def show_project_card(
 # project:{id}:connections — handled by routers/platforms/connections.py
 
 
-# project:{id}:scheduler — handled by routers/publishing/scheduler.py
-
 
 # ---------------------------------------------------------------------------
 # Project delete

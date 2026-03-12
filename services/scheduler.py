@@ -360,6 +360,10 @@ class SchedulerService:
         conns = await self._conn_repo().get_by_project(ctx.project.id)
         return self._filter_social(conns)
 
+    async def get_connection(self, conn_id: int) -> PlatformConnection | None:
+        """Get a connection by ID."""
+        return await self._conn_repo().get_by_id(conn_id)
+
     async def get_category_schedules_map(
         self,
         cat_id: int,

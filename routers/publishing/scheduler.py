@@ -6,7 +6,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
@@ -14,6 +14,7 @@ from db.models import User
 from keyboards.inline import (
     _DAY_LABELS,
     _PRESETS,
+    format_connection_display,
     schedule_count_kb,
     schedule_days_kb,
     schedule_times_kb,
@@ -54,97 +55,8 @@ class ScheduleSetupFSM(StatesGroup):
 
 
 # ---------------------------------------------------------------------------
-# Entry: from nav:scheduler (pipeline result screen, H4 fix)
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(F.data == "nav:scheduler")
-async def nav_scheduler(
-    callback: CallbackQuery,
-    user: User,
-    scheduler_service: SchedulerService,
-) -> None:
-    """Navigate to scheduler from pipeline result (no project context).
-
-    If user has 1 project — go directly to its scheduler.
-    If multiple — show project selection list.
-    """
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    projects = await scheduler_service.get_user_projects(user.id)
-    if not projects:
-        await callback.answer(
-            "Сначала создайте проект в /start \u2192 \U0001f4c1 Проекты",
-            show_alert=True,
-        )
-        return
-
-    if len(projects) == 1:
-        project = projects[0]
-        cats = await scheduler_service.get_project_categories(project.id, user.id)
-        if not cats:
-            await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
-            return
-        await safe_edit_text(msg, 
-            "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
-            reply_markup=scheduler_cat_list_kb(cats, project.id),
-        )
-        await callback.answer()
-        return
-
-    # Multiple projects — show selection
-    rows: list[list[InlineKeyboardButton]] = []
-    for p in projects:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=p.name,
-                    callback_data=f"project:{p.id}:scheduler",
-                ),
-            ]
-        )
-    rows.append([InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard")])
-    await safe_edit_text(msg, 
-        "<b>Планировщик</b>\n\nВыберите проект:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
-    )
-    await callback.answer()
-
-
-# ---------------------------------------------------------------------------
 # Entry: from project card
 # ---------------------------------------------------------------------------
-
-
-@router.callback_query(F.data.regexp(r"^project:\d+:scheduler$"))
-async def scheduler_entry(
-    callback: CallbackQuery,
-    user: User,
-    scheduler_service: SchedulerService,
-) -> None:
-    """Legacy entry — redirect to articles scheduler."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    cats = await scheduler_service.get_project_categories(project_id, user.id)
-    if cats is None:
-        await callback.answer("Проект не найден", show_alert=True)
-        return
-    if not cats:
-        await callback.answer("Сначала создайте категорию в карточке проекта", show_alert=True)
-        return
-
-    await safe_edit_text(msg, 
-        "<b>Статьи — Планировщик</b>\n\nВыберите категорию:",
-        reply_markup=scheduler_cat_list_kb(cats, project_id),
-    )
-    await callback.answer()
 
 
 @router.callback_query(F.data.regexp(r"^project:\d+:sched_articles$"))
@@ -239,8 +151,8 @@ async def scheduler_category(
 
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await safe_edit_text(msg, 
-        "<b>Подключения</b>\n\nВыберите подключение для настройки расписания:",
+    await safe_edit_text(msg,
+        "<b>Статьи — Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_conn_list_kb(connections, schedules_map, cat_id, project_id),
     )
     await callback.answer()
@@ -257,7 +169,7 @@ async def scheduler_conn_list_back(
     user: User,
     scheduler_service: SchedulerService,
 ) -> None:
-    """Navigate back to connection list -- reconstruct category context."""
+    """Navigate back to article (WordPress) connection list."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -272,8 +184,8 @@ async def scheduler_conn_list_back(
     connections = await scheduler_service.get_project_connections(ctx.project.id, user.id)
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await safe_edit_text(msg, 
-        "<b>Подключения</b>\n\nВыберите подключение для настройки расписания:",
+    await safe_edit_text(msg,
+        "<b>Статьи — Подключения</b>\n\nВыберите подключение для настройки расписания:",
         reply_markup=scheduler_conn_list_kb(connections or [], schedules_map, cat_id, ctx.project.id),
     )
     await callback.answer()
@@ -371,18 +283,28 @@ async def scheduler_preset(
         await callback.answer("Категория или подключение не найдены", show_alert=True)
         return
 
-    await safe_edit_text(msg, 
+    display = format_connection_display(result.connection)
+    is_social = result.connection.platform_type != "wordpress"
+
+    if is_social:
+        social_conns = await scheduler_service.get_social_connections_by_category(cat_id, user.id)
+        has_other = len(social_conns or []) > 1
+        reply_markup = scheduler_social_config_kb(
+            cat_id, conn_id, has_schedule=True, has_other_social=has_other,
+            schedule_days=days, posts_per_day=posts_per_day,
+        )
+    else:
+        reply_markup = scheduler_config_kb(
+            cat_id, conn_id, has_schedule=True,
+            schedule_days=days, posts_per_day=posts_per_day,
+        )
+
+    await safe_edit_text(msg,
         f"Расписание установлено!\n\n"
-        f"Подключение: {result.connection.identifier}\n"
+        f"Подключение: {display}\n"
         f"Режим: {preset[0]}\n"
         f"Ориент. расход: ~{result.weekly_cost} токенов/нед",
-        reply_markup=scheduler_config_kb(
-            cat_id,
-            conn_id,
-            has_schedule=True,
-            schedule_days=days,
-            posts_per_day=posts_per_day,
-        ),
+        reply_markup=reply_markup,
     )
     await callback.answer()
 
@@ -413,9 +335,21 @@ async def scheduler_disable(
         await callback.answer("Категория не найдена", show_alert=True)
         return
 
-    await safe_edit_text(msg, 
+    conn = await scheduler_service.get_connection(conn_id)
+    is_social = conn is not None and conn.platform_type != "wordpress"
+
+    if is_social:
+        social_conns = await scheduler_service.get_social_connections_by_category(cat_id, user.id)
+        has_other = len(social_conns or []) > 1
+        reply_markup = scheduler_social_config_kb(
+            cat_id, conn_id, has_schedule=False, has_other_social=has_other,
+        )
+    else:
+        reply_markup = scheduler_config_kb(cat_id, conn_id, has_schedule=False)
+
+    await safe_edit_text(msg,
         "Расписание отключено.",
-        reply_markup=scheduler_config_kb(cat_id, conn_id, has_schedule=False),
+        reply_markup=reply_markup,
     )
     await callback.answer()
 
@@ -641,19 +575,27 @@ async def schedule_times_done(
     days_str = ", ".join(_DAY_LABELS.get(d, d) for d in selected_days)
     times_str = ", ".join(selected_times)
 
-    await safe_edit_text(msg, 
+    is_social = result.connection.platform_type != "wordpress"
+    if is_social:
+        social_conns = await scheduler_service.get_social_connections_by_category(cat_id, user.id)
+        has_other = len(social_conns or []) > 1
+        reply_markup = scheduler_social_config_kb(
+            cat_id, conn_id, has_schedule=True, has_other_social=has_other,
+            schedule_days=list(selected_days), posts_per_day=required,
+        )
+    else:
+        reply_markup = scheduler_config_kb(
+            cat_id, conn_id, has_schedule=True,
+            schedule_days=list(selected_days), posts_per_day=required,
+        )
+
+    await safe_edit_text(msg,
         f"Расписание установлено!\n\n"
         f"Дни: {days_str}\n"
         f"Время: {times_str}\n"
         f"Постов/день: {required}\n"
         f"Ориент. расход: ~{result.weekly_cost} токенов/нед",
-        reply_markup=scheduler_config_kb(
-            cat_id,
-            conn_id,
-            has_schedule=True,
-            schedule_days=list(selected_days),
-            posts_per_day=required,
-        ),
+        reply_markup=reply_markup,
     )
     await callback.answer()
 
@@ -806,10 +748,10 @@ async def scheduler_crosspost_config(
         await callback.answer("Категория или подключение не найдены", show_alert=True)
         return
 
-    lead_name = html_mod.escape(config.lead_connection.identifier)
+    lead_display = format_connection_display(config.lead_connection)
     text = (
         f"<b>Кросс-постинг</b>\n\n"
-        f"Ведущая платформа: {config.lead_connection.platform_type.capitalize()} ({lead_name})\n\n"
+        f"Ведущая платформа: {html_mod.escape(lead_display)}\n\n"
         "Выберите платформы для автоматической адаптации поста.\n"
         "Стоимость: ~10 ток/пост за кросс-пост."
     )
@@ -915,7 +857,12 @@ async def scheduler_crosspost_save(
 @router.callback_query(F.data == "sched:cancel", ScheduleSetupFSM.select_days)
 @router.callback_query(F.data == "sched:cancel", ScheduleSetupFSM.select_count)
 @router.callback_query(F.data == "sched:cancel", ScheduleSetupFSM.select_times)
-async def schedule_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+async def schedule_cancel(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    scheduler_service: SchedulerService,
+) -> None:
     """Cancel manual schedule setup, return to connection config."""
     msg = safe_message(callback)
     if not msg:
@@ -929,9 +876,23 @@ async def schedule_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
 
     if cat_id and conn_id:
-        await safe_edit_text(msg, 
+        cat_id_int, conn_id_int = int(cat_id), int(conn_id)
+        conn = await scheduler_service.get_connection(conn_id_int)
+        is_social = conn is not None and conn.platform_type != "wordpress"
+
+        if is_social:
+            social_conns = await scheduler_service.get_social_connections_by_category(cat_id_int, user.id)
+            has_other = len(social_conns or []) > 1
+            reply_markup = scheduler_social_config_kb(
+                cat_id_int, conn_id_int,
+                has_schedule=bool(has_schedule), has_other_social=has_other,
+            )
+        else:
+            reply_markup = scheduler_config_kb(cat_id_int, conn_id_int, has_schedule=bool(has_schedule))
+
+        await safe_edit_text(msg,
             "Настройка расписания отменена.",
-            reply_markup=scheduler_config_kb(int(cat_id), int(conn_id), has_schedule=bool(has_schedule)),
+            reply_markup=reply_markup,
         )
     else:
         await safe_edit_text(msg, "Настройка расписания отменена.")

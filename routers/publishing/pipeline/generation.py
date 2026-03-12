@@ -1157,20 +1157,6 @@ async def _jump_to_category_selection(
     await callback.answer()
 
 
-@router.callback_query(
-    ArticlePipelineFSM.result,
-    F.data == "pipeline:article:more",
-)
-async def more_articles(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-) -> None:
-    """Write another article — jump to step 3 (category), keeping project+WP (G5)."""
-    await _jump_to_category_selection(callback, state, user, db, redis)
-
 
 @router.callback_query(F.data == "pipeline:article:change_topic")
 async def change_topic(

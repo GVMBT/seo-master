@@ -486,6 +486,24 @@ _PLATFORM_ICONS: dict[str, str] = {
     "pinterest": "Pin",
 }
 
+_PLATFORM_LABELS_RU: dict[str, str] = {
+    "wordpress": "WordPress",
+    "telegram": "Телеграм",
+    "vk": "ВКонтакте",
+    "pinterest": "Пинтерест",
+}
+
+
+def format_connection_display(conn: Any) -> str:
+    """Human-readable connection label.
+
+    For WordPress shows domain (useful), for social shows Russian platform name.
+    """
+    label: str = _PLATFORM_LABELS_RU.get(conn.platform_type, conn.platform_type)
+    if conn.platform_type == "wordpress":
+        return str(conn.identifier)
+    return label
+
 
 def connection_list_kb(connections: list[PlatformConnection], project_id: int) -> InlineKeyboardMarkup:
     """Connection list with platform status + add buttons (UX_TOOLBOX.md section 5.1).
@@ -1220,15 +1238,18 @@ def scheduler_conn_list_kb(
     cat_id: int,
     project_id: int,
 ) -> InlineKeyboardMarkup:
-    """Connection list with schedule summaries."""
+    """Article (WordPress) connection list with schedule summaries."""
     rows: list[list[InlineKeyboardButton]] = []
     for conn in connections:
+        if conn.platform_type != "wordpress":
+            continue
         sched = schedules.get(conn.id)
+        display = format_connection_display(conn)
         if sched and sched.enabled:
             days_str = ", ".join(_DAY_LABELS.get(d) or d for d in sched.schedule_days)
-            label = f"{conn.identifier} ({days_str})"
+            label = f"{display} ({days_str})"
         else:
-            label = f"{conn.identifier} (нет расписания)"
+            label = f"{display} (нет расписания)"
         rows.append(
             [
                 InlineKeyboardButton(
@@ -1241,7 +1262,7 @@ def scheduler_conn_list_kb(
         [
             InlineKeyboardButton(
                 text="\u2b05\ufe0f Назад",
-                callback_data=f"project:{project_id}:scheduler",
+                callback_data=f"project:{project_id}:sched_articles",
             )
         ]
     )
@@ -1350,13 +1371,14 @@ def scheduler_social_conn_list_kb(
         if conn.platform_type not in _SOCIAL_TYPES:
             continue
         sched = schedules.get(conn.id)
+        display = format_connection_display(conn)
         if sched and sched.enabled:
             days_str = ", ".join(_DAY_LABELS.get(d) or d for d in sched.schedule_days)
             cross_count = len(sched.cross_post_connection_ids) if sched.cross_post_connection_ids else 0
             cross_badge = f" +{cross_count} кросс" if cross_count else ""
-            label = f"{conn.identifier} ({days_str}{cross_badge})"
+            label = f"{display} ({days_str}{cross_badge})"
         else:
-            label = f"{conn.identifier} (нет расписания)"
+            label = f"{display} (нет расписания)"
         rows.append(
             [
                 InlineKeyboardButton(
@@ -1388,11 +1410,11 @@ def scheduler_crosspost_kb(
         if conn.id == conn_id:
             continue  # skip lead connection
         mark = "\u2713 " if conn.id in selected_ids else ""
-        icon = _PLATFORM_ICONS.get(conn.platform_type, conn.platform_type)
+        display = format_connection_display(conn)
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{mark}{icon}: {conn.identifier}",
+                    text=f"{mark}{display}",
                     callback_data=f"sched_xp:{cat_id}:{conn_id}:{conn.id}:toggle",
                 )
             ]

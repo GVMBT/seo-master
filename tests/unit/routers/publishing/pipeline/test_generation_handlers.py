@@ -24,7 +24,6 @@ from routers.publishing.pipeline.generation import (
     confirm_generate,
     connect_wp_publish,
     copy_html,
-    more_articles,
     publish_article,
     regenerate_article,
     show_confirm,
@@ -1072,72 +1071,6 @@ class TestConnectWpPublish:
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.connect_wp_login)
         text = mock_callback.message.edit_text.call_args.args[0]
         assert "mysite.com" in text
-
-
-# ---------------------------------------------------------------------------
-# Step 8: more_articles (G5)
-# ---------------------------------------------------------------------------
-
-
-class TestMoreArticles:
-    """more_articles jumps to step 3 (category), keeping project."""
-
-    async def test_clears_preview_data(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-        mock_redis: MagicMock,
-    ) -> None:
-        mock_state.get_data = AsyncMock(return_value=_make_fsm_data(preview_id=100))
-        with (
-            patch("services.categories.CategoryService") as cats_cls,
-            patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock),
-        ):
-            cats_cls.return_value.list_by_project = AsyncMock(
-                return_value=[
-                    make_category(id=10),
-                    make_category(id=11),
-                ]
-            )
-            await more_articles(mock_callback, mock_state, user, mock_db, mock_redis)
-
-        # Should clear preview-specific data
-        update_call = mock_state.update_data.call_args
-        assert update_call.kwargs.get("preview_id") is None
-        assert update_call.kwargs.get("keyword") is None
-
-    async def test_single_category_auto_selects(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-        mock_redis: MagicMock,
-    ) -> None:
-        mock_state.get_data = AsyncMock(return_value=_make_fsm_data(preview_id=100))
-        with (
-            patch("services.categories.CategoryService") as cats_cls,
-            patch(f"{_MODULE}.save_checkpoint", new_callable=AsyncMock),
-            patch("routers.publishing.pipeline.readiness.show_readiness_check", new_callable=AsyncMock) as show_mock,
-        ):
-            cats_cls.return_value.list_by_project = AsyncMock(return_value=[make_category()])
-            await more_articles(mock_callback, mock_state, user, mock_db, mock_redis)
-        show_mock.assert_called_once()
-
-    async def test_no_project_shows_alert(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-        mock_redis: MagicMock,
-    ) -> None:
-        mock_state.get_data = AsyncMock(return_value={})
-        await more_articles(mock_callback, mock_state, user, mock_db, mock_redis)
-        mock_callback.answer.assert_called()
-        assert "устарели" in mock_callback.answer.call_args.args[0]
 
 
 # ---------------------------------------------------------------------------
