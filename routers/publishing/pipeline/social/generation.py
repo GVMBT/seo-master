@@ -945,6 +945,7 @@ async def crosspost_start(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    redis: RedisClient,
     http_client: httpx.AsyncClient,
     ai_orchestrator: Any,
 ) -> None:
@@ -986,7 +987,7 @@ async def crosspost_start(
         # Skip selection screen, go directly to adaptation
         await state.update_data(crosspost_selected_ids=[targets[0].id])
         await state.set_state(SocialPipelineFSM.cross_post_running)
-        await _execute_crosspost(msg, state, user, db, http_client, ai_orchestrator, callback)
+        await _execute_crosspost(msg, state, user, db, redis, http_client, ai_orchestrator, callback)
         return
 
     from keyboards.pipeline import crosspost_select_kb
@@ -1022,7 +1023,11 @@ async def crosspost_toggle(
     if len(parts) < 4:
         await callback.answer()
         return
-    toggle_id = int(parts[3])
+    try:
+        toggle_id = int(parts[3])
+    except ValueError:
+        await callback.answer()
+        return
 
     data = await state.get_data()
     selected: set[int] = set(data.get("crosspost_selected_ids", []))
@@ -1056,6 +1061,7 @@ async def crosspost_go(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    redis: RedisClient,
     http_client: httpx.AsyncClient,
     ai_orchestrator: Any,
 ) -> None:
@@ -1072,7 +1078,7 @@ async def crosspost_go(
         return
 
     await state.set_state(SocialPipelineFSM.cross_post_running)
-    await _execute_crosspost(msg, state, user, db, http_client, ai_orchestrator, callback)
+    await _execute_crosspost(msg, state, user, db, redis, http_client, ai_orchestrator, callback)
 
 
 @router.callback_query(F.data == "pipeline:crosspost:cancel")
@@ -1096,6 +1102,7 @@ async def _execute_crosspost(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    redis: RedisClient,
     http_client: httpx.AsyncClient,
     ai_orchestrator: Any,
     callback: CallbackQuery,
@@ -1112,6 +1119,14 @@ async def _execute_crosspost(
     keyword: str = data.get("generated_keyword", "")
     platform_type: str = data.get("platform_type", "")
 
+    # E07: Redis NX lock to prevent double-click
+    lock_key = f"crosspost:{user.id}:{project_id}"
+    acquired = await redis.set(lock_key, "1", ex=_PUBLISH_LOCK_TTL, nx=True)
+    if not acquired:
+        await safe_edit_text(msg, "Кросс-постинг уже выполняется...")
+        await callback.answer()
+        return
+
     settings = get_settings()
     token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
     social_svc = SocialPostService(ai_orchestrator, db, skip_rate_limit=True)
@@ -1123,103 +1138,114 @@ async def _execute_crosspost(
     results: list[str] = []
     total_cost = 0
 
-    for conn_id in selected_ids:
-        conn = await conn_svc.get_by_id(conn_id)
-        if not conn or conn.status != "active":
-            results.append(f"\u274c {conn_id}: подключение неактивно")
-            continue
-
-        cost = estimate_cross_post_cost()
-
-        # Balance check (not GOD_MODE)
-        is_god = user.id in settings.admin_ids
-        if not is_god and not await token_svc.check_balance(user.id, cost):
-            results.append(f"\u274c {conn.platform_type.upper()}: недостаточно токенов")
-            break
-
-        try:
-            adapted = await social_svc.adapt_for_platform(
-                original_text=generated_text,
-                source_platform=platform_type,
-                target_platform=conn.platform_type,
-                user_id=user.id,
-                project_id=project_id,
-                keyword=keyword,
-            )
-
-            adapted_text = ""
-            if isinstance(adapted.content, dict):
-                adapted_text = adapted.content.get("text", "")
-                hashtags = adapted.content.get("hashtags", [])
-                if hashtags:
-                    tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
-                    adapted_text = f"{adapted_text}\n\n{tags_str}"
-
-            # Get publisher and publish (with token refresh for Pinterest)
-            from services.publishers.factory import make_token_refresh_cb
-
-            enc_key = settings.encryption_key.get_secret_value()
-            on_refresh = make_token_refresh_cb(db, conn.id, enc_key)
-            publisher = _get_publisher(conn.platform_type, http_client, settings, on_token_refresh=on_refresh)
-
-            ct = _get_content_type(conn.platform_type)
-            category = await CategoriesRepository(db).get_by_id(category_id)
-
-            metadata: dict[str, str] = {}
-            if conn.platform_type == "pinterest" and isinstance(adapted.content, dict):
-                metadata["pin_title"] = adapted.content.get("pin_title", "")[:100]
-
-            pub_result: PublishResult = await publisher.publish(
-                PublishRequest(
-                    connection=conn,
-                    content=adapted_text,
-                    content_type=ct,
-                    category=category,
-                    metadata=metadata,
-                )
-            )
-
-            if not pub_result.success:
-                results.append(f"\u274c {conn.platform_type.upper()}: {pub_result.error}")
+    try:
+        for conn_id in selected_ids:
+            conn = await conn_svc.get_by_id(conn_id)
+            if not conn or conn.status != "active":
+                results.append(f"\u274c {conn_id}: подключение неактивно")
                 continue
 
-            # Charge after successful publish
-            if not is_god:
-                await token_svc.charge(
-                    user.id, cost, "cross_post",
-                    description=f"Cross-post: {keyword}",
-                )
-            total_cost += cost
+            cost = estimate_cross_post_cost()
 
-            # Log publication
-            pub_repo = PublicationsRepository(db)
-            await pub_repo.create_log(
-                PublicationLogCreate(
+            # Balance check (not GOD_MODE)
+            is_god = user.id in settings.admin_ids
+            if not is_god and not await token_svc.check_balance(user.id, cost):
+                results.append(f"\u274c {conn.platform_type.upper()}: недостаточно токенов")
+                break
+
+            try:
+                adapted = await social_svc.adapt_for_platform(
+                    original_text=generated_text,
+                    source_platform=platform_type,
+                    target_platform=conn.platform_type,
                     user_id=user.id,
                     project_id=project_id,
-                    category_id=category_id,
-                    platform_type=conn.platform_type,
-                    connection_id=conn.id,
                     keyword=keyword,
-                    content_type="cross_post",
-                    tokens_spent=cost,
-                    post_url=pub_result.post_url or "",
                 )
-            )
 
-            url_part = f": {pub_result.post_url}" if pub_result.post_url else ""
-            results.append(f"\u2705 {conn.platform_type.upper()}{url_part}")
+                if isinstance(adapted.content, dict):
+                    adapted_text = adapted.content.get("text", "")
+                    hashtags = adapted.content.get("hashtags", [])
+                    if hashtags:
+                        tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
+                        adapted_text = f"{adapted_text}\n\n{tags_str}"
+                else:
+                    adapted_text = str(adapted.content) if adapted.content else generated_text
 
-            log.info(
-                "pipeline.crosspost.published",
-                user_id=user.id,
-                platform=conn.platform_type,
-                conn_id=conn.id,
-            )
+                # Get publisher and publish (with token refresh for Pinterest)
+                from services.publishers.factory import make_token_refresh_cb
 
-        except Exception:
-            log.exception("pipeline.crosspost.failed", conn_id=conn_id)
-            results.append(f"\u274c {conn.platform_type.upper()}: ошибка адаптации")
+                enc_key = settings.encryption_key.get_secret_value()
+                on_refresh = make_token_refresh_cb(db, conn.id, enc_key)
+                publisher = _get_publisher(conn.platform_type, http_client, settings, on_token_refresh=on_refresh)
+
+                ct = _get_content_type(conn.platform_type)
+                category = await CategoriesRepository(db).get_by_id(category_id)
+
+                metadata: dict[str, str] = {}
+                if conn.platform_type == "pinterest" and isinstance(adapted.content, dict):
+                    metadata["pin_title"] = adapted.content.get("pin_title", "")[:100]
+
+                # Attach image from FSM state (required for Pinterest)
+                publish_images: list[bytes] = []
+                image_b64_stored = data.get("generated_image_b64")
+                if image_b64_stored:
+                    publish_images = [b64mod.b64decode(image_b64_stored)]
+
+                pub_result: PublishResult = await publisher.publish(
+                    PublishRequest(
+                        connection=conn,
+                        content=adapted_text,
+                        content_type=ct,
+                        category=category,
+                        metadata=metadata,
+                        images=publish_images,
+                    )
+                )
+
+                if not pub_result.success:
+                    results.append(f"\u274c {conn.platform_type.upper()}: {pub_result.error}")
+                    continue
+
+                # Charge after successful publish
+                if not is_god:
+                    await token_svc.charge(
+                        user.id, cost, "cross_post",
+                        description=f"Cross-post: {keyword}",
+                    )
+                total_cost += cost
+
+                # Log publication
+                pub_repo = PublicationsRepository(db)
+                await pub_repo.create_log(
+                    PublicationLogCreate(
+                        user_id=user.id,
+                        project_id=project_id,
+                        category_id=category_id,
+                        platform_type=conn.platform_type,
+                        connection_id=conn.id,
+                        keyword=keyword,
+                        content_type="cross_post",
+                        tokens_spent=cost,
+                        post_url=pub_result.post_url or "",
+                    )
+                )
+
+                url_part = f": {pub_result.post_url}" if pub_result.post_url else ""
+                results.append(f"\u2705 {conn.platform_type.upper()}{url_part}")
+
+                log.info(
+                    "pipeline.crosspost.published",
+                    user_id=user.id,
+                    platform=conn.platform_type,
+                    conn_id=conn.id,
+                )
+
+            except Exception:
+                log.exception("pipeline.crosspost.failed", conn_id=conn_id)
+                results.append(f"\u274c {conn.platform_type.upper()}: ошибка адаптации")
+    finally:
+        await redis.delete(lock_key)
 
     # Show results
     balance = await token_svc.get_balance(user.id)

@@ -1,7 +1,7 @@
 """Tests for SocialPipelineFSM definition.
 
 Verifies:
-- FSM has exactly 24 states (FSM_SPEC.md section 2.2, dead states removed)
+- FSM has exactly 28 states (FSM_SPEC.md section 2.2, incl. cross-post F6.4)
 - All expected state names exist
 - State group name matches convention (*FSM suffix)
 """
