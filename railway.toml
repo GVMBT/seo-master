@@ -1,5 +1,5 @@
 [deploy]
-startCommand = "uv run --no-dev --frozen python scripts/seed_prompts.py --force && uv run --no-dev --frozen python -m bot"
+startCommand = "uv run --no-dev --frozen python -m bot"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
