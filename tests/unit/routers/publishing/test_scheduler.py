@@ -169,6 +169,8 @@ def scheduler_service() -> AsyncMock:
     svc.get_user_projects = AsyncMock(return_value=[_make_project()])
     svc.get_project_categories = AsyncMock(return_value=[_make_category()])
     svc.get_project_connections = AsyncMock(return_value=[_make_connection()])
+    svc.get_wp_connections = AsyncMock(return_value=[_make_connection()])
+    svc.get_connection = AsyncMock(return_value=_make_connection())
     svc.get_social_connections = AsyncMock(return_value=[_make_social_conn()])
     svc.get_social_connections_by_category = AsyncMock(return_value=[_make_social_conn()])
     svc.get_category_schedules_map = AsyncMock(return_value={})
@@ -325,7 +327,7 @@ class TestSchedulerCategory:
         user: User,
         scheduler_service: AsyncMock,
     ) -> None:
-        scheduler_service.get_project_connections.return_value = []
+        scheduler_service.get_wp_connections.return_value = []
         mock_callback.data = "scheduler:1:cat:10"
 
         await scheduler_category(mock_callback, user, scheduler_service)
@@ -338,7 +340,7 @@ class TestSchedulerCategory:
         user: User,
         scheduler_service: AsyncMock,
     ) -> None:
-        scheduler_service.get_project_connections.return_value = None
+        scheduler_service.get_wp_connections.return_value = None
         mock_callback.data = "scheduler:1:cat:10"
 
         await scheduler_category(mock_callback, user, scheduler_service)
