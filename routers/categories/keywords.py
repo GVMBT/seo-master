@@ -140,6 +140,7 @@ async def _return_to_keywords(
     """Return to keywords screen after wizard completion (callback sub-flow)."""
     data = await state.get_data()
     cat_id = int(data.get("kw_cat_id", 0))
+    await state.set_state(None)
 
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
@@ -167,6 +168,7 @@ async def _return_to_keywords_msg(
     """Return to keywords screen after wizard completion (message sub-flow)."""
     data = await state.get_data()
     cat_id = int(data.get("kw_cat_id", 0))
+    await state.set_state(None)
 
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
