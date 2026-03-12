@@ -457,6 +457,11 @@ class TestPipelineResultKb:
         buttons = _flatten_buttons(kb)
         assert not any(b.callback_data == "nav:scheduler" for b in buttons)
 
+    def test_no_more_article_button(self) -> None:
+        kb = pipeline_result_kb()
+        buttons = _flatten_buttons(kb)
+        assert not any(b.callback_data == "pipeline:article:more" for b in buttons)
+
 
 # ---------------------------------------------------------------------------
 # Exit confirmation

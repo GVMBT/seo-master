@@ -722,6 +722,7 @@ class TestScheduleCancel:
         mock_callback.data = "sched:cancel"
         wp_conn = MagicMock(platform_type="wordpress")
         scheduler_service.get_connection.return_value = wp_conn
+        scheduler_service.get_category_schedules_map.return_value = {}
 
         await schedule_cancel(mock_callback, mock_state, user, scheduler_service)
 
@@ -729,6 +730,30 @@ class TestScheduleCancel:
         mock_callback.message.edit_text.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
         assert "отменена" in text
+
+    @patch("routers.publishing.scheduler.scheduler_config_kb", return_value=MagicMock())
+    async def test_cancel_with_active_schedule_restores_preset(
+        self,
+        mock_kb: MagicMock,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        user: User,
+        scheduler_service: AsyncMock,
+    ) -> None:
+        mock_state.get_data.return_value = {"sched_cat_id": 10, "sched_conn_id": 5, "sched_has_schedule": True}
+        mock_callback.data = "sched:cancel"
+        wp_conn = MagicMock(platform_type="wordpress")
+        scheduler_service.get_connection.return_value = wp_conn
+        existing_sched = MagicMock(enabled=True, schedule_days=["mon", "wed", "fri"], posts_per_day=1)
+        scheduler_service.get_category_schedules_map.return_value = {5: existing_sched}
+
+        await schedule_cancel(mock_callback, mock_state, user, scheduler_service)
+
+        # Verify config_kb called with schedule_days and posts_per_day
+        mock_kb.assert_called_once_with(
+            10, 5, has_schedule=True,
+            schedule_days=["mon", "wed", "fri"], posts_per_day=1,
+        )
 
     async def test_cancel_without_context(
         self,
