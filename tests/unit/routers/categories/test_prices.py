@@ -13,7 +13,6 @@ from routers.categories.prices import (
     parse_excel_rows,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers: create Excel bytes in memory
 # ---------------------------------------------------------------------------
