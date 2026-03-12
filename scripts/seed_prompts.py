@@ -36,6 +36,7 @@ _PROMPT_MAP: dict[str, tuple[str, str]] = {
     "cross_post_v2.yaml": ("cross_post", "v2"),
     "seed_normalize.yaml": ("seed_normalize", "v1"),
     "research_v1.yaml": ("article_research", "v1"),
+    "image_director_v1.yaml": ("image_director", "v1"),
 }
 
 # Which versions are active by default
@@ -51,6 +52,7 @@ _ACTIVE: set[tuple[str, str]] = {
     ("description", "v1"),
     ("seed_normalize", "v1"),
     ("article_research", "v1"),
+    ("image_director", "v1"),
 }
 
 
@@ -73,6 +75,7 @@ async def main() -> None:
     seeded = 0
     updated = 0
     skipped = 0
+    errors = 0
 
     for filename, (task_type, version) in _PROMPT_MAP.items():
         filepath = prompts_dir / filename
@@ -122,9 +125,12 @@ async def main() -> None:
             seeded += 1
         except Exception as e:
             print(f"  ERROR {task_type}/{version}: {e}")
+            errors += 1
 
     await client.aclose()
-    print(f"\nDone: {seeded} seeded, {updated} updated, {skipped} skipped")
+    print(f"\nDone: {seeded} seeded, {updated} updated, {skipped} skipped, {errors} errors")
+    if errors:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
