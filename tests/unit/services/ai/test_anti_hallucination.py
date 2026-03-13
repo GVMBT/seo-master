@@ -85,9 +85,10 @@ class TestCheckFabricatedData:
         result = check_fabricated_data(html, "", "")
         assert result == []
 
-    def test_no_known_prices_no_price_warning(self) -> None:
-        """If prices_excerpt is empty, text prices are not flagged."""
+    def test_no_known_prices_flags_any_price(self) -> None:
+        """If prices_excerpt is empty, any price in text is flagged as potentially fabricated."""
         html = "<p>Стоимость: 15000 руб</p>"
         result = check_fabricated_data(html, "", "")
         price_warnings = [w for w in result if "цена" in w.lower()]
-        assert len(price_warnings) == 0
+        assert len(price_warnings) == 1
+        assert "прайс не загружен" in price_warnings[0]

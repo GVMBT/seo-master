@@ -585,12 +585,19 @@ def _build_preview_text(
         f"Объём: ~{content.word_count} слов | Изображения: {content.images_count}",
         f"Списано: {tokens_charged} ток.",
     ]
+    if content.content_warnings:
+        warnings_text = "\n".join(f"  - {html.escape(w)}" for w in content.content_warnings[:5])
+        lines.append(f"\nПредупреждения:\n{warnings_text}")
     if not telegraph_url:
         # E05: Telegraph down — show inline snippet (strip HTML tags, Telegram rejects <h1> etc.)
         raw = re.sub(r"<[^>]+>", "", content.content_html or "")
         snippet = html.escape(raw[:500])
         lines.append(f"\n<i>(Превью недоступно, фрагмент ниже)</i>\n{snippet}...")
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    # Telegram message limit: 4096 chars
+    if len(text) > 4000:
+        text = text[:3997] + "..."
+    return text
 
 
 async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None:
