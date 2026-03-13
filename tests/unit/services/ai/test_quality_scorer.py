@@ -201,7 +201,7 @@ class TestStructureMetrics:
         scorer = ContentQualityScorer()
         html = _build_article_html(h2_count=4)
         result = scorer.score(html, "кухни на заказ", [])
-        # Should have points for h1_count=0 (correct) and h2_count in 3-6
+        # Should have points for h1_count=0 (correct) and h2_count in 4-6
         assert result.breakdown["structure"] > 0
 
     def test_score_structure_h1_in_body_issue(self) -> None:

@@ -593,7 +593,11 @@ def _build_preview_text(
         raw = re.sub(r"<[^>]+>", "", content.content_html or "")
         snippet = html.escape(raw[:500])
         lines.append(f"\n<i>(Превью недоступно, фрагмент ниже)</i>\n{snippet}...")
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    # Telegram message limit: 4096 chars
+    if len(text) > 4000:
+        text = text[:3997] + "..."
+    return text
 
 
 async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None:
