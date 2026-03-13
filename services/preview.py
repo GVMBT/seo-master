@@ -52,6 +52,7 @@ class ArticleContent:
     images_count: int
     meta_description: str = ""
     stored_images: list[dict[str, Any]] = field(default_factory=list)
+    content_warnings: list[str] = field(default_factory=list)
 
 
 class PreviewService:
@@ -293,6 +294,8 @@ class PreviewService:
                 keyword=keyword,
             )
 
+        content_warnings: list[str] = content.get("content_warnings", [])
+
         return ArticleContent(
             title=title,
             content_html=content_html,
@@ -300,6 +303,7 @@ class PreviewService:
             images_count=len(stored_images),
             meta_description=meta_description,
             stored_images=stored_images,
+            content_warnings=content_warnings,
         )
 
     async def warmup_research_schema(self) -> None:

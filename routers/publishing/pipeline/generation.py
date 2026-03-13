@@ -585,6 +585,9 @@ def _build_preview_text(
         f"Объём: ~{content.word_count} слов | Изображения: {content.images_count}",
         f"Списано: {tokens_charged} ток.",
     ]
+    if content.content_warnings:
+        warnings_text = "\n".join(f"  - {html.escape(w)}" for w in content.content_warnings[:5])
+        lines.append(f"\nПредупреждения:\n{warnings_text}")
     if not telegraph_url:
         # E05: Telegraph down — show inline snippet (strip HTML tags, Telegram rejects <h1> etc.)
         raw = re.sub(r"<[^>]+>", "", content.content_html or "")

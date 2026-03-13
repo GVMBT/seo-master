@@ -567,7 +567,7 @@ class ArticleService:
         result, content_markdown = await self._generate_steps(user_id, context, keyword)
 
         # Step 3-5: Render → Score → Critique
-        result, content_html = await self._quality_pipeline(
+        result, content_html, content_warnings = await self._quality_pipeline(
             user_id,
             result,
             content_markdown,
@@ -584,6 +584,7 @@ class ArticleService:
         # Store both markdown and html in result
         if isinstance(result.content, dict):
             result.content["content_html"] = content_html
+            result.content["content_warnings"] = content_warnings
 
         # Step 7: Content validation
         validation = self._validator.validate(content_html, "article", "wordpress")
@@ -743,8 +744,11 @@ class ArticleService:
         secondary_phrases: str,
         branding_dict: dict[str, str],
         keyword: str,
-    ) -> tuple[GenerationResult, str]:
-        """Steps 3-5: Render → Score → Conditional critique."""
+    ) -> tuple[GenerationResult, str, list[str]]:
+        """Steps 3-5: Render → Score → Conditional critique.
+
+        Returns (result, content_html, content_warnings).
+        """
         content_html = self._render_to_html(content_markdown, branding_dict, keyword)
 
         quality_score = None
@@ -773,9 +777,9 @@ class ArticleService:
             )
 
         # Anti-hallucination check (E48: warnings only, does NOT block publish)
-        self._check_hallucinations(content_html, context)
+        content_warnings = self._check_hallucinations(content_html, context)
 
-        return result, content_html
+        return result, content_html, content_warnings
 
     async def _try_critique(
         self,
@@ -890,8 +894,11 @@ class ArticleService:
             return f"<pre>{markdown_text}</pre>"
 
     @staticmethod
-    def _check_hallucinations(content_html: str, context: dict[str, Any]) -> None:
-        """Run anti-hallucination checks (E48: warnings only, does NOT block)."""
+    def _check_hallucinations(content_html: str, context: dict[str, Any]) -> list[str]:
+        """Run anti-hallucination checks (E48: warnings only, does NOT block).
+
+        Returns list of warning strings for display in preview UI.
+        """
         try:
             from services.ai.anti_hallucination import check_fabricated_data
 
@@ -902,10 +909,12 @@ class ArticleService:
             )
             if issues:
                 log.warning("hallucination_warnings", issues=issues, keyword=context.get("keyword"))
+            return issues
         except ImportError:
-            pass
+            return []
         except Exception:
             log.warning("hallucination_check_failed", exc_info=True)
+            return []
 
     @staticmethod
     def _score_quality(

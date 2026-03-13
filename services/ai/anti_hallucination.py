@@ -65,7 +65,9 @@ def check_fabricated_data(
             match_found = any(abs(price - known) / max(known, 1) < 0.2 for known in known_prices)
             if not match_found:
                 issues.append(f"Возможно выдуманная цена: {price} руб. (нет в прайсе)")
-        # If no known prices at all, we cannot validate -- skip
+        else:
+            # No known prices — any price in text is likely fabricated
+            issues.append(f"Возможно выдуманная цена: {price} руб. (прайс не загружен)")
 
     # 2. Phone number check: phones in text but not in company data
     if _PHONE_RE.search(html) and not _PHONE_RE.search(advantages):

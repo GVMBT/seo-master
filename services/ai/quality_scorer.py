@@ -360,10 +360,11 @@ class ContentQualityScorer:
         h2_count = len(re.findall(r"<h2[^>]*>", html, re.IGNORECASE))
         if 3 <= h2_count <= 6:
             points += 4
-        elif h2_count >= 2:
+        elif h2_count >= 2 and h2_count <= 8:
             points += 2
-        else:
             self._issues.append(f"h2_count: {h2_count} (expected 3-6)")
+        else:
+            self._issues.append(f"h2_count: {h2_count} (expected 3-6, got {'too many' if h2_count > 6 else 'too few'})")
 
         # faq_presence (max 3 points)
         if re.search(r"faq|часто\s+задаваемые|вопросы\s+и\s+ответы", lower_html):
