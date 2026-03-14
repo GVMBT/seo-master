@@ -46,9 +46,6 @@ def _project_completed(project: Project) -> dict[str, bool]:
 
 class ProjectCreateFSM(StatesGroup):
     name = State()
-    company_name = State()
-    specialization = State()
-    website_url = State()
 
 
 class ProjectEditFSM(StatesGroup):
@@ -143,8 +140,11 @@ async def start_create(
 async def process_name(
     message: Message,
     state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
-    """Step 1: project name (2-100 chars)."""
+    """Single step: project name (2-100 chars) -> create project."""
     text = (message.text or "").strip()
 
     if text == "Отмена":
@@ -156,99 +156,11 @@ async def process_name(
         await message.answer("Название должно быть от 2 до 100 символов. Попробуйте ещё раз.")
         return
 
-    await state.update_data(name=text)
-    await state.set_state(ProjectCreateFSM.company_name)
-    await message.answer(
-        "Как называется ваша компания?\nБудет использоваться в текстах.\n\n<i>Пример: ООО Мебель Комфорт</i>",
-        reply_markup=cancel_kb("project:create:cancel"),
-    )
-
-
-@router.message(ProjectCreateFSM.company_name, F.text)
-async def process_company_name(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Step 2: company name (2-255 chars)."""
-    text = (message.text or "").strip()
-
-    if text == "Отмена":
-        await state.clear()
-        await message.answer("Создание проекта отменено.", reply_markup=menu_kb())
-        return
-
-    if len(text) < 2 or len(text) > 255:
-        await message.answer("Название компании: от 2 до 255 символов.")
-        return
-
-    await state.update_data(company_name=text)
-    await state.set_state(ProjectCreateFSM.specialization)
-    await message.answer(
-        "Опишите специализацию в 2-3 словах.\n\n<i>Пример: мебель на заказ</i>",
-        reply_markup=cancel_kb("project:create:cancel"),
-    )
-
-
-@router.message(ProjectCreateFSM.specialization, F.text)
-async def process_specialization(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Step 3: specialization (2-500 chars)."""
-    text = (message.text or "").strip()
-
-    if text == "Отмена":
-        await state.clear()
-        await message.answer("Создание проекта отменено.", reply_markup=menu_kb())
-        return
-
-    if len(text) < 2 or len(text) > 500:
-        await message.answer("Специализация: от 2 до 500 символов.")
-        return
-
-    await state.update_data(specialization=text)
-    await state.set_state(ProjectCreateFSM.website_url)
-    await message.answer(
-        "Адрес вашего сайта (необязательно).\nЕсли нет — напишите «Пропустить».\n\n<i>Пример: comfort-mebel.ru</i>",
-        reply_markup=cancel_kb("project:create:cancel"),
-    )
-
-
-@router.message(ProjectCreateFSM.website_url, F.text)
-async def process_website_url(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    project_service_factory: ProjectServiceFactory,
-) -> None:
-    """Step 4: website URL (optional, skippable)."""
-    text = (message.text or "").strip()
-
-    if text == "Отмена":
-        await state.clear()
-        await message.answer("Создание проекта отменено.", reply_markup=menu_kb())
-        return
-
-    website_url: str | None = None
-    if text not in ("Пропустить", "нет", "-", ""):
-        if not URL_RE.match(text):
-            await message.answer("Некорректный URL. Попробуйте ещё раз или нажмите «Пропустить».")
-            return
-        website_url = text if text.startswith("http") else f"https://{text}"
-
-    data = await state.get_data()
     await state.clear()
 
     proj_svc = project_service_factory(db)
     project = await proj_svc.create_project(
-        ProjectCreate(
-            user_id=user.id,
-            name=data["name"],
-            company_name=data["company_name"],
-            specialization=data["specialization"],
-            website_url=website_url,
-        )
+        ProjectCreate(user_id=user.id, name=text, company_name=text)
     )
 
     if not project:
@@ -257,7 +169,7 @@ async def process_website_url(
 
     safe_name = html.escape(project.name)
     await message.answer(
-        f"Проект «{safe_name}» создан!\nТеперь подключите платформу для публикации.",
+        f"Проект «{safe_name}» создан!",
         reply_markup=project_created_kb(project.id),
     )
 

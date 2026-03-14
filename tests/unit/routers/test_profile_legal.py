@@ -55,10 +55,12 @@ class TestLegalTexts:
             assert svc in PRIVACY_POLICY, f"Missing service disclosure: {svc}"
 
     def test_terms_has_all_packages(self) -> None:
-        """Terms must list all token packages."""
-        assert "500 токенов" in TERMS_OF_SERVICE
-        assert "2 000 токенов" in TERMS_OF_SERVICE
-        assert "5 000 токенов" in TERMS_OF_SERVICE
+        """Terms must list all token packages (5 tariffs)."""
+        assert "1 000 токенов" in TERMS_OF_SERVICE  # mini
+        assert "3 500 токенов" in TERMS_OF_SERVICE  # start (3000 + 500 bonus)
+        assert "7 200 токенов" in TERMS_OF_SERVICE  # profi (6000 + 1200 bonus)
+        assert "18 000 токенов" in TERMS_OF_SERVICE  # business (15000 + 3000 bonus)
+        assert "50 000 токенов" in TERMS_OF_SERVICE  # maximum (40000 + 10000 bonus)
 
     def test_legal_notice_mentions_consent(self) -> None:
         assert "конфиденциальности" in LEGAL_NOTICE

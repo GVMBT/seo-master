@@ -1,11 +1,11 @@
 """Article Pipeline — Goal-Oriented Pipeline for article creation (F5).
 
-FSM: ArticlePipelineFSM (25 states, FSM_SPEC.md §1).
+FSM: ArticlePipelineFSM (20 states, FSM_SPEC.md §1).
 UX: UX_PIPELINE.md §4 (steps 1-8, inline sub-flows).
 Rules: .claude/rules/pipeline.md.
 
 This file implements steps 1-3 (selection) + inline sub-flows (F5.2):
-- Inline project creation (4 states: name → company → spec → url)
+- Inline project creation (1 state: name)
 - Inline WP connection (3 states: url → login → password)
 - Inline category creation (1 state: name)
 Step 4 (readiness) is in readiness.py. Steps 5-8 will be added in F5.4.
@@ -192,7 +192,8 @@ async def pipeline_projects_page(
     proj_svc = project_service_factory(db)
     projects = await proj_svc.list_by_user(user.id)
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         "Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, page=page),
     )
@@ -200,8 +201,53 @@ async def pipeline_projects_page(
 
 
 # ---------------------------------------------------------------------------
-# Step 1 sub-flow: Inline project creation (4 states)
-# UX_PIPELINE.md §4.1 step 1: 0 projects -> inline create (4 questions)
+# Step 1 shortcut: Start pipeline for a specific project (from project card)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^pipeline:article:project:\d+$"))
+async def pipeline_article_from_project(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+    redis: RedisClient,
+    project_service_factory: ProjectServiceFactory,
+) -> None:
+    """Start article pipeline with a pre-selected project (from project card)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    if not callback.data:
+        await callback.answer()
+        return
+    project_id = int(callback.data.split(":")[3])  # pipeline:article:project:{id}
+
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        log.info("pipeline.article.fsm_interrupted", user_id=user.id, interrupted=interrupted)
+
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
+    if project is None:
+        await callback.answer("Проект не найден.", show_alert=True)
+        return
+
+    await state.update_data(
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
+    )
+    await _show_wp_step(callback, state, user, db, http_client, redis, project.id, project.name)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Step 1 sub-flow: Inline project creation (1 step)
+# UX_PIPELINE.md §4.1 step 1: 0 projects -> inline create
 # ---------------------------------------------------------------------------
 
 
@@ -221,7 +267,8 @@ async def pipeline_start_create_project(
 
     await state.set_state(ArticlePipelineFSM.create_project_name)
     await state.update_data(last_update_time=time.time())
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         "Статья (1/5) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
@@ -231,8 +278,13 @@ async def pipeline_start_create_project(
 async def pipeline_create_project_name(
     message: Message,
     state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+    redis: RedisClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
-    """Inline project creation step 1: project name (2-100 chars)."""
+    """Inline project creation: name (2-100 chars) -> create -> proceed to step 2."""
     text = (message.text or "").strip()
     if len(text) < 2 or len(text) > 100:
         await message.answer(
@@ -241,91 +293,9 @@ async def pipeline_create_project_name(
         )
         return
 
-    await state.update_data(new_project_name=text, last_update_time=time.time())
-    await state.set_state(ArticlePipelineFSM.create_project_company)
-    await message.answer(
-        "Как называется ваша компания?\n<i>Пример: ООО Мебель Комфорт</i>",
-        reply_markup=cancel_kb("pipeline:article:cancel"),
-    )
-
-
-@router.message(ArticlePipelineFSM.create_project_company, F.text)
-async def pipeline_create_project_company(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Inline project creation step 2: company name (2-255 chars)."""
-    text = (message.text or "").strip()
-    if len(text) < 2 or len(text) > 255:
-        await message.answer(
-            "Название компании: от 2 до 255 символов.",
-            reply_markup=cancel_kb("pipeline:article:cancel"),
-        )
-        return
-
-    await state.update_data(new_company_name=text, last_update_time=time.time())
-    await state.set_state(ArticlePipelineFSM.create_project_spec)
-    await message.answer(
-        "Опишите специализацию в 2-3 словах.\n<i>Пример: мебель на заказ</i>",
-        reply_markup=cancel_kb("pipeline:article:cancel"),
-    )
-
-
-@router.message(ArticlePipelineFSM.create_project_spec, F.text)
-async def pipeline_create_project_spec(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Inline project creation step 3: specialization (2-500 chars)."""
-    text = (message.text or "").strip()
-    if len(text) < 2 or len(text) > 500:
-        await message.answer(
-            "Специализация: от 2 до 500 символов.",
-            reply_markup=cancel_kb("pipeline:article:cancel"),
-        )
-        return
-
-    await state.update_data(new_specialization=text, last_update_time=time.time())
-    await state.set_state(ArticlePipelineFSM.create_project_url)
-    await message.answer(
-        "Адрес сайта (необязательно).\nЕсли нет — напишите «Пропустить».\n<i>Пример: comfort-mebel.ru</i>",
-        reply_markup=cancel_kb("pipeline:article:cancel"),
-    )
-
-
-@router.message(ArticlePipelineFSM.create_project_url, F.text)
-async def pipeline_create_project_url(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    http_client: httpx.AsyncClient,
-    redis: RedisClient,
-    project_service_factory: ProjectServiceFactory,
-) -> None:
-    """Inline project creation step 4: URL -> create project -> proceed to step 2."""
-    text = (message.text or "").strip()
-
-    website_url: str | None = None
-    if text.lower() not in ("пропустить", "нет", "-", ""):
-        if not URL_RE.match(text):
-            await message.answer(
-                "Некорректный URL. Попробуйте ещё раз или напишите «Пропустить».",
-                reply_markup=cancel_kb("pipeline:article:cancel"),
-            )
-            return
-        website_url = text if text.startswith("http") else f"https://{text}"
-
-    data = await state.get_data()
     proj_svc = project_service_factory(db)
     project = await proj_svc.create_project(
-        ProjectCreate(
-            user_id=user.id,
-            name=data["new_project_name"],
-            company_name=data["new_company_name"],
-            specialization=data["new_specialization"],
-            website_url=website_url,
-        )
+        ProjectCreate(user_id=user.id, name=text, company_name=text)
     )
 
     if not project:
@@ -502,7 +472,8 @@ async def pipeline_start_connect_wp(
         if project and project.website_url:
             await state.update_data(wp_url=project.website_url, last_update_time=time.time())
             await state.set_state(ArticlePipelineFSM.connect_wp_login)
-            await safe_edit_text(msg, 
+            await safe_edit_text(
+                msg,
                 f"Статья (2/5) — Подключение WordPress\n\n"
                 f"Сайт: {html.escape(project.website_url)}\n\n"
                 f"Введите логин WordPress (имя пользователя).",
@@ -512,7 +483,8 @@ async def pipeline_start_connect_wp(
 
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await state.update_data(last_update_time=time.time())
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         "Статья (2/5) — Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
     )
     await callback.answer()
@@ -676,7 +648,8 @@ async def pipeline_cancel_wp_subflow(
     project_name = data.get("project_name", "")
 
     if project_id:
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
             reply_markup=pipeline_no_wp_kb(),
         )

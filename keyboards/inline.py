@@ -56,9 +56,6 @@ def consent_kb() -> InlineKeyboardMarkup:
 
 
 def dashboard_kb(
-    has_wp: bool,
-    has_social: bool,
-    balance: int,
     *,
     is_admin: bool = False,
 ) -> InlineKeyboardMarkup:
@@ -68,52 +65,24 @@ def dashboard_kb(
     """
     rows: list[list[InlineKeyboardButton]] = []
 
-    if balance <= 0:
-        # Zero/negative balance: top-up CTA as PRIMARY + pipeline CTAs stay visible (section 2.7)
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Пополнить баланс",
-                    callback_data="nav:tokens",
-                    style=ButtonStyle.PRIMARY,
-                ),
-            ]
-        )
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Написать статью на сайт",
-                    callback_data="pipeline:article:start",
-                ),
-            ]
-        )
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Создать пост в соцсети",
-                    callback_data="pipeline:social:start",
-                ),
-            ]
-        )
-    else:
-        # Pipeline CTAs
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Написать статью на сайт",
-                    callback_data="pipeline:article:start",
-                    style=ButtonStyle.PRIMARY,
-                ),
-            ]
-        )
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Создать пост в соцсети",
-                    callback_data="pipeline:social:start",
-                ),
-            ]
-        )
+    # Pipeline CTAs
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Написать статью на сайт",
+                callback_data="pipeline:article:start",
+                style=ButtonStyle.PRIMARY,
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Создать пост в соцсети",
+                callback_data="pipeline:social:start",
+            ),
+        ]
+    )
 
     # Nav row
     rows.append(
@@ -227,6 +196,17 @@ def project_card_kb(project_id: int) -> InlineKeyboardMarkup:
     pid = project_id
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Написать статью",
+                    callback_data=f"pipeline:article:project:{pid}",
+                    style=ButtonStyle.PRIMARY,
+                ),
+                InlineKeyboardButton(
+                    text="Создать пост",
+                    callback_data=f"pipeline:social:project:{pid}",
+                ),
+            ],
             [
                 InlineKeyboardButton(text="Редактировать", callback_data=f"project:{pid}:edit"),
                 InlineKeyboardButton(text="Категории", callback_data=f"project:{pid}:categories"),
@@ -1028,11 +1008,13 @@ def image_presets_kb(
     )
     rows.append(row)
     # Stepper row: [-] [count] [+]
-    rows.append([
-        InlineKeyboardButton(text="\u25c0", callback_data=f"settings:{cat_id}:ic:-"),
-        InlineKeyboardButton(text=f"Количество: {count}", callback_data="noop"),
-        InlineKeyboardButton(text="\u25b6", callback_data=f"settings:{cat_id}:ic:+"),
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(text="\u25c0", callback_data=f"settings:{cat_id}:ic:-"),
+            InlineKeyboardButton(text=f"Количество: {count}", callback_data="noop"),
+            InlineKeyboardButton(text="\u25b6", callback_data=f"settings:{cat_id}:ic:+"),
+        ]
+    )
     rows.append(
         [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
     )
@@ -1126,15 +1108,15 @@ def delete_account_cancelled_kb() -> InlineKeyboardMarkup:
 
 
 def tariffs_kb() -> InlineKeyboardMarkup:
-    """Package selection keyboard. Standard is PRIMARY (best value)."""
+    """Package selection keyboard. Profi is PRIMARY (best value)."""
     from services.payments.packages import PACKAGES
 
     rows: list[list[InlineKeyboardButton]] = []
     for name, pkg in PACKAGES.items():
-        style = ButtonStyle.PRIMARY if name == "standard" else None
-        discount = f" {pkg.discount}" if pkg.discount else ""
+        style = ButtonStyle.PRIMARY if name == "profi" else None
+        bonus_text = f" ({pkg.discount})" if pkg.discount else ""
         btn = InlineKeyboardButton(
-            text=f"{pkg.label} — {pkg.tokens} токенов / {pkg.price_rub} руб{discount}",
+            text=f"{pkg.label} — {pkg.total_tokens} токенов / {pkg.price_rub} руб{bonus_text}",
             callback_data=f"tariff:{name}:buy",
         )
         if style:

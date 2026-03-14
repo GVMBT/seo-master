@@ -51,6 +51,7 @@ from services.users import UsersService
 log = structlog.get_logger()
 router = Router()
 
+
 def _parse_referrer_id(arg: str) -> int | None:
     """Extract numeric referrer_id from deep link arg like 'referrer_12345'."""
     raw = arg.removeprefix("referrer_")
@@ -239,7 +240,12 @@ async def _handle_vk_deep_link(
     if dl.step == "community":
         # Community token ready — create connection
         await _create_vk_connection_from_community(
-            message, user, db, http_client, project, dl,
+            message,
+            user,
+            db,
+            http_client,
+            project,
+            dl,
         )
         await vk_svc.cleanup(nonce)
         if dl.from_pipeline:
@@ -267,17 +273,18 @@ async def _show_vk_group_picker(
 ) -> None:
     """Show group selection keyboard for multi-group VK OAuth flow."""
     buttons = [
-        [InlineKeyboardButton(
-            text=html.escape(g.get("name", f"Группа {g['id']}"))[:40],
-            callback_data=f"vk_auth:{nonce}:{g['id']}",
-        )]
+        [
+            InlineKeyboardButton(
+                text=html.escape(g.get("name", f"Группа {g['id']}"))[:40],
+                callback_data=f"vk_auth:{nonce}:{g['id']}",
+            )
+        ]
         for g in groups[:10]
     ]
     buttons.append([InlineKeyboardButton(text="Отмена", callback_data="nav:dashboard")])
 
     await message.answer(
-        f"VK-авторизация успешна!\n\n"
-        f"Выберите группу для подключения к проекту «{html.escape(project.name)}»:",
+        f"VK-авторизация успешна!\n\nВыберите группу для подключения к проекту «{html.escape(project.name)}»:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
 
@@ -390,7 +397,11 @@ async def vk_group_select_deeplink(
 
     # Store step-2 auth session with group info
     await vk_svc.store_auth(
-        new_nonce, user.id, step="community", group_id=group_id, group_name=group_name,
+        new_nonce,
+        user.id,
+        step="community",
+        group_id=group_id,
+        group_name=group_name,
     )
 
     # Build step-2 OAuth URL with group_ids (goes through /api/auth/vk redirect)
@@ -437,8 +448,14 @@ async def _return_to_pipeline(
 
     await state.update_data(project_id=project.id, project_name=project.name)
     await _show_connection_step_msg(
-        message, state, user, db, redis,
-        project.id, project.name, http_client=http_client,
+        message,
+        state,
+        user,
+        db,
+        redis,
+        project.id,
+        project.name,
+        http_client=http_client,
     )
 
 
@@ -463,12 +480,7 @@ async def _build_dashboard(
     # Check pipeline checkpoint (section 2.6)
     checkpoint_text = await _get_checkpoint_text(redis, user.id)
 
-    kb = dashboard_kb(
-        has_wp=data.has_wp,
-        has_social=data.has_social,
-        balance=user.balance,
-        is_admin=user.role == "admin",
-    )
+    kb = dashboard_kb(is_admin=user.role == "admin")
 
     if checkpoint_text:
         text += checkpoint_text
@@ -519,8 +531,7 @@ async def cmd_start(
     # OAuth deep-links: handle without clearing FSM and return early
     if args == "pinterest_error":
         await message.answer(
-            "Не удалось подключить Pinterest.\n"
-            "Авторизация была отклонена или произошла ошибка.",
+            "Не удалось подключить Pinterest.\nАвторизация была отклонена или произошла ошибка.",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="Попробовать снова", callback_data="nav:projects")],
@@ -576,7 +587,6 @@ async def cmd_start(
 # ---------------------------------------------------------------------------
 # Consent flow (C7/H30)
 # ---------------------------------------------------------------------------
-
 
 
 @router.callback_query(F.data == "legal:consent:accept")
@@ -724,7 +734,8 @@ async def _route_to_step(
         if not project_id:
             await safe_edit_text(
                 msg,
-                "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.", reply_markup=menu_kb(),
+                "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.",
+                reply_markup=menu_kb(),
             )
             await redis.delete(CacheKeys.pipeline_state(user.id))
             await state.clear()
@@ -786,7 +797,8 @@ async def _route_to_step(
         # Preview expired or already published
         await safe_edit_text(
             msg,
-            "\u26a0\ufe0f Превью устарело. Нажмите /start чтобы начать заново.", reply_markup=menu_kb(),
+            "\u26a0\ufe0f Превью устарело. Нажмите /start чтобы начать заново.",
+            reply_markup=menu_kb(),
         )
         await redis.delete(CacheKeys.pipeline_state(user.id))
         return
@@ -794,7 +806,10 @@ async def _route_to_step(
     # Fallback: show dashboard
     log.warning("pipeline.resume_unknown_step", step=step, user_id=user.id)
     text, kb = await _build_dashboard(
-        user, is_new_user=False, db=db, redis=redis,
+        user,
+        is_new_user=False,
+        db=db,
+        redis=redis,
         dashboard_service_factory=dashboard_service_factory,
     )
     await edit_screen(msg, "welcome.png", text, reply_markup=kb)

@@ -11,7 +11,7 @@ from bot.helpers import safe_edit_text, safe_message
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import payment_method_kb, tariffs_kb, yookassa_link_kb
-from services.payments.packages import PACKAGES
+from services.payments.packages import get_package
 from services.payments.stars import StarsPaymentService
 from services.payments.yookassa import YooKassaPaymentService
 
@@ -58,10 +58,12 @@ async def select_package(
         await callback.answer()
         return
 
-    package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
-    if package_name not in PACKAGES:
+    raw_name = callback.data.split(":")[1]  # type: ignore[union-attr]
+    pkg = get_package(raw_name)
+    if pkg is None:
         await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
+    package_name = pkg.name
 
     settings = get_settings()
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
@@ -87,10 +89,12 @@ async def pay_with_stars(
         await callback.answer()
         return
 
-    package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
-    if package_name not in PACKAGES:
+    raw_name = callback.data.split(":")[1]  # type: ignore[union-attr]
+    pkg = get_package(raw_name)
+    if pkg is None:
         await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
+    package_name = pkg.name
 
     settings = get_settings()
     stars_svc = StarsPaymentService(db=None, admin_ids=settings.admin_ids)  # type: ignore[arg-type]
@@ -118,10 +122,12 @@ async def pay_with_yookassa(
         await callback.answer()
         return
 
-    package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
-    if package_name not in PACKAGES:
+    raw_name = callback.data.split(":")[1]  # type: ignore[union-attr]
+    pkg = get_package(raw_name)
+    if pkg is None:
         await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
+    package_name = pkg.name
 
     settings = get_settings()
 

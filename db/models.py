@@ -94,8 +94,8 @@ class Project(BaseModel):
 class ProjectCreate(BaseModel):
     user_id: int
     name: str
-    company_name: str
-    specialization: str
+    company_name: str = ""
+    specialization: str = ""
     website_url: str | None = None
 
 

@@ -1,7 +1,7 @@
 """Tests for ArticlePipelineFSM definition.
 
 Verifies:
-- FSM has exactly 23 states (FSM_SPEC.md section 1, readiness_keywords_qty removed)
+- FSM has exactly 20 states (3 create_project states removed: company, spec, url)
 - All expected state names exist
 - State group name matches convention (*FSM suffix)
 """
@@ -12,14 +12,11 @@ from aiogram.fsm.state import State
 
 from routers.publishing.pipeline._common import ArticlePipelineFSM
 
-# Expected state names from FSM_SPEC.md section 1
+# Expected state names — 20 states (create_project_name only, no company/spec/url)
 _EXPECTED_STATES = [
     # Step 1: Project selection
     "select_project",
     "create_project_name",
-    "create_project_company",
-    "create_project_spec",
-    "create_project_url",
     # Step 2: WP connection check
     "select_wp",
     "connect_wp_url",
@@ -48,10 +45,10 @@ _EXPECTED_STATES = [
 class TestArticlePipelineFSMDefinition:
     """ArticlePipelineFSM has correct state definitions."""
 
-    def test_has_exactly_23_states(self) -> None:
-        """FSM_SPEC.md specifies exactly 23 states (readiness_keywords_qty removed)."""
+    def test_has_exactly_20_states(self) -> None:
+        """FSM has exactly 20 states (3 create_project states removed)."""
         states = ArticlePipelineFSM.__all_states__
-        assert len(states) == 23, f"Expected 23 states, got {len(states)}: {[s.state for s in states]}"
+        assert len(states) == 20, f"Expected 20 states, got {len(states)}: {[s.state for s in states]}"
 
     def test_all_expected_states_exist(self) -> None:
         """Every expected state name is present in the FSM."""
@@ -60,7 +57,7 @@ class TestArticlePipelineFSMDefinition:
             assert expected in state_names, f"Missing state: {expected}"
 
     def test_no_unexpected_states(self) -> None:
-        """FSM does not have extra states beyond the expected 23."""
+        """FSM does not have extra states beyond the expected 20."""
         state_names = {s.state.split(":")[-1] for s in ArticlePipelineFSM.__all_states__}
         expected_set = set(_EXPECTED_STATES)
         extra = state_names - expected_set
@@ -99,3 +96,8 @@ class TestArticlePipelineFSMDefinition:
         """Direct attribute access for result."""
         assert hasattr(ArticlePipelineFSM, "result")
         assert isinstance(ArticlePipelineFSM.result, State)
+
+    def test_removed_states_do_not_exist(self) -> None:
+        """Removed create_project states should not be present."""
+        for removed in ("create_project_company", "create_project_spec", "create_project_url"):
+            assert not hasattr(ArticlePipelineFSM, removed), f"State {removed} should have been removed"

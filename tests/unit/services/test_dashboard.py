@@ -33,7 +33,7 @@ def dash_svc(mock_db: MagicMock) -> DashboardService:
 class TestDashboardData:
     def test_create_frozen_model_raises_on_mutation(self) -> None:
         data = DashboardData(
-            project_count=1, schedule_count=2, has_wp=True, has_social=False,
+            project_count=1, schedule_count=2,
             total_publications=0, last_publication=None, tokens_per_week=0, tokens_per_month=0,
         )
         with pytest.raises(ValidationError):
@@ -41,13 +41,11 @@ class TestDashboardData:
 
     def test_create_model_stores_fields(self) -> None:
         data = DashboardData(
-            project_count=3, schedule_count=7, has_wp=True, has_social=True,
+            project_count=3, schedule_count=7,
             total_publications=10, last_publication=None, tokens_per_week=960, tokens_per_month=3840,
         )
         assert data.project_count == 3
         assert data.schedule_count == 7
-        assert data.has_wp is True
-        assert data.has_social is True
         assert data.total_publications == 10
         assert data.tokens_per_week == 960
         assert data.tokens_per_month == 3840
@@ -76,8 +74,6 @@ class TestGetDashboardDataNoProjects:
 
         assert result.project_count == 0
         assert result.schedule_count == 0
-        assert result.has_wp is False
-        assert result.has_social is False
         assert result.total_publications == 0
         assert result.last_publication is None
 
@@ -98,16 +94,12 @@ def _mock_pub_repo(mock_cls: MagicMock) -> None:
 class TestGetDashboardDataWithProjects:
     @patch(f"{_SVC_MODULE}.SchedulesRepository")
     @patch(f"{_SVC_MODULE}.CategoriesRepository")
-    @patch(f"{_SVC_MODULE}.ConnectionsRepository")
-    @patch(f"{_SVC_MODULE}.CredentialManager")
     @patch(f"{_SVC_MODULE}.PublicationsRepository")
     @patch(f"{_SVC_MODULE}.ProjectsRepository")
-    async def test_get_dashboard_data_wp_and_social_aggregated(
+    async def test_get_dashboard_data_schedules_aggregated(
         self,
         mock_proj_cls: MagicMock,
         mock_pub_cls: MagicMock,
-        _mock_cm_cls: MagicMock,
-        mock_conn_cls: MagicMock,
         mock_cats_cls: MagicMock,
         mock_sched_cls: MagicMock,
         dash_svc: DashboardService,
@@ -115,11 +107,6 @@ class TestGetDashboardDataWithProjects:
         projects = [MagicMock(id=1), MagicMock(id=2)]
         mock_proj_cls.return_value.get_by_user = AsyncMock(return_value=projects)
         _mock_pub_repo(mock_pub_cls)
-
-        # Connections: project 1 has WP, project 2 has telegram
-        mock_conn = MagicMock()
-        mock_conn.get_platform_types_by_project = AsyncMock(side_effect=[["wordpress"], ["telegram"]])
-        mock_conn_cls.return_value = mock_conn
 
         # Categories + schedules
         cat1 = MagicMock(id=10)
@@ -140,24 +127,18 @@ class TestGetDashboardDataWithProjects:
         result = await dash_svc.get_dashboard_data(42)
 
         assert result.project_count == 2
-        assert result.has_wp is True
-        assert result.has_social is True
         assert result.schedule_count == 2  # 2 enabled out of 3
         assert result.tokens_per_week == 3 * 320 + 1 * 40  # 3 WP posts/wk + 1 TG post/wk
         assert result.tokens_per_month == result.tokens_per_week * 4
 
     @patch(f"{_SVC_MODULE}.SchedulesRepository")
     @patch(f"{_SVC_MODULE}.CategoriesRepository")
-    @patch(f"{_SVC_MODULE}.ConnectionsRepository")
-    @patch(f"{_SVC_MODULE}.CredentialManager")
     @patch(f"{_SVC_MODULE}.PublicationsRepository")
     @patch(f"{_SVC_MODULE}.ProjectsRepository")
-    async def test_get_dashboard_data_wp_only_detected(
+    async def test_get_dashboard_data_no_categories_returns_zero_schedules(
         self,
         mock_proj_cls: MagicMock,
         mock_pub_cls: MagicMock,
-        _mock_cm_cls: MagicMock,
-        mock_conn_cls: MagicMock,
         mock_cats_cls: MagicMock,
         mock_sched_cls: MagicMock,
         dash_svc: DashboardService,
@@ -166,96 +147,21 @@ class TestGetDashboardDataWithProjects:
         mock_proj_cls.return_value.get_by_user = AsyncMock(return_value=projects)
         _mock_pub_repo(mock_pub_cls)
 
-        mock_conn = MagicMock()
-        mock_conn.get_platform_types_by_project = AsyncMock(return_value=["wordpress"])
-        mock_conn_cls.return_value = mock_conn
-
         mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=[])
         mock_sched_cls.return_value.get_by_project = AsyncMock(return_value=[])
 
         result = await dash_svc.get_dashboard_data(42)
 
-        assert result.has_wp is True
-        assert result.has_social is False
         assert result.schedule_count == 0
 
     @patch(f"{_SVC_MODULE}.SchedulesRepository")
     @patch(f"{_SVC_MODULE}.CategoriesRepository")
-    @patch(f"{_SVC_MODULE}.ConnectionsRepository")
-    @patch(f"{_SVC_MODULE}.CredentialManager")
-    @patch(f"{_SVC_MODULE}.PublicationsRepository")
-    @patch(f"{_SVC_MODULE}.ProjectsRepository")
-    async def test_get_dashboard_data_no_connections_returns_false(
-        self,
-        mock_proj_cls: MagicMock,
-        mock_pub_cls: MagicMock,
-        _mock_cm_cls: MagicMock,
-        mock_conn_cls: MagicMock,
-        mock_cats_cls: MagicMock,
-        mock_sched_cls: MagicMock,
-        dash_svc: DashboardService,
-    ) -> None:
-        projects = [MagicMock(id=1)]
-        mock_proj_cls.return_value.get_by_user = AsyncMock(return_value=projects)
-        _mock_pub_repo(mock_pub_cls)
-
-        mock_conn_cls.return_value.get_platform_types_by_project = AsyncMock(return_value=[])
-
-        mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=[])
-        mock_sched_cls.return_value.get_by_project = AsyncMock(return_value=[])
-
-        result = await dash_svc.get_dashboard_data(42)
-
-        assert result.has_wp is False
-        assert result.has_social is False
-
-    @patch(f"{_SVC_MODULE}.SchedulesRepository")
-    @patch(f"{_SVC_MODULE}.CategoriesRepository")
-    @patch(f"{_SVC_MODULE}.ConnectionsRepository")
-    @patch(f"{_SVC_MODULE}.CredentialManager")
-    @patch(f"{_SVC_MODULE}.PublicationsRepository")
-    @patch(f"{_SVC_MODULE}.ProjectsRepository")
-    async def test_get_platform_flags_parallel_fetches_all_projects(
-        self,
-        mock_proj_cls: MagicMock,
-        mock_pub_cls: MagicMock,
-        _mock_cm_cls: MagicMock,
-        mock_conn_cls: MagicMock,
-        mock_cats_cls: MagicMock,
-        mock_sched_cls: MagicMock,
-        dash_svc: DashboardService,
-    ) -> None:
-        """asyncio.gather fetches platform types for all projects in parallel."""
-        projects = [MagicMock(id=1), MagicMock(id=2), MagicMock(id=3)]
-        mock_proj_cls.return_value.get_by_user = AsyncMock(return_value=projects)
-        _mock_pub_repo(mock_pub_cls)
-
-        mock_conn = MagicMock()
-        mock_conn.get_platform_types_by_project = AsyncMock(side_effect=[["wordpress", "telegram"], [], []])
-        mock_conn_cls.return_value = mock_conn
-
-        mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=[])
-        mock_sched_cls.return_value.get_by_project = AsyncMock(return_value=[])
-
-        result = await dash_svc.get_dashboard_data(42)
-
-        assert result.has_wp is True
-        assert result.has_social is True
-        # All 3 projects fetched in parallel via asyncio.gather
-        assert mock_conn.get_platform_types_by_project.await_count == 3
-
-    @patch(f"{_SVC_MODULE}.SchedulesRepository")
-    @patch(f"{_SVC_MODULE}.CategoriesRepository")
-    @patch(f"{_SVC_MODULE}.ConnectionsRepository")
-    @patch(f"{_SVC_MODULE}.CredentialManager")
     @patch(f"{_SVC_MODULE}.PublicationsRepository")
     @patch(f"{_SVC_MODULE}.ProjectsRepository")
     async def test_last_publication_populated_from_successful(
         self,
         mock_proj_cls: MagicMock,
         mock_pub_cls: MagicMock,
-        _mock_cm_cls: MagicMock,
-        mock_conn_cls: MagicMock,
         mock_cats_cls: MagicMock,
         mock_sched_cls: MagicMock,
         dash_svc: DashboardService,
@@ -276,7 +182,6 @@ class TestGetDashboardDataWithProjects:
         )
         mock_pub_cls.return_value.get_last_successful = AsyncMock(return_value=last_pub_mock)
 
-        mock_conn_cls.return_value.get_platform_types_by_project = AsyncMock(return_value=[])
         mock_cats_cls.return_value.get_by_project = AsyncMock(return_value=[])
         mock_sched_cls.return_value.get_by_project = AsyncMock(return_value=[])
 
@@ -299,8 +204,6 @@ def _data(**overrides: object) -> DashboardData:
     defaults: dict[str, object] = {
         "project_count": 1,
         "schedule_count": 0,
-        "has_wp": False,
-        "has_social": False,
         "total_publications": 0,
         "last_publication": None,
         "tokens_per_week": 0,

@@ -12,9 +12,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from db.client import SupabaseClient
-from db.credential_manager import CredentialManager
 from db.repositories.categories import CategoriesRepository
-from db.repositories.connections import ConnectionsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from db.repositories.schedules import SchedulesRepository
@@ -45,8 +43,6 @@ class DashboardData(BaseModel, frozen=True):
 
     project_count: int
     schedule_count: int
-    has_wp: bool
-    has_social: bool
     total_publications: int
     last_publication: LastPublication | None
     tokens_per_week: int
@@ -64,7 +60,7 @@ class DashboardService:
         self._encryption_key = encryption_key
 
     async def get_dashboard_data(self, user_id: int) -> DashboardData:
-        """Aggregate dashboard data: projects, schedules, platform flags, publications."""
+        """Aggregate dashboard data: projects, schedules, publications."""
         projects_repo = ProjectsRepository(self._db)
         pub_repo = PublicationsRepository(self._db)
 
@@ -77,15 +73,10 @@ class DashboardService:
         project_count = len(projects)
         project_ids = [p.id for p in projects]
 
-        has_wp = False
-        has_social = False
         schedule_count = 0
         tokens_per_week = 0
         if project_count > 0:
-            (has_wp, has_social), (schedule_count, tokens_per_week) = await asyncio.gather(
-                self._get_platform_flags(project_ids),
-                self._get_schedule_stats(project_ids),
-            )
+            schedule_count, tokens_per_week = await self._get_schedule_stats(project_ids)
 
         last_pub = None
         if last_pub_row:
@@ -98,37 +89,11 @@ class DashboardService:
         return DashboardData(
             project_count=project_count,
             schedule_count=schedule_count,
-            has_wp=has_wp,
-            has_social=has_social,
             total_publications=pub_stats.get("total_publications", 0),
             last_publication=last_pub,
             tokens_per_week=tokens_per_week,
             tokens_per_month=tokens_per_week * 4,
         )
-
-    async def _get_platform_flags(
-        self,
-        project_ids: list[int],
-    ) -> tuple[bool, bool]:
-        """Return (has_wp, has_social) across given projects.
-
-        Uses asyncio.gather to fetch platform types for all projects in parallel.
-        """
-        cm = CredentialManager(self._encryption_key)
-        conn_repo = ConnectionsRepository(self._db, cm)
-
-        results = await asyncio.gather(*(conn_repo.get_platform_types_by_project(pid) for pid in project_ids))
-
-        has_wp = False
-        has_social = False
-        for ptypes in results:
-            if "wordpress" in ptypes:
-                has_wp = True
-            if any(p in ptypes for p in ("telegram", "vk", "pinterest")):
-                has_social = True
-            if has_wp and has_social:
-                break
-        return has_wp, has_social
 
     async def _get_schedule_stats(
         self,
@@ -179,10 +144,7 @@ class DashboardService:
                 "Для генерации контента пополните баланс."
             )
         if balance == 0:
-            return (
-                "\U0001f4b0 <b>Баланс: 0 токенов</b>\n\n"
-                "Для генерации контента нужно пополнить баланс."
-            )
+            return "\U0001f4b0 <b>Баланс: 0 токенов</b>\n\nДля генерации контента нужно пополнить баланс."
 
         if is_new_user and data.project_count == 0:
             articles_est = balance // _AVG_ARTICLE_COST
@@ -198,17 +160,13 @@ class DashboardService:
         lines: list[str] = []
 
         # Balance line
-        lines.append(
-            f"\U0001f4b0 <b>Баланс: {_format_balance(balance)} токенов</b>"
-            f" (~{articles_est} статей)"
-        )
+        lines.append(f"\U0001f4b0 <b>Баланс: {_format_balance(balance)} токенов</b> (~{articles_est} статей)")
         lines.append("")
 
         if data.project_count > 0:
             # Stats block
             lines.append(
-                f"\U0001f4c1 Проектов: {data.project_count}"
-                f"  \u00b7  \U0001f4c5 Расписаний: {data.schedule_count}"
+                f"\U0001f4c1 Проектов: {data.project_count}  \u00b7  \U0001f4c5 Расписаний: {data.schedule_count}"
             )
             if data.total_publications > 0:
                 lines.append(f"\U0001f4ca Публикаций: {data.total_publications}")
@@ -221,10 +179,8 @@ class DashboardService:
                 kw_short = html.escape(
                     lp.keyword[:40] + "\u2026" if len(lp.keyword) > 40 else lp.keyword,
                 )
-                lines.append(
-                    f"\U0001f4dd {label.capitalize()}: \u00ab{kw_short}\u00bb"
-                    f" \u2014 {date_str}"
-                )
+                suffix = f" \u2014 {date_str}" if date_str else ""
+                lines.append(f"\U0001f4dd {label.capitalize()}: \u00ab{kw_short}\u00bb{suffix}")
 
             # Forecast
             if data.tokens_per_week > 0:

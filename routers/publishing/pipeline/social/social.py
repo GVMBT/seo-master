@@ -23,7 +23,6 @@ from aiogram.types import CallbackQuery, Message
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
-from bot.validators import URL_RE
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import ProjectCreate, User
@@ -103,7 +102,11 @@ async def pipeline_social_start(
 
     if len(projects) == 1:
         project = projects[0]
-        await state.update_data(project_id=project.id, project_name=project.name)
+        await state.update_data(
+            project_id=project.id,
+            project_name=project.name,
+            company_name=project.company_name,
+        )
         await _show_connection_step(
             callback,
             state,
@@ -158,7 +161,11 @@ async def pipeline_select_project(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
-    await state.update_data(project_id=project.id, project_name=project.name)
+    await state.update_data(
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
+    )
     await _show_connection_step(
         callback,
         state,
@@ -192,7 +199,8 @@ async def pipeline_projects_page(
     proj_svc = project_service_factory(db)
     projects = await proj_svc.list_by_user(user.id)
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, page=page, pipeline_type="social"),
     )
@@ -200,7 +208,61 @@ async def pipeline_projects_page(
 
 
 # ---------------------------------------------------------------------------
-# Step 1 sub-flow: Inline project creation (4 states)
+# Step 1 shortcut: Start pipeline for a specific project (from project card)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^pipeline:social:project:\d+$"))
+async def pipeline_social_from_project(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
+) -> None:
+    """Start social pipeline with a pre-selected project (from project card)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    if not callback.data:
+        await callback.answer()
+        return
+    project_id = int(callback.data.split(":")[3])  # pipeline:social:project:{id}
+
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        log.info("pipeline.social.fsm_interrupted", user_id=user.id, interrupted=interrupted)
+
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id)
+    if project is None:
+        await callback.answer("Проект не найден.", show_alert=True)
+        return
+
+    await state.update_data(
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
+    )
+    await _show_connection_step(
+        callback,
+        state,
+        user,
+        db,
+        redis,
+        project.id,
+        project.name,
+        http_client=http_client,
+    )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Step 1 sub-flow: Inline project creation (1 step)
 # ---------------------------------------------------------------------------
 
 
@@ -220,7 +282,8 @@ async def pipeline_start_create_project(
 
     await state.set_state(SocialPipelineFSM.create_project_name)
     await state.update_data(last_update_time=time.time())
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         f"Пост (1/{_TOTAL_STEPS}) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
@@ -230,8 +293,13 @@ async def pipeline_start_create_project(
 async def pipeline_create_project_name(
     message: Message,
     state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
-    """Inline project creation step 1: project name (2-100 chars)."""
+    """Inline project creation: name (2-100 chars) -> create -> proceed to step 2."""
     text = (message.text or "").strip()
     if len(text) < 2 or len(text) > 100:
         await message.answer(
@@ -240,91 +308,9 @@ async def pipeline_create_project_name(
         )
         return
 
-    await state.update_data(new_project_name=text, last_update_time=time.time())
-    await state.set_state(SocialPipelineFSM.create_project_company)
-    await message.answer(
-        "Как называется ваша компания?\n<i>Пример: ООО Мебель Комфорт</i>",
-        reply_markup=cancel_kb("pipeline:social:cancel"),
-    )
-
-
-@router.message(SocialPipelineFSM.create_project_company, F.text)
-async def pipeline_create_project_company(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Inline project creation step 2: company name (2-255 chars)."""
-    text = (message.text or "").strip()
-    if len(text) < 2 or len(text) > 255:
-        await message.answer(
-            "Название компании: от 2 до 255 символов.",
-            reply_markup=cancel_kb("pipeline:social:cancel"),
-        )
-        return
-
-    await state.update_data(new_company_name=text, last_update_time=time.time())
-    await state.set_state(SocialPipelineFSM.create_project_spec)
-    await message.answer(
-        "Опишите специализацию в 2-3 словах.\n<i>Пример: мебель на заказ</i>",
-        reply_markup=cancel_kb("pipeline:social:cancel"),
-    )
-
-
-@router.message(SocialPipelineFSM.create_project_spec, F.text)
-async def pipeline_create_project_spec(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    """Inline project creation step 3: specialization (2-500 chars)."""
-    text = (message.text or "").strip()
-    if len(text) < 2 or len(text) > 500:
-        await message.answer(
-            "Специализация: от 2 до 500 символов.",
-            reply_markup=cancel_kb("pipeline:social:cancel"),
-        )
-        return
-
-    await state.update_data(new_specialization=text, last_update_time=time.time())
-    await state.set_state(SocialPipelineFSM.create_project_url)
-    await message.answer(
-        "Адрес сайта (необязательно).\nЕсли нет — напишите «Пропустить».\n<i>Пример: comfort-mebel.ru</i>",
-        reply_markup=cancel_kb("pipeline:social:cancel"),
-    )
-
-
-@router.message(SocialPipelineFSM.create_project_url, F.text)
-async def pipeline_create_project_url(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    http_client: httpx.AsyncClient,
-    project_service_factory: ProjectServiceFactory,
-) -> None:
-    """Inline project creation step 4: URL -> create project -> proceed to step 2."""
-    text = (message.text or "").strip()
-
-    website_url: str | None = None
-    if text.lower() not in ("пропустить", "нет", "-", ""):
-        if not URL_RE.match(text):
-            await message.answer(
-                "Некорректный URL. Попробуйте ещё раз или напишите «Пропустить».",
-                reply_markup=cancel_kb("pipeline:social:cancel"),
-            )
-            return
-        website_url = text if text.startswith("http") else f"https://{text}"
-
-    data = await state.get_data()
     proj_svc = project_service_factory(db)
     project = await proj_svc.create_project(
-        ProjectCreate(
-            user_id=user.id,
-            name=data["new_project_name"],
-            company_name=data["new_company_name"],
-            specialization=data["new_specialization"],
-            website_url=website_url,
-        )
+        ProjectCreate(user_id=user.id, name=text, company_name=text)
     )
 
     if not project:
@@ -335,7 +321,11 @@ async def pipeline_create_project_url(
 
     log.info("pipeline.social.project_created", project_id=project.id, user_id=user.id)
 
-    await state.update_data(project_id=project.id, project_name=project.name)
+    await state.update_data(
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
+    )
     await message.answer(f"Проект «{html.escape(project.name)}» создан!")
 
     # Proceed to step 2 (connection selection)
@@ -388,7 +378,8 @@ async def _show_category_step(
     categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     if not categories:
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nО чём будет пост? Назовите тему.",
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
@@ -409,7 +400,8 @@ async def _show_category_step(
         await show_social_readiness_check(callback, state, user, db, redis)
         return
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
@@ -535,7 +527,8 @@ async def pipeline_categories_page(
     cat_svc = category_service_factory(db)
     categories = await cat_svc.list_by_project(project_id, user.id) or []
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, page=page, pipeline_type="social"),
     )

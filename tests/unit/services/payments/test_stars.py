@@ -38,20 +38,30 @@ class TestBuildInvoiceParams:
         assert params["provider_token"] == ""
 
     def test_payload_format(self, service: StarsPaymentService) -> None:
-        params = service.build_invoice_params(user_id=42, package_name="standard")
-        assert params["payload"] == "purchase:standard:user_42"
+        params = service.build_invoice_params(user_id=42, package_name="start")
+        assert params["payload"] == "purchase:start:user_42"
 
     def test_stars_amount_matches_package(self, service: StarsPaymentService) -> None:
-        params = service.build_invoice_params(user_id=1, package_name="pro")
-        assert params["prices"][0]["amount"] == 195
+        params = service.build_invoice_params(user_id=1, package_name="profi")
+        assert params["prices"][0]["amount"] == 390
 
     def test_start_package_stars(self, service: StarsPaymentService) -> None:
         params = service.build_invoice_params(user_id=1, package_name="start")
-        assert params["prices"][0]["amount"] == 33
+        assert params["prices"][0]["amount"] == 195
 
     def test_title_uses_label(self, service: StarsPaymentService) -> None:
-        params = service.build_invoice_params(user_id=1, package_name="standard")
-        assert "Стандарт" in params["title"]
+        params = service.build_invoice_params(user_id=1, package_name="start")
+        assert "Старт" in params["title"]
+
+    def test_title_includes_total_tokens(self, service: StarsPaymentService) -> None:
+        params = service.build_invoice_params(user_id=1, package_name="start")
+        # start: 3000 + 500 bonus = 3500 total_tokens
+        assert "3500" in params["title"]
+
+    def test_legacy_standard_resolves(self, service: StarsPaymentService) -> None:
+        """Legacy 'standard' name should resolve via get_package fallback."""
+        params = service.build_invoice_params(user_id=42, package_name="standard")
+        assert params["payload"] == "purchase:standard:user_42"
 
 
 # ---------------------------------------------------------------------------
@@ -113,20 +123,21 @@ class TestProcessSuccessfulPayment:
             payload="purchase:start:user_42",
             telegram_payment_charge_id="charge_123",
             provider_payment_charge_id="provider_123",
-            total_amount=33,
+            total_amount=195,
         )
-        assert result["tokens_credited"] == 500
+        # start: 3000 + 500 bonus = 3500 total_tokens
+        assert result["tokens_credited"] == 3500
         assert result["new_balance"] == 2500
         assert result["is_duplicate"] is False
-        service_with_mocks._users.credit_balance.assert_called_once_with(42, 500)
+        service_with_mocks._users.credit_balance.assert_called_once_with(42, 3500)
 
     async def test_purchase_creates_payment_record(self, service_with_mocks: StarsPaymentService) -> None:
         await service_with_mocks.process_successful_payment(
             user_id=42,
-            payload="purchase:standard:user_42",
+            payload="purchase:start:user_42",
             telegram_payment_charge_id="charge_456",
             provider_payment_charge_id="prov_456",
-            total_amount=104,
+            total_amount=195,
         )
         service_with_mocks._payments.create.assert_called_once()
         service_with_mocks._payments.update.assert_called_once()
@@ -140,7 +151,7 @@ class TestProcessSuccessfulPayment:
             payload="purchase:start:user_42",
             telegram_payment_charge_id="dup_charge",
             provider_payment_charge_id="prov",
-            total_amount=33,
+            total_amount=195,
         )
         assert result["is_duplicate"] is True
         assert result["tokens_credited"] == 0
@@ -233,16 +244,18 @@ class TestFormatting:
 
     def test_package_text_contains_tokens(self, service: StarsPaymentService) -> None:
         text = service.format_package_text("start")
-        assert "500" in text
+        # start: 3000 + 500 bonus = 3500 total_tokens
+        assert "3500" in text
 
-    def test_package_text_shows_discount(self, service: StarsPaymentService) -> None:
-        text = service.format_package_text("standard")
-        assert "20%" in text
+    def test_package_text_shows_bonus(self, service: StarsPaymentService) -> None:
+        text = service.format_package_text("start")
+        assert "500" in text  # bonus amount
+        assert "бонус" in text.lower()
 
     def test_payment_link_text_package(self, service: StarsPaymentService) -> None:
-        text = service.format_payment_link_text("pro")
-        assert "3000" in text
-        assert "Про" in text
+        text = service.format_payment_link_text("profi")
+        assert "6000" in text
+        assert "Профи" in text
 
 
 # ---------------------------------------------------------------------------

@@ -16,8 +16,8 @@ class TestTTLConstants:
     def test_fsm_ttl_24h(self) -> None:
         assert FSM_TTL == 86400
 
-    def test_publish_lock_ttl_5min(self) -> None:
-        assert PUBLISH_LOCK_TTL == 300
+    def test_publish_lock_ttl_10min(self) -> None:
+        assert PUBLISH_LOCK_TTL == 600
 
     def test_branding_ttl_7days(self) -> None:
         assert BRANDING_TTL == 604800
