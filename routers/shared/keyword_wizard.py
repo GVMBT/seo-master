@@ -238,19 +238,20 @@ async def run_keyword_generation(
             await state.clear()
         return
 
-    # Post-success UI
+    # Post-success UI — save chat_id before deleting message
+    chat_id = progress_msg.chat.id
+    bot = progress_msg.bot
     try:
         await progress_msg.delete()
     except Exception:
         log.debug(f"{log_prefix}.delete_progress_failed")
 
     volume_line = f"\nОбщий объём: {total_volume:,}/мес" if total_volume > 0 else ""
-    bot = progress_msg.bot
     if not bot:
         return
     with contextlib.suppress(Exception):
         await bot.send_message(
-            chat_id=progress_msg.chat.id,
+            chat_id=chat_id,
             text=(
                 f"Готово! Добавлено:\n"
                 f"Кластеров: {len(enriched)}\n"
@@ -703,11 +704,11 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
         )
 
     # -----------------------------------------------------------------------
-    # Cancel (from geo state)
+    # Cancel (from geo state only — state_generating has active coroutine, M4)
     # -----------------------------------------------------------------------
 
     prefix_escaped = re.escape(prefix)
-    cancel_pattern = rf"^{prefix_escaped}.*(?:cancel|gen_cancel|confirm_no)$"
+    cancel_pattern = rf"^{prefix_escaped}.*(?:cancel|gen_cancel)$"
 
     async def wizard_cancel(
         callback: CallbackQuery,

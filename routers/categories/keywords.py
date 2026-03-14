@@ -295,7 +295,7 @@ async def start_generation(
     project = await proj_svc.get_owned_project(project_id, user.id) if project_id else None
     geography = project.company_city if project and project.company_city else None
 
-    if geography:
+    if geography and project_id:
         # Direct path — run generation immediately
         await state.set_state(KeywordGenerationFSM.fetching)
         await state.update_data(

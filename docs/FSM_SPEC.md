@@ -90,7 +90,7 @@ class CategoryCreateFSM(StatesGroup):
 class ProjectEditFSM(StatesGroup):
     field_value = State()    # Ввод нового значения поля (field_name в state.data)
 
-# routers/publishing/pipeline/article.py (Goal-Oriented Pipeline: статьи, 24 состояния)
+# routers/publishing/pipeline/article.py (Goal-Oriented Pipeline: статьи, 23 состояния)
 class ArticlePipelineFSM(StatesGroup):
     select_project = State()       # Шаг 1: выбор проекта
     create_project_name = State()  # Inline: создание проекта — название
@@ -346,7 +346,7 @@ file_upload ──[TXT файл OK]──► enriching ──[DataForSEO OK]─�
 5. При E03 на `enriching` → skip `clustering`, сохранить в legacy-формате (плоский список без volume/difficulty), предупредить: "Данные без объёмов поиска"
 6. При AI error на `clustering` → сохранить как один кластер (все фразы, cluster_name = category_name), volume/difficulty из enrichment
 
-### ArticlePipelineFSM (Goal-Oriented Pipeline: статьи, 24 состояния)
+### ArticlePipelineFSM (Goal-Oriented Pipeline: статьи, 23 состояния)
 
 > Подробное описание: [UX_PIPELINE.md](UX_PIPELINE.md) §4.1, §12, §13
 

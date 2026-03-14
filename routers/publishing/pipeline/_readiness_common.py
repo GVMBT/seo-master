@@ -12,6 +12,7 @@ now delegated to routers.shared.keyword_wizard -- only entry points
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -88,7 +89,11 @@ async def run_keyword_generation(
         prefix=back_kb_prefix,
         log_prefix=log_prefix,
         cancel_cb_fn=lambda _data: "",
-        on_done=lambda cb, st, u, d, r: on_success(cb.message, st, u, d, r),  # type: ignore[arg-type]
+        on_done=lambda cb, st, u, d, r: (  # type: ignore[arg-type]
+            on_success(cb.message, st, u, d, r)
+            if cb.message and isinstance(cb.message, Message)
+            else asyncio.sleep(0)
+        ),
         on_done_msg=on_success,
         cancel_nav_kb_fn=lambda _data: InlineKeyboardMarkup(inline_keyboard=[]),
         error_state=readiness_state,
