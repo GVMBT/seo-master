@@ -19,7 +19,7 @@ from db.client import SupabaseClient
 from db.models import PaymentCreate, PaymentUpdate, TokenExpenseCreate
 from db.repositories.payments import PaymentsRepository
 from db.repositories.users import UsersRepository
-from services.payments.packages import PACKAGES
+from services.payments.packages import get_package
 from services.payments.stars import credit_referral_bonus
 
 log = structlog.get_logger()
@@ -86,11 +86,11 @@ class YooKassaPaymentService:
 
         Returns None on API error.
         """
-        pkg = PACKAGES.get(package_name)
+        pkg = get_package(package_name)
         if not pkg:
             return None
         amount = str(pkg.price_rub)
-        tokens = pkg.tokens
+        tokens = pkg.total_tokens
         description = f"{pkg.label} — {tokens} токенов"
 
         body: dict[str, Any] = {
@@ -141,13 +141,13 @@ class YooKassaPaymentService:
         Returns True if payment was created successfully, False otherwise.
         Token crediting happens when payment.succeeded webhook arrives.
         """
-        pkg = PACKAGES.get(package_name)
+        pkg = get_package(package_name)
         if not pkg:
             log.error("renew_unknown_package", user_id=user_id, package=package_name)
             return False
 
         amount = str(pkg.price_rub)
-        tokens = pkg.tokens
+        tokens = pkg.total_tokens
         description = f"Продление подписки {pkg.label} — {tokens} токенов"
 
         body: dict[str, Any] = {
@@ -243,7 +243,7 @@ class YooKassaPaymentService:
         await self._payments.update(payment.id, update)
 
         # 3. Record token expense
-        pkg = PACKAGES.get(package_name)
+        pkg = get_package(package_name)
         pkg_label = pkg.label if pkg else package_name.capitalize()
         await self._payments.create_expense(
             TokenExpenseCreate(

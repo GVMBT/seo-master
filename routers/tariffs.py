@@ -11,7 +11,7 @@ from bot.helpers import safe_edit_text, safe_message
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import payment_method_kb, tariffs_kb, yookassa_link_kb
-from services.payments.packages import PACKAGES
+from services.payments.packages import get_package
 from services.payments.stars import StarsPaymentService
 from services.payments.yookassa import YooKassaPaymentService
 
@@ -59,7 +59,7 @@ async def select_package(
         return
 
     package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
-    if package_name not in PACKAGES:
+    if get_package(package_name) is None:
         await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
 
@@ -88,7 +88,7 @@ async def pay_with_stars(
         return
 
     package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
-    if package_name not in PACKAGES:
+    if get_package(package_name) is None:
         await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
 
@@ -119,7 +119,7 @@ async def pay_with_yookassa(
         return
 
     package_name = callback.data.split(":")[1]  # type: ignore[union-attr]
-    if package_name not in PACKAGES:
+    if get_package(package_name) is None:
         await callback.answer("\u26a0\ufe0f Пакет не найден. Попробуйте снова.", show_alert=True)
         return
 

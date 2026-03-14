@@ -4,7 +4,7 @@ Covers steps 1-3 of the Article Pipeline:
 - pipeline_article_start: 0/1/>1 projects
 - pipeline_select_project: ownership check, loading
 - pipeline_projects_page: pagination
-- Inline project creation: 4 states (name -> company -> spec -> url)
+- Inline project creation: name -> create project directly (no company/spec/url)
 - WP step: 0/1 connections (1 project = max 1 WP, no multi-WP)
 - pipeline_preview_only: sets preview_only=True
 - Inline WP connection: 3 states (url -> login -> password)
@@ -35,10 +35,7 @@ from routers.publishing.pipeline.article import (
     pipeline_connect_wp_password,
     pipeline_connect_wp_url,
     pipeline_create_category_name,
-    pipeline_create_project_company,
     pipeline_create_project_name,
-    pipeline_create_project_spec,
-    pipeline_create_project_url,
     pipeline_preview_only,
     pipeline_projects_page,
     pipeline_select_category,
@@ -441,124 +438,23 @@ class TestPipelineStartCreateProject:
 
 
 class TestPipelineCreateProjectName:
-    """pipeline_create_project_name: validates 2-100 chars."""
+    """pipeline_create_project_name: validates 2-100 chars, creates project directly."""
 
-    async def test_valid_name_proceeds(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "My Project"
-        await pipeline_create_project_name(mock_message, mock_state)
-        mock_state.set_state.assert_called_with(ArticlePipelineFSM.create_project_company)
-        # Should store the name
-        call_kwargs = mock_state.update_data.call_args.kwargs
-        assert call_kwargs["new_project_name"] == "My Project"
-
-    async def test_too_short_rejected(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "A"
-        await pipeline_create_project_name(mock_message, mock_state)
-        mock_state.set_state.assert_not_called()
-        assert "2 до 100" in mock_message.answer.call_args.args[0]
-
-    async def test_too_long_rejected(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "A" * 101
-        await pipeline_create_project_name(mock_message, mock_state)
-        mock_state.set_state.assert_not_called()
-
-
-class TestPipelineCreateProjectCompany:
-    """pipeline_create_project_company: validates 2-255 chars."""
-
-    async def test_valid_company_proceeds(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "TestCo Inc"
-        await pipeline_create_project_company(mock_message, mock_state)
-        mock_state.set_state.assert_called_with(ArticlePipelineFSM.create_project_spec)
-        call_kwargs = mock_state.update_data.call_args.kwargs
-        assert call_kwargs["new_company_name"] == "TestCo Inc"
-
-    async def test_too_short_rejected(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "A"
-        await pipeline_create_project_company(mock_message, mock_state)
-        mock_state.set_state.assert_not_called()
-        assert "2 до 255" in mock_message.answer.call_args.args[0]
-
-
-class TestPipelineCreateProjectSpec:
-    """pipeline_create_project_spec: validates 2-500 chars."""
-
-    async def test_valid_spec_proceeds(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "web development"
-        await pipeline_create_project_spec(mock_message, mock_state)
-        mock_state.set_state.assert_called_with(ArticlePipelineFSM.create_project_url)
-        call_kwargs = mock_state.update_data.call_args.kwargs
-        assert call_kwargs["new_specialization"] == "web development"
-
-    async def test_too_short_rejected(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "x"
-        await pipeline_create_project_spec(mock_message, mock_state)
-        mock_state.set_state.assert_not_called()
-        assert "2 до 500" in mock_message.answer.call_args.args[0]
-
-
-class TestPipelineCreateProjectUrl:
-    """pipeline_create_project_url: creates project, proceeds to WP step."""
-
-    async def test_valid_url_creates_project(
+    async def test_valid_name_creates_project(
         self,
         mock_message: MagicMock,
         mock_state: MagicMock,
         mock_redis: MagicMock,
         user: Any,
     ) -> None:
-        """Valid URL -> project created, proceeds to WP step."""
-        mock_message.text = "example.com"
-        mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(
-            return_value={
-                "new_project_name": "Test",
-                "new_company_name": "Co",
-                "new_specialization": "SEO",
-            }
-        )
-        created = make_project(id=42, name="Test")
+        """Valid name -> project created immediately, proceeds to WP step."""
+        mock_message.text = "My Project"
+        created = make_project(id=42, name="My Project")
         patches, proj_mock, _, _, pf, _cf = _patch_repos(created_project=created, wp_connections=[])
         with patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_create_project_url(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                MagicMock(),
-                mock_redis,
-                pf,
+            await pipeline_create_project_name(
+                mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis, pf,
             )
-
-        # Project creation called
         proj_mock.create_project.assert_called_once()
         # State updated with project_id
         update_calls = mock_state.update_data.call_args_list
@@ -569,92 +465,48 @@ class TestPipelineCreateProjectUrl:
         assert proj_call is not None
         assert proj_call.kwargs["project_id"] == 42
 
-    async def test_skip_url_creates_project_without_url(
+    async def test_too_short_rejected(
         self,
         mock_message: MagicMock,
         mock_state: MagicMock,
         mock_redis: MagicMock,
         user: Any,
     ) -> None:
-        """'Пропустить' -> project created with website_url=None."""
-        mock_message.text = "Пропустить"
-        mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(
-            return_value={
-                "new_project_name": "Test",
-                "new_company_name": "Co",
-                "new_specialization": "SEO",
-            }
+        mock_message.text = "A"
+        await pipeline_create_project_name(
+            mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis, MagicMock(),
         )
-        created = make_project(id=42, name="Test")
-        patches, proj_mock, _, _, pf, _cf = _patch_repos(created_project=created, wp_connections=[])
+        assert "2 до 100" in mock_message.answer.call_args.args[0]
+
+    async def test_too_long_rejected(
+        self,
+        mock_message: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        mock_message.text = "A" * 101
+        await pipeline_create_project_name(
+            mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis, MagicMock(),
+        )
+        assert "2 до 100" in mock_message.answer.call_args.args[0]
+
+    async def test_project_limit_reached_clears_state(
+        self,
+        mock_message: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """create_project returns None -> clears state, shows limit message."""
+        mock_message.text = "My Project"
+        patches, _, _, _, pf, _cf = _patch_repos(created_project=None)
         with patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_create_project_url(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                MagicMock(),
-                mock_redis,
-                pf,
+            await pipeline_create_project_name(
+                mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis, pf,
             )
-
-        # Check that website_url is None in the create call
-        create_arg = proj_mock.create_project.call_args.args[0]
-        assert create_arg.website_url is None
-
-    async def test_invalid_url_rejected(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        """Invalid URL -> error message, no project created."""
-        mock_message.text = "not a url!!!"
-        await pipeline_create_project_url(
-            mock_message,
-            mock_state,
-            user,
-            MagicMock(),
-            MagicMock(),
-            mock_redis,
-            MagicMock(),
-        )
-        assert "Некорректный URL" in mock_message.answer.call_args.args[0]
-
-    async def test_url_gets_https_prefix(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-        mock_redis: MagicMock,
-        user: Any,
-    ) -> None:
-        """URL without scheme gets https:// prefix."""
-        mock_message.text = "example.com"
-        mock_message.delete = AsyncMock()
-        mock_state.get_data = AsyncMock(
-            return_value={
-                "new_project_name": "Test",
-                "new_company_name": "Co",
-                "new_specialization": "SEO",
-            }
-        )
-        created = make_project(id=42, name="Test")
-        patches, proj_mock, _, _, pf, _cf = _patch_repos(created_project=created, wp_connections=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
-            await pipeline_create_project_url(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                MagicMock(),
-                mock_redis,
-                pf,
-            )
-
-        create_arg = proj_mock.create_project.call_args.args[0]
-        assert create_arg.website_url == "https://example.com"
+        mock_state.clear.assert_called_once()
+        assert "лимит" in mock_message.answer.call_args.args[0].lower()
 
 
 # ---------------------------------------------------------------------------

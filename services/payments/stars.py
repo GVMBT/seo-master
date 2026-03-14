@@ -20,6 +20,7 @@ from db.repositories.users import UsersRepository
 from services.payments.packages import (
     PACKAGES,
     REFERRAL_BONUS_PERCENT,
+    get_package,
 )
 
 if TYPE_CHECKING:
@@ -147,11 +148,11 @@ class StarsPaymentService:
 
         Returns dict with: title, description, payload, currency, prices.
         """
-        pkg = PACKAGES[package_name]
+        pkg = get_package(package_name) or PACKAGES["mini"]
         discount_text = f" ({pkg.discount})" if pkg.discount else ""
         return {
-            "title": f"{pkg.label} — {pkg.tokens} токенов",
-            "description": f"{pkg.tokens} токенов{discount_text}",
+            "title": f"{pkg.label} — {pkg.total_tokens} токенов",
+            "description": f"{pkg.total_tokens} токенов{discount_text}",
             "payload": f"purchase:{package_name}:user_{user_id}",
             "currency": "XTR",
             "prices": [{"label": pkg.label, "amount": pkg.stars}],
@@ -181,7 +182,7 @@ class StarsPaymentService:
             return False, "Ошибка идентификации пользователя."
 
         if action == "purchase":
-            if name not in PACKAGES:
+            if get_package(name) is None:
                 return False, "Пакет не найден."
         else:
             return False, "Неизвестный тип платежа."
@@ -239,20 +240,20 @@ class StarsPaymentService:
         stars_amount: int,
     ) -> dict:
         """Process one-time purchase."""
-        pkg = PACKAGES.get(package_name)
+        pkg = get_package(package_name)
         if not pkg:
             log.error("unknown_package", package_name=package_name)
             return {"tokens_credited": 0, "error": f"Unknown package: {package_name}"}
 
-        # 1. Credit tokens (atomic RPC)
-        new_balance = await self._users.credit_balance(user_id, pkg.tokens)
+        # 1. Credit tokens (atomic RPC) — base + bonus
+        new_balance = await self._users.credit_balance(user_id, pkg.total_tokens)
 
         # 2. Create payment record
         payment = await self._payments.create(
             PaymentCreate(
                 user_id=user_id,
                 provider="stars",
-                tokens_amount=pkg.tokens,
+                tokens_amount=pkg.total_tokens,
                 package_name=package_name,
                 amount_rub=Decimal(str(pkg.price_rub)),
                 stars_amount=stars_amount,
@@ -271,9 +272,9 @@ class StarsPaymentService:
         await self._payments.create_expense(
             TokenExpenseCreate(
                 user_id=user_id,
-                amount=pkg.tokens,
+                amount=pkg.total_tokens,
                 operation_type="purchase",
-                description=f"{pkg.label} ({pkg.tokens} токенов)",
+                description=f"{pkg.label} ({pkg.total_tokens} токенов)",
             )
         )
 
@@ -284,12 +285,12 @@ class StarsPaymentService:
             "stars_purchase_completed",
             user_id=user_id,
             package=package_name,
-            tokens=pkg.tokens,
+            tokens=pkg.total_tokens,
             stars=stars_amount,
         )
 
         return {
-            "tokens_credited": pkg.tokens,
+            "tokens_credited": pkg.total_tokens,
             "new_balance": new_balance,
             "package_name": package_name,
             "is_duplicate": False,
@@ -369,25 +370,21 @@ class StarsPaymentService:
             f"Ваш баланс: <b>{balance}</b> токенов\n\n"
             f"<b>Справочник стоимости:</b>\n"
             f"Статья на сайт (2000 слов + 4 картинки): ~320 токенов\n"
-            f"Пост в соцсети (текст + картинка): ~40 токенов\n"
-            f"Подбор 100 ключевых фраз: 100 токенов\n"
-            f"Технический аудит сайта: 50 токенов"
+            f"Пост в соцсети (текст + картинка): ~40 токенов"
         )
 
     def format_package_text(self, package_name: str) -> str:
         """Format package info for payment method selection."""
-        pkg = PACKAGES[package_name]
-        discount_text = f"\nСкидка: {pkg.discount}" if pkg.discount else ""
-        return (
-            f"<b>{pkg.label}</b>\n\n"
-            f"Токенов: {pkg.tokens}{discount_text}\n"
-            f"Цена: {pkg.price_rub} руб.\n\n"
-            f"Выберите способ оплаты:"
-        )
+        pkg = get_package(package_name) or PACKAGES["mini"]
+        if pkg.bonus > 0:
+            tokens_line = f"Токенов: {pkg.tokens} + {pkg.bonus} бонус = {pkg.total_tokens}"
+        else:
+            tokens_line = f"Токенов: {pkg.total_tokens}"
+        return f"<b>{pkg.label}</b>\n\n{tokens_line}\nЦена: {pkg.price_rub} руб.\n\nВыберите способ оплаты:"
 
     def format_payment_link_text(self, package_name: str) -> str:
         """Format text for YooKassa payment link screen."""
-        pkg = PACKAGES[package_name]
+        pkg = get_package(package_name) or PACKAGES["mini"]
         return (
             f"Оплата пакета <b>{pkg.label}</b> — {pkg.price_rub} руб.\n\n"
             f"Нажмите кнопку для перехода на страницу оплаты."

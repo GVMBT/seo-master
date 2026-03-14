@@ -3,8 +3,7 @@
 Covers steps 1 and 3 of the Social Pipeline (F6.1):
 - pipeline_social_start: 0/1/>1 projects
 - pipeline_select_project: ownership check
-- pipeline_projects_page: pagination
-- Inline project creation: 4 states (name -> company -> spec -> url)
+- Inline project creation: name -> create project directly (no company/spec/url)
 - Category step (via connection stub): 0/1/>1 categories
 - pipeline_select_category: ownership check
 - pipeline_create_category_name: inline creation + validation
@@ -28,10 +27,7 @@ from routers.publishing.pipeline.social.generation import (
 )
 from routers.publishing.pipeline.social.social import (
     pipeline_create_category_name,
-    pipeline_create_project_company,
     pipeline_create_project_name,
-    pipeline_create_project_spec,
-    pipeline_create_project_url,
     pipeline_select_category,
     pipeline_select_project,
     pipeline_social_cancel,
@@ -281,70 +277,51 @@ class TestInlineProjectCreation:
         self,
         mock_message: MagicMock,
         mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
     ) -> None:
         mock_message.text = "X"
-        await pipeline_create_project_name(mock_message, mock_state)
+        await pipeline_create_project_name(
+            mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(), MagicMock(),
+        )
         mock_message.answer.assert_awaited_once()
         assert "от 2 до 100" in mock_message.answer.call_args[0][0]
 
-    async def test_name_valid(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "My Project"
-        await pipeline_create_project_name(mock_message, mock_state)
-        mock_state.update_data.assert_awaited()
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.create_project_company)
-
-    async def test_company_valid(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "TestCo Inc"
-        await pipeline_create_project_company(mock_message, mock_state)
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.create_project_spec)
-
-    async def test_spec_valid(
-        self,
-        mock_message: MagicMock,
-        mock_state: MagicMock,
-    ) -> None:
-        mock_message.text = "SEO services"
-        await pipeline_create_project_spec(mock_message, mock_state)
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.create_project_url)
-
-    async def test_url_skip_creates_project(
+    async def test_name_valid_creates_project(
         self,
         mock_message: MagicMock,
         mock_state: MagicMock,
         mock_redis: MagicMock,
         user: Any,
     ) -> None:
-        mock_message.text = "Пропустить"
+        """Valid name -> project created immediately, proceeds to connection step."""
+        mock_message.text = "My Project"
         p = make_project()
-        mock_state.get_data = AsyncMock(
-            return_value={
-                "new_project_name": "Test",
-                "new_company_name": "Co",
-                "new_specialization": "SEO",
-            }
-        )
         patches, pf, _ = _patch_repos(created_project=p, categories=[make_category()])
         with patches["cats"], patches["conn_step_msg"]:
-            await pipeline_create_project_url(
-                mock_message,
-                mock_state,
-                user,
-                MagicMock(),
-                mock_redis,
-                MagicMock(),
-                pf,
+            await pipeline_create_project_name(
+                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf,
             )
 
         # Should have created the project and updated state
         mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
+
+    async def test_project_limit_reached_clears_state(
+        self,
+        mock_message: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """create_project returns None -> clears state, shows limit message."""
+        mock_message.text = "My Project"
+        patches, pf, _ = _patch_repos(created_project=None)
+        with patches["cats"]:
+            await pipeline_create_project_name(
+                mock_message, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf,
+            )
+        mock_state.clear.assert_awaited_once()
+        assert "лимит" in mock_message.answer.call_args[0][0].lower()
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 """Tests for SocialPipelineFSM definition.
 
 Verifies:
-- FSM has exactly 27 states (FSM_SPEC.md section 2.2, readiness_keywords_qty removed)
+- FSM has exactly 24 states (3 create_project states removed: company, spec, url)
 - All expected state names exist
 - State group name matches convention (*FSM suffix)
 """
@@ -12,14 +12,11 @@ from aiogram.fsm.state import State
 
 from routers.publishing.pipeline._common import SocialPipelineFSM
 
-# Expected state names from FSM_SPEC.md section 2.2
+# Expected state names — 24 states (create_project_name only, no company/spec/url)
 _EXPECTED_STATES = [
     # Step 1: Project selection
     "select_project",
     "create_project_name",
-    "create_project_company",
-    "create_project_spec",
-    "create_project_url",
     # Step 2: Connection selection (TG/VK/Pinterest)
     "select_connection",
     "connect_tg_channel",
@@ -53,7 +50,7 @@ _EXPECTED_STATES = [
 class TestSocialPipelineFSMDefinition:
     def test_state_count(self) -> None:
         states = [attr for attr in dir(SocialPipelineFSM) if isinstance(getattr(SocialPipelineFSM, attr), State)]
-        assert len(states) == 27  # 24 base + 3 cross-post (F6.4), readiness_keywords_qty removed
+        assert len(states) == 24  # 21 base + 3 cross-post (F6.4), 3 create_project states removed
 
     def test_all_expected_states_exist(self) -> None:
         for name in _EXPECTED_STATES:
@@ -68,3 +65,8 @@ class TestSocialPipelineFSMDefinition:
 
     def test_fsm_suffix(self) -> None:
         assert SocialPipelineFSM.__name__.endswith("FSM")
+
+    def test_removed_states_do_not_exist(self) -> None:
+        """Removed create_project states should not be present."""
+        for removed in ("create_project_company", "create_project_spec", "create_project_url"):
+            assert not hasattr(SocialPipelineFSM, removed), f"State {removed} should have been removed"

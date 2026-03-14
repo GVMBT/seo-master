@@ -98,12 +98,13 @@ class TestCreatePayment:
         mock_resp.raise_for_status = MagicMock()
         mock_http.post = AsyncMock(return_value=mock_resp)
 
-        await service.create_payment(user_id=42, package_name="standard")
+        await service.create_payment(user_id=42, package_name="start")
 
         call_kwargs = mock_http.post.call_args
         body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
-        assert body["amount"]["value"] == "1600.00"
-        assert body["metadata"]["tokens_amount"] == "2000"
+        # start: price_rub=3000, total_tokens=3500 (3000+500 bonus)
+        assert body["amount"]["value"] == "3000.00"
+        assert body["metadata"]["tokens_amount"] == "3500"
 
     async def test_returns_none_on_unknown_package(self, service: YooKassaPaymentService) -> None:
         url = await service.create_payment(user_id=42, package_name="nonexistent")

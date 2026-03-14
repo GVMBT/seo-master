@@ -31,14 +31,11 @@ PipelineType = Literal["article", "social"]
 
 
 class ArticlePipelineFSM(StatesGroup):
-    """Article pipeline FSM — 25 states covering 8 steps + inline sub-flows."""
+    """Article pipeline FSM — 22 states covering 8 steps + inline sub-flows."""
 
     # Step 1: Project selection
     select_project = State()
     create_project_name = State()
-    create_project_company = State()
-    create_project_spec = State()
-    create_project_url = State()
 
     # Step 2: WP connection check
     select_wp = State()
@@ -73,14 +70,11 @@ class ArticlePipelineFSM(StatesGroup):
 
 
 class SocialPipelineFSM(StatesGroup):
-    """Social pipeline FSM — 28 states (25 base + 3 cross-post F6.4)."""
+    """Social pipeline FSM — 25 states (22 base + 3 cross-post F6.4)."""
 
     # Step 1: Project selection
     select_project = State()
     create_project_name = State()
-    create_project_company = State()
-    create_project_spec = State()
-    create_project_url = State()
 
     # Step 2: Connection selection (TG/VK/Pinterest)
     select_connection = State()
