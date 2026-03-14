@@ -26,12 +26,12 @@ log = structlog.get_logger()
 PipelineType = Literal["article", "social"]
 
 # ---------------------------------------------------------------------------
-# FSM (FSM_SPEC.md §1 — ArticlePipelineFSM, 25 states)
+# FSM (FSM_SPEC.md §1 — ArticlePipelineFSM, 20 states)
 # ---------------------------------------------------------------------------
 
 
 class ArticlePipelineFSM(StatesGroup):
-    """Article pipeline FSM — 22 states covering 8 steps + inline sub-flows."""
+    """Article pipeline FSM — 20 states covering 8 steps + inline sub-flows."""
 
     # Step 1: Project selection
     select_project = State()
@@ -65,12 +65,12 @@ class ArticlePipelineFSM(StatesGroup):
 
 
 # ---------------------------------------------------------------------------
-# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 28 states)
+# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 24 states)
 # ---------------------------------------------------------------------------
 
 
 class SocialPipelineFSM(StatesGroup):
-    """Social pipeline FSM — 25 states (22 base + 3 cross-post F6.4)."""
+    """Social pipeline FSM — 24 states (21 base + 3 cross-post F6.4)."""
 
     # Step 1: Project selection
     select_project = State()
