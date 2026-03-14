@@ -179,7 +179,8 @@ class DashboardService:
                 kw_short = html.escape(
                     lp.keyword[:40] + "\u2026" if len(lp.keyword) > 40 else lp.keyword,
                 )
-                lines.append(f"\U0001f4dd {label.capitalize()}: \u00ab{kw_short}\u00bb \u2014 {date_str}")
+                suffix = f" \u2014 {date_str}" if date_str else ""
+                lines.append(f"\U0001f4dd {label.capitalize()}: \u00ab{kw_short}\u00bb{suffix}")
 
             # Forecast
             if data.tokens_per_week > 0:

@@ -1,11 +1,11 @@
 """Article Pipeline — Goal-Oriented Pipeline for article creation (F5).
 
-FSM: ArticlePipelineFSM (25 states, FSM_SPEC.md §1).
+FSM: ArticlePipelineFSM (20 states, FSM_SPEC.md §1).
 UX: UX_PIPELINE.md §4 (steps 1-8, inline sub-flows).
 Rules: .claude/rules/pipeline.md.
 
 This file implements steps 1-3 (selection) + inline sub-flows (F5.2):
-- Inline project creation (4 states: name → company → spec → url)
+- Inline project creation (1 state: name)
 - Inline WP connection (3 states: url → login → password)
 - Inline category creation (1 state: name)
 Step 4 (readiness) is in readiness.py. Steps 5-8 will be added in F5.4.

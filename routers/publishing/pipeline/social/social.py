@@ -103,10 +103,10 @@ async def pipeline_social_start(
     if len(projects) == 1:
         project = projects[0]
         await state.update_data(
-        project_id=project.id,
-        project_name=project.name,
-        company_name=project.company_name,
-    )
+            project_id=project.id,
+            project_name=project.name,
+            company_name=project.company_name,
+        )
         await _show_connection_step(
             callback,
             state,

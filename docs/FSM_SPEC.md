@@ -249,11 +249,10 @@ class BroadcastFSM(StatesGroup):
 
 ### ProjectCreateFSM (1 шаг)
 
-```
+```text
 name ──[валидный текст 2-100]──► CLEAR_STATE + создание проекта (company_name = name)
   │
-  [невалидный]
-  └── повтор запроса          └── повтор запроса                └── повтор запроса                   └── повтор запроса
+  └──[невалидный]──► повтор запроса
 ```
 
 ### ScheduleSetupFSM
