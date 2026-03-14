@@ -102,7 +102,11 @@ async def pipeline_social_start(
 
     if len(projects) == 1:
         project = projects[0]
-        await state.update_data(project_id=project.id, project_name=project.name)
+        await state.update_data(
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
+    )
         await _show_connection_step(
             callback,
             state,
@@ -157,7 +161,11 @@ async def pipeline_select_project(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
-    await state.update_data(project_id=project.id, project_name=project.name)
+    await state.update_data(
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
+    )
     await _show_connection_step(
         callback,
         state,
@@ -235,7 +243,11 @@ async def pipeline_social_from_project(
         await callback.answer("Проект не найден.", show_alert=True)
         return
 
-    await state.update_data(project_id=project.id, project_name=project.name)
+    await state.update_data(
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
+    )
     await _show_connection_step(
         callback,
         state,
@@ -297,7 +309,9 @@ async def pipeline_create_project_name(
         return
 
     proj_svc = project_service_factory(db)
-    project = await proj_svc.create_project(ProjectCreate(user_id=user.id, name=text))
+    project = await proj_svc.create_project(
+        ProjectCreate(user_id=user.id, name=text, company_name=text)
+    )
 
     if not project:
         await state.clear()
@@ -307,7 +321,11 @@ async def pipeline_create_project_name(
 
     log.info("pipeline.social.project_created", project_id=project.id, user_id=user.id)
 
-    await state.update_data(project_id=project.id, project_name=project.name)
+    await state.update_data(
+        project_id=project.id,
+        project_name=project.name,
+        company_name=project.company_name,
+    )
     await message.answer(f"Проект «{html.escape(project.name)}» создан!")
 
     # Proceed to step 2 (connection selection)

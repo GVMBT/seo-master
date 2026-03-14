@@ -159,7 +159,9 @@ async def process_name(
     await state.clear()
 
     proj_svc = project_service_factory(db)
-    project = await proj_svc.create_project(ProjectCreate(user_id=user.id, name=text))
+    project = await proj_svc.create_project(
+        ProjectCreate(user_id=user.id, name=text, company_name=text)
+    )
 
     if not project:
         await message.answer("Достигнут лимит проектов.", reply_markup=menu_kb())

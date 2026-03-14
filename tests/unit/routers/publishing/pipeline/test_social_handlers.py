@@ -166,7 +166,9 @@ class TestPipelineSocialStart:
         with patches["cats"], patches["fsm_utils"], patches["conn_step"]:
             await pipeline_social_start(mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(), pf)
 
-        mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
+        mock_state.update_data.assert_any_await(
+            project_id=p.id, project_name=p.name, company_name=p.company_name,
+        )
 
     async def test_multiple_projects_shows_list(
         self,
@@ -231,7 +233,9 @@ class TestPipelineSelectProject:
                 pf,
             )
 
-        mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
+        mock_state.update_data.assert_any_await(
+            project_id=p.id, project_name=p.name, company_name=p.company_name,
+        )
 
     async def test_wrong_owner_shows_alert(
         self,
@@ -304,7 +308,9 @@ class TestInlineProjectCreation:
             )
 
         # Should have created the project and updated state
-        mock_state.update_data.assert_any_await(project_id=p.id, project_name=p.name)
+        mock_state.update_data.assert_any_await(
+            project_id=p.id, project_name=p.name, company_name=p.company_name,
+        )
 
     async def test_project_limit_reached_clears_state(
         self,

@@ -239,6 +239,7 @@ async def pipeline_article_from_project(
     await state.update_data(
         project_id=project.id,
         project_name=project.name,
+        company_name=project.company_name,
     )
     await _show_wp_step(callback, state, user, db, http_client, redis, project.id, project.name)
     await callback.answer()
@@ -293,7 +294,9 @@ async def pipeline_create_project_name(
         return
 
     proj_svc = project_service_factory(db)
-    project = await proj_svc.create_project(ProjectCreate(user_id=user.id, name=text))
+    project = await proj_svc.create_project(
+        ProjectCreate(user_id=user.id, name=text, company_name=text)
+    )
 
     if not project:
         await state.clear()
@@ -306,6 +309,7 @@ async def pipeline_create_project_name(
     await state.update_data(
         project_id=project.id,
         project_name=project.name,
+        company_name=project.company_name,
     )
     await message.answer(f"Проект «{html.escape(project.name)}» создан!")
 
