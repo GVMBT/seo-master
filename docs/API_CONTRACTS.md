@@ -2091,14 +2091,14 @@ variables:
     source: DataForSEO keyword_suggestions + related_keywords (JSON)
     required: true
   - name: extra_count
-    source: ceil(quantity * 0.15)
+    source: ceil(raw_count * 0.15)
     required: true
     default: 30
   - name: products
-    source: FSM-ответ (товары/услуги)
+    source: category.description or category.name (auto-filled)
     required: true
   - name: geography
-    source: FSM-ответ (география)
+    source: project.company_city (auto-filled or user input)
     required: true
   - name: company_name
     source: projects.company_name

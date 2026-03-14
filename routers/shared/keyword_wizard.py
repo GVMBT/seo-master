@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import html
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -77,9 +76,6 @@ class KeywordWizardConfig:
     state_geo: State
     """FSM state for waiting for geography text."""
 
-    state_qty: State
-    """FSM state for quantity selection + confirm."""
-
     state_generating: State
     """FSM state during generation progress."""
 
@@ -98,12 +94,6 @@ class KeywordWizardConfig:
     on_done_msg: ShowCheckMsgCb
     """Return callback after wizard completes (message sub-flows)."""
 
-    qty_kb_fn: Callable[[dict[str, Any]], InlineKeyboardMarkup]
-    """Quantity selection keyboard builder (receives FSM data dict)."""
-
-    confirm_kb_fn: Callable[[dict[str, Any]], InlineKeyboardMarkup]
-    """Confirm generation keyboard builder (receives FSM data dict)."""
-
     cancel_nav_kb_fn: Callable[[dict[str, Any]], InlineKeyboardMarkup]
     """Cancel/back navigation keyboard for text input prompts."""
 
@@ -116,9 +106,6 @@ class KeywordWizardConfig:
     auto_mode: bool = False
     """Pipeline-only: auto-generate from category.name (enables city select)."""
 
-    saved_answers: bool = False
-    """Toolbox-only: persist kw_products_{cat_id}/kw_geography_{cat_id} in FSM data."""
-
     upload_enriches: bool = True
     """Toolbox: cluster+enrich uploaded phrases. Pipeline: save as flat keywords."""
 
@@ -129,7 +116,7 @@ class KeywordWizardConfig:
 
 
 async def run_keyword_generation(
-    callback: CallbackQuery,
+    progress_msg: Message,
     state: FSMContext,
     user: User,
     db: SupabaseClient,
@@ -140,7 +127,6 @@ async def run_keyword_generation(
     project_id: int,
     products: str,
     geography: str,
-    quantity: int,
     ai_orchestrator: AIOrchestrator,
     dataforseo_client: DataForSEOClient,
 ) -> None:
@@ -149,16 +135,16 @@ async def run_keyword_generation(
     AI clustering (DeepSeek) can take 60-90 seconds. Progress updates use
     _safe_edit (tolerates Telegram errors) and the final result is sent
     as a NEW message.
+
+    Args:
+        progress_msg: Message to edit for progress updates (caller sends it).
     """
     log_prefix = cfg.log_prefix
-    msg = safe_message(callback)
-    if not msg:
-        return
 
     async def _safe_edit(text: str) -> None:
         """Edit message, silently ignoring Telegram errors."""
         try:
-            await safe_edit_text(msg, text)
+            await safe_edit_text(progress_msg, text)
         except Exception:
             log.debug(f"{log_prefix}.edit_failed", text=text[:50])
 
@@ -173,7 +159,6 @@ async def run_keyword_generation(
         raw_phrases = await kw_service.fetch_raw_phrases(
             products=products,
             geography=geography,
-            quantity=quantity,
             project_id=project_id,
             user_id=user.id,
         )
@@ -185,17 +170,15 @@ async def run_keyword_generation(
                 raw_phrases=raw_phrases,
                 products=products,
                 geography=geography,
-                quantity=quantity,
                 project_id=project_id,
                 user_id=user.id,
             )
         else:
-            # Step 2b: DataForSEO empty -> single AI call generates clusters directly
-            await _safe_edit("DataForSEO без данных. Генерирую фразы через AI (до 1.5 мин)...")
+            # Step 2b: DataForSEO empty -> AI generates clusters directly
+            await _safe_edit("Генерирую ключевые фразы (до 1.5 мин)...")
             clusters = await kw_service.generate_clusters_direct(
                 products=products,
                 geography=geography,
-                quantity=quantity,
                 project_id=project_id,
                 user_id=user.id,
             )
@@ -237,15 +220,15 @@ async def run_keyword_generation(
         )
         # Send error as new message (original may be expired)
         with contextlib.suppress(Exception):
-            await msg.delete()
-        bot = msg.bot
+            await progress_msg.delete()
+        bot = progress_msg.bot
         if not bot:
             return
 
         fsm_data = await state.get_data()
         error_kb = cfg.error_kb_fn(fsm_data) if cfg.error_kb_fn else None
         await bot.send_message(
-            chat_id=msg.chat.id,
+            chat_id=progress_msg.chat.id,
             text="Ошибка при подборе фраз. Попробуйте позже.",
             reply_markup=error_kb,
         )
@@ -255,36 +238,30 @@ async def run_keyword_generation(
             await state.clear()
         return
 
-    # Build quality warning (toolbox feature)
-    quality_note = ""
-    if total_volume < 100:
-        quality_note = (
-            "\n\nНизкий объём поиска по этой нише -- фразы могут быть "
-            "менее надёжными. Попробуйте более конкретные товары/услуги."
-        )
-
-    # Post-success UI
+    # Post-success UI — save chat_id before deleting message
+    chat_id = progress_msg.chat.id
+    bot = progress_msg.bot
     try:
-        await msg.delete()
+        await progress_msg.delete()
     except Exception:
         log.debug(f"{log_prefix}.delete_progress_failed")
 
-    bot = msg.bot
+    volume_line = f"\nОбщий объём: {total_volume:,}/мес" if total_volume > 0 else ""
     if not bot:
         return
     with contextlib.suppress(Exception):
         await bot.send_message(
-            chat_id=msg.chat.id,
+            chat_id=chat_id,
             text=(
                 f"Готово! Добавлено:\n"
                 f"Кластеров: {len(enriched)}\n"
-                f"Фраз: {total_phrases}\n"
-                f"Общий объём: {total_volume:,}/мес{quality_note}"
+                f"Фраз: {total_phrases}"
+                f"{volume_line}"
             ),
         )
     await asyncio.sleep(1)
     with contextlib.suppress(Exception):
-        await cfg.on_done_msg(msg, state, user, db, redis)
+        await cfg.on_done_msg(progress_msg, state, user, db, redis)
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +299,6 @@ async def _run_upload_enrich_pipeline(
             raw_phrases=raw_phrases,
             products="",
             geography="",
-            quantity=len(raw_phrases),
             project_id=project_id,
             user_id=user.id,
         )
@@ -344,15 +320,12 @@ async def _run_upload_enrich_pipeline(
         total_phrases = sum(len(c.get("phrases", [])) for c in enriched)
         total_volume = sum(c.get("total_volume", 0) for c in enriched)
 
+        volume_line = f"\nОбщий объём: {total_volume:,}/мес" if total_volume > 0 else ""
         await safe_edit_text(
             progress_msg,
-            f"Готово! Загружено:\nКластеров: {len(enriched)}\nФраз: {total_phrases}\nОбщий объём: {total_volume:,}/мес",
+            f"Готово! Загружено:\nКластеров: {len(enriched)}\nФраз: {total_phrases}{volume_line}",
         )
-        # Clear FSM state but preserve saved answers if configured
-        if cfg.saved_answers:
-            await state.set_state(None)
-        else:
-            await state.clear()
+        await state.clear()
 
         log.info(
             f"{log_prefix}.keywords_uploaded",
@@ -419,11 +392,7 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
                 return
 
             await state.set_state(cfg.state_geo)
-            prod_update: dict[str, Any] = {"kw_products": text}
-            if cfg.saved_answers:
-                cat_id = data.get("kw_cat_id", 0)
-                prod_update[f"kw_products_{cat_id}"] = text
-            await state.update_data(**prod_update)
+            await state.update_data(kw_products=text)
 
             await message.answer(
                 "Укажите географию продвижения:\n<i>Например: Москва, Россия, СНГ</i>\n\nОт 2 до 200 символов.",
@@ -605,8 +574,14 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
     async def wizard_geo_input(
         message: Message,
         state: FSMContext,
+        user: User,
+        db: SupabaseClient,
+        redis: RedisClient,
+        ai_orchestrator: AIOrchestrator,
+        dataforseo_client: DataForSEOClient,
+        project_service_factory: ProjectServiceFactory,
     ) -> None:
-        """Geography text input (2-200 chars)."""
+        """Geography text input (2-200 chars) -> run generation immediately."""
         text = (message.text or "").strip()
         data = await state.get_data()
         if len(text) < 2 or len(text) > 200:
@@ -616,17 +591,40 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
             )
             return
 
-        await state.set_state(cfg.state_qty)
-        geo_update: dict[str, Any] = {"kw_geography": text}
-        if cfg.saved_answers:
-            cat_id = data.get("kw_cat_id", 0)
-            geo_update[f"kw_geography_{cat_id}"] = text
-        await state.update_data(**geo_update)
+        await state.update_data(kw_geography=text)
+        await state.set_state(cfg.state_generating)
 
-        new_data = await state.get_data()
-        await message.answer(
-            "Сколько ключевых фраз подобрать?",
-            reply_markup=cfg.qty_kb_fn(new_data),
+        # Save city to project for future auto-fill
+        project_id = data.get("project_id") or data.get("kw_project_id")
+        if project_id:
+            from db.models import ProjectUpdate
+
+            proj_svc = project_service_factory(db)
+            with contextlib.suppress(Exception):
+                await proj_svc.update_project(int(project_id), user.id, ProjectUpdate(company_city=text))
+
+        products = data.get("kw_products", "")
+        category_id = data.get("category_id") or data.get("kw_cat_id")
+        if not category_id or not project_id:
+            await message.answer("Данные не найдены. Начните заново.", reply_markup=menu_kb())
+            await state.clear()
+            return
+
+        progress_msg = await message.answer("Получаю реальные фразы из DataForSEO...")
+
+        await run_keyword_generation(
+            progress_msg=progress_msg,
+            state=state,
+            user=user,
+            db=db,
+            redis=redis,
+            cfg=cfg,
+            category_id=int(category_id),
+            project_id=int(project_id),
+            products=products,
+            geography=text,
+            ai_orchestrator=ai_orchestrator,
+            dataforseo_client=dataforseo_client,
         )
 
     router.message.register(
@@ -645,9 +643,12 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
             state: FSMContext,
             user: User,
             db: SupabaseClient,
+            redis: RedisClient,
             project_service_factory: ProjectServiceFactory,
+            ai_orchestrator: AIOrchestrator,
+            dataforseo_client: DataForSEOClient,
         ) -> None:
-            """Quick city selection for auto-keywords (UX_PIPELINE SS4a)."""
+            """Quick city selection -> run generation immediately (UX_PIPELINE SS4a)."""
             msg = safe_message(callback)
             if not msg:
                 await callback.answer()
@@ -659,49 +660,42 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
 
             city = callback.data.split(":")[-1]
             data = await state.get_data()
-            kw_mode = data.get("kw_mode", "")
             products = data.get("kw_products", "")
-            project_id = data.get("project_id")
+            project_id = data.get("project_id") or data.get("kw_project_id")
+            category_id = data.get("category_id") or data.get("kw_cat_id")
 
             # Save city to project for future use
             if project_id:
                 from db.models import ProjectUpdate
 
                 proj_svc = project_service_factory(db)
-                await proj_svc.update_project(project_id, user.id, ProjectUpdate(company_city=city))
+                with contextlib.suppress(Exception):
+                    await proj_svc.update_project(int(project_id), user.id, ProjectUpdate(company_city=city))
 
-            if kw_mode == "auto":
-                # Auto path: city selected -> go straight to confirm (100 phrases)
-                quantity = 100
+            if not category_id or not project_id:
+                await callback.answer("Данные не найдены. Начните заново.", show_alert=True)
+                return
 
-                await state.set_state(cfg.state_qty)
-                await state.update_data(
-                    kw_geography=city,
-                    kw_quantity=quantity,
-                )
+            await state.set_state(cfg.state_generating)
+            await state.update_data(kw_geography=city)
 
-                new_data = await state.get_data()
-                await safe_edit_text(
-                    msg,
-                    f"Автоподбор ключевых фраз\n\n"
-                    f"Тема: {html.escape(products)}\n"
-                    f"География: {html.escape(city)}\n"
-                    f"Количество: {quantity} фраз",
-                    reply_markup=cfg.confirm_kb_fn(new_data),
-                )
-            else:
-                # Configure path: city selected -> go to qty selection
-                await state.set_state(cfg.state_qty)
-                await state.update_data(kw_geography=city)
-
-                new_data = await state.get_data()
-                await safe_edit_text(
-                    msg,
-                    "Сколько ключевых фраз подобрать?",
-                    reply_markup=cfg.qty_kb_fn(new_data),
-                )
-
+            await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
             await callback.answer()
+
+            await run_keyword_generation(
+                progress_msg=msg,
+                state=state,
+                user=user,
+                db=db,
+                redis=redis,
+                cfg=cfg,
+                category_id=int(category_id),
+                project_id=int(project_id),
+                products=products,
+                geography=city,
+                ai_orchestrator=ai_orchestrator,
+                dataforseo_client=dataforseo_client,
+            )
 
         router.callback_query.register(
             wizard_city_select,
@@ -710,135 +704,11 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
         )
 
     # -----------------------------------------------------------------------
-    # Quantity select
+    # Cancel (from geo state only — state_generating has active coroutine, M4)
     # -----------------------------------------------------------------------
 
-    # Pattern matches both "pipeline:readiness:keywords:qty_100" and "kw:5:qty_100"
-    # State guard prevents false matches.
     prefix_escaped = re.escape(prefix)
-    qty_pattern = rf"^{prefix_escaped}.*qty_(\d+)$"
-
-    async def wizard_qty_select(
-        callback: CallbackQuery,
-        state: FSMContext,
-    ) -> None:
-        """Select keyword quantity and show confirmation."""
-        msg = safe_message(callback)
-        if not msg:
-            await callback.answer()
-            return
-
-        if not callback.data:
-            await callback.answer()
-            return
-
-        # Extract quantity from callback_data (last segment: qty_N)
-        match = re.search(r"qty_(\d+)", callback.data)
-        if not match:
-            await callback.answer()
-            return
-
-        quantity = int(match.group(1))
-        if quantity not in (50, 100, 150, 200):
-            await callback.answer("Недопустимое количество.", show_alert=True)
-            return
-
-        data = await state.get_data()
-        products = data.get("kw_products", "")
-        geography = data.get("kw_geography", "")
-
-        await state.update_data(kw_quantity=quantity)
-        new_data = await state.get_data()
-
-        await safe_edit_text(
-            msg,
-            f"Подбор ключевых фраз\n\n"
-            f"Тема: {html.escape(products)}\n"
-            f"География: {html.escape(geography)}\n"
-            f"Количество: {quantity} фраз",
-            reply_markup=cfg.confirm_kb_fn(new_data),
-        )
-        await callback.answer()
-
-    router.callback_query.register(
-        wizard_qty_select,
-        cfg.state_qty,
-        F.data.regexp(qty_pattern),
-    )
-
-    # -----------------------------------------------------------------------
-    # Confirm generation
-    # -----------------------------------------------------------------------
-
-    # Matches both ":confirm" and ":confirm_yes" under state guard
-    confirm_pattern = rf"^{prefix_escaped}.*(?:confirm|confirm_yes)$"
-
-    async def wizard_confirm(
-        callback: CallbackQuery,
-        state: FSMContext,
-        user: User,
-        db: SupabaseClient,
-        redis: RedisClient,
-        ai_orchestrator: AIOrchestrator,
-        dataforseo_client: DataForSEOClient,
-    ) -> None:
-        """Confirm keyword generation (free for user -- platform expense)."""
-        msg = safe_message(callback)
-        if not msg:
-            await callback.answer()
-            return
-
-        data = await state.get_data()
-        quantity = int(data.get("kw_quantity", 100))
-        products = str(data.get("kw_products", ""))
-        geography = str(data.get("kw_geography", ""))
-        category_id = data.get("category_id") or data.get("kw_cat_id")
-        project_id = data.get("project_id") or data.get("kw_project_id")
-
-        if not category_id or not project_id:
-            await callback.answer("Данные не найдены. Начните заново.", show_alert=True)
-            return
-
-        # Save answers for future reuse (toolbox mode)
-        if cfg.saved_answers:
-            cat_id = int(category_id)
-            await state.update_data({
-                f"kw_products_{cat_id}": products,
-                f"kw_geography_{cat_id}": geography,
-            })
-
-        await state.set_state(cfg.state_generating)
-        await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
-        await callback.answer()
-
-        await run_keyword_generation(
-            callback=callback,
-            state=state,
-            user=user,
-            db=db,
-            redis=redis,
-            cfg=cfg,
-            category_id=int(category_id),
-            project_id=int(project_id),
-            products=products,
-            geography=geography,
-            quantity=quantity,
-            ai_orchestrator=ai_orchestrator,
-            dataforseo_client=dataforseo_client,
-        )
-
-    router.callback_query.register(
-        wizard_confirm,
-        cfg.state_qty,
-        F.data.regexp(confirm_pattern),
-    )
-
-    # -----------------------------------------------------------------------
-    # Cancel (from geo or qty states)
-    # -----------------------------------------------------------------------
-
-    # Matches cancel callbacks under state guard
-    cancel_pattern = rf"^{prefix_escaped}.*(?:cancel|gen_cancel|confirm_no)$"
+    cancel_pattern = rf"^{prefix_escaped}.*(?:cancel|gen_cancel)$"
 
     async def wizard_cancel(
         callback: CallbackQuery,
@@ -853,7 +723,7 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
 
     router.callback_query.register(
         wizard_cancel,
-        StateFilter(cfg.state_geo, cfg.state_qty),
+        StateFilter(cfg.state_geo),
         F.data.regexp(cancel_pattern),
     )
 
@@ -862,8 +732,6 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
         "wizard_products_text": wizard_products_text,
         "wizard_upload_file": wizard_upload_file,
         "wizard_geo_input": wizard_geo_input,
-        "wizard_qty_select": wizard_qty_select,
-        "wizard_confirm": wizard_confirm,
         "wizard_cancel": wizard_cancel,
     }
     if cfg.auto_mode:

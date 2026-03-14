@@ -1,7 +1,7 @@
 """Tests for SocialPipelineFSM definition.
 
 Verifies:
-- FSM has exactly 28 states (FSM_SPEC.md section 2.2, incl. cross-post F6.4)
+- FSM has exactly 27 states (FSM_SPEC.md section 2.2, readiness_keywords_qty removed)
 - All expected state names exist
 - State group name matches convention (*FSM suffix)
 """
@@ -35,7 +35,6 @@ _EXPECTED_STATES = [
     "readiness_check",
     "readiness_keywords_products",
     "readiness_keywords_geo",
-    "readiness_keywords_qty",
     "readiness_keywords_generating",
     "readiness_description",
     # Steps 5-7: Confirm, generate, review, publish
@@ -54,7 +53,7 @@ _EXPECTED_STATES = [
 class TestSocialPipelineFSMDefinition:
     def test_state_count(self) -> None:
         states = [attr for attr in dir(SocialPipelineFSM) if isinstance(getattr(SocialPipelineFSM, attr), State)]
-        assert len(states) == 28  # 25 base + 3 cross-post (F6.4)
+        assert len(states) == 27  # 24 base + 3 cross-post (F6.4), readiness_keywords_qty removed
 
     def test_all_expected_states_exist(self) -> None:
         for name in _EXPECTED_STATES:

@@ -54,7 +54,6 @@ class ArticlePipelineFSM(StatesGroup):
     readiness_check = State()
     readiness_keywords_products = State()
     readiness_keywords_geo = State()
-    readiness_keywords_qty = State()
     readiness_keywords_generating = State()
     readiness_description = State()
     readiness_prices = State()
@@ -100,7 +99,6 @@ class SocialPipelineFSM(StatesGroup):
     readiness_check = State()
     readiness_keywords_products = State()
     readiness_keywords_geo = State()
-    readiness_keywords_qty = State()
     readiness_keywords_generating = State()
     readiness_description = State()
 

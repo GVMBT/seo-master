@@ -12,7 +12,7 @@ now delegated to routers.shared.keyword_wizard -- only entry points
 
 from __future__ import annotations
 
-import html
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -30,9 +30,7 @@ from keyboards.pipeline import (
     pipeline_back_to_checklist_kb,
     pipeline_description_options_kb,
     pipeline_keywords_city_kb,
-    pipeline_keywords_confirm_kb,
     pipeline_keywords_options_kb,
-    pipeline_keywords_qty_kb,
 )
 from routers.shared.keyword_wizard import (
     KeywordWizardConfig,
@@ -62,7 +60,7 @@ log = structlog.get_logger()
 
 
 async def run_keyword_generation(
-    callback: CallbackQuery,
+    progress_msg: Message,
     state: FSMContext,
     user: User,
     db: SupabaseClient,
@@ -72,7 +70,6 @@ async def run_keyword_generation(
     project_id: int,
     products: str,
     geography: str,
-    quantity: int,
     ai_orchestrator: AIOrchestrator,
     dataforseo_client: DataForSEOClient,
     log_prefix: str,
@@ -88,22 +85,23 @@ async def run_keyword_generation(
     compat_cfg = KeywordWizardConfig(
         state_products=State(),  # unused by run_keyword_generation
         state_geo=State(),
-        state_qty=State(),
         state_generating=State(),
         prefix=back_kb_prefix,
         log_prefix=log_prefix,
         cancel_cb_fn=lambda _data: "",
-        on_done=lambda cb, st, u, d, r: on_success(cb.message, st, u, d, r),  # type: ignore[arg-type]
+        on_done=lambda cb, st, u, d, r: (  # type: ignore[arg-type]
+            on_success(cb.message, st, u, d, r)
+            if cb.message and isinstance(cb.message, Message)
+            else asyncio.sleep(0)
+        ),
         on_done_msg=on_success,
-        qty_kb_fn=lambda _data: InlineKeyboardMarkup(inline_keyboard=[]),
-        confirm_kb_fn=lambda _data: InlineKeyboardMarkup(inline_keyboard=[]),
         cancel_nav_kb_fn=lambda _data: InlineKeyboardMarkup(inline_keyboard=[]),
         error_state=readiness_state,
         error_kb_fn=lambda _data: pipeline_back_to_checklist_kb(prefix=back_kb_prefix),
     )
 
     await _wizard_run_keyword_generation(
-        callback=callback,
+        progress_msg=progress_msg,
         state=state,
         user=user,
         db=db,
@@ -113,7 +111,6 @@ async def run_keyword_generation(
         project_id=project_id,
         products=products,
         geography=geography,
-        quantity=quantity,
         ai_orchestrator=ai_orchestrator,
         dataforseo_client=dataforseo_client,
     )
@@ -268,12 +265,6 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
     # Construct KeywordWizardConfig and register wizard handlers
     # -----------------------------------------------------------------------
 
-    def _pipeline_qty_kb(_data: dict[str, Any]) -> InlineKeyboardMarkup:
-        return pipeline_keywords_qty_kb(prefix=prefix)
-
-    def _pipeline_confirm_kb(_data: dict[str, Any]) -> InlineKeyboardMarkup:
-        return pipeline_keywords_confirm_kb(prefix=prefix)
-
     def _pipeline_cancel_nav_kb(_data: dict[str, Any]) -> InlineKeyboardMarkup:
         return pipeline_back_to_checklist_kb(prefix=prefix)
 
@@ -283,7 +274,6 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
     kw_cfg = KeywordWizardConfig(
         state_products=fsm.readiness_keywords_products,
         state_geo=fsm.readiness_keywords_geo,
-        state_qty=fsm.readiness_keywords_qty,
         state_generating=fsm.readiness_keywords_generating,
         prefix=prefix,
         log_prefix=log_prefix,
@@ -292,13 +282,10 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         # (tests mutate _article_readiness_config attrs via object.__setattr__)
         on_done=lambda cb, st, u, d, r: cfg.show_check(cb, st, u, d, r),
         on_done_msg=lambda msg, st, u, d, r: cfg.show_check_msg(msg, st, u, d, r),
-        qty_kb_fn=_pipeline_qty_kb,
-        confirm_kb_fn=_pipeline_confirm_kb,
         cancel_nav_kb_fn=_pipeline_cancel_nav_kb,
         error_state=fsm.readiness_check,
         error_kb_fn=_pipeline_error_kb,
         auto_mode=True,
-        saved_answers=False,
         upload_enriches=False,
     )
 
@@ -333,10 +320,13 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         state: FSMContext,
         user: User,
         db: SupabaseClient,
+        redis: RedisClient,
         category_service_factory: CategoryServiceFactory,
         project_service_factory: ProjectServiceFactory,
+        ai_orchestrator: AIOrchestrator,
+        dataforseo_client: DataForSEOClient,
     ) -> None:
-        """Auto keyword generation -- quick path (100 phrases, defaults from DB)."""
+        """Auto keyword generation -- quick path (defaults from DB, no confirmation)."""
         msg = safe_message(callback)
         if not msg:
             await callback.answer()
@@ -374,24 +364,27 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
-        quantity = 100
+        # City already set — run generation immediately
+        await state.set_state(fsm.readiness_keywords_generating)
+        await state.update_data(kw_products=products, kw_geography=geography)
 
-        await state.set_state(fsm.readiness_keywords_qty)
-        await state.update_data(
-            kw_products=products,
-            kw_geography=geography,
-            kw_quantity=quantity,
-        )
-
-        await safe_edit_text(
-            msg,
-            f"Автоподбор ключевых фраз\n\n"
-            f"Тема: {html.escape(products)}\n"
-            f"География: {html.escape(geography)}\n"
-            f"Количество: {quantity} фраз",
-            reply_markup=pipeline_keywords_confirm_kb(prefix=prefix),
-        )
+        await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
         await callback.answer()
+
+        await _wizard_run_keyword_generation(
+            progress_msg=msg,
+            state=state,
+            user=user,
+            db=db,
+            redis=redis,
+            cfg=kw_cfg,
+            category_id=int(category_id),
+            project_id=int(project_id),
+            products=products,
+            geography=geography,
+            ai_orchestrator=ai_orchestrator,
+            dataforseo_client=dataforseo_client,
+        )
 
     router.callback_query.register(
         readiness_keywords_auto,
@@ -582,7 +575,6 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
     back_input_states = [
         fsm.readiness_keywords_products,
         fsm.readiness_keywords_geo,
-        fsm.readiness_keywords_qty,
         fsm.readiness_description,
         *cfg.extra_back_states,
     ]
@@ -670,8 +662,6 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         ("readiness_keywords_text_input", "wizard_products_text"),
         ("readiness_keywords_city_select", "wizard_city_select"),
         ("readiness_keywords_geo_input", "wizard_geo_input"),
-        ("readiness_keywords_qty_select", "wizard_qty_select"),
-        ("readiness_keywords_confirm", "wizard_confirm"),
         ("readiness_keywords_cancel", "wizard_cancel"),
     ]:
         if new_name in wizard_handlers:

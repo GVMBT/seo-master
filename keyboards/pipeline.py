@@ -552,63 +552,6 @@ def pipeline_keywords_city_kb(prefix: str = "pipeline:readiness") -> InlineKeybo
     )
 
 
-def pipeline_keywords_qty_kb(prefix: str = "pipeline:readiness") -> InlineKeyboardMarkup:
-    """Keyword quantity selection for pipeline readiness sub-flow."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="50 фраз (50 ток.)",
-                    callback_data=f"{prefix}:keywords:qty_50",
-                ),
-                InlineKeyboardButton(
-                    text="100 фраз (100 ток.)",
-                    callback_data=f"{prefix}:keywords:qty_100",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="150 фраз (150 ток.)",
-                    callback_data=f"{prefix}:keywords:qty_150",
-                ),
-                InlineKeyboardButton(
-                    text="200 фраз (200 ток.)",
-                    callback_data=f"{prefix}:keywords:qty_200",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="\u2b05\ufe0f Назад к чеклисту",
-                    callback_data=f"{prefix}:back",
-                ),
-            ],
-        ]
-    )
-
-
-def pipeline_keywords_confirm_kb(
-    prefix: str = "pipeline:readiness",
-) -> InlineKeyboardMarkup:
-    """Confirm keyword generation in pipeline readiness sub-flow (free for user)."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Подобрать",
-                    callback_data=f"{prefix}:keywords:confirm",
-                    style=ButtonStyle.SUCCESS,
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="\u2b05\ufe0f Назад к чеклисту",
-                    callback_data=f"{prefix}:keywords:cancel",
-                ),
-            ],
-        ]
-    )
-
-
 # ---------------------------------------------------------------------------
 # Readiness sub-flow: Description
 # ---------------------------------------------------------------------------
