@@ -1,7 +1,7 @@
 """Tests for ArticlePipelineFSM definition.
 
 Verifies:
-- FSM has exactly 24 states (FSM_SPEC.md section 1)
+- FSM has exactly 23 states (FSM_SPEC.md section 1, readiness_keywords_qty removed)
 - All expected state names exist
 - State group name matches convention (*FSM suffix)
 """
@@ -32,7 +32,6 @@ _EXPECTED_STATES = [
     "readiness_check",
     "readiness_keywords_products",
     "readiness_keywords_geo",
-    "readiness_keywords_qty",
     "readiness_keywords_generating",
     "readiness_description",
     "readiness_prices",
@@ -49,10 +48,10 @@ _EXPECTED_STATES = [
 class TestArticlePipelineFSMDefinition:
     """ArticlePipelineFSM has correct state definitions."""
 
-    def test_has_exactly_24_states(self) -> None:
-        """FSM_SPEC.md specifies exactly 24 states (readiness_photos removed)."""
+    def test_has_exactly_23_states(self) -> None:
+        """FSM_SPEC.md specifies exactly 23 states (readiness_keywords_qty removed)."""
         states = ArticlePipelineFSM.__all_states__
-        assert len(states) == 24, f"Expected 24 states, got {len(states)}: {[s.state for s in states]}"
+        assert len(states) == 23, f"Expected 23 states, got {len(states)}: {[s.state for s in states]}"
 
     def test_all_expected_states_exist(self) -> None:
         """Every expected state name is present in the FSM."""
@@ -61,7 +60,7 @@ class TestArticlePipelineFSMDefinition:
             assert expected in state_names, f"Missing state: {expected}"
 
     def test_no_unexpected_states(self) -> None:
-        """FSM does not have extra states beyond the expected 24."""
+        """FSM does not have extra states beyond the expected 23."""
         state_names = {s.state.split(":")[-1] for s in ArticlePipelineFSM.__all_states__}
         expected_set = set(_EXPECTED_STATES)
         extra = state_names - expected_set

@@ -2,7 +2,7 @@
 
 Covers Readiness Check (step 4) sub-flows:
 - Checklist display (show_readiness_check, _build_checklist_text)
-- Keywords sub-flow: menu, auto/configure/upload, city select, geo/qty/confirm/cancel,
+- Keywords sub-flow: menu, auto/configure/upload, city select, geo/cancel,
   generation pipeline (_run_pipeline_keyword_generation)
 - Description sub-flow: menu, AI generation (charge tokens), manual input
 - Prices sub-flow: menu, text input, Excel upload
@@ -33,10 +33,8 @@ from routers.publishing.pipeline.readiness import (
     readiness_keywords_cancel,
     readiness_keywords_city_select,
     readiness_keywords_configure,
-    readiness_keywords_confirm,
     readiness_keywords_geo_input,
     readiness_keywords_menu,
-    readiness_keywords_qty_select,
     readiness_keywords_text_input,
     readiness_keywords_upload_file,
     readiness_keywords_upload_start,
@@ -389,37 +387,44 @@ class TestKeywordsSubFlow:
         assert "Ключевые фразы" in mock_callback.message.edit_text.call_args[0][0]
         mock_callback.answer.assert_called_once()
 
-    async def test_auto_shows_confirm(
+    async def test_auto_triggers_generation(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
         user: Any,
         mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
-        """Auto keyword generation loads category/project and shows confirm."""
+        """Auto keyword generation with city -> runs generation immediately."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
 
         cat_obj = MagicMock()
         cat_obj.name = "Test Category"
         cf = _make_cat_factory(category=cat_obj)
         pf = _make_proj_factory(project=MagicMock(company_city="Москва"))
-        await readiness_keywords_auto(
-            mock_callback,
-            mock_state,
-            user,
-            mock_db,
-            cf,
-            pf,
-        )
+        p_gen = patch(f"{_COMMON}._wizard_run_keyword_generation", new_callable=AsyncMock)
 
-        mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
+        with p_gen as mock_gen:
+            await readiness_keywords_auto(
+                mock_callback,
+                mock_state,
+                user,
+                mock_db,
+                mock_redis,
+                category_service_factory=cf,
+                project_service_factory=pf,
+                ai_orchestrator=AsyncMock(),
+                dataforseo_client=AsyncMock(),
+            )
+
+        mock_state.set_state.assert_called_with(
+            ArticlePipelineFSM.readiness_keywords_generating,
+        )
         mock_state.update_data.assert_called_once()
         update_kwargs = mock_state.update_data.call_args.kwargs
-        assert update_kwargs["kw_quantity"] == 100
         assert update_kwargs["kw_products"] == "Test Category"
         assert update_kwargs["kw_geography"] == "Москва"
-        mock_callback.message.edit_text.assert_called_once()
-        assert "Автоподбор" in mock_callback.message.edit_text.call_args[0][0]
+        mock_gen.assert_awaited_once()
 
     async def test_auto_no_city_shows_city_kb(
         self,
@@ -427,6 +432,7 @@ class TestKeywordsSubFlow:
         mock_state: MagicMock,
         user: Any,
         mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
         """Auto shows city selection when project has no company_city (UX_PIPELINE SS4a)."""
         mock_state.get_data = AsyncMock(return_value=_make_state_data())
@@ -441,8 +447,11 @@ class TestKeywordsSubFlow:
             mock_state,
             user,
             mock_db,
-            cf,
-            pf,
+            mock_redis,
+            category_service_factory=cf,
+            project_service_factory=pf,
+            ai_orchestrator=AsyncMock(),
+            dataforseo_client=AsyncMock(),
         )
 
         # Should transition to geo state with kw_mode="auto"
@@ -1438,10 +1447,18 @@ class TestGeoInputValidation:
         self,
         mock_message: MagicMock,
         mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
         """Geo < 2 chars -> validation error."""
         mock_message.text = "М"
-        await readiness_keywords_geo_input(mock_message, mock_state)
+        mock_state.get_data = AsyncMock(return_value=_make_state_data())
+        await readiness_keywords_geo_input(
+            mock_message, mock_state, user, mock_db, mock_redis,
+            ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+            project_service_factory=MagicMock(),
+        )
         mock_message.answer.assert_called_once()
         assert "2" in mock_message.answer.call_args[0][0]
         mock_state.set_state.assert_not_called()
@@ -1450,25 +1467,49 @@ class TestGeoInputValidation:
         self,
         mock_message: MagicMock,
         mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
         """Geo > 200 chars -> validation error."""
         mock_message.text = "А" * 201
-        await readiness_keywords_geo_input(mock_message, mock_state)
+        mock_state.get_data = AsyncMock(return_value=_make_state_data())
+        await readiness_keywords_geo_input(
+            mock_message, mock_state, user, mock_db, mock_redis,
+            ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+            project_service_factory=MagicMock(),
+        )
         mock_message.answer.assert_called_once()
         mock_state.set_state.assert_not_called()
 
-    async def test_geo_valid_transitions_to_qty(
+    async def test_geo_valid_triggers_generation(
         self,
         mock_message: MagicMock,
         mock_state: MagicMock,
+        user: Any,
+        mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
-        """Valid geo -> state to readiness_keywords_qty, shows qty keyboard."""
+        """Valid geo -> saves city to project, starts generation immediately."""
         mock_message.text = "Москва"
-        await readiness_keywords_geo_input(mock_message, mock_state)
-        mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
-        mock_state.update_data.assert_called_with(kw_geography="Москва")
-        mock_message.answer.assert_called_once()
-        assert "фраз" in mock_message.answer.call_args[0][0].lower()
+        mock_state.get_data = AsyncMock(
+            return_value=_make_state_data(kw_products="Мебель"),
+        )
+        pf = _make_proj_factory()
+        p_gen = patch(f"{_WIZARD}.run_keyword_generation", new_callable=AsyncMock)
+
+        with p_gen as mock_gen:
+            await readiness_keywords_geo_input(
+                mock_message, mock_state, user, mock_db, mock_redis,
+                ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
+                project_service_factory=pf,
+            )
+
+        mock_state.update_data.assert_any_call(kw_geography="Москва")
+        mock_state.set_state.assert_called_with(
+            ArticlePipelineFSM.readiness_keywords_generating,
+        )
+        mock_gen.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1479,179 +1520,37 @@ class TestGeoInputValidation:
 class TestCitySelectHandler:
     """readiness_keywords_city_select: quick city buttons for auto/configure paths."""
 
-    async def test_auto_city_goes_to_confirm(
+    async def test_city_triggers_generation(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
         user: Any,
         mock_db: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
-        """Auto mode + city selected -> shows confirm (100 phrases)."""
+        """City selected -> saves city to project, starts generation immediately."""
         mock_callback.data = "pipeline:readiness:keywords:city:Москва"
         mock_state.get_data = AsyncMock(
             return_value=_make_state_data(kw_mode="auto", kw_products="Мебель"),
         )
         pf = _make_proj_factory()
         proj_svc = pf.return_value
+        p_gen = patch(f"{_WIZARD}.run_keyword_generation", new_callable=AsyncMock)
 
-        await readiness_keywords_city_select(mock_callback, mock_state, user, mock_db, pf)
-
-        mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
-        update_kwargs = mock_state.update_data.call_args.kwargs
-        assert update_kwargs["kw_geography"] == "Москва"
-        assert update_kwargs["kw_quantity"] == 100
-        # Should save city to project
-        proj_svc.update_project.assert_called_once()
-        # Confirm text shown
-        edit_text = mock_callback.message.edit_text.call_args[0][0]
-        assert "Автоподбор" in edit_text
-
-    async def test_configure_city_goes_to_qty(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-    ) -> None:
-        """Configure mode + city selected -> shows qty selection."""
-        mock_callback.data = "pipeline:readiness:keywords:city:СПб"
-        mock_state.get_data = AsyncMock(
-            return_value=_make_state_data(kw_mode="configure", kw_products="Мебель"),
-        )
-        pf = _make_proj_factory()
-
-        await readiness_keywords_city_select(mock_callback, mock_state, user, mock_db, pf)
-
-        mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_keywords_qty)
-        mock_state.update_data.assert_called_with(kw_geography="СПб")
-        edit_text = mock_callback.message.edit_text.call_args[0][0]
-        assert "фраз" in edit_text.lower()
-
-
-# ---------------------------------------------------------------------------
-# Keywords: qty select handler
-# ---------------------------------------------------------------------------
-
-
-class TestQtySelectHandler:
-    """readiness_keywords_qty_select: parse quantity, compute cost, show confirm."""
-
-    async def test_qty_50_shows_confirm(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-    ) -> None:
-        """Select 50 phrases -> show confirm (free, no cost)."""
-        mock_callback.data = "pipeline:readiness:keywords:qty_50"
-        mock_state.get_data = AsyncMock(
-            return_value=_make_state_data(kw_products="Мебель", kw_geography="Москва"),
-        )
-
-        await readiness_keywords_qty_select(mock_callback, mock_state)
-
-        update_kwargs = mock_state.update_data.call_args.kwargs
-        assert update_kwargs["kw_quantity"] == 50
-        edit_text = mock_callback.message.edit_text.call_args[0][0]
-        assert "50" in edit_text
-        assert "Мебель" in edit_text
-
-    async def test_qty_200_shows_confirm(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-    ) -> None:
-        """Select 200 phrases -> quantity stored (free, no cost)."""
-        mock_callback.data = "pipeline:readiness:keywords:qty_200"
-        mock_state.get_data = AsyncMock(
-            return_value=_make_state_data(kw_products="SEO", kw_geography="Россия"),
-        )
-
-        await readiness_keywords_qty_select(mock_callback, mock_state)
-
-        assert mock_state.update_data.call_args.kwargs["kw_quantity"] == 200
-
-    async def test_qty_invalid_rejected(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-    ) -> None:
-        """Invalid quantity (e.g. 999) -> show_alert error."""
-        mock_callback.data = "pipeline:readiness:keywords:qty_999"
-        await readiness_keywords_qty_select(mock_callback, mock_state)
-        mock_callback.answer.assert_called_once()
-        assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
-        mock_state.update_data.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Keywords: confirm handler (E01 balance check + charge)
-# ---------------------------------------------------------------------------
-
-
-class TestConfirmHandler:
-    """readiness_keywords_confirm: free for user, starts generation."""
-
-    async def test_confirm_starts_generation(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-        mock_redis: MagicMock,
-    ) -> None:
-        """Confirm -> set generating state, call pipeline (no charge)."""
-        mock_state.get_data = AsyncMock(
-            return_value=_make_state_data(
-                kw_quantity=100,
-                kw_products="Test",
-                kw_geography="Москва",
-            ),
-        )
-        p_pipeline = patch(f"{_WIZARD}.run_keyword_generation", new_callable=AsyncMock)
-
-        with p_pipeline as mock_pipeline:
-            await readiness_keywords_confirm(
-                mock_callback,
-                mock_state,
-                user,
-                mock_db,
-                mock_redis,
-                ai_orchestrator=AsyncMock(),
-                dataforseo_client=AsyncMock(),
+        with p_gen as mock_gen:
+            await readiness_keywords_city_select(
+                mock_callback, mock_state, user, mock_db, mock_redis,
+                project_service_factory=pf,
+                ai_orchestrator=AsyncMock(), dataforseo_client=AsyncMock(),
             )
 
         mock_state.set_state.assert_called_with(
             ArticlePipelineFSM.readiness_keywords_generating,
         )
-        mock_pipeline.assert_awaited_once()
-
-    async def test_confirm_missing_data_shows_alert(
-        self,
-        mock_callback: MagicMock,
-        mock_state: MagicMock,
-        user: Any,
-        mock_db: MagicMock,
-        mock_redis: MagicMock,
-    ) -> None:
-        """Missing category_id or project_id -> show_alert error."""
-        mock_state.get_data = AsyncMock(return_value={})
-        await readiness_keywords_confirm(
-            mock_callback,
-            mock_state,
-            user,
-            mock_db,
-            mock_redis,
-            ai_orchestrator=AsyncMock(),
-            dataforseo_client=AsyncMock(),
-        )
-        mock_callback.answer.assert_called_once()
-        assert mock_callback.answer.call_args.kwargs.get("show_alert") is True
+        mock_state.update_data.assert_any_call(kw_geography="Москва")
+        # Should save city to project
+        proj_svc.update_project.assert_called_once()
+        mock_gen.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1735,7 +1634,7 @@ class TestRunPipelineKeywordGeneration:
 
     async def test_success_saves_keywords_and_returns_to_checklist(
         self,
-        mock_callback: MagicMock,
+        mock_message: MagicMock,
         mock_state: MagicMock,
         user: Any,
         mock_db: MagicMock,
@@ -1751,14 +1650,14 @@ class TestRunPipelineKeywordGeneration:
         cat_svc_mock.update_keywords = AsyncMock(return_value=True)
         p_cats = patch(f"{_WIZARD}.CategoryService", return_value=cat_svc_mock)
         mock_show = AsyncMock()
-        # Mock msg.bot.send_message
-        mock_callback.message.bot = MagicMock()
-        mock_callback.message.bot.send_message = AsyncMock()
-        mock_callback.message.delete = AsyncMock()
+        # Mock msg.bot.send_message for result message
+        mock_message.bot = MagicMock()
+        mock_message.bot.send_message = AsyncMock()
+        mock_message.delete = AsyncMock()
 
         with p_kw, p_cats:
             await _run_pipeline_keyword_generation(
-                callback=mock_callback,
+                progress_msg=mock_message,
                 state=mock_state,
                 user=user,
                 db=mock_db,
@@ -1783,7 +1682,7 @@ class TestRunPipelineKeywordGeneration:
 
     async def test_dataforseo_empty_falls_back_to_direct(
         self,
-        mock_callback: MagicMock,
+        mock_message: MagicMock,
         mock_state: MagicMock,
         user: Any,
         mock_db: MagicMock,
@@ -1798,13 +1697,13 @@ class TestRunPipelineKeywordGeneration:
         cat_svc_mock.get_owned_category = AsyncMock(return_value=cat_obj)
         cat_svc_mock.update_keywords = AsyncMock(return_value=True)
         p_cats = patch(f"{_WIZARD}.CategoryService", return_value=cat_svc_mock)
-        mock_callback.message.bot = MagicMock()
-        mock_callback.message.bot.send_message = AsyncMock()
-        mock_callback.message.delete = AsyncMock()
+        mock_message.bot = MagicMock()
+        mock_message.bot.send_message = AsyncMock()
+        mock_message.delete = AsyncMock()
 
         with p_kw, p_cats:
             await _run_pipeline_keyword_generation(
-                callback=mock_callback,
+                progress_msg=mock_message,
                 state=mock_state,
                 user=user,
                 db=mock_db,
@@ -1825,7 +1724,7 @@ class TestRunPipelineKeywordGeneration:
 
     async def test_error_refunds_tokens(
         self,
-        mock_callback: MagicMock,
+        mock_message: MagicMock,
         mock_state: MagicMock,
         user: Any,
         mock_db: MagicMock,
@@ -1835,13 +1734,13 @@ class TestRunPipelineKeywordGeneration:
         kw_mock = MagicMock()
         kw_mock.fetch_raw_phrases = AsyncMock(side_effect=RuntimeError("API down"))
         p_kw = patch(f"{_WIZARD}.KeywordService", return_value=kw_mock)
-        mock_callback.message.bot = MagicMock()
-        mock_callback.message.bot.send_message = AsyncMock()
-        mock_callback.message.delete = AsyncMock()
+        mock_message.bot = MagicMock()
+        mock_message.bot.send_message = AsyncMock()
+        mock_message.delete = AsyncMock()
 
         with p_kw:
             await _run_pipeline_keyword_generation(
-                callback=mock_callback,
+                progress_msg=mock_message,
                 state=mock_state,
                 user=user,
                 db=mock_db,
@@ -1859,11 +1758,11 @@ class TestRunPipelineKeywordGeneration:
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.readiness_check)
         # Error message shown to user
-        mock_callback.message.bot.send_message.assert_awaited_once()
+        mock_message.bot.send_message.assert_awaited_once()
 
     async def test_merges_with_existing_keywords(
         self,
-        mock_callback: MagicMock,
+        mock_message: MagicMock,
         mock_state: MagicMock,
         user: Any,
         mock_db: MagicMock,
@@ -1889,13 +1788,13 @@ class TestRunPipelineKeywordGeneration:
         cat_svc_mock.get_owned_category = AsyncMock(return_value=cat_obj)
         cat_svc_mock.update_keywords = AsyncMock(return_value=True)
         p_cats = patch(f"{_WIZARD}.CategoryService", return_value=cat_svc_mock)
-        mock_callback.message.bot = MagicMock()
-        mock_callback.message.bot.send_message = AsyncMock()
-        mock_callback.message.delete = AsyncMock()
+        mock_message.bot = MagicMock()
+        mock_message.bot.send_message = AsyncMock()
+        mock_message.delete = AsyncMock()
 
         with p_kw, p_cats:
             await _run_pipeline_keyword_generation(
-                callback=mock_callback,
+                progress_msg=mock_message,
                 state=mock_state,
                 user=user,
                 db=mock_db,

@@ -4,14 +4,16 @@ Source of truth: UX_TOOLBOX.md section 9, FSM_SPEC.md (KeywordGenerationFSM),
 EDGE_CASES.md E01/E03/E16/E36.
 
 Keyword generation is FREE (no token charging).
-The wizard sub-flow (products -> geo -> qty -> confirm) is delegated to
+The wizard sub-flow (products -> geo -> generation) is delegated to
 routers.shared.keyword_wizard for code sharing with the pipeline readiness flow.
 """
+
+from __future__ import annotations
 
 import csv
 import html
 import io
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from aiogram import Bot, F, Router
@@ -20,7 +22,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
-    InlineKeyboardMarkup,
     Message,
 )
 
@@ -35,18 +36,24 @@ from keyboards.inline import (
     category_card_kb,
     keywords_cluster_delete_list_kb,
     keywords_cluster_list_kb,
-    keywords_confirm_kb,
     keywords_delete_all_confirm_kb,
     keywords_empty_kb,
-    keywords_quantity_kb,
-    keywords_saved_answers_kb,
     keywords_summary_kb,
     menu_kb,
 )
 from routers.shared.keyword_wizard import (
     KeywordWizardConfig,
     register_keyword_wizard,
+    run_keyword_generation,
 )
+
+if TYPE_CHECKING:
+    from aiogram.types import InlineKeyboardMarkup
+
+    from bot.service_factory import ProjectServiceFactory
+    from cache.client import RedisClient
+    from services.ai.orchestrator import AIOrchestrator
+    from services.external.dataforseo import DataForSEOClient
 
 log = structlog.get_logger()
 router = Router()
@@ -72,9 +79,8 @@ def _csv_safe(value: str) -> str:
 
 
 class KeywordGenerationFSM(StatesGroup):
-    products = State()  # Q1: goods/services (3-1000 chars)
-    geography = State()  # Q2: geography (2-200 chars)
-    quantity = State()  # Button: 50/100/150/200 + confirm
+    products = State()  # Upload mode: text/file input
+    geography = State()  # Geography input (if no company_city)
     fetching = State()  # DataForSEO fetch (progress msg)
     clustering = State()  # AI clustering (progress msg)
     enriching = State()  # DataForSEO enrich (progress msg)
@@ -117,11 +123,12 @@ def _build_keywords_summary(category: Any) -> str:
     total_volume = sum(c.get("total_volume", 0) for c in clusters)
     cluster_count = len(clusters)
 
+    volume_line = f"\nОбщий объём: {total_volume:,}/мес" if total_volume > 0 else ""
     return (
         f"<b>Ключевые фразы</b> — {safe_name}\n\n"
         f"Кластеров: {cluster_count}\n"
-        f"Фраз: {total_phrases}\n"
-        f"Общий объём: {total_volume:,}/мес"
+        f"Фраз: {total_phrases}"
+        f"{volume_line}"
     )
 
 
@@ -186,16 +193,6 @@ async def _return_to_keywords_msg(
 # ---------------------------------------------------------------------------
 
 
-def _toolbox_qty_kb(data: dict[str, Any]) -> InlineKeyboardMarkup:
-    cat_id = int(data.get("kw_cat_id", 0))
-    return keywords_quantity_kb(cat_id)
-
-
-def _toolbox_confirm_kb(data: dict[str, Any]) -> InlineKeyboardMarkup:
-    cat_id = int(data.get("kw_cat_id", 0))
-    return keywords_confirm_kb(cat_id)
-
-
 def _toolbox_cancel_nav_kb(data: dict[str, Any]) -> InlineKeyboardMarkup:
     cat_id = int(data.get("kw_cat_id", 0))
     return cancel_kb(f"kw:{cat_id}:gen_cancel")
@@ -209,20 +206,16 @@ def _toolbox_error_kb(data: dict[str, Any]) -> InlineKeyboardMarkup:
 _toolbox_kw_config = KeywordWizardConfig(
     state_products=KeywordGenerationFSM.products,
     state_geo=KeywordGenerationFSM.geography,
-    state_qty=KeywordGenerationFSM.quantity,
     state_generating=KeywordGenerationFSM.fetching,
     prefix="kw",
     log_prefix="toolbox.keywords",
     cancel_cb_fn=lambda data: f"kw:{data.get('kw_cat_id', 0)}:gen_cancel",
     on_done=_return_to_keywords,
     on_done_msg=_return_to_keywords_msg,
-    qty_kb_fn=_toolbox_qty_kb,
-    confirm_kb_fn=_toolbox_confirm_kb,
     cancel_nav_kb_fn=_toolbox_cancel_nav_kb,
     error_state=None,  # clear state on error
     error_kb_fn=_toolbox_error_kb,
-    auto_mode=False,
-    saved_answers=True,
+    auto_mode=True,
     upload_enriches=True,
 )
 
@@ -272,8 +265,12 @@ async def start_generation(
     state: FSMContext,
     user: User,
     db: SupabaseClient,
+    redis: RedisClient,
+    ai_orchestrator: AIOrchestrator,
+    dataforseo_client: DataForSEOClient,
+    project_service_factory: ProjectServiceFactory,
 ) -> None:
-    """Start keyword generation -- check for saved answers first."""
+    """Start keyword generation -- auto-fill from category/project."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -290,109 +287,56 @@ async def start_generation(
     if interrupted:
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
-    # Check for saved answers in state or category metadata
-    saved_data = await state.get_data()
-    saved_products = saved_data.get(f"kw_products_{cat_id}")
-    saved_geography = saved_data.get(f"kw_geography_{cat_id}")
+    # Auto-fill products from category
+    products = category.description or category.name
 
-    if saved_products and saved_geography:
-        # Offer to use saved answers
-        await state.set_state(KeywordGenerationFSM.products)
+    # Look up project for city
+    proj_svc = project_service_factory(db)
+    project = await proj_svc.get_owned_project(project_id, user.id) if project_id else None
+    geography = project.company_city if project and project.company_city else None
+
+    if geography:
+        # Direct path — run generation immediately
+        await state.set_state(KeywordGenerationFSM.fetching)
         await state.update_data(
             kw_cat_id=cat_id,
             kw_project_id=project_id,
+            kw_products=products,
+            kw_geography=geography,
         )
+        await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
+        await callback.answer()
 
-        await safe_edit_text(
-            msg,
-            f"Найдены сохранённые ответы:\n"
-            f"Товары/услуги: <i>{html.escape(saved_products)}</i>\n"
-            f"География: <i>{html.escape(saved_geography)}</i>\n\n"
-            "Использовать или начать заново?",
-            reply_markup=keywords_saved_answers_kb(cat_id),
+        await run_keyword_generation(
+            progress_msg=msg,
+            state=state,
+            user=user,
+            db=db,
+            redis=redis,
+            cfg=_toolbox_kw_config,
+            category_id=cat_id,
+            project_id=int(project_id),  # type: ignore[arg-type]
+            products=products,
+            geography=geography,
+            ai_orchestrator=ai_orchestrator,
+            dataforseo_client=dataforseo_client,
         )
     else:
-        # Start fresh
-        await state.set_state(KeywordGenerationFSM.products)
+        # No city — ask for geography
+        await state.set_state(KeywordGenerationFSM.geography)
         await state.update_data(
             kw_cat_id=cat_id,
             kw_project_id=project_id,
+            kw_products=products,
             kw_mode="configure",
         )
-
         await safe_edit_text(
             msg,
-            "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
+            "Укажите географию продвижения:\n"
+            "<i>Например: Москва, Россия, СНГ</i>\n\nОт 2 до 200 символов.",
             reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
         )
-
-    await callback.answer()
-
-
-@router.callback_query(F.data.regexp(r"^kw:\d+:generate:new$"))
-async def start_fresh_generation(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-) -> None:
-    """Start generation from scratch, ignoring saved answers."""
-    msg = safe_message(callback)
-    if not msg:
         await callback.answer()
-        return
-
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    _, category, project_id = await _check_category_ownership(cat_id, user, db)
-    if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
-        return
-
-    await state.set_state(KeywordGenerationFSM.products)
-    await state.update_data(
-        kw_cat_id=cat_id,
-        kw_project_id=project_id,
-        kw_mode="configure",
-    )
-
-    await safe_edit_text(
-        msg,
-        "Какие товары или услуги продвигаете?\n<i>Например: кухни на заказ, шкафы-купе, корпусная мебель</i>",
-        reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.regexp(r"^kw:\d+:use_saved$"))
-async def use_saved_answers(
-    callback: CallbackQuery,
-    state: FSMContext,
-) -> None:
-    """Skip to quantity selection using saved answers."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    cat_id = int(data["kw_cat_id"])
-
-    # Move saved answers to active
-    products = data.get(f"kw_products_{cat_id}", "")
-    geography = data.get(f"kw_geography_{cat_id}", "")
-
-    await state.set_state(KeywordGenerationFSM.quantity)
-    await state.update_data(
-        kw_products=products,
-        kw_geography=geography,
-    )
-
-    await safe_edit_text(
-        msg,
-        "Сколько ключевых фраз подобрать?",
-        reply_markup=keywords_quantity_kb(cat_id),
-    )
-    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
@@ -545,16 +489,20 @@ async def show_cluster_detail(
     phrases = cluster.get("phrases", [])
     total_volume = cluster.get("total_volume", 0)
 
+    volume_info = f" | Объём: {total_volume:,}/мес" if total_volume > 0 else ""
     lines = [
         f"<b>{name}</b>",
         f"Тип: {cluster_type}" if cluster_type else "",
-        f"Фраз: {len(phrases)} | Объём: {total_volume:,}/мес\n",
+        f"Фраз: {len(phrases)}{volume_info}\n",
     ]
 
     for p in phrases[:50]:  # limit display
         phrase = html.escape(p.get("phrase", ""))
         vol = p.get("volume", 0)
-        lines.append(f"  \u2022 {phrase} ({vol:,}/мес)")
+        if vol > 0:
+            lines.append(f"  \u2022 {phrase} ({vol:,}/мес)")
+        else:
+            lines.append(f"  \u2022 {phrase}")
 
     if len(phrases) > 50:
         lines.append(f"\n  ... ещё {len(phrases) - 50}")
