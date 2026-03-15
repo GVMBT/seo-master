@@ -295,9 +295,9 @@ class TestConsentGate:
                 http_client=MagicMock(),
             )
 
-        # First call removes reply keyboard, second shows dashboard
-        assert mock_message.answer.call_count == 2
-        # Last call is the dashboard
-        args, kwargs = mock_message.answer.call_args
-        assert "Dashboard" in args[0]
+        # First call removes reply keyboard, then answer_photo shows dashboard
+        assert mock_message.answer.call_count == 1  # ReplyKeyboardRemove
+        mock_message.answer_photo.assert_called_once()
+        _, kwargs = mock_message.answer_photo.call_args
+        assert "Dashboard" in kwargs.get("caption", "")
         assert kwargs.get("reply_markup") is not None

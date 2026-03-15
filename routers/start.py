@@ -575,16 +575,13 @@ async def cmd_start(
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
     full_text = text + "\n\nВыберите действие:"
-    if is_new_user:
-        result = await message.answer_photo(
-            asset_photo("welcome.png"),
-            caption=full_text,
-            reply_markup=kb,
-        )
-        if result.photo:
-            cache_file_id("welcome.png", result.photo[-1].file_id)
-    else:
-        await message.answer(full_text, reply_markup=kb)
+    result = await message.answer_photo(
+        asset_photo("welcome.png"),
+        caption=full_text,
+        reply_markup=kb,
+    )
+    if result.photo:
+        cache_file_id("welcome.png", result.photo[-1].file_id)
 
 
 # ---------------------------------------------------------------------------
