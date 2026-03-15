@@ -222,8 +222,8 @@ async def process_category_name(
 
     safe_name = html.escape(category.name)
     await message.answer(
-        f"Категория «{safe_name}» создана!\nДобавьте ключевые фразы для генерации контента.",
-        reply_markup=category_created_kb(category.id, project_id),
+        f"Категория «{safe_name}» создана!",
+        reply_markup=category_created_kb(category.id),
     )
     log.info("category_created", category_id=category.id, project_id=project_id, user_id=user.id)
 

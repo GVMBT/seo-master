@@ -380,7 +380,9 @@ async def wp_process_url(message: Message, state: FSMContext) -> None:
     pid = data.get("connect_project_id", 0)
     await state.set_state(ConnectWordPressFSM.login)
     await message.answer(
-        "Шаг 2/3 \u2014 Введите логин WordPress:",
+        "Шаг 2/3 \u2014 Введите логин WordPress:\n\n"
+        "Это ваш логин для входа в панель WordPress (wp-admin).\n"
+        "Обычно это имя пользователя, не email.",
         reply_markup=cancel_kb(f"conn:{pid}:wp_cancel"),
     )
 
@@ -495,8 +497,7 @@ async def wp_process_password(
     connections = await conn_svc.get_by_project(project_id)
     safe_name = html.escape(project.name)
     await message.answer(
-        f"WordPress ({html.escape(identifier)}) подключён!\n"
-        f"Анализ сайта запущен.\n\n<b>{safe_name}</b> — Подключения",
+        f"WordPress ({html.escape(identifier)}) подключён!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
     )
 
@@ -547,8 +548,9 @@ async def start_tg_connect(
     await msg.answer(
         "Подключение Telegram-канала\n\n"
         "Шаг 1/2 \u2014 Введите ссылку на канал:\n\n"
-        "<i>Формат: @channel, t.me/channel или ID (-100...)</i>",
+        "<i>Формат: @channel или t.me/channel</i>",
         reply_markup=cancel_kb(f"conn:{project_id}:tg_cancel"),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     await callback.answer()
 
@@ -563,7 +565,7 @@ async def tg_process_channel(message: Message, state: FSMContext) -> None:
         return
 
     if not TG_CHANNEL_RE.match(text):
-        await message.answer("Некорректный формат. Введите @channel, t.me/channel или -100XXXX.")
+        await message.answer("Некорректный формат. Введите @channel или t.me/channel.")
         return
 
     # Normalize to consistent format
@@ -691,6 +693,7 @@ async def tg_process_token(
     await message.answer(
         f"Telegram-канал {channel_id} подключён!\n\n<b>{safe_name}</b> — Подключения",
         reply_markup=connection_list_kb(connections, project_id),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
 
