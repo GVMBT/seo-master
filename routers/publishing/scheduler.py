@@ -25,6 +25,7 @@ from keyboards.inline import (
     scheduler_social_cat_list_kb,
     scheduler_social_config_kb,
     scheduler_social_conn_list_kb,
+    scheduler_type_kb,
 )
 from services.scheduler import SchedulerService
 
@@ -57,6 +58,25 @@ class ScheduleSetupFSM(StatesGroup):
 # ---------------------------------------------------------------------------
 # Entry: from project card
 # ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(r"^project:\d+:scheduler$"))
+async def scheduler_entry(
+    callback: CallbackQuery,
+) -> None:
+    """Scheduler type selection — articles or social."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    await safe_edit_text(
+        msg,
+        "<b>Планировщик</b>\n\nВыберите тип контента:",
+        reply_markup=scheduler_type_kb(project_id),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.regexp(r"^project:\d+:sched_articles$"))
