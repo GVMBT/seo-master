@@ -81,8 +81,9 @@ def test_project_card_has_scheduler_button() -> None:
     kb = project_card_kb(42)
     callbacks = _get_all_callbacks(kb)
 
-    # Scheduler entry point (single button, not split)
-    assert "project:42:sched_articles" in callbacks
+    # Single scheduler entry (type selection screen)
+    assert "project:42:scheduler" in callbacks
+    assert "project:42:sched_articles" not in callbacks
     assert "project:42:sched_social" not in callbacks
     # Pipeline buttons should still be present
     assert "pipeline:article:project:42" in callbacks

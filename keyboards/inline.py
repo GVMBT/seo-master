@@ -183,6 +183,7 @@ def project_card_kb(project_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Создать пост",
                     callback_data=f"pipeline:social:project:{pid}",
+                    style=ButtonStyle.PRIMARY,
                 ),
             ],
             [
@@ -191,7 +192,7 @@ def project_card_kb(project_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
-                InlineKeyboardButton(text="Планировщик", callback_data=f"project:{pid}:sched_articles"),
+                InlineKeyboardButton(text="Планировщик", callback_data=f"project:{pid}:scheduler"),
             ],
             [
                 InlineKeyboardButton(
@@ -1155,6 +1156,26 @@ _DAY_LABELS: dict[str, str] = {
     "sat": "Сб",
     "sun": "Вс",
 }
+
+
+def scheduler_type_kb(project_id: int) -> InlineKeyboardMarkup:
+    """Scheduler type selection: articles or social posts."""
+    pid = project_id
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Статьи на сайт",
+                    callback_data=f"project:{pid}:sched_articles",
+                ),
+                InlineKeyboardButton(
+                    text="Посты в соцсети",
+                    callback_data=f"project:{pid}:sched_social",
+                ),
+            ],
+            [InlineKeyboardButton(text="\u2b05\ufe0f К проекту", callback_data=f"project:{pid}:card")],
+        ]
+    )
 
 
 def scheduler_cat_list_kb(categories: list[Any], project_id: int) -> InlineKeyboardMarkup:
