@@ -29,6 +29,7 @@ from db.repositories.previews import PreviewsRepository
 from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
     cancel_kb,
+    connection_list_kb,
     connection_manage_kb,
     consent_kb,
     dashboard_kb,
@@ -325,10 +326,12 @@ async def _create_vk_connection_from_community(
         )
         return
 
+    # Show connections list (same as WP/TG success)
+    connections = await conn_svc.get_by_project(project.id)
     safe_name = html.escape(project.name)
     await message.answer(
-        f"VK-группа «{html.escape(group_name)}» подключена к проекту «{safe_name}»!",
-        reply_markup=menu_kb(),
+        f"VK-группа «{html.escape(group_name)}» подключена!\n\n<b>{safe_name}</b> — Подключения",
+        reply_markup=connection_list_kb(connections, project.id),
     )
     log.info(
         "vk_connected_via_deeplink",

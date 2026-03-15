@@ -59,30 +59,8 @@ def dashboard_kb(
     *,
     is_admin: bool = False,
 ) -> InlineKeyboardMarkup:
-    """Dashboard keyboard with pipeline CTAs and nav row.
-
-    Article button is always PRIMARY.
-    """
+    """Dashboard keyboard with nav row (Projects | Profile | Tokens)."""
     rows: list[list[InlineKeyboardButton]] = []
-
-    # Pipeline CTAs
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="Написать статью на сайт",
-                callback_data="pipeline:article:start",
-                style=ButtonStyle.PRIMARY,
-            ),
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="Создать пост в соцсети",
-                callback_data="pipeline:social:start",
-            ),
-        ]
-    )
 
     # Nav row
     rows.append(
@@ -213,10 +191,6 @@ def project_card_kb(project_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
-            ],
-            [
-                InlineKeyboardButton(text="Статьи", callback_data=f"project:{pid}:sched_articles"),
-                InlineKeyboardButton(text="Соцсети", callback_data=f"project:{pid}:sched_social"),
             ],
             [
                 InlineKeyboardButton(
@@ -439,7 +413,7 @@ def category_delete_confirm_kb(category_id: int, project_id: int) -> InlineKeybo
     )
 
 
-def category_created_kb(category_id: int, project_id: int) -> InlineKeyboardMarkup:
+def category_created_kb(category_id: int) -> InlineKeyboardMarkup:
     """Success screen after category creation."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -449,7 +423,6 @@ def category_created_kb(category_id: int, project_id: int) -> InlineKeyboardMark
                     callback_data=f"category:{category_id}:card",
                     style=ButtonStyle.SUCCESS,
                 ),
-                InlineKeyboardButton(text="К категориям", callback_data=f"project:{project_id}:categories"),
             ],
         ]
     )
