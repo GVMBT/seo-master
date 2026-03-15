@@ -77,8 +77,8 @@ def _get_all_texts(kb: Any) -> list[str]:
 
 
 def test_project_card_has_scheduler_button() -> None:
-    """project_card_kb has single scheduler entry + pipeline buttons."""
-    kb = project_card_kb(42)
+    """project_card_kb has single scheduler entry + pipeline buttons when has_keywords=True."""
+    kb = project_card_kb(42, has_keywords=True)
     callbacks = _get_all_callbacks(kb)
 
     # Single scheduler entry (type selection screen)
@@ -88,6 +88,24 @@ def test_project_card_has_scheduler_button() -> None:
     # Pipeline buttons should still be present
     assert "pipeline:article:project:42" in callbacks
     assert "pipeline:social:project:42" in callbacks
+
+
+def test_project_card_hides_pipeline_without_keywords() -> None:
+    """project_card_kb hides pipeline and scheduler buttons when has_keywords=False."""
+    kb = project_card_kb(42, has_keywords=False)
+    callbacks = _get_all_callbacks(kb)
+
+    # Pipeline and scheduler buttons should NOT be present
+    assert "pipeline:article:project:42" not in callbacks
+    assert "pipeline:social:project:42" not in callbacks
+    assert "project:42:scheduler" not in callbacks
+
+    # Basic management buttons should still be present
+    assert "project:42:edit" in callbacks
+    assert "project:42:categories" in callbacks
+    assert "project:42:connections" in callbacks
+    assert "project:42:delete" in callbacks
+    assert "nav:projects" in callbacks
 
 
 # ---------------------------------------------------------------------------

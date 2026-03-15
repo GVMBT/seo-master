@@ -74,7 +74,7 @@ def dashboard_kb(
                 callback_data="nav:profile",
             ),
             InlineKeyboardButton(
-                text="Токены",
+                text="Планы",
                 callback_data="nav:tokens",
             ),
         ]
@@ -169,41 +169,54 @@ def project_list_empty_kb() -> InlineKeyboardMarkup:
 # ---------------------------------------------------------------------------
 
 
-def project_card_kb(project_id: int) -> InlineKeyboardMarkup:
-    """Project card action buttons (UX_TOOLBOX.md section 3.1)."""
+def project_card_kb(project_id: int, *, has_keywords: bool) -> InlineKeyboardMarkup:
+    """Project card action buttons (UX_TOOLBOX.md section 3.1).
+
+    Pipeline and scheduler buttons are shown only when ``has_keywords=True``
+    (at least one category with keywords exists).
+    """
     pid = project_id
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Написать статью",
-                    callback_data=f"pipeline:article:project:{pid}",
-                    style=ButtonStyle.PRIMARY,
-                ),
-                InlineKeyboardButton(
-                    text="Создать пост",
-                    callback_data=f"pipeline:social:project:{pid}",
-                    style=ButtonStyle.PRIMARY,
-                ),
-            ],
-            [
-                InlineKeyboardButton(text="Редактировать", callback_data=f"project:{pid}:edit"),
-                InlineKeyboardButton(text="Категории", callback_data=f"project:{pid}:categories"),
-            ],
-            [
-                InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
-                InlineKeyboardButton(text="Планировщик", callback_data=f"project:{pid}:scheduler"),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Удалить проект",
-                    callback_data=f"project:{pid}:delete",
-                    style=ButtonStyle.DANGER,
-                ),
-            ],
-            [InlineKeyboardButton(text="\u2b05\ufe0f К проектам", callback_data="nav:projects")],
-        ]
-    )
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if has_keywords:
+        rows.append([
+            InlineKeyboardButton(
+                text="Написать статью",
+                callback_data=f"pipeline:article:project:{pid}",
+                style=ButtonStyle.PRIMARY,
+            ),
+            InlineKeyboardButton(
+                text="Создать пост",
+                callback_data=f"pipeline:social:project:{pid}",
+                style=ButtonStyle.PRIMARY,
+            ),
+        ])
+
+    rows.append([
+        InlineKeyboardButton(text="Настройки", callback_data=f"project:{pid}:edit"),
+        InlineKeyboardButton(text="Категории", callback_data=f"project:{pid}:categories"),
+    ])
+
+    if has_keywords:
+        rows.append([
+            InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
+            InlineKeyboardButton(text="Планировщик", callback_data=f"project:{pid}:scheduler"),
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
+        ])
+
+    rows.append([
+        InlineKeyboardButton(
+            text="Удалить проект",
+            callback_data=f"project:{pid}:delete",
+            style=ButtonStyle.DANGER,
+        ),
+    ])
+    rows.append([InlineKeyboardButton(text="\u2b05\ufe0f К проектам", callback_data="nav:projects")])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ---------------------------------------------------------------------------
