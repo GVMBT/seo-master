@@ -60,7 +60,9 @@ async def show_project_card(
         f"\n\U0001f4c2 Категорий: {len(card_data.categories)}"
         f"\n\U0001f4ca Публикаций: {card_data.pub_count}"
     )
-    await edit_screen(msg, "project_card.png", text, reply_markup=project_card_kb(project_id))
+    has_keywords = any(cat.keywords for cat in card_data.categories)
+    kb = project_card_kb(project_id, has_keywords=has_keywords)
+    await edit_screen(msg, "project_card.png", text, reply_markup=kb)
     await callback.answer()
 
 

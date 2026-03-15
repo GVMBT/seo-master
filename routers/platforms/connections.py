@@ -24,6 +24,13 @@ from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts.connections import (
+    TG_STEP1_CHANNEL,
+    TG_STEP2_BOT_SETUP,
+    WP_STEP1_URL,
+    WP_STEP2_LOGIN,
+    WP_STEP3_CREDENTIALS,
+)
 from bot.validators import TG_CHANNEL_RE, URL_RE
 from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
@@ -356,7 +363,7 @@ async def start_wp_connect(
     await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
 
     await msg.answer(
-        "Подключение WordPress\n\nШаг 1/3 \u2014 Введите URL сайта WordPress:\n\n<i>Пример: example.com</i>",
+        WP_STEP1_URL,
         reply_markup=cancel_kb(f"conn:{project_id}:wp_cancel"),
     )
     await callback.answer()
@@ -380,9 +387,7 @@ async def wp_process_url(message: Message, state: FSMContext) -> None:
     pid = data.get("connect_project_id", 0)
     await state.set_state(ConnectWordPressFSM.login)
     await message.answer(
-        "Шаг 2/3 \u2014 Введите логин WordPress:\n\n"
-        "Это ваш логин для входа в панель WordPress (wp-admin).\n"
-        "Обычно это имя пользователя, не email.",
+        WP_STEP2_LOGIN,
         reply_markup=cancel_kb(f"conn:{pid}:wp_cancel"),
     )
 
@@ -404,9 +409,7 @@ async def wp_process_login(message: Message, state: FSMContext) -> None:
     pid = data.get("connect_project_id", 0)
     await state.set_state(ConnectWordPressFSM.password)
     await message.answer(
-        "Шаг 3/3 \u2014 Введите Application Password:\n\n"
-        "Создайте его в WordPress: Пользователи \u2192 Профиль \u2192 Application Passwords.\n"
-        "Формат: xxxx xxxx xxxx xxxx xxxx xxxx",
+        WP_STEP3_CREDENTIALS,
         reply_markup=cancel_kb(f"conn:{pid}:wp_cancel"),
     )
 
@@ -546,9 +549,7 @@ async def start_tg_connect(
     await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
 
     await msg.answer(
-        "Подключение Telegram-канала\n\n"
-        "Шаг 1/2 \u2014 Введите ссылку на канал:\n\n"
-        "<i>Формат: @channel или t.me/channel</i>",
+        TG_STEP1_CHANNEL,
         reply_markup=cancel_kb(f"conn:{project_id}:tg_cancel"),
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
@@ -577,9 +578,9 @@ async def tg_process_channel(message: Message, state: FSMContext) -> None:
     pid = data.get("connect_project_id", 0)
     await state.set_state(ConnectTelegramFSM.token)
     await message.answer(
-        "Шаг 2/2 \u2014 Создайте бота через @BotFather и отправьте его токен.\n\n"
-        "После этого добавьте бота в канал как администратора с правом публикации.",
+        TG_STEP2_BOT_SETUP,
         reply_markup=cancel_kb(f"conn:{pid}:tg_cancel"),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
 
