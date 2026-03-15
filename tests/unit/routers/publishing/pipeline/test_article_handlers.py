@@ -30,6 +30,8 @@ from routers.publishing.pipeline._common import (
 from routers.publishing.pipeline.article import (
     pipeline_article_cancel,
     pipeline_article_start,
+    pipeline_back_to_project,
+    pipeline_back_to_wp,
     pipeline_cancel_wp_subflow,
     pipeline_connect_wp_login,
     pipeline_connect_wp_password,
@@ -1513,3 +1515,113 @@ class TestClearCheckpoint:
     async def test_deletes_correct_key(self, mock_redis: MagicMock) -> None:
         await clear_checkpoint(mock_redis, user_id=456)
         mock_redis.delete.assert_called_once_with("pipeline:456:state")
+
+
+# ---------------------------------------------------------------------------
+# Back navigation: step 2 -> step 1, step 3 -> step 2
+# ---------------------------------------------------------------------------
+
+
+class TestBackToProject:
+    """pipeline_back_to_project: from WP step back to project selection."""
+
+    async def test_back_shows_project_list(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """Multiple projects -> shows project list, sets state to select_project."""
+        p1 = make_project(id=1, name="P1")
+        p2 = make_project(id=2, name="P2")
+        patches, _, _, _, pf, _ = _patch_repos(projects=[p1, p2])
+        with patches["conn"], patches["cats"]:
+            await pipeline_back_to_project(
+                mock_callback, mock_state, user, MagicMock(), mock_redis, pf,
+            )
+
+        mock_state.set_state.assert_awaited_once_with(ArticlePipelineFSM.select_project)
+        mock_callback.message.edit_text.assert_awaited_once()
+        text = mock_callback.message.edit_text.call_args[0][0]
+        assert "Для какого проекта" in text
+
+    async def test_back_zero_projects_shows_create(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """0 projects -> shows no_projects_kb."""
+        patches, _, _, _, pf, _ = _patch_repos(projects=[])
+        with patches["conn"], patches["cats"]:
+            await pipeline_back_to_project(
+                mock_callback, mock_state, user, MagicMock(), mock_redis, pf,
+            )
+
+        mock_state.set_state.assert_awaited_once_with(ArticlePipelineFSM.select_project)
+        mock_callback.message.edit_text.assert_awaited_once()
+        text = mock_callback.message.edit_text.call_args[0][0]
+        assert "создадим проект" in text
+
+    async def test_back_inaccessible_message(
+        self,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """InaccessibleMessage -> answers callback and returns."""
+        from aiogram.types import InaccessibleMessage
+
+        callback = MagicMock()
+        callback.message = MagicMock(spec=InaccessibleMessage)
+        callback.answer = AsyncMock()
+        patches, _, _, _, pf, _ = _patch_repos()
+        with patches["conn"], patches["cats"]:
+            await pipeline_back_to_project(
+                callback, mock_state, user, MagicMock(), mock_redis, pf,
+            )
+        mock_state.set_state.assert_not_awaited()
+
+
+class TestBackToWp:
+    """pipeline_back_to_wp: from category step back to WP step."""
+
+    async def test_back_shows_wp_step(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """Valid state data -> shows WP step (no WP connections)."""
+        mock_state.get_data = AsyncMock(
+            return_value={"project_id": 1, "project_name": "Test"}
+        )
+        patches, _, _, _, _, _ = _patch_repos(wp_connections=[])
+        with patches["conn"], patches["cats"]:
+            await pipeline_back_to_wp(
+                mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+            )
+
+        mock_callback.message.edit_text.assert_awaited_once()
+        text = mock_callback.message.edit_text.call_args[0][0]
+        assert "Сайт" in text or "WordPress" in text
+
+    async def test_back_no_project_id_clears_state(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        """No project_id in state -> alert + clear state."""
+        mock_state.get_data = AsyncMock(return_value={})
+        await pipeline_back_to_wp(
+            mock_callback, mock_state, user, MagicMock(), MagicMock(), mock_redis,
+        )
+
+        mock_callback.answer.assert_awaited_once()
+        assert "устарели" in mock_callback.answer.call_args[0][0]
+        mock_state.clear.assert_awaited_once()

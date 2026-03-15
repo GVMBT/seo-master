@@ -165,10 +165,15 @@ class TestPipelineNoWpKb:
         buttons = _flatten_buttons(kb)
         assert any(b.callback_data == "pipeline:article:preview_only" for b in buttons)
 
-    def test_two_buttons_total(self) -> None:
+    def test_three_buttons_total(self) -> None:
         kb = pipeline_no_wp_kb()
         buttons = _flatten_buttons(kb)
-        assert len(buttons) == 2
+        assert len(buttons) == 3
+
+    def test_back_button_present(self) -> None:
+        kb = pipeline_no_wp_kb()
+        buttons = _flatten_buttons(kb)
+        assert any(b.callback_data == "pipeline:article:back_project" for b in buttons)
 
 
 # ---------------------------------------------------------------------------
