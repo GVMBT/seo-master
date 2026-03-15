@@ -420,6 +420,7 @@ async def pipeline_wp_continue(
     if not project_id:
         await callback.answer("Данные сессии устарели.", show_alert=True)
         await state.clear()
+        await clear_checkpoint(redis, user.id)
         return
 
     await _show_category_step(callback, state, user, db, redis, project_id, project_name)
