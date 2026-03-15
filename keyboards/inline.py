@@ -191,6 +191,7 @@ def project_card_kb(project_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
+                InlineKeyboardButton(text="Планировщик", callback_data=f"project:{pid}:sched_articles"),
             ],
             [
                 InlineKeyboardButton(
