@@ -503,6 +503,7 @@ async def pipeline_back_to_connection(
         project_id,
         project_name,
         http_client=http_client,
+        auto_skip=False,
     )
     await callback.answer()
 

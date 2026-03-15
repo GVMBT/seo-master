@@ -21,7 +21,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
@@ -331,11 +331,13 @@ async def _show_wp_step(
     redis: RedisClient,
     project_id: int,
     project_name: str,
+    *,
+    auto_skip: bool = True,
 ) -> None:
     """Show WP connection selection (step 2).
 
     UX_PIPELINE.md §4.1:
-    - 1 WP connection -> auto-select, skip to step 3
+    - 1 WP connection -> auto-select, skip to step 3 (unless auto_skip=False)
     - 0 WP connections -> offer connect or preview-only
 
     Rule: 1 project = max 1 WordPress connection. No multi-WP branch needed.
@@ -347,11 +349,35 @@ async def _show_wp_step(
     conn_svc = ConnectionService(db, http_client)
     wp_connections = await conn_svc.get_by_project_and_platform(project_id, "wordpress")
 
-    if wp_connections:
+    if wp_connections and auto_skip:
         # Auto-select the WP connection (max 1 per project)
         conn = wp_connections[0]
         await state.update_data(connection_id=conn.id, wp_identifier=conn.identifier)
         await _show_category_step(callback, state, user, db, redis, project_id, project_name)
+        return
+
+    if wp_connections:
+        # WP exists but back navigation — show selection without auto-skip
+        conn = wp_connections[0]
+        await state.update_data(connection_id=conn.id, wp_identifier=conn.identifier)
+        await safe_edit_text(
+            msg,
+            f"Статья (2/5) — Сайт\n\n\u2705 WordPress подключён: {html.escape(conn.identifier)}",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Продолжить", callback_data="pipeline:article:wp_continue")],
+                    [InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data="pipeline:article:back_project")],
+                ]
+            ),
+        )
+        await state.set_state(ArticlePipelineFSM.select_wp)
+        await save_checkpoint(
+            redis,
+            user.id,
+            current_step="select_wp",
+            project_id=project_id,
+            project_name=project_name,
+        )
         return
 
     # No WP connections — offer connect or preview-only
@@ -368,6 +394,36 @@ async def _show_wp_step(
         project_id=project_id,
         project_name=project_name,
     )
+
+
+@router.callback_query(
+    ArticlePipelineFSM.select_wp,
+    F.data == "pipeline:article:wp_continue",
+)
+async def pipeline_wp_continue(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+) -> None:
+    """Continue from WP step to category selection (step 3)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    project_name = data.get("project_name", "")
+
+    if not project_id:
+        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await state.clear()
+        return
+
+    await _show_category_step(callback, state, user, db, redis, project_id, project_name)
+    await callback.answer()
 
 
 @router.callback_query(
@@ -951,7 +1007,10 @@ async def pipeline_back_to_wp(
         await clear_checkpoint(redis, user.id)
         return
 
-    await _show_wp_step(callback, state, user, db, http_client, redis, project_id, project_name)
+    await _show_wp_step(
+        callback, state, user, db, http_client, redis, project_id, project_name,
+        auto_skip=False,
+    )
     await callback.answer()
 
 

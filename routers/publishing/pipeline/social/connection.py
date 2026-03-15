@@ -73,12 +73,13 @@ async def _show_connection_step(
     project_name: str,
     *,
     http_client: httpx.AsyncClient,
+    auto_skip: bool = True,
 ) -> None:
     """Show connection selection (step 2).
 
     UX_PIPELINE.md section 5.2:
     - 0 connections -> show platform picker
-    - 1 connection -> auto-select, skip to step 3
+    - 1 connection -> auto-select, skip to step 3 (unless auto_skip=False)
     - >1 connections -> show list
     """
     msg = safe_message(callback)
@@ -108,7 +109,7 @@ async def _show_connection_step(
         )
         return
 
-    if len(social_conns) == 1:
+    if len(social_conns) == 1 and auto_skip:
         conn = social_conns[0]
         await state.update_data(
             connection_id=conn.id, platform_type=conn.platform_type,
