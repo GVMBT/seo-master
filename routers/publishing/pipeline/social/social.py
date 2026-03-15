@@ -468,6 +468,47 @@ async def _show_category_step_msg(
 
 @router.callback_query(
     SocialPipelineFSM.select_category,
+    F.data == "pipeline:social:back_connection",
+)
+async def pipeline_back_to_connection(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Go back from step 3 (category) to step 2 (connection)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    project_name = data.get("project_name", "")
+
+    if not project_id:
+        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await state.clear()
+        await clear_checkpoint(redis, user.id)
+        return
+
+    await _show_connection_step(
+        callback,
+        state,
+        user,
+        db,
+        redis,
+        project_id,
+        project_name,
+        http_client=http_client,
+    )
+    await callback.answer()
+
+
+@router.callback_query(
+    SocialPipelineFSM.select_category,
     F.data.regexp(r"^pipeline:social:\d+:cat:(\d+)$"),
 )
 async def pipeline_select_category(

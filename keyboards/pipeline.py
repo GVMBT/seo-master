@@ -78,6 +78,12 @@ def pipeline_no_wp_kb() -> InlineKeyboardMarkup:
                     callback_data="pipeline:article:preview_only",
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    text="\u2b05\ufe0f Назад",
+                    callback_data="pipeline:article:back_project",
+                ),
+            ],
         ]
     )
 
@@ -97,13 +103,23 @@ def pipeline_categories_kb(
 
     callback_data: pipeline:{type}:{project_id}:cat:{cat_id}
     """
-    return paginate(
+    kb, _ = paginate(
         items=categories,
         page=page,
         cb_prefix=f"pipeline_{pipeline_type}_categories",
         item_text="name",
         item_cb=f"pipeline:{pipeline_type}:{project_id}:cat:{{id}}",
-    )[0]
+    )
+    # Add back button to return to previous step
+    back_cb = (
+        "pipeline:article:back_wp"
+        if pipeline_type == "article"
+        else "pipeline:social:back_connection"
+    )
+    kb.inline_keyboard.append(
+        [InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data=back_cb)]
+    )
+    return kb
 
 
 def pipeline_no_categories_kb(pipeline_type: str = "article") -> InlineKeyboardMarkup:
@@ -704,6 +720,15 @@ def social_connections_kb(
     rows.append(
         [
             InlineKeyboardButton(
+                text="\u2b05\ufe0f Назад",
+                callback_data="pipeline:social:back_project",
+            ),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
                 text="Отмена",
                 callback_data="pipeline:social:cancel",
             ),
@@ -736,6 +761,15 @@ def social_no_connections_kb(
         else:
             btn = InlineKeyboardButton(text=text, callback_data=cb)
         rows.append([btn])
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="\u2b05\ufe0f Назад",
+                callback_data="pipeline:social:back_project",
+            ),
+        ]
+    )
 
     rows.append(
         [

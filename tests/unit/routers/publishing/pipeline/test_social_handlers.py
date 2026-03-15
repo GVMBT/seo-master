@@ -21,11 +21,15 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from routers.publishing.pipeline._common import SocialPipelineFSM, save_checkpoint
+from routers.publishing.pipeline.social.connection import (
+    pipeline_back_to_project,
+)
 from routers.publishing.pipeline.social.generation import (
     _build_review_text,
     _show_review,
 )
 from routers.publishing.pipeline.social.social import (
+    pipeline_back_to_connection,
     pipeline_create_category_name,
     pipeline_create_project_name,
     pipeline_select_category,
@@ -461,6 +465,110 @@ class TestSocialCheckpoint:
 
         data = json.loads(mock_redis.set.call_args[0][1])
         assert data["step_label"] == "ревью"
+
+
+# ---------------------------------------------------------------------------
+# Back navigation: step 2 -> step 1, step 3 -> step 2
+# ---------------------------------------------------------------------------
+
+_CONN_MODULE = "routers.publishing.pipeline.social.connection"
+
+
+class TestSocialBackToProject:
+    """pipeline_back_to_project: from connection step back to project selection."""
+
+    async def test_back_shows_project_list(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        p1 = make_project(id=1, name="P1")
+        p2 = make_project(id=2, name="P2")
+        pf = _make_proj_factory(projects=[p1, p2])
+        await pipeline_back_to_project(
+            mock_callback, mock_state, user, MagicMock(), mock_redis, pf,
+        )
+
+        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_project)
+        mock_callback.message.edit_text.assert_awaited_once()
+        text = mock_callback.message.edit_text.call_args[0][0]
+        assert "Для какого проекта" in text
+
+    async def test_back_zero_projects_shows_create(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        pf = _make_proj_factory(projects=[])
+        await pipeline_back_to_project(
+            mock_callback, mock_state, user, MagicMock(), mock_redis, pf,
+        )
+
+        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.select_project)
+        mock_callback.message.edit_text.assert_awaited_once()
+        text = mock_callback.message.edit_text.call_args[0][0]
+        assert "создадим проект" in text
+
+    async def test_back_inaccessible_message(
+        self,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        from aiogram.types import InaccessibleMessage
+
+        callback = MagicMock()
+        callback.message = MagicMock(spec=InaccessibleMessage)
+        callback.answer = AsyncMock()
+        pf = _make_proj_factory()
+        await pipeline_back_to_project(
+            callback, mock_state, user, MagicMock(), mock_redis, pf,
+        )
+        mock_state.set_state.assert_not_awaited()
+
+
+class TestSocialBackToConnection:
+    """pipeline_back_to_connection: from category step back to connection step."""
+
+    async def test_back_shows_connection_step(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        mock_state.get_data = AsyncMock(
+            return_value={"project_id": 1, "project_name": "Test"}
+        )
+        patches, _, _ = _patch_repos()
+        with patches["cats"], patches["conn_step"] as mock_conn_step:
+            await pipeline_back_to_connection(
+                mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+            )
+
+        mock_conn_step.assert_awaited_once()
+
+    async def test_back_no_project_id_clears_state(
+        self,
+        mock_callback: MagicMock,
+        mock_state: MagicMock,
+        mock_redis: MagicMock,
+        user: Any,
+    ) -> None:
+        mock_state.get_data = AsyncMock(return_value={})
+        patches, _, _ = _patch_repos()
+        with patches["cats"]:
+            await pipeline_back_to_connection(
+                mock_callback, mock_state, user, MagicMock(), mock_redis, MagicMock(),
+            )
+
+        mock_callback.answer.assert_awaited_once()
+        assert "устарели" in mock_callback.answer.call_args[0][0]
+        mock_state.clear.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

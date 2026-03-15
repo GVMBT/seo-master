@@ -32,6 +32,7 @@ from aiogram.types import (
 )
 
 from bot.helpers import safe_edit_text, safe_message
+from bot.service_factory import ProjectServiceFactory
 from bot.validators import TG_CHANNEL_RE
 from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
@@ -39,6 +40,8 @@ from db.client import SupabaseClient
 from db.models import PlatformConnectionCreate, User
 from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
+    pipeline_no_projects_kb,
+    pipeline_projects_kb,
     social_connections_kb,
     social_no_connections_kb,
 )
@@ -201,6 +204,50 @@ async def _show_connection_step_msg(
         project_id=project_id,
         project_name=project_name,
     )
+
+
+# ---------------------------------------------------------------------------
+# Back navigation: step 2 -> step 1 (project selection)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(
+    SocialPipelineFSM.select_connection,
+    F.data == "pipeline:social:back_project",
+)
+async def pipeline_back_to_project(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    project_service_factory: ProjectServiceFactory,
+) -> None:
+    """Go back from step 2 (connection) to step 1 (project selection)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    proj_svc = project_service_factory(db)
+    projects = await proj_svc.list_by_user(user.id)
+
+    if not projects:
+        await safe_edit_text(
+            msg,
+            f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+            reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
+        )
+    else:
+        await safe_edit_text(
+            msg,
+            f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
+            reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
+        )
+
+    await state.set_state(SocialPipelineFSM.select_project)
+    await save_checkpoint(redis, user.id, current_step="select_project", pipeline_type="social")
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------

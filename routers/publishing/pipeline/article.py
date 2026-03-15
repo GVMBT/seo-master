@@ -880,6 +880,82 @@ async def pipeline_create_category_name(
 
 
 # ---------------------------------------------------------------------------
+# Back navigation: step 2 -> step 1, step 3 -> step 2
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(
+    ArticlePipelineFSM.select_wp,
+    F.data == "pipeline:article:back_project",
+)
+async def pipeline_back_to_project(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    project_service_factory: ProjectServiceFactory,
+) -> None:
+    """Go back from step 2 (WP) to step 1 (project selection)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    proj_svc = project_service_factory(db)
+    projects = await proj_svc.list_by_user(user.id)
+
+    if not projects:
+        await safe_edit_text(
+            msg,
+            "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+            reply_markup=pipeline_no_projects_kb(),
+        )
+    else:
+        await safe_edit_text(
+            msg,
+            "Статья (1/5) — Проект\n\nДля какого проекта?",
+            reply_markup=pipeline_projects_kb(projects),
+        )
+
+    await state.set_state(ArticlePipelineFSM.select_project)
+    await save_checkpoint(redis, user.id, current_step="select_project")
+    await callback.answer()
+
+
+@router.callback_query(
+    ArticlePipelineFSM.select_category,
+    F.data == "pipeline:article:back_wp",
+)
+async def pipeline_back_to_wp(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+    redis: RedisClient,
+) -> None:
+    """Go back from step 3 (category) to step 2 (WP)."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    project_name = data.get("project_name", "")
+
+    if not project_id:
+        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await state.clear()
+        await clear_checkpoint(redis, user.id)
+        return
+
+    await _show_wp_step(callback, state, user, db, http_client, redis, project_id, project_name)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
 # Return to preview after WP connection from Variant B (F5.5)
 # ---------------------------------------------------------------------------
 
