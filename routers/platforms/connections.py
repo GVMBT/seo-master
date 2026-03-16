@@ -27,6 +27,8 @@ from bot.service_factory import ProjectServiceFactory
 from bot.texts.connections import (
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
+    VK_STEP1_GROUP_URL,
+    VK_STEP2_OAUTH,
     WP_STEP1_URL,
     WP_STEP2_LOGIN,
     WP_STEP3_CREDENTIALS,
@@ -746,12 +748,7 @@ async def start_vk_connect(
     )
 
     await msg.answer(
-        "Подключение VK\n\n"
-        "Отправьте ссылку на группу VK, к которой хотите подключиться.\n\n"
-        "Примеры:\n"
-        "• https://vk.com/club123456\n"
-        "• https://vk.com/mygroup\n"
-        "• 123456 (ID группы)",
+        VK_STEP1_GROUP_URL,
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
@@ -840,9 +837,7 @@ async def vk_process_group_url(
 
     safe_name = html.escape(group_name or f"Группа {resolved_id}")
     await message.answer(
-        f"Группа найдена: <b>{safe_name}</b>\n\n"
-        "Нажмите кнопку ниже, чтобы предоставить доступ на публикацию.\n"
-        "Ссылка действительна 30 минут.",
+        VK_STEP2_OAUTH.format(group_name=safe_name),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Подтвердить доступ к группе", url=oauth_url)],

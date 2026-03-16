@@ -892,7 +892,6 @@ async def schedule_cancel(
     data = await state.get_data()
     cat_id = data.get("sched_cat_id")
     conn_id = data.get("sched_conn_id")
-    has_schedule = data.get("sched_has_schedule", False)
     await state.clear()
 
     if cat_id and conn_id:

@@ -39,61 +39,49 @@ class GeneratedImage:
     height: int
 
 
-def _flatten_image_settings(context: dict[str, Any]) -> dict[str, Any]:
-    """Flatten nested image_settings into top-level prompt variables.
+def _normalize_list(settings: dict[str, Any], key: str, legacy_key: str = "") -> list[str]:
+    """Normalize a settings field to a list of strings."""
+    val = settings.get(key)
+    if val is None:
+        val = []
+    if isinstance(val, str):
+        return [val]
+    if not isinstance(val, list):
+        return [str(val)]
+    if not val and legacy_key:
+        legacy = settings.get(legacy_key)
+        if isinstance(legacy, str):
+            return [legacy]
+        if legacy is not None:
+            return [str(legacy)]
+    return [str(v) for v in val if v is not None]
 
-    image_v1.yaml expects flat keys: style, tone, camera_instruction, etc.
-    ImageService receives image_settings as a nested dict from preview.py.
-    This function extracts the first value from each list-field and maps it
-    to the flat key expected by the prompt template.
-    """
+
+def _flatten_image_settings(context: dict[str, Any]) -> dict[str, Any]:
+    """Flatten nested image_settings into top-level prompt variables."""
     flat = dict(context)
     settings = flat.get("image_settings", {})
 
-    # styles[] or style (legacy flat string from UI) → style
-    styles = settings.get("styles", [])
-    if isinstance(styles, str):
-        styles = [styles]
-    if not styles:
-        legacy_style = settings.get("style")
-        if legacy_style:
-            styles = [legacy_style]
+    styles = _normalize_list(settings, "styles", "style")
     if styles:
         flat.setdefault("style", styles[0])
 
-    # tones[] or tone (legacy) → tone
-    tones = settings.get("tones", [])
-    if isinstance(tones, str):
-        tones = [tones]
-    if not tones:
-        legacy_tone = settings.get("tone")
-        if legacy_tone:
-            tones = [legacy_tone]
+    tones = _normalize_list(settings, "tones", "tone")
     if tones:
         flat.setdefault("tone", tones[0])
 
-    # cameras[] → camera_instruction (join into one instruction)
-    cameras = settings.get("cameras", [])
-    if isinstance(cameras, str):
-        cameras = [cameras]
+    cameras = _normalize_list(settings, "cameras")
     if cameras:
         flat.setdefault("camera_instruction", f"Камера: {', '.join(cameras)}.")
 
-    # angles[] → angle_instruction (join into one instruction)
-    angles = settings.get("angles", [])
-    if isinstance(angles, str):
-        angles = [angles]
+    angles = _normalize_list(settings, "angles")
     if angles:
         flat.setdefault("angle_instruction", f"Ракурс: {', '.join(angles)}.")
 
-    # quality[] → quality_instruction
-    quality = settings.get("quality", [])
-    if isinstance(quality, str):
-        quality = [quality]
+    quality = _normalize_list(settings, "quality")
     if quality:
         flat.setdefault("quality_instruction", f"Качество: {', '.join(quality)}.")
 
-    # text_on_image → text_on_image_instruction
     text_on_image = settings.get("text_on_image")
     if text_on_image:
         flat.setdefault("text_on_image_instruction", text_on_image)

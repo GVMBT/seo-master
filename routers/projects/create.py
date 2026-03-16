@@ -74,7 +74,6 @@ _FIELD_LABELS: dict[str, str] = {
     "company_address": "адрес",
     "company_phone": "телефон",
     "company_email": "email",
-    "timezone": "часовой пояс",
 }
 
 _FIELD_LIMITS: dict[str, tuple[int, int]] = {
@@ -89,7 +88,6 @@ _FIELD_LIMITS: dict[str, tuple[int, int]] = {
     "company_address": (2, 255),
     "company_phone": (5, 30),
     "company_email": (5, 100),
-    "timezone": (3, 50),
 }
 
 
