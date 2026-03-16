@@ -74,6 +74,8 @@ def _flatten_image_settings(context: dict[str, Any]) -> dict[str, Any]:
 
     # cameras[] → camera_instruction (join into one instruction)
     cameras = settings.get("cameras", [])
+    if isinstance(cameras, str):
+        cameras = [cameras]
     if cameras:
         flat.setdefault("camera_instruction", f"Камера: {', '.join(cameras)}.")
 

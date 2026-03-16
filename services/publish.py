@@ -784,8 +784,6 @@ class PublishService:
                 from services.ai.images import ImageService
 
                 image_service = ImageService(self._ai_orchestrator)
-                if not project:
-                    project = await self._projects.get_by_id(project_id)
                 img_settings = dict(eff_image_settings or {})
                 # Pinterest: vertical 2:3 aspect ratio
                 if connection.platform_type == "pinterest":

@@ -284,7 +284,7 @@ async def show_category_card(
     # Image settings (project fallback → category)
     proj = await ProjectsRepository(db).get_by_id(category.project_id)
     eff_image_settings = (proj.image_settings if proj else None) or category.image_settings or {}
-    img_count = eff_image_settings.get("count") if eff_image_settings else None
+    img_count = eff_image_settings.get("count")
     if img_count is not None:
         lines.append(f"\U0001f5bc Медиа: \u2705 {img_count} файлов")
     else:
