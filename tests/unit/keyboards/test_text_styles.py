@@ -1,8 +1,7 @@
 """Tests for text style list and styles/style key consistency.
 
 Verifies:
-- _TEXT_STYLES in keyboards/inline.py contains exactly 8 items (no gender styles)
-- _TEXT_STYLES in routers/categories/content_settings.py matches keyboards/inline.py
+- TEXT_STYLES in bot/texts/content_options.py contains exactly 10 items (with gender styles)
 - AI services read text_settings["styles"] (plural, list) and join with comma
 """
 
@@ -11,11 +10,10 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from keyboards.inline import _TEXT_STYLES as INLINE_TEXT_STYLES
-from routers.categories.content_settings import _TEXT_STYLES as ROUTER_TEXT_STYLES
+from bot.texts.content_options import TEXT_STYLES
 
 # ---------------------------------------------------------------------------
-# 1. Gender styles removed
+# 1. Text styles content
 # ---------------------------------------------------------------------------
 
 _EXPECTED_STYLES: list[str] = [
@@ -27,36 +25,19 @@ _EXPECTED_STYLES: list[str] = [
     "\u041a\u0440\u0435\u0430\u0442\u0438\u0432\u043d\u044b\u0439",
     "\u0418\u043d\u0444\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u043d\u044b\u0439",
     "\u0421 \u044e\u043c\u043e\u0440\u043e\u043c",
+    "\u041c\u0443\u0436\u0441\u043a\u043e\u0439",
+    "\u0416\u0435\u043d\u0441\u043a\u0438\u0439",
 ]
 
 
-def test_inline_text_styles_has_no_gender_styles() -> None:
-    """_TEXT_STYLES in keyboards/inline.py must not contain gender styles."""
-    assert "\u041c\u0443\u0436\u0441\u043a\u043e\u0439" not in INLINE_TEXT_STYLES
-    assert "\u0416\u0435\u043d\u0441\u043a\u0438\u0439" not in INLINE_TEXT_STYLES
-
-
-def test_router_text_styles_has_no_gender_styles() -> None:
-    """_TEXT_STYLES in content_settings.py must not contain gender styles."""
-    assert "\u041c\u0443\u0436\u0441\u043a\u043e\u0439" not in ROUTER_TEXT_STYLES
-    assert "\u0416\u0435\u043d\u0441\u043a\u0438\u0439" not in ROUTER_TEXT_STYLES
-
-
-def test_text_styles_count_is_eight() -> None:
-    """Both _TEXT_STYLES lists must have exactly 8 items."""
-    assert len(INLINE_TEXT_STYLES) == 8
-    assert len(ROUTER_TEXT_STYLES) == 8
-
-
-def test_text_styles_lists_match() -> None:
-    """keyboards/inline.py and routers/categories/content_settings.py lists must be identical."""
-    assert INLINE_TEXT_STYLES == ROUTER_TEXT_STYLES
+def test_text_styles_count_is_ten() -> None:
+    """TEXT_STYLES list must have exactly 10 items."""
+    assert len(TEXT_STYLES) == 10
 
 
 def test_text_styles_exact_content() -> None:
-    """Both lists must contain exactly the expected 8 styles in order."""
-    assert INLINE_TEXT_STYLES == _EXPECTED_STYLES
-    assert ROUTER_TEXT_STYLES == _EXPECTED_STYLES
+    """TEXT_STYLES must contain exactly the expected 10 styles in order."""
+    assert TEXT_STYLES == _EXPECTED_STYLES
 
 
 # ---------------------------------------------------------------------------

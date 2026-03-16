@@ -196,6 +196,10 @@ def project_card_kb(project_id: int, *, has_keywords: bool) -> InlineKeyboardMar
         InlineKeyboardButton(text="Категории", callback_data=f"project:{pid}:categories"),
     ])
 
+    rows.append([
+        InlineKeyboardButton(text="Контент", callback_data=f"project:{pid}:content_settings"),
+    ])
+
     if has_keywords:
         rows.append([
             InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
@@ -397,7 +401,6 @@ def category_card_kb(category_id: int, project_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="Цены", callback_data=f"category:{cid}:prices"),
-                InlineKeyboardButton(text="Настройки", callback_data=f"category:{cid}:content_settings"),
             ],
             [
                 InlineKeyboardButton(
@@ -808,52 +811,101 @@ def prices_kb(cat_id: int, has_prices: bool) -> InlineKeyboardMarkup:
 
 
 # ---------------------------------------------------------------------------
-# Content settings
+# Project content settings (psettings:{pid}:*)
 # ---------------------------------------------------------------------------
 
-_TEXT_STYLES: list[str] = [
-    "Рекламный",
-    "Мотивационный",
-    "Дружелюбный",
-    "Разговорный",
-    "Профессиональный",
-    "Креативный",
-    "Информативный",
-    "С юмором",
-]
 
-_IMAGE_STYLES: list[str] = [
-    "Фотореализм",
-    "Аниме",
-    "Масло",
-    "Акварель",
-    "Мультяшный",
-    "Минимализм",
-]
-
-
-def content_settings_kb(cat_id: int, settings: dict[str, Any]) -> InlineKeyboardMarkup:
-    """Main content settings screen (UX_TOOLBOX section 12)."""
+def project_content_settings_kb(pid: int) -> InlineKeyboardMarkup:
+    """Main project content settings screen."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Длина статьи", callback_data=f"settings:{cat_id}:text_length")],
-            [InlineKeyboardButton(text="Стиль текста", callback_data=f"settings:{cat_id}:text_style")],
-            [InlineKeyboardButton(text="Изображения", callback_data=f"settings:{cat_id}:images")],
-            [InlineKeyboardButton(text="К категории", callback_data=f"category:{cat_id}:card")],
+            [InlineKeyboardButton(text="Текст", callback_data=f"psettings:{pid}:text")],
+            [InlineKeyboardButton(text="Изображения", callback_data=f"psettings:{pid}:images")],
+            [InlineKeyboardButton(text="К проекту", callback_data=f"project:{pid}:card")],
         ]
     )
 
 
-def text_style_kb(cat_id: int, selected: list[str]) -> InlineKeyboardMarkup:
-    """Multi-select text style grid (UX_TOOLBOX section 12.2)."""
+def project_text_menu_kb(pid: int) -> InlineKeyboardMarkup:
+    """Text settings sub-menu."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Длина статьи", callback_data=f"psettings:{pid}:words")],
+            [InlineKeyboardButton(text="HTML-верстка", callback_data=f"psettings:{pid}:html")],
+            [InlineKeyboardButton(text="Стиль текста", callback_data=f"psettings:{pid}:tstyle")],
+            [InlineKeyboardButton(text="Назад", callback_data=f"psettings:{pid}:back")],
+        ]
+    )
+
+
+def _multi_select_grid(
+    items: list[str],
+    selected: set[str],
+    cb_prefix: str,
+    back_cb: str,
+    *,
+    cols: int = 2,
+) -> InlineKeyboardMarkup:
+    """Generic multi-select grid with checkmark prefix."""
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
-    for idx, style in enumerate(_TEXT_STYLES):
-        prefix = "\u2713 " if style in selected else ""
+    for idx, item in enumerate(items):
+        prefix = "\u2713 " if item in selected else ""
         row.append(
             InlineKeyboardButton(
-                text=f"{prefix}{style}",
-                callback_data=f"settings:{cat_id}:ts:{idx}",
+                text=f"{prefix}{item}",
+                callback_data=f"{cb_prefix}:{idx}",
+            ),
+        )
+        if len(row) == cols:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=back_cb)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _single_select_grid(
+    items: list[str],
+    current: str | None,
+    cb_prefix: str,
+    back_cb: str,
+    *,
+    cols: int = 2,
+) -> InlineKeyboardMarkup:
+    """Generic single-select grid with checkmark prefix."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for idx, item in enumerate(items):
+        prefix = "\u2713 " if item == current else ""
+        row.append(
+            InlineKeyboardButton(
+                text=f"{prefix}{item}",
+                callback_data=f"{cb_prefix}:{idx}",
+            ),
+        )
+        if len(row) == cols:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=back_cb)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def project_word_count_kb(pid: int, current: int | None) -> InlineKeyboardMarkup:
+    """Word count preset selection."""
+    from bot.texts.content_options import WORD_COUNTS
+
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for wc in WORD_COUNTS:
+        prefix = "\u2713 " if wc == current else ""
+        row.append(
+            InlineKeyboardButton(
+                text=f"{prefix}{wc}",
+                callback_data=f"psettings:{pid}:wc:{wc}",
             ),
         )
         if len(row) == 3:
@@ -861,28 +913,100 @@ def text_style_kb(cat_id: int, selected: list[str]) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="Сохранить",
-                callback_data=f"settings:{cat_id}:ts_save",
-                style=ButtonStyle.SUCCESS,
-            ),
-        ]
-    )
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=f"psettings:{pid}:text")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def image_count_kb(cat_id: int, current: int) -> InlineKeyboardMarkup:
-    """Image count selection 0-10 (UX_TOOLBOX section 12.3)."""
+def project_html_style_kb(pid: int, current: str | None) -> InlineKeyboardMarkup:
+    """HTML style single-select grid."""
+    from bot.texts.content_options import HTML_STYLES
+
+    return _single_select_grid(
+        HTML_STYLES,
+        current,
+        f"psettings:{pid}:hs",
+        f"psettings:{pid}:text",
+    )
+
+
+def project_text_style_kb(pid: int, selected: set[str]) -> InlineKeyboardMarkup:
+    """Text style multi-select grid."""
+    from bot.texts.content_options import TEXT_STYLES
+
+    return _multi_select_grid(
+        TEXT_STYLES,
+        selected,
+        f"psettings:{pid}:ts",
+        f"psettings:{pid}:text",
+    )
+
+
+def project_image_menu_kb(pid: int) -> InlineKeyboardMarkup:
+    """Image settings sub-menu."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Формат превью", callback_data=f"psettings:{pid}:pfmt")],
+            [InlineKeyboardButton(text="Форматы статьи", callback_data=f"psettings:{pid}:afmts")],
+            [InlineKeyboardButton(text="Стиль", callback_data=f"psettings:{pid}:istyle")],
+            [InlineKeyboardButton(text="Количество", callback_data=f"psettings:{pid}:icount")],
+            [InlineKeyboardButton(text="Текст на фото", callback_data=f"psettings:{pid}:tximg")],
+            [InlineKeyboardButton(text="Камера", callback_data=f"psettings:{pid}:camera")],
+            [InlineKeyboardButton(text="Ракурс", callback_data=f"psettings:{pid}:angle")],
+            [InlineKeyboardButton(text="Качество", callback_data=f"psettings:{pid}:quality")],
+            [InlineKeyboardButton(text="Тональность", callback_data=f"psettings:{pid}:tone")],
+            [InlineKeyboardButton(text="Назад", callback_data=f"psettings:{pid}:back")],
+        ]
+    )
+
+
+def project_preview_format_kb(pid: int, current: str | None) -> InlineKeyboardMarkup:
+    """Preview format single-select (aspect ratios)."""
+    from bot.texts.content_options import ASPECT_RATIOS
+
+    return _single_select_grid(
+        ASPECT_RATIOS,
+        current,
+        f"psettings:{pid}:pf",
+        f"psettings:{pid}:images",
+        cols=5,
+    )
+
+
+def project_article_format_kb(pid: int, selected: set[str]) -> InlineKeyboardMarkup:
+    """Article format multi-select (aspect ratios)."""
+    from bot.texts.content_options import ASPECT_RATIOS
+
+    return _multi_select_grid(
+        ASPECT_RATIOS,
+        selected,
+        f"psettings:{pid}:af",
+        f"psettings:{pid}:images",
+        cols=5,
+    )
+
+
+def project_image_style_kb(pid: int, selected: set[str]) -> InlineKeyboardMarkup:
+    """Image style multi-select grid."""
+    from bot.texts.content_options import IMAGE_STYLES
+
+    return _multi_select_grid(
+        IMAGE_STYLES,
+        selected,
+        f"psettings:{pid}:is",
+        f"psettings:{pid}:images",
+    )
+
+
+def project_image_count_kb(pid: int, current: int | None) -> InlineKeyboardMarkup:
+    """Image count selection 0-10."""
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for n in range(11):
-        text = f"\u2022{n}\u2022" if n == current else str(n)
+        prefix = "\u2713 " if n == current else ""
         row.append(
             InlineKeyboardButton(
-                text=text,
-                callback_data=f"settings:{cat_id}:imgcnt:{n}",
+                text=f"{prefix}{n}",
+                callback_data=f"psettings:{pid}:ic:{n}",
             ),
         )
         if len(row) == 4:
@@ -890,94 +1014,74 @@ def image_count_kb(cat_id: int, current: int) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
-    rows.append(
-        [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
-    )
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=f"psettings:{pid}:images")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def image_style_kb(cat_id: int, current: str | None) -> InlineKeyboardMarkup:
-    """Image style selection grid (UX_TOOLBOX section 12.4)."""
+def project_text_on_image_kb(pid: int, current: int | None) -> InlineKeyboardMarkup:
+    """Text-on-image percentage selection."""
+    from bot.texts.content_options import TEXT_ON_IMAGE
+
     rows: list[list[InlineKeyboardButton]] = []
-    row: list[InlineKeyboardButton] = []
-    for idx, style in enumerate(_IMAGE_STYLES):
-        prefix = "\u2713 " if style == current else ""
-        row.append(
+    for pct in TEXT_ON_IMAGE:
+        prefix = "\u2713 " if pct == current else ""
+        rows.append([
             InlineKeyboardButton(
-                text=f"{prefix}{style}",
-                callback_data=f"settings:{cat_id}:is:{idx}",
+                text=f"{prefix}{pct}%",
+                callback_data=f"psettings:{pid}:to:{pct}",
             ),
-        )
-        if len(row) == 3:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    rows.append(
-        [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
-    )
+        ])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=f"psettings:{pid}:images")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def image_presets_kb(
-    cat_id: int,
-    preset_names: list[str],
-    current_preset: str | None,
-    recommended_idx: int,
-    count: int,
-) -> InlineKeyboardMarkup:
-    """Image presets grid with stepper for count.
+def project_camera_kb(pid: int, selected: set[str]) -> InlineKeyboardMarkup:
+    """Camera multi-select grid."""
+    from bot.texts.content_options import CAMERAS
 
-    Layout: 2 presets per row, then "custom" button, stepper, back.
-    Marks: checkmark on current, star on recommended (when no current).
-    """
-    rows: list[list[InlineKeyboardButton]] = []
-    row: list[InlineKeyboardButton] = []
-    for idx, name in enumerate(preset_names):
-        if name == current_preset:
-            prefix = "\u2713 "
-        elif current_preset is None and idx == recommended_idx:
-            prefix = "\u2605 "
-        else:
-            prefix = ""
-        row.append(
-            InlineKeyboardButton(
-                text=f"{prefix}{name}",
-                callback_data=f"settings:{cat_id}:ip:{idx}",
-            ),
-        )
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    # Last preset row + "custom" button
-    row.append(
-        InlineKeyboardButton(
-            text="Свой вариант",
-            callback_data=f"settings:{cat_id}:img_custom",
-        ),
+    return _multi_select_grid(
+        CAMERAS,
+        selected,
+        f"psettings:{pid}:cm",
+        f"psettings:{pid}:images",
     )
-    rows.append(row)
-    # Stepper row: [-] [count] [+]
-    rows.append(
-        [
-            InlineKeyboardButton(text="\u25c0", callback_data=f"settings:{cat_id}:ic:-"),
-            InlineKeyboardButton(text=f"Количество: {count}", callback_data="noop"),
-            InlineKeyboardButton(text="\u25b6", callback_data=f"settings:{cat_id}:ic:+"),
-        ]
-    )
-    rows.append(
-        [InlineKeyboardButton(text="К настройкам", callback_data=f"category:{cat_id}:content_settings")],
-    )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def image_custom_kb(cat_id: int) -> InlineKeyboardMarkup:
-    """Custom image settings: style + back to presets."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Стиль изображений", callback_data=f"settings:{cat_id}:img_style")],
-            [InlineKeyboardButton(text="К пресетам", callback_data=f"settings:{cat_id}:images")],
-        ]
+def project_angle_kb(pid: int, selected: set[str]) -> InlineKeyboardMarkup:
+    """Angle multi-select grid."""
+    from bot.texts.content_options import ANGLES
+
+    return _multi_select_grid(
+        ANGLES,
+        selected,
+        f"psettings:{pid}:an",
+        f"psettings:{pid}:images",
+    )
+
+
+def project_quality_kb(pid: int, selected: set[str]) -> InlineKeyboardMarkup:
+    """Quality multi-select grid."""
+    from bot.texts.content_options import QUALITY
+
+    return _multi_select_grid(
+        QUALITY,
+        selected,
+        f"psettings:{pid}:ql",
+        f"psettings:{pid}:images",
+        cols=3,
+    )
+
+
+def project_tone_kb(pid: int, selected: set[str]) -> InlineKeyboardMarkup:
+    """Tone multi-select grid."""
+    from bot.texts.content_options import TONES
+
+    return _multi_select_grid(
+        TONES,
+        selected,
+        f"psettings:{pid}:tn",
+        f"psettings:{pid}:images",
+        cols=3,
     )
 
 

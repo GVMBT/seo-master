@@ -263,39 +263,6 @@ class TestGetDeleteImpact:
 # ---------------------------------------------------------------------------
 
 
-class TestUpdateTextSettings:
-    async def test_updates_when_owned(self, cat_svc: CategoryService) -> None:
-        category = MagicMock(project_id=10)
-        project = MagicMock(user_id=42)
-        updated = MagicMock()
-
-        cat_svc._cats_repo.get_by_id = AsyncMock(return_value=category)
-        cat_svc._projects_repo.get_by_id = AsyncMock(return_value=project)
-        cat_svc._cats_repo.update = AsyncMock(return_value=updated)
-
-        result = await cat_svc.update_text_settings(5, 42, {"min_words": 500})
-        assert result is updated
-
-    async def test_returns_none_when_not_owned(self, cat_svc: CategoryService) -> None:
-        cat_svc._cats_repo.get_by_id = AsyncMock(return_value=None)
-        result = await cat_svc.update_text_settings(5, 42, {"min_words": 500})
-        assert result is None
-
-
-class TestUpdateImageSettings:
-    async def test_updates_when_owned(self, cat_svc: CategoryService) -> None:
-        category = MagicMock(project_id=10)
-        project = MagicMock(user_id=42)
-        updated = MagicMock()
-
-        cat_svc._cats_repo.get_by_id = AsyncMock(return_value=category)
-        cat_svc._projects_repo.get_by_id = AsyncMock(return_value=project)
-        cat_svc._cats_repo.update = AsyncMock(return_value=updated)
-
-        result = await cat_svc.update_image_settings(5, 42, {"count": 3})
-        assert result is updated
-
-
 class TestUpdatePrices:
     async def test_updates_when_owned(self, cat_svc: CategoryService) -> None:
         category = MagicMock(project_id=10)
