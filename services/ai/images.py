@@ -41,14 +41,20 @@ class GeneratedImage:
 
 def _normalize_list(settings: dict[str, Any], key: str, legacy_key: str = "") -> list[str]:
     """Normalize a settings field to a list of strings."""
-    val = settings.get(key, [])
+    val = settings.get(key)
+    if val is None:
+        val = []
     if isinstance(val, str):
         return [val]
+    if not isinstance(val, list):
+        return [str(val)]
     if not val and legacy_key:
         legacy = settings.get(legacy_key)
-        if legacy:
-            return [legacy] if isinstance(legacy, str) else list(legacy)
-    return list(val)
+        if isinstance(legacy, str):
+            return [legacy]
+        if legacy is not None:
+            return [str(legacy)]
+    return [str(v) for v in val if v is not None]
 
 
 def _flatten_image_settings(context: dict[str, Any]) -> dict[str, Any]:
