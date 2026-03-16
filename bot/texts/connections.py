@@ -13,7 +13,7 @@ Premium emoji IDs from screen/icons/:
 # ---------------------------------------------------------------------------
 
 VK_STEP1_GROUP_URL = (
-    '<emoji document_id="5305396259765394964">🔵</emoji>'
+    '<tg-emoji emoji-id="5305396259765394964">🔵</tg-emoji>'
     " <b>Подключение VK</b>\n\n"
     "Отправьте ссылку на группу VK, к которой\n"
     "хотите подключиться.\n\n"
@@ -24,12 +24,12 @@ VK_STEP1_GROUP_URL = (
 )
 
 VK_STEP2_OAUTH = (
-    '<emoji document_id="5305396259765394964">🔵</emoji>'
+    '<tg-emoji emoji-id="5305396259765394964">🔵</tg-emoji>'
     " <b>Подключение VK</b>\n\n"
     "Группа найдена: <b>{group_name}</b>\n\n"
     "Нажмите кнопку ниже, чтобы предоставить\n"
     "доступ на публикацию.\n\n"
-    '<emoji document_id="5305748374069221919">🔒</emoji>'
+    '<tg-emoji emoji-id="5305748374069221919">🔒</tg-emoji>'
     " Токен хранится в зашифрованном виде"
 )
 
@@ -38,14 +38,14 @@ VK_STEP2_OAUTH = (
 # ---------------------------------------------------------------------------
 
 WP_STEP1_URL = (
-    '<emoji document_id="5305702774401439462">🌐</emoji>'
+    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
     " <b>Подключение WordPress</b>\n\n"
     "Шаг 1/3 — Введите адрес вашего сайта\n\n"
     "<i>Пример: example.com</i>"
 )
 
 WP_STEP2_LOGIN = (
-    '<emoji document_id="5305702774401439462">🌐</emoji>'
+    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
     " <b>Подключение WordPress</b>\n\n"
     "Шаг 2/3 — Введите логин WordPress\n\n"
     "Это ваш логин для входа в панель управления\n"
@@ -55,7 +55,7 @@ WP_STEP2_LOGIN = (
 )
 
 WP_STEP3_CREDENTIALS = (
-    '<emoji document_id="5305702774401439462">🌐</emoji>'
+    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
     " <b>Подключение WordPress</b>\n\n"
     "Шаг 3/3 — Введите Application Password\n\n"
     "Как создать:\n"
@@ -69,14 +69,14 @@ WP_STEP3_CREDENTIALS = (
 )
 
 TG_STEP1_CHANNEL = (
-    '<emoji document_id="5305643301989290953">✈</emoji>'
+    '<tg-emoji emoji-id="5305643301989290953">✈</tg-emoji>'
     " <b>Подключение Telegram-канала</b>\n\n"
     "Шаг 1/2 — Введите ссылку на канал\n\n"
     "<i>Формат: @channel или t.me/channel</i>"
 )
 
 TG_STEP2_BOT_SETUP = (
-    '<emoji document_id="5305643301989290953">✈</emoji>'
+    '<tg-emoji emoji-id="5305643301989290953">✈</tg-emoji>'
     " <b>Подключение Telegram-канала</b>\n\n"
     "Шаг 2/2 — Создайте бота-публикатора\n\n"
     "Инструкция (30 секунд):\n"

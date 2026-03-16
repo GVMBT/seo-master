@@ -48,9 +48,9 @@ log = structlog.get_logger()
 router = Router()
 
 # Premium emoji for message texts
-_SETTINGS_ICON = '<emoji document_id="5305307637410206511">\u2699</emoji>'
-_TEXT_ICON = '<emoji document_id="5305682317472208455">\u270f</emoji>'
-_IMAGE_ICON = '<emoji document_id="5305545582893373314">\U0001f5bc</emoji>'
+_SETTINGS_ICON = '<tg-emoji emoji-id="5305307637410206511">\u2699</tg-emoji>'
+_TEXT_ICON = '<tg-emoji emoji-id="5305682317472208455">\u270f</tg-emoji>'
+_IMAGE_ICON = '<tg-emoji emoji-id="5305545582893373314">\U0001f5bc</tg-emoji>'
 
 
 # ---------------------------------------------------------------------------
