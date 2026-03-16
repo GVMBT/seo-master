@@ -410,7 +410,7 @@ async def pipeline_connect_tg_channel(
 
     if not TG_CHANNEL_RE.match(text):
         await message.answer(
-            "Неверный формат. Используйте @channel, t.me/channel или -100XXXXX.",
+            "Неверный формат. Используйте @channel, t.me/channel или -100XXXX.",
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         return

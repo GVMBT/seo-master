@@ -25,10 +25,6 @@ log = structlog.get_logger()
 
 COST_PER_100_WORDS = 10
 COST_PER_IMAGE = 30
-COST_DESCRIPTION = 20
-
-# Keyword generation: 50 for 50, 100 for 100, 150 for 150, 200 for 200
-COST_KEYWORDS_PER_UNIT = 1  # 1 token per keyword
 
 
 def estimate_text_cost(word_count: int) -> int:
@@ -54,11 +50,6 @@ def estimate_social_post_cost(word_count: int = 100, images_count: int = 1) -> i
 def estimate_cross_post_cost(word_count: int = 100) -> int:
     """Cross-post: text adaptation only, no images (~10 tokens)."""
     return estimate_text_cost(word_count)
-
-
-def estimate_keywords_cost(quantity: int) -> int:
-    """Keyword generation: 50-200 tokens (1:1 mapping)."""
-    return max(quantity * COST_KEYWORDS_PER_UNIT, 0)
 
 
 # ---------------------------------------------------------------------------

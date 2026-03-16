@@ -338,10 +338,10 @@ _JSONLD_RE = re.compile(
 )
 
 # Quality score thresholds (API_CONTRACTS.md §5 step 8)
-# >=80: pass, 55-79: critique, <55: block
+# >=80: pass, 65-79: critique, <65: block
 CRITIQUE_THRESHOLD = 80
-CRITIQUE_MIN = 55
-BLOCK_THRESHOLD = 55
+CRITIQUE_MIN = 65
+BLOCK_THRESHOLD = 65
 
 
 def calculate_target_length(

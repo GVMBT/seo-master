@@ -1,7 +1,6 @@
-"""Category description: AI generation, manual input, delete.
+"""Category description: AI generation (free), manual input, delete.
 
-Source of truth: UX_TOOLBOX.md section 10, FSM_SPEC.md (DescriptionGenerateFSM),
-EDGE_CASES.md E01 (balance check).
+Source of truth: UX_TOOLBOX.md section 10, FSM_SPEC.md (DescriptionGenerateFSM).
 """
 
 import html
@@ -13,7 +12,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
-from bot.config import get_settings
 from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
@@ -23,14 +21,12 @@ from db.models import User
 from keyboards.inline import (
     cancel_kb,
     category_card_kb,
-    description_confirm_kb,
     description_kb,
     description_review_kb,
     menu_kb,
 )
 from services.ai.description import DescriptionService
 from services.ai.orchestrator import AIOrchestrator
-from services.tokens import COST_DESCRIPTION, TokenService
 
 log = structlog.get_logger()
 router = Router()
@@ -42,7 +38,7 @@ router = Router()
 
 
 class DescriptionGenerateFSM(StatesGroup):
-    confirm = State()  # Cost confirmation (20 tokens)
+    generating = State()  # AI generation in progress
     review = State()  # Save / Regenerate / Cancel
     manual_input = State()  # Manual text input (10-2000 chars)
 
@@ -127,8 +123,9 @@ async def start_generate(
     user: User,
     db: SupabaseClient,
     category_service_factory: CategoryServiceFactory,
+    ai_orchestrator: AIOrchestrator,
 ) -> None:
-    """Start AI description generation — show cost confirmation."""
+    """Start AI description generation (free — no token charge)."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -146,61 +143,13 @@ async def start_generate(
     if interrupted:
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
-    settings = get_settings()
-    token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-    balance = await token_service.get_balance(user.id)
-
-    await state.set_state(DescriptionGenerateFSM.confirm)
+    await state.set_state(DescriptionGenerateFSM.generating)
     await state.update_data(
         last_update_time=time.time(),
         cat_id=cat_id,
         project_id=category.project_id,
         regeneration_count=0,
     )
-
-    safe_name = html.escape(getattr(category, "name", ""))
-    await safe_edit_text(msg, 
-        f"Сгенерировать описание для «{safe_name}»?\nСтоимость: {COST_DESCRIPTION} токенов. Баланс: {balance}.",
-        reply_markup=description_confirm_kb(cat_id, balance),
-    )
-    await callback.answer()
-
-
-# ---------------------------------------------------------------------------
-# 3. Confirm generation
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(DescriptionGenerateFSM.confirm, F.data.regexp(r"^desc:\d+:confirm_yes$"))
-async def confirm_generate(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    ai_orchestrator: AIOrchestrator,
-) -> None:
-    """Confirm AI generation — E01 balance check, charge, generate."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    settings = get_settings()
-    token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-
-    # E01: balance check
-    has_balance = await token_service.check_balance(user.id, COST_DESCRIPTION)
-    if not has_balance:
-        balance = await token_service.get_balance(user.id)
-        insufficient_msg = token_service.format_insufficient_msg(COST_DESCRIPTION, balance)
-        await safe_edit_text(msg, insufficient_msg, reply_markup=menu_kb())
-        await state.clear()
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    cat_id = int(data["cat_id"])
-    project_id = int(data["project_id"])
 
     # Show progress indicator before AI call
     await safe_edit_text(msg, f"{EMOJI_PROGRESS} Генерирую описание...")
@@ -211,7 +160,7 @@ async def confirm_generate(
         desc_svc = DescriptionService(orchestrator=ai_orchestrator, db=db)
         result = await desc_svc.generate(
             user_id=user.id,
-            project_id=project_id,
+            project_id=category.project_id,
             category_id=cat_id,
         )
         generated_text = result.content if isinstance(result.content, str) else str(result.content)
@@ -221,17 +170,6 @@ async def confirm_generate(
         await safe_edit_text(msg, "\u26a0\ufe0f Ошибка генерации. Попробуйте ещё раз.", reply_markup=menu_kb())
         return
 
-    # Charge tokens AFTER successful generation (charge-after-result)
-    try:
-        await token_service.charge(
-            user_id=user.id,
-            amount=COST_DESCRIPTION,
-            operation_type="description",
-            description=f"Генерация описания (категория #{cat_id})",
-        )
-    except Exception:
-        log.exception("description_charge_failed", cat_id=cat_id, user_id=user.id)
-
     # Move to review state
     await state.set_state(DescriptionGenerateFSM.review)
     await state.update_data(
@@ -239,11 +177,10 @@ async def confirm_generate(
         last_update_time=time.time(),
     )
 
-    regen_count = int(data.get("regeneration_count", 0))
     safe_text = html.escape(generated_text)
-    await safe_edit_text(msg, 
-        f"Описание сгенерировано (списано {COST_DESCRIPTION} токенов):\n\n<i>{safe_text}</i>",
-        reply_markup=description_review_kb(cat_id, regen_count),
+    await safe_edit_text(msg,
+        f"Описание сгенерировано:\n\n<i>{safe_text}</i>",
+        reply_markup=description_review_kb(cat_id, 0),
     )
     log.info(
         "description_generated",
@@ -253,45 +190,7 @@ async def confirm_generate(
 
 
 # ---------------------------------------------------------------------------
-# 4. Cancel generation (from confirm screen)
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(DescriptionGenerateFSM.confirm, F.data.regexp(r"^desc:\d+:confirm_no$"))
-async def cancel_generate(
-    callback: CallbackQuery,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    category_service_factory: CategoryServiceFactory,
-) -> None:
-    """Cancel generation — return to category card."""
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    cat_id = int(data["cat_id"])
-    await state.clear()
-
-    cat_svc = category_service_factory(db)
-    category = await cat_svc.get_owned_category(cat_id, user.id)
-    if not category:
-        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
-        await callback.answer()
-        return
-
-    safe_name = html.escape(category.name)
-    await safe_edit_text(msg, 
-        f"<b>{safe_name}</b>",
-        reply_markup=category_card_kb(cat_id, category.project_id),
-    )
-    await callback.answer()
-
-
-# ---------------------------------------------------------------------------
-# 5. Review: save
+# 4. Review: save
 # ---------------------------------------------------------------------------
 
 
@@ -339,7 +238,7 @@ async def review_regenerate(
     db: SupabaseClient,
     ai_orchestrator: AIOrchestrator,
 ) -> None:
-    """Regenerate description. First 2 are free, then charge again (FSM_SPEC 2.2)."""
+    """Regenerate description (free — no token charge)."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -350,21 +249,8 @@ async def review_regenerate(
     project_id = int(data["project_id"])
     regen_count = int(data.get("regeneration_count", 0))
 
-    settings = get_settings()
-    token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-
-    # After 2 free regenerations, check balance (E10)
-    if regen_count >= 2:
-        has_balance = await token_service.check_balance(user.id, COST_DESCRIPTION)
-        if not has_balance:
-            balance = await token_service.get_balance(user.id)
-            await callback.answer(
-                token_service.format_insufficient_msg(COST_DESCRIPTION, balance),
-                show_alert=True,
-            )
-            return
-
     # Show progress indicator before AI call
+    await state.set_state(DescriptionGenerateFSM.generating)
     await safe_edit_text(msg, f"{EMOJI_PROGRESS} Генерирую описание...")
     await callback.answer()
 
@@ -378,22 +264,12 @@ async def review_regenerate(
         )
         generated_text = result.content if isinstance(result.content, str) else str(result.content)
     except Exception:
+        await state.set_state(DescriptionGenerateFSM.review)
         log.exception("description_regen_failed", cat_id=cat_id, user_id=user.id)
         await callback.answer("Ошибка генерации. Попробуйте ещё раз.", show_alert=True)
         return
 
-    # Charge AFTER successful regeneration (charge-after-result, E10)
-    if regen_count >= 2:
-        try:
-            await token_service.charge(
-                user_id=user.id,
-                amount=COST_DESCRIPTION,
-                operation_type="description",
-                description=f"Перегенерация описания (категория #{cat_id}, попытка {regen_count + 1})",
-            )
-        except Exception:
-            log.exception("description_regen_charge_failed", cat_id=cat_id, user_id=user.id)
-
+    await state.set_state(DescriptionGenerateFSM.review)
     regen_count += 1
     await state.update_data(
         generated_text=generated_text,
@@ -402,9 +278,8 @@ async def review_regenerate(
     )
 
     safe_text = html.escape(generated_text)
-    cost_note = f" (списано {COST_DESCRIPTION} токенов)" if regen_count > 2 else ""
-    await safe_edit_text(msg, 
-        f"Описание перегенерировано{cost_note}:\n\n<i>{safe_text}</i>",
+    await safe_edit_text(msg,
+        f"Описание перегенерировано:\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, regen_count),
     )
     await callback.answer()

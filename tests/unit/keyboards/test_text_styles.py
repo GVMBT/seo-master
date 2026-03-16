@@ -102,6 +102,49 @@ def _make_category(**overrides: Any) -> Any:
     return Category(**defaults)
 
 
+def _build_article_md() -> str:
+    """Build mock article markdown that passes quality gates (score >= 65)."""
+    intro = (
+        "TestCo provides professional test keyword services in Moscow. "
+        "Our team has been helping businesses optimize their digital presence for over 10 years."
+    )
+    section1 = (
+        "Modern search engine optimization requires a data-driven approach. "
+        "Companies that invest in professional SEO services see significant improvements "
+        "in organic traffic and conversion rates. Our experience shows that consistent "
+        "content creation combined with technical optimization delivers the best results."
+    )
+    section2 = (
+        "When choosing an SEO provider, consider their track record and methodology. "
+        "A good agency will provide transparent reporting and measurable KPIs. "
+        "We recommend focusing on long-term strategies rather than quick fixes "
+        "that may lead to penalties from search engines."
+    )
+    section3 = (
+        "Technical audit is the foundation of any successful optimization campaign. "
+        "It identifies critical issues that prevent search engines from properly indexing "
+        "your content. Regular audits help maintain site health and performance."
+    )
+    faq = (
+        "**How long does SEO take to show results?**\n\n"
+        "Typically 3-6 months for noticeable improvements in organic rankings.\n\n"
+        "**What is included in an SEO audit?**\n\n"
+        "Technical analysis, content review, backlink profile, and competitor research."
+    )
+    conclusion = (
+        "Professional test keyword optimization is an investment in your business growth. "
+        "TestCo helps you achieve sustainable results through proven strategies."
+    )
+    return (
+        f"## Understanding test keyword\n\n{intro}\n\n"
+        f"## Why businesses need SEO services\n\n{section1}\n\n"
+        f"## How to choose the right approach\n\n{section2}\n\n"
+        f"## Technical foundations\n\n{section3}\n\n"
+        f"## FAQ\n\n{faq}\n\n"
+        f"## Conclusion\n\n{conclusion}\n"
+    )
+
+
 async def test_article_service_reads_styles_plural_key() -> None:
     """ArticleService must read text_settings['styles'] and join with comma."""
     from services.ai.orchestrator import GenerationResult
@@ -114,16 +157,7 @@ async def test_article_service_reads_styles_plural_key() -> None:
         "target_word_count": 2000,
         "suggested_images": [],
     }
-    sentences = " ".join(f"TestCo delivers test keyword services since {yr}." for yr in range(2018, 2026))
-    md = (
-        f"# Complete guide to test keyword for business\n\n"
-        f"TestCo helps with test keyword for over 10 years. {sentences}\n\n"
-        f"## What is test keyword\n\n{sentences}\n\n"
-        f"## Benefits of test keyword\n\n{sentences}\n\n"
-        f"## How to choose test keyword\n\n{sentences}\n\n"
-        f"## FAQ\n\n**How much?**\n\n15000 rubles.\n\n"
-        f"## Conclusion\n\nTestCo is your partner for test keyword. {sentences}\n"
-    )
+    md = _build_article_md()
     article_content = {
         "title": "Guide",
         "meta_description": "Desc",
@@ -169,12 +203,18 @@ async def test_article_service_reads_styles_plural_key() -> None:
     mock_orch.generate = AsyncMock(side_effect=mock_results)
     mock_db = MagicMock()
 
+    mock_score = MagicMock()
+    mock_score.total = 80
+    mock_score.issues = []
+
     with (
         patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
         patch("services.ai.articles.CategoriesRepository") as MockCatRepo,
+        patch("services.ai.quality_scorer.ContentQualityScorer") as MockScorer,
     ):
         MockProjRepo.return_value.get_by_id = AsyncMock(return_value=_make_project())
         MockCatRepo.return_value.get_by_id = AsyncMock(return_value=_make_category())
+        MockScorer.return_value.score.return_value = mock_score
 
         from services.ai.articles import ArticleService
 
@@ -254,16 +294,7 @@ async def test_article_service_default_style_when_no_styles_key() -> None:
         "target_word_count": 2000,
         "suggested_images": [],
     }
-    sentences = " ".join(f"TestCo delivers test keyword services since {yr}." for yr in range(2018, 2026))
-    md = (
-        f"# Complete guide to test keyword for business\n\n"
-        f"TestCo helps with test keyword for over 10 years. {sentences}\n\n"
-        f"## What is test keyword\n\n{sentences}\n\n"
-        f"## Benefits of test keyword\n\n{sentences}\n\n"
-        f"## How to choose test keyword\n\n{sentences}\n\n"
-        f"## FAQ\n\n**How much?**\n\n15000 rubles.\n\n"
-        f"## Conclusion\n\nTestCo is your partner for test keyword. {sentences}\n"
-    )
+    md = _build_article_md()
     article_content = {
         "title": "Guide",
         "meta_description": "Desc",
@@ -312,12 +343,18 @@ async def test_article_service_default_style_when_no_styles_key() -> None:
     # Category with NO text_settings (empty dict)
     cat_no_styles = _make_category(text_settings={})
 
+    mock_score = MagicMock()
+    mock_score.total = 80
+    mock_score.issues = []
+
     with (
         patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
         patch("services.ai.articles.CategoriesRepository") as MockCatRepo,
+        patch("services.ai.quality_scorer.ContentQualityScorer") as MockScorer,
     ):
         MockProjRepo.return_value.get_by_id = AsyncMock(return_value=_make_project())
         MockCatRepo.return_value.get_by_id = AsyncMock(return_value=cat_no_styles)
+        MockScorer.return_value.score.return_value = mock_score
 
         from services.ai.articles import ArticleService
 

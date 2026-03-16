@@ -364,14 +364,26 @@ class StarsPaymentService:
     # ------------------------------------------------------------------
 
     def format_tariffs_text(self, balance: int) -> str:
-        """Format main tariffs screen text."""
-        return (
-            f"<b>Тарифы</b>\n\n"
-            f"Ваш баланс: <b>{balance}</b> токенов\n\n"
-            f"<b>Справочник стоимости:</b>\n"
-            f"Статья на сайт (2000 слов + 4 картинки): ~320 токенов\n"
-            f"Пост в соцсети (текст + картинка): ~40 токенов"
-        )
+        """Format main tariffs screen text with package details."""
+        lines = [
+            "💎 <b>ПАКЕТЫ ТОКЕНОВ</b>\n",
+            "🎁 При первом входе: 1500 токенов в подарок!\n",
+        ]
+        emoji_map = {"mini": "🟢", "start": "🔵", "profi": "⭐", "business": "🟣", "maximum": "🔶"}
+        for name, pkg in PACKAGES.items():
+            emoji = emoji_map.get(name, "▪️")
+            lines.append(f"{emoji} <b>{pkg.label}</b>")
+            lines.append(f"  Цена: {pkg.price_rub}₽")
+            if pkg.bonus > 0:
+                lines.append(f"  Токенов: {pkg.tokens} + {pkg.bonus} бонус")
+            lines.append(f"  Итого: {pkg.total_tokens} токенов\n")
+
+        lines.append("📋 ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ:\n")
+        lines.append("📝 Генерация текста (100 слов) — 10 🪙")
+        lines.append("🖼 Генерация изображения — 30 🪙\n")
+        lines.append(f"💰 Ваш баланс: <b>{balance}</b> токенов\n")
+        lines.append("<b>Важно:</b> базовый курс 1 токен = 1 рубль, пакеты могут содержать бонусные токены")
+        return "\n".join(lines)
 
     def format_package_text(self, package_name: str) -> str:
         """Format package info for payment method selection."""

@@ -374,10 +374,18 @@ class AIOrchestrator:
 
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
-        # Extract response
-        if not response.choices:
-            raise AIGenerationError(
-                message="OpenRouter returned empty choices (content may have been filtered)",
+        # Extract response — content filter fallback
+        if (
+            not response.choices
+            or getattr(response.choices[0], "finish_reason", None) == "content_filter"
+        ):
+            response = await self._retry_on_content_filter(
+                chain=chain,
+                messages=messages,
+                rendered=rendered,
+                extra_body=extra_body,
+                kwargs=kwargs,
+                request=request,
             )
         choice = response.choices[0]
         self._check_finish_reason(choice, request.task, rendered.meta)
@@ -558,7 +566,20 @@ class AIOrchestrator:
                 )
                 await asyncio.sleep(delay)
             except Exception as exc:
-                # Non-HTTP exceptions (e.g. parsing) — do not retry
+                # JSON parse errors (truncated response) — retry once
+                if isinstance(exc, (ValueError,)) and attempt < max_retries:
+                    log.warning(
+                        "http_retry",
+                        operation="openrouter_generate",
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                        status=None,
+                        delay_s=2,
+                        error=str(exc)[:200],
+                    )
+                    await asyncio.sleep(2)
+                    continue
+                # Other non-HTTP exceptions — do not retry
                 log.error("openrouter_api_error", task=request.task, error=str(exc))
                 raise AIGenerationError(
                     message=f"OpenRouter API error: {exc}",
@@ -570,6 +591,69 @@ class AIOrchestrator:
                 message=f"OpenRouter API error: {last_exc}",
             ) from last_exc
         raise AIGenerationError(message="Unexpected retry state")  # pragma: no cover
+
+    async def _retry_on_content_filter(
+        self,
+        *,
+        chain: list[str],
+        messages: list[dict[str, Any]],
+        rendered: Any,
+        extra_body: dict[str, Any],
+        kwargs: dict[str, Any],
+        request: GenerationRequest,
+    ) -> Any:
+        """Retry with fallback models when primary returned empty choices (content filtered).
+
+        OpenRouter native fallback (extra_body.models) only triggers on provider
+        downtime, NOT on content filtering. This method explicitly tries each
+        fallback model when the primary model filters the content.
+        """
+        primary = chain[0] if chain else "unknown"
+
+        for fallback_model in chain[1:]:
+            log.warning(
+                "content_filtered_fallback",
+                task=request.task,
+                filtered_model=primary,
+                trying_model=fallback_model,
+            )
+            try:
+                fallback_extra = {**extra_body, "models": []}
+                resp = await self._client.chat.completions.create(
+                    model=fallback_model,
+                    messages=messages,  # type: ignore[arg-type]
+                    max_tokens=rendered.meta.get("max_tokens", 4000),
+                    temperature=rendered.meta.get(
+                        "temperature",
+                        0.6 if rendered.meta.get("task") == "article" else 0.7,
+                    ),
+                    extra_body=fallback_extra,
+                    timeout=rendered.meta.get("timeout", 120),
+                    **kwargs,
+                )
+                if resp.choices:
+                    fb_finish = getattr(resp.choices[0], "finish_reason", None)
+                    if fb_finish == "content_filter":
+                        log.warning("content_filtered_fallback_also_filtered", model=fallback_model)
+                        continue
+                    log.info(
+                        "content_filter_fallback_success",
+                        task=request.task,
+                        model=fallback_model,
+                    )
+                    return resp
+                log.warning("content_filtered_fallback_also_empty", model=fallback_model)
+            except Exception:
+                log.warning(
+                    "content_filtered_fallback_error",
+                    model=fallback_model,
+                    exc_info=True,
+                )
+
+        raise AIGenerationError(
+            message=f"All models returned empty choices (content filtered): {chain}",
+            user_message="Модель отклонила запрос. Попробуйте изменить формулировку.",
+        )
 
     @staticmethod
     def _apply_task_specific_params(
@@ -596,7 +680,7 @@ class AIOrchestrator:
 
     @staticmethod
     def _check_finish_reason(choice: Any, task: str, meta: dict[str, Any]) -> None:
-        """Raise if response was truncated (finish_reason=length)."""
+        """Raise if response was truncated or content-filtered."""
         finish_reason = getattr(choice, "finish_reason", None) or ""
         if finish_reason == "length":
             log.warning(
@@ -607,6 +691,12 @@ class AIOrchestrator:
             raise AIGenerationError(
                 message=f"AI response truncated (max_tokens exceeded) for task={task}",
                 user_message="Генерация обрезана из-за лимита. Попробуйте ещё раз.",
+            )
+        if finish_reason == "content_filter":
+            log.warning("generation_content_filtered", task=task)
+            raise AIGenerationError(
+                message=f"Content filtered by model for task={task}",
+                user_message="Модель отклонила запрос. Попробуйте изменить формулировку.",
             )
 
     @staticmethod
