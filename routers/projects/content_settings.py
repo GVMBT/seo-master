@@ -13,6 +13,7 @@ from aiogram.types import CallbackQuery
 
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts.emoji import Emoji
 from bot.texts.content_options import (
     ANGLES,
     ASPECT_RATIOS,
@@ -51,16 +52,16 @@ from keyboards.inline import (
 log = structlog.get_logger()
 router = Router()
 
-# Premium emoji for message texts
-_E_SET = '<tg-emoji emoji-id="5305307637410206511">\u2699</tg-emoji>'
-_E_TXT = '<tg-emoji emoji-id="5305682317472208455">\u270f</tg-emoji>'
-_E_IMG = '<tg-emoji emoji-id="5305545582893373314">\U0001f5bc</tg-emoji>'
+# Premium emoji (centralized in bot/texts/emoji.py)
+_E_SET = Emoji.SLIDERS
+_E_TXT = Emoji.PEN
+_E_IMG = Emoji.IMAGE
 
 _PLAT_ICONS: dict[str, str] = {
-    "wordpress": '<tg-emoji emoji-id="5305702774401439462">\U0001f310</tg-emoji>',
-    "telegram": '<tg-emoji emoji-id="5305643301989290953">\u2708</tg-emoji>',
-    "vk": '<tg-emoji emoji-id="5305396259765394964">\U0001f535</tg-emoji>',
-    "pinterest": '<tg-emoji emoji-id="5305654597753279465">\U0001f4cc</tg-emoji>',
+    "wordpress": Emoji.WORDPRESS,
+    "telegram": Emoji.TELEGRAM,
+    "vk": Emoji.VK,
+    "pinterest": Emoji.PINTEREST,
 }
 
 _PLAT_NAMES: dict[str, str] = {
