@@ -376,7 +376,7 @@ class StarsPaymentService:
             lines.append(f"  Цена: {pkg.price_rub}₽")
             if pkg.bonus > 0:
                 lines.append(f"  Токенов: {pkg.tokens} + {pkg.bonus} бонус")
-            lines.append(f"  Итого: {pkg.total_tokens}\n")
+            lines.append(f"  Итого: {pkg.total_tokens} токенов\n")
 
         lines.append("📋 ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ:\n")
         lines.append("📝 Генерация текста (100 слов) — 10 🪙")
