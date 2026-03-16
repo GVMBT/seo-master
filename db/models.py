@@ -209,30 +209,25 @@ class CategoryUpdate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 5. platform_content_overrides
+# 5. project_platform_settings (per-platform content overrides at project level)
 # ---------------------------------------------------------------------------
 
 
-class PlatformContentOverride(BaseModel):
+class ProjectPlatformSettings(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    category_id: int
+    project_id: int
     platform_type: str
-    image_settings: dict[str, Any] | None = None
-    text_settings: dict[str, Any] | None = None
+    text_settings: dict[str, Any] = Field(default_factory=dict)
+    image_settings: dict[str, Any] = Field(default_factory=dict)
 
 
-class PlatformContentOverrideCreate(BaseModel):
-    category_id: int
+class ProjectPlatformSettingsUpsert(BaseModel):
+    project_id: int
     platform_type: str
-    image_settings: dict[str, Any] | None = None
     text_settings: dict[str, Any] | None = None
-
-
-class PlatformContentOverrideUpdate(BaseModel):
     image_settings: dict[str, Any] | None = None
-    text_settings: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------

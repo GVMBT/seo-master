@@ -6,8 +6,6 @@ from db.models import (
     Category,
     CategoryCreate,
     CategoryUpdate,
-    PlatformContentOverride,
-    PlatformContentOverrideCreate,
 )
 from db.repositories.categories import CategoriesRepository
 
@@ -28,17 +26,6 @@ def category_row() -> dict:
         "image_settings": {"style": "photo"},
         "text_settings": {"tone": "professional"},
         "created_at": "2026-01-01T00:00:00+00:00",
-    }
-
-
-@pytest.fixture
-def override_row() -> dict:
-    return {
-        "id": 1,
-        "category_id": 1,
-        "platform_type": "wordpress",
-        "image_settings": {"style": "illustration"},
-        "text_settings": None,
     }
 
 
@@ -107,48 +94,3 @@ class TestDelete:
     async def test_success(self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict) -> None:
         mock_db.set_response("categories", MockResponse(data=[category_row]))
         assert await repo.delete(1) is True
-
-
-class TestContentSettingsInheritance:
-    """F41: override field None -> inherit from category."""
-
-    async def test_no_override_returns_category_settings(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict
-    ) -> None:
-        mock_db.set_response("categories", MockResponse(data=category_row))
-        mock_db.set_response("platform_content_overrides", MockResponse(data=None))
-        image_s, text_s = await repo.get_content_settings(1, "wordpress")
-        assert image_s == {"style": "photo"}
-        assert text_s == {"tone": "professional"}
-
-    async def test_override_replaces_image_settings(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient, category_row: dict, override_row: dict
-    ) -> None:
-        mock_db.set_response("categories", MockResponse(data=category_row))
-        mock_db.set_response("platform_content_overrides", MockResponse(data=override_row))
-        image_s, text_s = await repo.get_content_settings(1, "wordpress")
-        # Override has image_settings, so it replaces category's
-        assert image_s == {"style": "illustration"}
-        # Override has text_settings=None, so category's is inherited
-        assert text_s == {"tone": "professional"}
-
-    async def test_category_not_found_returns_empty(
-        self, repo: CategoriesRepository, mock_db: MockSupabaseClient
-    ) -> None:
-        mock_db.set_response("categories", MockResponse(data=None))
-        image_s, text_s = await repo.get_content_settings(999, "wordpress")
-        assert image_s == {}
-        assert text_s == {}
-
-
-class TestUpsertOverride:
-    async def test_upsert(self, repo: CategoriesRepository, mock_db: MockSupabaseClient, override_row: dict) -> None:
-        mock_db.set_response("platform_content_overrides", MockResponse(data=[override_row]))
-        result = await repo.upsert_override(
-            PlatformContentOverrideCreate(
-                category_id=1,
-                platform_type="wordpress",
-                image_settings={"style": "illustration"},
-            )
-        )
-        assert isinstance(result, PlatformContentOverride)
