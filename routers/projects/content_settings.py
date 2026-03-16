@@ -229,7 +229,7 @@ async def show_settings(
     if not project:
         return
     svc = project_service_factory(db)
-    platforms = await _get_platforms(db, svc._encryption_key, pid)
+    platforms = await _get_platforms(db, svc.encryption_key, pid)
     await safe_edit_text(
         msg, _main_screen_text(),
         reply_markup=project_content_settings_kb(pid, platforms),
@@ -255,7 +255,7 @@ async def back_to_settings(
     if not project:
         return
     svc = project_service_factory(db)
-    platforms = await _get_platforms(db, svc._encryption_key, pid)
+    platforms = await _get_platforms(db, svc.encryption_key, pid)
     await safe_edit_text(
         msg, _main_screen_text(),
         reply_markup=project_content_settings_kb(pid, platforms),

@@ -54,6 +54,11 @@ class ProjectService:
         self._platform_settings_repo = ProjectPlatformSettingsRepository(db)
         self._encryption_key = encryption_key
 
+    @property
+    def encryption_key(self) -> str:
+        """Public access to encryption key (needed for CredentialManager in routers)."""
+        return self._encryption_key
+
     # ------------------------------------------------------------------
     # Ownership helpers
     # ------------------------------------------------------------------
