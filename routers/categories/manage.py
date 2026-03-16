@@ -15,6 +15,7 @@ from bot.helpers import get_owned_project, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
 from db.client import SupabaseClient
 from db.models import User
+from db.repositories.projects import ProjectsRepository
 from keyboards.inline import (
     category_card_kb,
     category_created_kb,
@@ -280,8 +281,10 @@ async def show_category_card(
     else:
         lines.append("\U0001f4b0 Цены: \u274c не заданы")
 
-    # Image settings
-    img_count = category.image_settings.get("count") if category.image_settings else None
+    # Image settings (project fallback → category)
+    proj = await ProjectsRepository(db).get_by_id(category.project_id)
+    eff_image_settings = (proj.image_settings if proj else None) or category.image_settings or {}
+    img_count = eff_image_settings.get("count") if eff_image_settings else None
     if img_count is not None:
         lines.append(f"\U0001f5bc Медиа: \u2705 {img_count} файлов")
     else:

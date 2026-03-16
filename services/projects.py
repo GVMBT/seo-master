@@ -9,6 +9,7 @@ Source of truth: ARCHITECTURE.md section 2 ("routers -> services -> repositories
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import structlog
 
@@ -140,6 +141,34 @@ class ProjectService:
         if not project:
             return None
         return await self._repo.update(project_id, update)
+
+    # ------------------------------------------------------------------
+    # Content settings
+    # ------------------------------------------------------------------
+
+    async def update_text_settings(
+        self,
+        project_id: int,
+        user_id: int,
+        settings: dict[str, Any],
+    ) -> Project | None:
+        """Update text_settings for an owned project."""
+        project = await self.get_owned_project(project_id, user_id)
+        if not project:
+            return None
+        return await self._repo.update(project_id, ProjectUpdate(text_settings=settings))
+
+    async def update_image_settings(
+        self,
+        project_id: int,
+        user_id: int,
+        settings: dict[str, Any],
+    ) -> Project | None:
+        """Update image_settings for an owned project."""
+        project = await self.get_owned_project(project_id, user_id)
+        if not project:
+            return None
+        return await self._repo.update(project_id, ProjectUpdate(image_settings=settings))
 
     # ------------------------------------------------------------------
     # Delete (E11 + E42)

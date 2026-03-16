@@ -77,6 +77,20 @@ def _flatten_image_settings(context: dict[str, Any]) -> dict[str, Any]:
     if cameras:
         flat.setdefault("camera_instruction", f"Камера: {', '.join(cameras)}.")
 
+    # angles[] → angle_instruction (join into one instruction)
+    angles = settings.get("angles", [])
+    if isinstance(angles, str):
+        angles = [angles]
+    if angles:
+        flat.setdefault("angle_instruction", f"Ракурс: {', '.join(angles)}.")
+
+    # quality[] → quality_instruction
+    quality = settings.get("quality", [])
+    if isinstance(quality, str):
+        quality = [quality]
+    if quality:
+        flat.setdefault("quality_instruction", f"Качество: {', '.join(quality)}.")
+
     # text_on_image → text_on_image_instruction
     text_on_image = settings.get("text_on_image")
     if text_on_image:

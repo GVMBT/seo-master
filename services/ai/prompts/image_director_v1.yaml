@@ -23,6 +23,10 @@ system: |
   - Never include text/watermarks in images unless explicitly requested
   - Consider brand colors when relevant to composition
   - For YMYL niches (medical, legal, finance): professional, trustworthy imagery only
+  - If a camera model is specified, emulate its characteristic rendering (depth of field, grain, color science)
+  - If an angle/perspective is specified, use it as the primary composition direction
+  - If quality tier is specified, match the render fidelity (e.g. cinematic lighting, 8K detail, studio setup)
+  - If text_on_image > 0, include a text overlay covering approximately that percentage of the image area
 
 user: |
   Plan <<image_count>> images for this article.
@@ -31,6 +35,10 @@ user: |
   Company: <<company_name>> (<<niche>>)
   <% if brand_colors %>Brand colors: <<brand_colors>><% endif %>
   Image style preference: <<image_style>>
+  <% if camera %>Camera: <<camera>> — emulate its characteristic lens rendering<% endif %>
+  <% if angle %>Composition angle: <<angle>><% endif %>
+  <% if quality %>Render quality: <<quality>><% endif %>
+  <% if text_on_image %>Text overlay: cover ~<<text_on_image>>% of the image<% endif %>
 
   Article summary (first 500 words):
   <<article_summary>>
@@ -63,3 +71,15 @@ variables:
   - name: image_style
     required: false
     default: "photorealism, professional"
+  - name: camera
+    required: false
+    default: ""
+  - name: angle
+    required: false
+    default: ""
+  - name: quality
+    required: false
+    default: ""
+  - name: text_on_image
+    required: false
+    default: 0

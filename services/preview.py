@@ -110,8 +110,12 @@ class PreviewService:
 
         category = await CategoriesRepository(self._db).get_by_id(category_id)
         project = await ProjectsRepository(self._db).get_by_id(project_id)
+        # Fallback: project.image_settings → category.image_settings
+        eff_image_settings = (
+            (project.image_settings if project else None) or (category.image_settings if category else None) or {}
+        )
         if image_count is None:
-            image_count = int((category.image_settings or {}).get("count", 4) if category else 4)
+            image_count = int(eff_image_settings.get("count", 4))
 
         # Phase 1: Gather websearch + research data (Serper PAA + Firecrawl + Sonar Pro)
         project_url = project.website_url if project else None
@@ -128,13 +132,12 @@ class PreviewService:
             company_description_short=((project.description or "")[:200]) if project else "",
         )
 
-        image_settings = (category.image_settings or {}) if category else {}
         image_context: dict[str, Any] = {
             "keyword": keyword,
             "content_type": "article",
             "company_name": (project.company_name or "") if project else "",
             "specialization": (project.specialization or "") if project else "",
-            "image_settings": image_settings,
+            "image_settings": eff_image_settings,
         }
 
         # Load branding colors for image prompt (image_v1.yaml)
@@ -210,8 +213,8 @@ class PreviewService:
                 image_count=image_count,
                 target_sections=target_sections,
                 brand_colors=(branding.colors if branding and branding.colors else {}),
-                image_style=image_settings.get("style", "photorealism, professional"),
-                image_tone=image_settings.get("tone", "professional"),
+                image_style=eff_image_settings.get("style", "photorealism, professional"),
+                image_tone=eff_image_settings.get("tone", "professional"),
             )
             director_result = await director_service.plan_images(director_context, user_id)
             director_plans = director_result.images if director_result else None
@@ -283,8 +286,10 @@ class PreviewService:
         word_count = len(content_markdown.split())
 
         # Word count warning: log if significantly below target (not a hard block)
-        text_settings = (category.text_settings or {}) if category else {}
-        words_min = _safe_int(text_settings.get("words_min"), 1500)
+        eff_text_settings = (
+            (project.text_settings if project else None) or (category.text_settings if category else None) or {}
+        )
+        words_min = _safe_int(eff_text_settings.get("words_min"), 1500)
         if word_count < int(words_min * 0.8):
             log.warning(
                 "article_word_count_below_target",

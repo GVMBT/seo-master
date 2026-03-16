@@ -143,7 +143,7 @@ class SocialPostService:
 
             raise AIGenerationError(message="Project or category not found")
 
-        text_settings = overrides or category.text_settings or {}
+        text_settings = overrides or project.text_settings or category.text_settings or {}
         styles = text_settings.get("styles")
         if isinstance(styles, str):
             styles = [styles]

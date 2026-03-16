@@ -21,6 +21,7 @@ user: |
   Стиль: <<style>>. Тональность: <<tone>>.
   <<camera_instruction>>
   <<angle_instruction>>
+  <<quality_instruction>>
   <<text_on_image_instruction>>
 
   Цветовая палитра сайта:
@@ -64,6 +65,10 @@ variables:
     default: ""
   - name: angle_instruction
     source: image_settings.angles
+    required: false
+    default: ""
+  - name: quality_instruction
+    source: image_settings.quality
     required: false
     default: ""
   - name: text_on_image_instruction

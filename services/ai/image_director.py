@@ -59,9 +59,15 @@ DIRECTOR_SCHEMA: dict[str, Any] = {
                             "type": "string",
                             "enum": [
                                 "1:1",
+                                "2:3",
                                 "3:2",
+                                "3:4",
                                 "4:3",
+                                "4:5",
+                                "5:4",
+                                "9:16",
                                 "16:9",
+                                "21:9",
                             ],
                             "description": "Best aspect ratio for this content",
                         },
@@ -79,7 +85,7 @@ DIRECTOR_SCHEMA: dict[str, Any] = {
 # Default negative prompt when Director is unavailable (E54 fallback)
 _DEFAULT_NEGATIVE = "text, watermark, blurry, low quality, cartoon, illustration, anime"
 
-_VALID_ASPECT_RATIOS = {"1:1", "3:2", "4:3", "16:9"}
+_VALID_ASPECT_RATIOS = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 _DEFAULT_ASPECT_RATIO = "4:3"
 
 
@@ -117,6 +123,10 @@ class ImageDirectorContext:
     brand_colors: dict[str, str] | str = ""
     image_style: str = "photorealism, professional"
     image_tone: str = "professional"
+    camera: str = ""
+    angle: str = ""
+    quality: str = ""
+    text_on_image: int = 0
 
 
 class ImageDirectorService:
@@ -175,7 +185,7 @@ class ImageDirectorService:
         """Build context dict for Jinja2 prompt template."""
         # Truncate to ~500 words (spec §7.4.2)
         words = ctx.article_summary.split()[:500]
-        return {
+        result: dict[str, Any] = {
             "article_title": ctx.article_title,
             "article_summary": " ".join(words),
             "company_name": ctx.company_name,
@@ -184,7 +194,12 @@ class ImageDirectorService:
             "target_sections": ctx.target_sections,
             "brand_colors": self._format_brand_colors(ctx.brand_colors),
             "image_style": f"{ctx.image_style}, {ctx.image_tone}",
+            "camera": ctx.camera,
+            "angle": ctx.angle,
+            "quality": ctx.quality,
+            "text_on_image": ctx.text_on_image,
         }
+        return result
 
     def _parse_result(
         self,

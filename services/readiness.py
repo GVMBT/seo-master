@@ -12,6 +12,7 @@ import structlog
 
 from db.client import SupabaseClient
 from db.repositories.categories import CategoriesRepository
+from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from services.tokens import estimate_article_cost, estimate_social_post_cost
 
@@ -74,6 +75,7 @@ class ReadinessService:
     def __init__(self, db: SupabaseClient) -> None:
         self._db = db
         self._categories = CategoriesRepository(db)
+        self._projects = ProjectsRepository(db)
         self._publications = PublicationsRepository(db)
 
     async def check(
@@ -120,9 +122,13 @@ class ReadinessService:
         user_pubs = await self._publications.get_by_user(user_id)
         publication_count = len(user_pubs)
 
+        # Load project for settings fallback (project → category)
+        project = await self._projects.get_by_id(category.project_id)
+        eff_image_settings = (project.image_settings if project else None) or category.image_settings or {}
+
         # Cost estimation
         if pipeline_type == "social":
-            raw_count = (category.image_settings or {}).get("count", 1)
+            raw_count = eff_image_settings.get("count", 1)
             try:
                 effective_image_count = max(0, int(raw_count))
             except (ValueError, TypeError):

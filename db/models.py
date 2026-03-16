@@ -88,6 +88,8 @@ class Project(BaseModel):
     advantages: str | None = None
     description: str | None = None
     timezone: str = "Europe/Moscow"
+    text_settings: dict[str, Any] = Field(default_factory=dict)
+    image_settings: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
 
 
@@ -116,6 +118,8 @@ class ProjectUpdate(BaseModel):
     advantages: str | None = None
     description: str | None = None
     timezone: str | None = None
+    text_settings: dict[str, Any] | None = None
+    image_settings: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------

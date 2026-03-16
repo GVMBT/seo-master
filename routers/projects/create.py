@@ -334,7 +334,7 @@ async def process_field_value(
     await state.clear()
 
     # Ownership-verified update
-    update_data = ProjectUpdate(**{field: text or None})
+    update_data = ProjectUpdate(**{field: text or None})  # type: ignore[arg-type]
     project = await proj_svc.update_project(project_id, user.id, update_data)
 
     if project:
