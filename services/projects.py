@@ -15,10 +15,11 @@ import structlog
 
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
-from db.models import Category, Project, ProjectCreate, ProjectUpdate
+from db.models import Category, Project, ProjectCreate, ProjectPlatformSettings, ProjectUpdate
 from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.previews import PreviewsRepository
+from db.repositories.project_settings import ProjectPlatformSettingsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.publications import PublicationsRepository
 from services.scheduler import SchedulerService
@@ -50,6 +51,7 @@ class ProjectService:
     def __init__(self, db: SupabaseClient, encryption_key: str = "") -> None:
         self._db = db
         self._repo = ProjectsRepository(db)
+        self._platform_settings_repo = ProjectPlatformSettingsRepository(db)
         self._encryption_key = encryption_key
 
     # ------------------------------------------------------------------
@@ -169,6 +171,78 @@ class ProjectService:
         if not project:
             return None
         return await self._repo.update(project_id, ProjectUpdate(image_settings=settings))
+
+    # ------------------------------------------------------------------
+    # Platform-specific content settings
+    # ------------------------------------------------------------------
+
+    async def get_platform_settings(
+        self,
+        project_id: int,
+        user_id: int,
+        platform_type: str,
+    ) -> ProjectPlatformSettings | None:
+        """Get platform-specific settings for an owned project."""
+        project = await self.get_owned_project(project_id, user_id)
+        if not project:
+            return None
+        return await self._platform_settings_repo.get_by_project_and_platform(
+            project_id, platform_type
+        )
+
+    async def upsert_platform_settings(
+        self,
+        project_id: int,
+        user_id: int,
+        platform_type: str,
+        text_settings: dict[str, Any] | None = None,
+        image_settings: dict[str, Any] | None = None,
+    ) -> ProjectPlatformSettings | None:
+        """Create or update platform settings for an owned project."""
+        project = await self.get_owned_project(project_id, user_id)
+        if not project:
+            return None
+        return await self._platform_settings_repo.upsert(
+            project_id, platform_type, text_settings, image_settings
+        )
+
+    async def delete_platform_settings(
+        self,
+        project_id: int,
+        user_id: int,
+        platform_type: str,
+    ) -> bool:
+        """Delete platform override (reset to project defaults)."""
+        project = await self.get_owned_project(project_id, user_id)
+        if not project:
+            return False
+        return await self._platform_settings_repo.delete(project_id, platform_type)
+
+    async def resolve_effective_settings(
+        self,
+        project_id: int,
+        platform_type: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Resolve text_settings and image_settings for a specific platform.
+
+        Priority: platform override -> project defaults -> empty dict.
+        """
+        override = await self._platform_settings_repo.get_by_project_and_platform(
+            project_id, platform_type
+        )
+        project = await self._repo.get_by_id(project_id)
+
+        ts = (
+            (override.text_settings if override and override.text_settings else None)
+            or (project.text_settings if project else None)
+            or {}
+        )
+        is_ = (
+            (override.image_settings if override and override.image_settings else None)
+            or (project.image_settings if project else None)
+            or {}
+        )
+        return ts, is_
 
     # ------------------------------------------------------------------
     # Delete (E11 + E42)
