@@ -382,7 +382,7 @@ class StarsPaymentService:
         lines.append("📝 Генерация текста (100 слов) — 10 🪙")
         lines.append("🖼 Генерация изображения — 30 🪙\n")
         lines.append(f"💰 Ваш баланс: <b>{balance}</b> токенов\n")
-        lines.append(f"<b>Важно:</b> 1 токен = 1 рубль при покупке пакета")
+        lines.append("<b>Важно:</b> базовый курс 1 токен = 1 рубль, пакеты могут содержать бонусные токены")
         return "\n".join(lines)
 
     def format_package_text(self, package_name: str) -> str:

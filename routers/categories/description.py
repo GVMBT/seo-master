@@ -38,6 +38,7 @@ router = Router()
 
 
 class DescriptionGenerateFSM(StatesGroup):
+    generating = State()  # AI generation in progress
     review = State()  # Save / Regenerate / Cancel
     manual_input = State()  # Manual text input (10-2000 chars)
 
@@ -142,6 +143,7 @@ async def start_generate(
     if interrupted:
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
+    await state.set_state(DescriptionGenerateFSM.generating)
     await state.update_data(
         last_update_time=time.time(),
         cat_id=cat_id,
@@ -248,6 +250,7 @@ async def review_regenerate(
     regen_count = int(data.get("regeneration_count", 0))
 
     # Show progress indicator before AI call
+    await state.set_state(DescriptionGenerateFSM.generating)
     await safe_edit_text(msg, f"{EMOJI_PROGRESS} Генерирую описание...")
     await callback.answer()
 
@@ -261,10 +264,12 @@ async def review_regenerate(
         )
         generated_text = result.content if isinstance(result.content, str) else str(result.content)
     except Exception:
+        await state.set_state(DescriptionGenerateFSM.review)
         log.exception("description_regen_failed", cat_id=cat_id, user_id=user.id)
         await callback.answer("Ошибка генерации. Попробуйте ещё раз.", show_alert=True)
         return
 
+    await state.set_state(DescriptionGenerateFSM.review)
     regen_count += 1
     await state.update_data(
         generated_text=generated_text,

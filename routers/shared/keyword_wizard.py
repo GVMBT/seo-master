@@ -117,10 +117,15 @@ class KeywordWizardConfig:
 
 def _keyword_error_message(exc: Exception) -> str:
     """Map exception to user-friendly keyword-specific error message."""
+    import math
+
     from bot.exceptions import AIGenerationError, RateLimitError
 
     if isinstance(exc, RateLimitError):
-        minutes = max(exc.retry_after_seconds // 60, 1)
+        secs = exc.retry_after_seconds
+        if secs < 60:
+            return f"Слишком много запросов на подбор фраз. Подождите {max(secs, 1)} сек."
+        minutes = math.ceil(secs / 60)
         return f"Слишком много запросов на подбор фраз. Подождите {minutes} мин."
 
     if isinstance(exc, AIGenerationError):
@@ -374,13 +379,7 @@ async def _run_upload_enrich_pipeline(
         fsm_data = await state.get_data()
         await state.clear()
 
-        from bot.exceptions import AIGenerationError
-
-        if isinstance(exc, AIGenerationError):
-            error_text = "ИИ не смог обработать загруженные фразы. Попробуйте ещё раз."
-        else:
-            error_text = "Не удалось обработать файл. Проверьте формат и попробуйте снова."
-
+        error_text = _keyword_error_message(exc)
         error_kb = cfg.error_kb_fn(fsm_data) if cfg.error_kb_fn else None
         await msg.answer(error_text, reply_markup=error_kb)
 

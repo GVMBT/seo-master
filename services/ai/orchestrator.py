@@ -375,7 +375,10 @@ class AIOrchestrator:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
         # Extract response — content filter fallback
-        if not response.choices:
+        if (
+            not response.choices
+            or getattr(response.choices[0], "finish_reason", None) == "content_filter"
+        ):
             response = await self._retry_on_content_filter(
                 chain=chain,
                 messages=messages,
@@ -564,12 +567,12 @@ class AIOrchestrator:
                 await asyncio.sleep(delay)
             except Exception as exc:
                 # JSON parse errors (truncated response) — retry once
-                if isinstance(exc, (ValueError,)) and attempt < 1:
+                if isinstance(exc, (ValueError,)) and attempt < max_retries:
                     log.warning(
                         "http_retry",
                         operation="openrouter_generate",
                         attempt=attempt + 1,
-                        max_retries=1,
+                        max_retries=max_retries,
                         status=None,
                         delay_s=2,
                         error=str(exc)[:200],
@@ -629,6 +632,10 @@ class AIOrchestrator:
                     **kwargs,
                 )
                 if resp.choices:
+                    fb_finish = getattr(resp.choices[0], "finish_reason", None)
+                    if fb_finish == "content_filter":
+                        log.warning("content_filtered_fallback_also_filtered", model=fallback_model)
+                        continue
                     log.info(
                         "content_filter_fallback_success",
                         task=request.task,

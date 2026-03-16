@@ -206,9 +206,14 @@ class TestArticleService:
         critique_result = _make_generation_result(content=critique_content)
         mock_orchestrator.generate.side_effect = [outline_result, article_result, critique_result]
 
+        mock_score = MagicMock()
+        mock_score.total = 80
+        mock_score.issues = []
+
         with (
             patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
             patch("services.ai.articles.CategoriesRepository") as MockCatRepo,
+            patch("services.ai.quality_scorer.ContentQualityScorer") as MockScorer,
         ):
             MockProjRepo.return_value.get_by_id = AsyncMock(
                 return_value=_make_project(),
@@ -216,6 +221,7 @@ class TestArticleService:
             MockCatRepo.return_value.get_by_id = AsyncMock(
                 return_value=_make_category(),
             )
+            MockScorer.return_value.score.return_value = mock_score
 
             from services.ai.articles import ArticleService
 
@@ -369,13 +375,18 @@ class TestArticleService:
     ) -> None:
         """Branding colors should be included in the generation context."""
         mock_orchestrator.generate.side_effect = _make_v7_article_mocks()
+        mock_score = MagicMock()
+        mock_score.total = 80
+        mock_score.issues = []
 
         with (
             patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
             patch("services.ai.articles.CategoriesRepository") as MockCatRepo,
+            patch("services.ai.quality_scorer.ContentQualityScorer") as MockScorer,
         ):
             MockProjRepo.return_value.get_by_id = AsyncMock(return_value=_make_project())
             MockCatRepo.return_value.get_by_id = AsyncMock(return_value=_make_category())
+            MockScorer.return_value.score.return_value = mock_score
 
             from services.ai.articles import ArticleService
 
@@ -402,13 +413,18 @@ class TestArticleService:
     ) -> None:
         """Keyword volume and difficulty should be extracted from category keywords."""
         mock_orchestrator.generate.side_effect = _make_v7_article_mocks()
+        mock_score = MagicMock()
+        mock_score.total = 80
+        mock_score.issues = []
 
         with (
             patch("services.ai.articles.ProjectsRepository") as MockProjRepo,
             patch("services.ai.articles.CategoriesRepository") as MockCatRepo,
+            patch("services.ai.quality_scorer.ContentQualityScorer") as MockScorer,
         ):
             MockProjRepo.return_value.get_by_id = AsyncMock(return_value=_make_project())
             MockCatRepo.return_value.get_by_id = AsyncMock(return_value=_make_category())
+            MockScorer.return_value.score.return_value = mock_score
 
             from services.ai.articles import ArticleService
 
