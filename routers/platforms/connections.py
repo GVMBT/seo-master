@@ -27,6 +27,7 @@ from bot.service_factory import ProjectServiceFactory
 from bot.texts.connections import (
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
+    VK_STEP1_GROUP_URL,
     WP_STEP1_URL,
     WP_STEP2_LOGIN,
     WP_STEP3_CREDENTIALS,
@@ -746,12 +747,7 @@ async def start_vk_connect(
     )
 
     await msg.answer(
-        "Подключение VK\n\n"
-        "Отправьте ссылку на группу VK, к которой хотите подключиться.\n\n"
-        "Примеры:\n"
-        "• https://vk.com/club123456\n"
-        "• https://vk.com/mygroup\n"
-        "• 123456 (ID группы)",
+        VK_STEP1_GROUP_URL,
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
