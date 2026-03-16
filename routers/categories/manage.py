@@ -13,6 +13,7 @@ from bot.assets import edit_screen
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import get_owned_project, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
+from bot.texts.emoji import Emoji
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.projects import ProjectsRepository
@@ -263,32 +264,32 @@ async def show_category_card(
     if keyword_count > 0:
         cluster_count = sum(1 for k in category.keywords if k.get("cluster_name"))
         if cluster_count > 0:
-            lines.append(f"\U0001f511 Ключевые фразы: \u2705 {cluster_count} кластеров")
+            lines.append(f"{Emoji.HASHTAG} Ключевые фразы: {Emoji.CHECKMARK} {cluster_count} кластеров")
         else:
-            lines.append(f"\U0001f511 Ключевые фразы: \u2705 {keyword_count} фраз")
+            lines.append(f"{Emoji.HASHTAG} Ключевые фразы: {Emoji.CHECKMARK} {keyword_count} фраз")
     else:
-        lines.append("\U0001f511 Ключевые фразы: \u274c не заданы")
+        lines.append(f"{Emoji.HASHTAG} Ключевые фразы: {Emoji.CLOSE} не заданы")
 
     # Description
     if category.description:
-        lines.append("\U0001f4dd Описание: \u2705 есть")
+        lines.append(f"{Emoji.EDIT_DOC} Описание: {Emoji.CHECKMARK} есть")
     else:
-        lines.append("\U0001f4dd Описание: \u274c не задано")
+        lines.append(f"{Emoji.EDIT_DOC} Описание: {Emoji.CLOSE} не задано")
 
     # Prices
     if category.prices:
-        lines.append("\U0001f4b0 Цены: \u2705 есть")
+        lines.append(f"{Emoji.PRICE_TAG} Цены: {Emoji.CHECKMARK} есть")
     else:
-        lines.append("\U0001f4b0 Цены: \u274c не заданы")
+        lines.append(f"{Emoji.PRICE_TAG} Цены: {Emoji.CLOSE} не заданы")
 
     # Image settings (project fallback → category)
     proj = await ProjectsRepository(db).get_by_id(category.project_id)
     eff_image_settings = (proj.image_settings if proj else None) or category.image_settings or {}
     img_count = eff_image_settings.get("count")
     if img_count is not None:
-        lines.append(f"\U0001f5bc Медиа: \u2705 {img_count} файлов")
+        lines.append(f"{Emoji.IMAGE} Медиа: {Emoji.CHECKMARK} {img_count} файлов")
     else:
-        lines.append("\U0001f5bc Медиа: \u274c нет файлов")
+        lines.append(f"{Emoji.IMAGE} Медиа: {Emoji.CLOSE} нет файлов")
 
     text = "\n".join(lines)
     await safe_edit_text(msg, text, reply_markup=category_card_kb(category_id, category.project_id))
@@ -364,13 +365,16 @@ async def execute_category_delete(
             if remaining
             else category_list_empty_kb(category.project_id)
         )
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             f"Категория «{safe_name}» удалена.",
             reply_markup=kb,
         )
     else:
         await safe_edit_text(
-            msg, "\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.", reply_markup=menu_kb(),
+            msg,
+            "\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.",
+            reply_markup=menu_kb(),
         )
 
     await callback.answer()

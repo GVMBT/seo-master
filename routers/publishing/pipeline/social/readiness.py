@@ -24,6 +24,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts.emoji import Emoji
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -78,18 +79,18 @@ def _build_social_checklist_text(report: ReadinessReport, fsm_data: dict[str, An
 
     # Description status (first — keywords are generated from it)
     if report.has_description:
-        lines.append("\u2705 Описание")
+        lines.append(f"{Emoji.CHECKMARK} Описание")
     else:
-        lines.append("\u274c Описание")
+        lines.append(f"{Emoji.CLOSE} Описание")
 
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"\u2705 Ключевые фразы \u2014 {kw_info}")
+        lines.append(f"{Emoji.CHECKMARK} Ключевые фразы \u2014 {kw_info}")
     else:
-        lines.append("\u274c Ключевые фразы (обязательно)")
+        lines.append(f"{Emoji.CLOSE} Ключевые фразы (обязательно)")
 
     # Cost estimate
     lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")

@@ -12,8 +12,7 @@ from db.models import (
     PaymentCreate,
     PlatformConnection,
     PlatformConnectionCreate,
-    PlatformContentOverride,
-    PlatformContentOverrideCreate,
+    ProjectPlatformSettings,
     PlatformSchedule,
     PlatformScheduleCreate,
     Project,
@@ -94,15 +93,11 @@ class TestCategoryModel:
         assert cc.description is None
 
 
-class TestPlatformContentOverrideModel:
-    def test_nullable_settings(self) -> None:
-        o = PlatformContentOverride(id=1, category_id=1, platform_type="wordpress")
-        assert o.image_settings is None
-        assert o.text_settings is None
-
-    def test_create(self) -> None:
-        oc = PlatformContentOverrideCreate(category_id=1, platform_type="vk", image_settings={"count": 2})
-        assert oc.image_settings == {"count": 2}
+class TestProjectPlatformSettingsModel:
+    def test_defaults(self) -> None:
+        s = ProjectPlatformSettings(id=1, project_id=1, platform_type="wordpress")
+        assert s.text_settings == {}
+        assert s.image_settings == {}
 
 
 class TestPlatformScheduleModel:
