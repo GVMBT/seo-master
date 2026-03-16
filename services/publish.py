@@ -197,6 +197,11 @@ class PublishService:
 
         if low_pool:
             log.warning("publish_low_keyword_pool", category_id=payload.category_id, keyword=keyword)
+            # Fire-and-forget: expand keyword pool in background
+            import asyncio
+
+            task = asyncio.create_task(self._try_expand_keywords(payload, category, user_id))
+            task.add_done_callback(lambda t: t.result() if not t.cancelled() else None)
 
         # 5b. Find matching cluster for keyword context (C2)
         cluster = self._find_matching_cluster(keyword, category.keywords)
@@ -289,10 +294,8 @@ class PublishService:
             except Exception:
                 log.exception("charge_after_publish_failed", user_id=user_id, cost=actual_cost)
 
-            # Log publication
-            images_count = 0
-            if gen_result and isinstance(gen_result.content, dict):
-                images_count = len(gen_result.content.get("images_meta", []))
+            # Log publication with SimHash for anti-cannibalization (E46)
+            images_count, content_hash = self._extract_log_metadata(gen_result)
 
             pub_log = await self._publications.create_log(
                 PublicationLogCreate(
@@ -305,6 +308,7 @@ class PublishService:
                     content_type=content_type,
                     tokens_spent=actual_cost if charged else 0,
                     images_count=images_count,
+                    content_hash=content_hash,
                     status="success",
                     post_url=pub_result.post_url or "",
                 )
@@ -554,6 +558,11 @@ class PublishService:
             )
             raise RuntimeError("External data unavailable (Serper + Research empty), skipping slot")
 
+        # Load previous keywords for anti-repetition in prompts
+        previous_keywords = await self._publications.get_recent_keywords(
+            category_id, content_type="article", limit=10,
+        )
+
         # Phase 2: Text generation (sequential — Director needs article text)
         text_result = await article_service.generate(
             user_id=user_id,
@@ -569,6 +578,7 @@ class PublishService:
             research_data=websearch.get("research_data"),
             news_data=websearch.get("news_data"),
             autocomplete_suggestions=websearch.get("autocomplete_suggestions"),
+            previous_keywords=previous_keywords,
         )
 
         # Extract text content
@@ -982,6 +992,50 @@ class PublishService:
                 )
 
         return results
+
+    @staticmethod
+    def _extract_log_metadata(gen_result: Any) -> tuple[int, int | None]:
+        """Extract images_count and content_hash from generation result."""
+        images_count = 0
+        content_hash: int | None = None
+        if gen_result and isinstance(gen_result.content, dict):
+            images_count = len(gen_result.content.get("images_meta", []))
+            content_md = gen_result.content.get("content_markdown", "")
+            if content_md:
+                from services.ai.simhash import compute_simhash
+
+                content_hash = compute_simhash(content_md)
+        return images_count, content_hash
+
+    async def _try_expand_keywords(
+        self,
+        payload: Any,
+        category: Any,
+        user_id: int,
+    ) -> None:
+        """Fire-and-forget keyword expansion when pool is low."""
+        try:
+            from bot.config import get_settings
+            from services.external.dataforseo import DataForSEOClient
+            from services.keyword_expansion import KeywordExpansionService
+            from services.keywords import KeywordService
+
+            settings = self._settings or get_settings()
+            dataforseo = DataForSEOClient(
+                login=settings.dataforseo_login or "",
+                password=settings.dataforseo_password.get_secret_value() if settings.dataforseo_password else "",
+                http_client=self._http_client,
+            )
+            keyword_service = KeywordService(self._ai_orchestrator, dataforseo, self._db)
+            expansion = KeywordExpansionService(self._db, keyword_service, self._redis)
+            await expansion.maybe_expand(
+                category_id=payload.category_id,
+                user_id=user_id,
+                project_id=payload.project_id,
+                existing_keywords=category.keywords or [],
+            )
+        except Exception:
+            log.exception("keyword_expansion_background_failed", category_id=payload.category_id)
 
     @staticmethod
     def _find_matching_cluster(

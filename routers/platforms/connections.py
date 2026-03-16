@@ -28,6 +28,7 @@ from bot.texts.connections import (
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
     VK_STEP1_GROUP_URL,
+    VK_STEP2_OAUTH,
     WP_STEP1_URL,
     WP_STEP2_LOGIN,
     WP_STEP3_CREDENTIALS,
@@ -836,9 +837,7 @@ async def vk_process_group_url(
 
     safe_name = html.escape(group_name or f"Группа {resolved_id}")
     await message.answer(
-        f"Группа найдена: <b>{safe_name}</b>\n\n"
-        "Нажмите кнопку ниже, чтобы предоставить доступ на публикацию.\n"
-        "Ссылка действительна 30 минут.",
+        VK_STEP2_OAUTH.format(group_name=safe_name),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Подтвердить доступ к группе", url=oauth_url)],
