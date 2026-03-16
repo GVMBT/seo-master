@@ -125,6 +125,9 @@ def _make_service() -> PublishService:
         admin_ids=[999],
         scheduler_service=cast(Any, mock_scheduler),
     )
+    # Mock project repository for settings fallback (project → category)
+    svc._projects = MagicMock()
+    svc._projects.get_by_id = AsyncMock(return_value=None)
     return svc
 
 

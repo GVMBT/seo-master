@@ -618,8 +618,8 @@ class ArticleService:
         autocomplete_suggestions: list[str] | None = None,
     ) -> tuple[dict[str, Any], str, str, dict[str, str]]:
         """Build prompt context from project/category/competitor data."""
-        text_settings = overrides or category.text_settings or {}
-        image_settings = category.image_settings or {}
+        text_settings = overrides or project.text_settings or category.text_settings or {}
+        image_settings = project.image_settings or category.image_settings or {}
 
         competitor_word_counts: list[int] = []
         if competitor_pages:

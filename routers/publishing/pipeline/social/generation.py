@@ -396,7 +396,9 @@ async def _run_social_generation(
             image_service = ImageService(ai_orchestrator)
             cat = await CategoriesRepository(db).get_by_id(category_id)
             proj = await ProjectsRepository(db).get_by_id(project_id)
-            img_settings = dict((cat.image_settings or {}) if cat else {})
+            img_settings = dict(
+                (proj.image_settings if proj else None) or (cat.image_settings if cat else None) or {}
+            )
             # Pinterest: vertical 2:3 aspect ratio
             if platform_type == "pinterest":
                 img_settings["formats"] = ["2:3"]

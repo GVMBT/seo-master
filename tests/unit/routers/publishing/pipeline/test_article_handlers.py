@@ -105,11 +105,16 @@ def _patch_repos(
     # Factory callable that returns the mock service
     cat_factory = MagicMock(return_value=cat_svc_mock)
 
+    # ProjectsRepository mock (used directly for settings fallback)
+    proj_repo_mock = MagicMock()
+    proj_repo_mock.get_by_id = AsyncMock(return_value=project)
+
     patches = {
         # CategoryService is used directly (not via factory) in helper functions
         "cats": patch(f"{_MODULE}.CategoryService", return_value=cat_svc_mock),
         "conn": patch(f"{_MODULE}.ConnectionService", return_value=conn_mock),
         "fsm_utils": patch(f"{_MODULE}.ensure_no_active_fsm", new_callable=AsyncMock, return_value=None),
+        "proj_repo": patch(f"{_MODULE}.ProjectsRepository", return_value=proj_repo_mock),
     }
     return patches, proj_svc_mock, conn_mock, cat_svc_mock, proj_factory, cat_factory
 
@@ -131,7 +136,7 @@ class TestPipelineArticleStart:
     ) -> None:
         """0 projects -> shows no_projects_kb, sets FSM to select_project."""
         patches, _, _, _, pf, _cf = _patch_repos(projects=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -160,7 +165,7 @@ class TestPipelineArticleStart:
         """1 project -> auto-select, skip to WP step (calls _show_wp_step)."""
         project = make_project(id=5, name="Solo Project")
         patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -188,7 +193,7 @@ class TestPipelineArticleStart:
         """>1 projects -> show project list keyboard."""
         projects = [make_project(id=1), make_project(id=2)]
         patches, _, _, _, pf, _cf = _patch_repos(projects=projects)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -219,7 +224,7 @@ class TestPipelineArticleStart:
         callback.answer = AsyncMock()
 
         patches, _, _, _, pf, _cf = _patch_repos()
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 callback,
                 mock_state,
@@ -245,7 +250,7 @@ class TestPipelineArticleStart:
         callback.answer = AsyncMock()
 
         patches, _, _, _, pf, _cf = _patch_repos()
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 callback,
                 mock_state,
@@ -279,7 +284,7 @@ class TestPipelineSelectProject:
         mock_callback.data = "pipeline:article:5:select"
 
         patches, _, _, _, pf, _cf = _patch_repos(project=project, wp_connections=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_select_project(
                 mock_callback,
                 mock_state,
@@ -308,7 +313,7 @@ class TestPipelineSelectProject:
 
         # get_owned_project returns None for projects not owned by this user
         patches, _, _, _, pf, _cf = _patch_repos(project=None)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_select_project(
                 mock_callback,
                 mock_state,
@@ -333,7 +338,7 @@ class TestPipelineSelectProject:
         mock_callback.data = "pipeline:article:999:select"
 
         patches, _, _, _, pf, _cf = _patch_repos(project=None)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_select_project(
                 mock_callback,
                 mock_state,
@@ -357,7 +362,7 @@ class TestPipelineSelectProject:
         mock_callback.data = None
 
         patches, _, _, _, pf, _cf = _patch_repos()
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_select_project(
                 mock_callback,
                 mock_state,
@@ -389,7 +394,7 @@ class TestPipelineProjectsPage:
         projects = [make_project(id=i) for i in range(1, 12)]  # > PAGE_SIZE
 
         patches, _, _, _, pf, _cf = _patch_repos(projects=projects)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_projects_page(mock_callback, user, MagicMock(), pf)
 
         mock_callback.message.edit_text.assert_called_once()
@@ -453,7 +458,7 @@ class TestPipelineCreateProjectName:
         mock_message.text = "My Project"
         created = make_project(id=42, name="My Project")
         patches, proj_mock, _, _, pf, _cf = _patch_repos(created_project=created, wp_connections=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_create_project_name(
                 mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis, pf,
             )
@@ -503,7 +508,7 @@ class TestPipelineCreateProjectName:
         """create_project returns None -> clears state, shows limit message."""
         mock_message.text = "My Project"
         patches, _, _, _, pf, _cf = _patch_repos(created_project=None)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_create_project_name(
                 mock_message, mock_state, user, MagicMock(), MagicMock(), mock_redis, pf,
             )
@@ -532,7 +537,7 @@ class TestPipelineWpStep:
         """0 WP connections -> shows no_wp_kb."""
         project = make_project(id=1)
         patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -557,7 +562,7 @@ class TestPipelineWpStep:
         project = make_project(id=1)
         conn = make_connection(id=5, identifier="site.com")
         patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[conn], categories=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -597,7 +602,7 @@ class TestPipelinePreviewOnly:
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
         patches, _, _, _, _pf, _cf = _patch_repos(categories=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_preview_only(
                 mock_callback,
                 mock_state,
@@ -621,7 +626,7 @@ class TestPipelinePreviewOnly:
         cat = make_category(id=10, project_id=5)
 
         patches, _, _, _, _pf, _cf = _patch_repos(categories=[cat])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_preview_only(
                 mock_callback,
                 mock_state,
@@ -787,7 +792,7 @@ class TestPipelineConnectWpPassword:
             categories=[],
             validate_wp_error=None,  # success
         )
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -825,7 +830,7 @@ class TestPipelineConnectWpPassword:
         patches, _, _, _, pf, _cf = _patch_repos(
             validate_wp_error="Неверный логин или пароль. Попробуйте ещё раз.",
         )
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -861,7 +866,7 @@ class TestPipelineConnectWpPassword:
         patches, _, _, _, pf, _cf = _patch_repos(
             validate_wp_error="Сайт вернул ошибку (500). Проверьте URL и данные.",
         )
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -897,7 +902,7 @@ class TestPipelineConnectWpPassword:
         patches, _, _, _, pf, _cf = _patch_repos(
             validate_wp_error="Сайт не отвечает. Проверьте URL.",
         )
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -933,7 +938,7 @@ class TestPipelineConnectWpPassword:
         patches, _, _, _, pf, _cf = _patch_repos(
             validate_wp_error="Не удалось подключиться к сайту. Проверьте URL.",
         )
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -959,7 +964,7 @@ class TestPipelineConnectWpPassword:
         mock_message.delete = AsyncMock()
 
         patches, _, conn_mock, _, pf, _cf = _patch_repos()
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -1000,7 +1005,7 @@ class TestPipelineConnectWpPassword:
             categories=[],
             validate_wp_error=None,
         )
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -1067,7 +1072,7 @@ class TestPipelineConnectWpPassword:
         )
 
         patches, _, _, _, pf, _cf = _patch_repos(project=None, validate_wp_error=None)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_connect_wp_password(
                 mock_message,
                 mock_state,
@@ -1143,7 +1148,7 @@ class TestPipelineCategoryStep:
         project = make_project(id=1)
         conn = make_connection(id=5)
         patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[conn], categories=[])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -1169,7 +1174,7 @@ class TestPipelineCategoryStep:
         conn = make_connection(id=5)
         cat = make_category(id=10, name="SEO Tips")
         patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[conn], categories=[cat])
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -1201,7 +1206,7 @@ class TestPipelineCategoryStep:
         conn = make_connection(id=5)
         cats = [make_category(id=i) for i in range(1, 4)]
         patches, _, _, _, pf, _cf = _patch_repos(projects=[project], wp_connections=[conn], categories=cats)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_article_start(
                 mock_callback,
                 mock_state,
@@ -1231,7 +1236,7 @@ class TestPipelineSelectCategory:
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
         patches, _, _, _, _pf, _cf = _patch_repos(category=cat)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, _cf)
 
         mock_state.update_data.assert_called_with(category_id=12, category_name="Content Marketing", image_count=4)
@@ -1248,7 +1253,7 @@ class TestPipelineSelectCategory:
         mock_state.get_data = AsyncMock(return_value={"project_id": 5})
 
         patches, _, _, _, _pf, _cf = _patch_repos(category=None)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, _cf)
 
         mock_callback.answer.assert_called_with("Категория не найдена.", show_alert=True)
@@ -1266,7 +1271,7 @@ class TestPipelineSelectCategory:
 
         # get_owned_category returns None for categories not owned by this user
         patches, _, _, _, _pf, _cf = _patch_repos(category=None)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, _cf)
 
         mock_callback.answer.assert_called_with("Категория не найдена.", show_alert=True)
@@ -1293,7 +1298,7 @@ class TestPipelineCreateCategoryName:
         created_cat = make_category(id=20, project_id=5, name="New Category")
 
         patches, _, _, _, _pf, _cf = _patch_repos(created_category=created_cat)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, _cf)
 
         mock_state.update_data.assert_called_with(category_id=20, category_name="New Category", image_count=4)
@@ -1376,7 +1381,7 @@ class TestPipelineCreateCategoryName:
         mock_state.get_data = AsyncMock(return_value={"project_id": 5, "project_name": "Test"})
 
         patches, _, _, _, _pf, _cf = _patch_repos(created_category=None)
-        with patches["conn"], patches["cats"], patches["fsm_utils"]:
+        with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, _cf)
 
         # Should show error message

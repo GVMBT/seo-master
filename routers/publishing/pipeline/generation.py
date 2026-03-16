@@ -601,17 +601,21 @@ def _build_preview_text(
 
 
 async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None:
-    """Re-read image_count from category settings (C25: stale cost prevention).
+    """Re-read image_count from project/category settings (C25: stale cost prevention).
 
+    Fallback: project.image_settings -> category.image_settings.
     Returns None if category not found or no image settings.
     """
+    from db.repositories.projects import ProjectsRepository
     from services.categories import CategoryService
 
     cat_svc = CategoryService(db=db)
     category = await cat_svc.get_category_raw(category_id)
     if not category:
         return None
-    image_settings = category.image_settings or {}
+    # Fallback: project → category
+    project = await ProjectsRepository(db).get_by_id(category.project_id)
+    image_settings = (project.image_settings if project else None) or category.image_settings or {}
     count = image_settings.get("count")
     if count is not None:
         try:

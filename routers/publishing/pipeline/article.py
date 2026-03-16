@@ -31,6 +31,7 @@ from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PlatformConnectionCreate, ProjectCreate, User
 from db.repositories.previews import PreviewsRepository
+from db.repositories.projects import ProjectsRepository
 from keyboards.inline import cancel_kb, menu_kb
 from keyboards.pipeline import (
     pipeline_categories_kb,
@@ -55,9 +56,14 @@ log = structlog.get_logger()
 router = Router()
 
 
-def _get_image_count(category: object) -> int:
-    """Extract image count from category.image_settings, default 4."""
-    settings = getattr(category, "image_settings", None) or {}
+def _get_image_count(category: object, project: object | None = None) -> int:
+    """Extract image count from project/category image_settings, default 4.
+
+    Fallback: project.image_settings -> category.image_settings.
+    """
+    proj_settings = getattr(project, "image_settings", None) if project else None
+    cat_settings = getattr(category, "image_settings", None)
+    settings = proj_settings or cat_settings or {}
     count = settings.get("count", 4) if isinstance(settings, dict) else 4
     return int(count)
 
@@ -774,10 +780,11 @@ async def _show_category_step(
     if len(categories) == 1:
         # Auto-select the only category
         cat = categories[0]
+        proj = await ProjectsRepository(db).get_by_id(project_id)
         await state.update_data(
             category_id=cat.id,
             category_name=cat.name,
-            image_count=_get_image_count(cat),
+            image_count=_get_image_count(cat, proj),
         )
         await show_readiness_check(callback, state, user, db, redis)
         return
@@ -832,10 +839,11 @@ async def _show_category_step_msg(
 
     if len(categories) == 1:
         cat = categories[0]
+        proj = await ProjectsRepository(db).get_by_id(project_id)
         await state.update_data(
             category_id=cat.id,
             category_name=cat.name,
-            image_count=_get_image_count(cat),
+            image_count=_get_image_count(cat, proj),
         )
         await show_readiness_check_msg(message, state, user, db, redis)
         return
@@ -883,10 +891,11 @@ async def pipeline_select_category(
         return
 
     await callback.answer()
+    proj = await ProjectsRepository(db).get_by_id(category.project_id)
     await state.update_data(
         category_id=category.id,
         category_name=category.name,
-        image_count=_get_image_count(category),
+        image_count=_get_image_count(category, proj),
     )
     await show_readiness_check(callback, state, user, db, redis)
 
@@ -924,10 +933,11 @@ async def pipeline_create_category_name(
         await message.answer("Не удалось создать категорию. Попробуйте снова.", reply_markup=menu_kb())
         return
 
+    proj = await ProjectsRepository(db).get_by_id(project_id)
     await state.update_data(
         category_id=category.id,
         category_name=category.name,
-        image_count=_get_image_count(category),
+        image_count=_get_image_count(category, proj),
     )
     await message.answer(f"Тема «{html.escape(category.name)}» создана.")
 

@@ -301,8 +301,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -326,8 +329,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -350,8 +356,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -374,8 +383,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -395,8 +407,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -429,8 +444,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -452,8 +470,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -475,8 +496,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -498,8 +522,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -522,8 +549,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 
@@ -548,8 +578,11 @@ class TestReadinessServiceCheck:
 
         with (
             patch("services.readiness.CategoriesRepository") as CatRepoMock,
+            patch("services.readiness.ProjectsRepository") as ProjRepoMock,
             patch("services.readiness.PublicationsRepository") as PubRepoMock,
         ):
+            proj_repo = ProjRepoMock.return_value
+            proj_repo.get_by_id = AsyncMock(return_value=None)
             cat_repo = CatRepoMock.return_value
             cat_repo.get_by_id = AsyncMock(return_value=cat)
 

@@ -304,3 +304,64 @@ class TestDeleteProject:
         deleted, result_project = await proj_svc.delete_project(5, 42, scheduler, token_svc)
         assert deleted is False
         assert result_project is project
+
+
+# ---------------------------------------------------------------------------
+# update_text_settings / update_image_settings
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateTextSettings:
+    async def test_updates_for_owned_project(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(user_id=42)
+        updated = MagicMock()
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+        proj_svc._repo.update = AsyncMock(return_value=updated)
+
+        result = await proj_svc.update_text_settings(5, 42, {"words_min": 1500})
+        assert result is updated
+        call_args = proj_svc._repo.update.call_args
+        assert call_args[0][0] == 5
+        update_obj = call_args[0][1]
+        assert update_obj.text_settings == {"words_min": 1500}
+
+    async def test_returns_none_when_not_owned(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(user_id=99)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+
+        result = await proj_svc.update_text_settings(5, 42, {"words_min": 1500})
+        assert result is None
+
+    async def test_returns_none_when_not_found(self, proj_svc: ProjectService) -> None:
+        proj_svc._repo.get_by_id = AsyncMock(return_value=None)
+
+        result = await proj_svc.update_text_settings(5, 42, {"words_min": 1500})
+        assert result is None
+
+
+class TestUpdateImageSettings:
+    async def test_updates_for_owned_project(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(user_id=42)
+        updated = MagicMock()
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+        proj_svc._repo.update = AsyncMock(return_value=updated)
+
+        result = await proj_svc.update_image_settings(5, 42, {"count": 3, "styles": ["anime"]})
+        assert result is updated
+        call_args = proj_svc._repo.update.call_args
+        assert call_args[0][0] == 5
+        update_obj = call_args[0][1]
+        assert update_obj.image_settings == {"count": 3, "styles": ["anime"]}
+
+    async def test_returns_none_when_not_owned(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(user_id=99)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+
+        result = await proj_svc.update_image_settings(5, 42, {"count": 3})
+        assert result is None
+
+    async def test_returns_none_when_not_found(self, proj_svc: ProjectService) -> None:
+        proj_svc._repo.get_by_id = AsyncMock(return_value=None)
+
+        result = await proj_svc.update_image_settings(5, 42, {"count": 3})
+        assert result is None

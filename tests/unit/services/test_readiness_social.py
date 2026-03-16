@@ -69,6 +69,8 @@ class TestReadinessServiceSocial:
         )
         service._categories = MagicMock()
         service._categories.get_by_id = AsyncMock(return_value=cat)
+        service._projects = MagicMock()
+        service._projects.get_by_id = AsyncMock(return_value=None)
         service._publications = MagicMock()
         service._publications.get_by_user = AsyncMock(return_value=[])
 
