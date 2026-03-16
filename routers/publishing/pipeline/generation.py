@@ -33,6 +33,7 @@ from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts.emoji import Emoji
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
@@ -358,7 +359,7 @@ async def _progress_task(
     done_event: asyncio.Event,
 ) -> None:
     """Send cumulative progress messages while generation runs (G7: cancel on fast gen)."""
-    title = "\U0001f4dd Генерация статьи"
+    title = f"{Emoji.EDIT_DOC} Генерация статьи"
     for step_idx, delay in enumerate(_ARTICLE_STEP_DELAYS):
         if done_event.is_set():
             return
@@ -408,7 +409,8 @@ async def _run_generation(
     keyword = await select_keyword(db, category_id)
     if not keyword:
         await try_refund(db, user, tokens_charged, "Нет ключевых фраз")
-        await safe_edit_text(message, 
+        await safe_edit_text(
+            message,
             "Нет доступных ключевых фраз. Добавьте их в категорию.",
             reply_markup=pipeline_generation_error_kb(),
         )
@@ -451,7 +453,8 @@ async def _run_generation(
         progress.cancel()
         log.exception("pipeline.generation_failed", user_id=user.id, error=str(exc))
         await try_refund(db, user, tokens_charged, "Ошибка генерации")
-        await safe_edit_text(message, 
+        await safe_edit_text(
+            message,
             "Ошибка генерации. Токены возвращены.\n\nПопробуйте ещё раз.",
             reply_markup=pipeline_generation_error_kb(),
         )
@@ -620,7 +623,7 @@ async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None
     if count is not None:
         try:
             return int(count)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
     return None
 
@@ -684,7 +687,8 @@ async def publish_article(
     await state.update_data(last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.publishing)
     await safe_edit_text(
-        msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 0),
+        msg,
+        _progress_text(f"{Emoji.UPLOAD} Публикация статьи", _ARTICLE_PUBLISH_STEPS, 0),
     )
 
     try:
@@ -692,7 +696,8 @@ async def publish_article(
         conn_svc = ConnectionService(db, http_client)
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
-            await safe_edit_text(msg,
+            await safe_edit_text(
+                msg,
                 "WordPress-подключение не найдено. Проверьте настройки.",
                 reply_markup=menu_kb(),
             )
@@ -702,7 +707,8 @@ async def publish_article(
         # Step 2: Uploading to WordPress
         with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await safe_edit_text(
-                msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 1),
+                msg,
+                _progress_text(f"{Emoji.UPLOAD} Публикация статьи", _ARTICLE_PUBLISH_STEPS, 1),
             )
 
         try:
@@ -717,7 +723,8 @@ async def publish_article(
             log.exception("pipeline.publish_failed", preview_id=preview_id, error=str(exc))
             # Revert to draft on failure
             await previews_repo.update(preview_id, ArticlePreviewUpdate(status="draft"))
-            await safe_edit_text(msg, 
+            await safe_edit_text(
+                msg,
                 "Ошибка публикации на WordPress. Попробуйте снова.",
                 reply_markup=pipeline_preview_kb(
                     preview.telegraph_url,
@@ -733,7 +740,8 @@ async def publish_article(
         # Step 3: Saving result
         with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await safe_edit_text(
-                msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 2),
+                msg,
+                _progress_text(f"{Emoji.UPLOAD} Публикация статьи", _ARTICLE_PUBLISH_STEPS, 2),
             )
 
         # Log publication
@@ -763,7 +771,8 @@ async def publish_article(
             f"<b>{html.escape(preview.title or '')}</b>\n"
             f"Списано: {preview.tokens_charged or 0} ток. | Баланс: {balance} ток."
         )
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             result_text,
             reply_markup=pipeline_result_kb(result.post_url),
         )
@@ -1076,7 +1085,8 @@ async def connect_wp_publish(
         if project and project.website_url:
             await state.update_data(wp_url=project.website_url)
             await state.set_state(ArticlePipelineFSM.connect_wp_login)
-            await safe_edit_text(msg, 
+            await safe_edit_text(
+                msg,
                 f"Подключение WordPress\n\n"
                 f"Сайт: {html.escape(project.website_url)}\n\n"
                 f"Введите логин WordPress (имя пользователя).",
@@ -1085,7 +1095,8 @@ async def connect_wp_publish(
             return
 
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         "Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
     )
     await callback.answer()
@@ -1139,7 +1150,8 @@ async def _jump_to_category_selection(
     if not categories:
         from keyboards.inline import cancel_kb
 
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
@@ -1151,7 +1163,8 @@ async def _jump_to_category_selection(
 
         await show_readiness_check(callback, state, user, db, redis)
     else:
-        await safe_edit_text(msg, 
+        await safe_edit_text(
+            msg,
             "Статья (3/5) — Тема\n\nКакая тема?",
             reply_markup=pipeline_categories_kb(categories, project_id),
         )
@@ -1166,7 +1179,6 @@ async def _jump_to_category_selection(
         connection_id=data.get("connection_id"),
     )
     await callback.answer()
-
 
 
 @router.callback_query(F.data == "pipeline:article:change_topic")

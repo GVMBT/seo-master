@@ -1,36 +1,30 @@
 """Connection instruction texts for platform onboarding.
 
-Premium emoji IDs from screen/icons/:
-- 5305396259765394964 = VK logo
-- 5305702774401439462 = WordPress logo
-- 5305643301989290953 = Telegram logo
-- 5305635128666526830 = key
-- 5305748374069221919 = lock
+Uses Emoji constants from bot.texts.emoji for consistent custom emoji rendering.
 """
+
+from bot.texts.emoji import Emoji
 
 # ---------------------------------------------------------------------------
 # VK
 # ---------------------------------------------------------------------------
 
 VK_STEP1_GROUP_URL = (
-    '<tg-emoji emoji-id="5305396259765394964">🔵</tg-emoji>'
-    " <b>Подключение VK</b>\n\n"
-    "Отправьте ссылку на группу VK, к которой\n"
+    f"{Emoji.VK} <b>Подключение VK</b>\n\n"
+    f"{Emoji.NUM_1} Отправьте ссылку на группу VK, к которой\n"
     "хотите подключиться.\n\n"
-    "Примеры:\n"
-    "• https://vk.com/club123456\n"
-    "• https://vk.com/mygroup\n"
-    "• 123456 (ID группы)"
+    f"{Emoji.LIGHTBULB} Примеры:\n"
+    "\u2022 https://vk.com/club123456\n"
+    "\u2022 https://vk.com/mygroup\n"
+    "\u2022 123456 (ID группы)"
 )
 
 VK_STEP2_OAUTH = (
-    '<tg-emoji emoji-id="5305396259765394964">🔵</tg-emoji>'
-    " <b>Подключение VK</b>\n\n"
+    f"{Emoji.VK} <b>Подключение VK</b>\n\n"
     "Группа найдена: <b>{group_name}</b>\n\n"
-    "Нажмите кнопку ниже, чтобы предоставить\n"
+    f"{Emoji.NUM_2} Нажмите кнопку ниже, чтобы предоставить\n"
     "доступ на публикацию.\n\n"
-    '<tg-emoji emoji-id="5305748374069221919">🔒</tg-emoji>'
-    " Токен хранится в зашифрованном виде"
+    f"{Emoji.LOCK} Токен хранится в зашифрованном виде"
 )
 
 # ---------------------------------------------------------------------------
@@ -38,53 +32,48 @@ VK_STEP2_OAUTH = (
 # ---------------------------------------------------------------------------
 
 WP_STEP1_URL = (
-    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
-    " <b>Подключение WordPress</b>\n\n"
-    "Шаг 1/3 — Введите адрес вашего сайта\n\n"
-    "<i>Пример: example.com</i>"
+    f"{Emoji.WORDPRESS} <b>Подключение WordPress</b>\n\n"
+    f"{Emoji.NUM_1} Введите адрес вашего сайта\n\n"
+    f"{Emoji.INFO} <i>Пример: example.com</i>"
 )
 
 WP_STEP2_LOGIN = (
-    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
-    " <b>Подключение WordPress</b>\n\n"
-    "Шаг 2/3 — Введите логин WordPress\n\n"
+    f"{Emoji.WORDPRESS} <b>Подключение WordPress</b>\n\n"
+    f"{Emoji.NUM_2} Введите логин WordPress\n\n"
     "Это ваш логин для входа в панель управления\n"
     "WordPress (wp-admin).\n\n"
-    "Обычно это имя пользователя, <b>не email</b>.\n"
-    "Найти его можно: WP-Admin → Пользователи → Ваш профиль."
+    f"{Emoji.LIGHTBULB} Обычно это имя пользователя, <b>не email</b>.\n"
+    "Найти его можно: WP-Admin \u2192 Пользователи \u2192 Ваш профиль."
 )
 
 WP_STEP3_CREDENTIALS = (
-    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
-    " <b>Подключение WordPress</b>\n\n"
-    "Шаг 3/3 — Введите Application Password\n\n"
-    "Как создать:\n"
-    "1. Откройте WP-Admin → Пользователи → Профиль\n"
-    "2. Прокрутите вниз до раздела <b>Application Passwords</b>\n"
-    "3. Введите название (например: SEO Master)\n"
-    "4. Нажмите <b>Добавить новый</b>\n"
-    "5. Скопируйте сгенерированный пароль\n\n"
-    "Формат: <code>xxxx xxxx xxxx xxxx xxxx xxxx</code>\n\n"
-    "Пароль хранится в зашифрованном виде"
+    f"{Emoji.WORDPRESS} <b>Подключение WordPress</b>\n\n"
+    f"{Emoji.NUM_3} Введите Application Password\n\n"
+    f"{Emoji.LIGHTBULB} Как создать:\n"
+    f"{Emoji.NUM_1} Откройте WP-Admin \u2192 Пользователи \u2192 Профиль\n"
+    f"{Emoji.NUM_2} Прокрутите вниз до раздела <b>Application Passwords</b>\n"
+    f"{Emoji.NUM_3} Введите название (например: SEO Master)\n"
+    f"{Emoji.NUM_4} Нажмите <b>Добавить новый</b>\n"
+    f"{Emoji.NUM_5} Скопируйте сгенерированный пароль\n\n"
+    f"{Emoji.INFO} Формат: <code>xxxx xxxx xxxx xxxx xxxx xxxx</code>\n\n"
+    f"{Emoji.LOCK} Пароль хранится в зашифрованном виде"
 )
 
 TG_STEP1_CHANNEL = (
-    '<tg-emoji emoji-id="5305643301989290953">✈</tg-emoji>'
-    " <b>Подключение Telegram-канала</b>\n\n"
-    "Шаг 1/2 — Введите ссылку на канал\n\n"
-    "<i>Формат: @channel или t.me/channel</i>"
+    f"{Emoji.TELEGRAM} <b>Подключение Telegram-канала</b>\n\n"
+    f"{Emoji.NUM_1} Введите ссылку на канал\n\n"
+    f"{Emoji.INFO} <i>Формат: @channel или t.me/channel</i>"
 )
 
 TG_STEP2_BOT_SETUP = (
-    '<tg-emoji emoji-id="5305643301989290953">✈</tg-emoji>'
-    " <b>Подключение Telegram-канала</b>\n\n"
-    "Шаг 2/2 — Создайте бота-публикатора\n\n"
-    "Инструкция (30 секунд):\n"
-    "1. Откройте @BotFather в Telegram\n"
-    "2. Отправьте команду /newbot\n"
-    "3. Придумайте имя (например: Мой Контент Бот)\n"
-    "4. Скопируйте токен и вставьте сюда\n\n"
+    f"{Emoji.TELEGRAM} <b>Подключение Telegram-канала</b>\n\n"
+    f"{Emoji.NUM_2} Создайте бота-публикатора\n\n"
+    f"{Emoji.LIGHTBULB} Инструкция (30 секунд):\n"
+    f"{Emoji.NUM_1} Откройте @BotFather в Telegram\n"
+    f"{Emoji.NUM_2} Отправьте команду /newbot\n"
+    f"{Emoji.NUM_3} Придумайте имя (например: Мой Контент Бот)\n"
+    f"{Emoji.NUM_4} Скопируйте токен и вставьте сюда\n\n"
     "После этого добавьте бота <b>администратором</b>\n"
     "в ваш канал с правом публикации сообщений.\n\n"
-    "Токен хранится в зашифрованном виде"
+    f"{Emoji.LOCK} Токен хранится в зашифрованном виде"
 )

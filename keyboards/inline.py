@@ -44,7 +44,13 @@ def consent_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="Политика конфиденциальности", url=PRIVACY_POLICY_URL)],
             [InlineKeyboardButton(text="Оферта", url=TERMS_OF_SERVICE_URL)],
-            [InlineKeyboardButton(text="Принимаю", callback_data="legal:consent:accept")],
+            [
+                InlineKeyboardButton(
+                    text="Принимаю",
+                    callback_data="legal:consent:accept",
+                    style=ButtonStyle.SUCCESS,
+                ),
+            ],
         ]
     )
 
@@ -58,22 +64,37 @@ def dashboard_kb(
     *,
     is_admin: bool = False,
 ) -> InlineKeyboardMarkup:
-    """Dashboard keyboard with nav row (Projects | Profile | Tokens)."""
+    """Dashboard keyboard with pipeline CTA + nav row (Projects | Profile | Tokens)."""
     rows: list[list[InlineKeyboardButton]] = []
+
+    # Pipeline CTA row
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="✏️ Написать статью",
+                callback_data="pipeline:article:start",
+                style=ButtonStyle.PRIMARY,
+            ),
+            InlineKeyboardButton(
+                text="📢 Создать пост",
+                callback_data="pipeline:social:start",
+            ),
+        ]
+    )
 
     # Nav row
     rows.append(
         [
             InlineKeyboardButton(
-                text="Проекты",
+                text="📁 Проекты",
                 callback_data="nav:projects",
             ),
             InlineKeyboardButton(
-                text="Профиль",
+                text="👤 Профиль",
                 callback_data="nav:profile",
             ),
             InlineKeyboardButton(
-                text="Тарифы",
+                text="👑 Тарифы",
                 callback_data="nav:tokens",
             ),
         ]
@@ -83,7 +104,7 @@ def dashboard_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="Админка",
+                    text="⚙️ Админка",
                     callback_data="admin:panel",
                 ),
             ]
@@ -178,45 +199,57 @@ def project_card_kb(project_id: int, *, has_keywords: bool) -> InlineKeyboardMar
     rows: list[list[InlineKeyboardButton]] = []
 
     if has_keywords:
-        rows.append([
-            InlineKeyboardButton(
-                text="Написать статью",
-                callback_data=f"pipeline:article:project:{pid}",
-                style=ButtonStyle.PRIMARY,
-            ),
-            InlineKeyboardButton(
-                text="Создать пост",
-                callback_data=f"pipeline:social:project:{pid}",
-                style=ButtonStyle.PRIMARY,
-            ),
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="✏️ Написать статью",
+                    callback_data=f"pipeline:article:project:{pid}",
+                    style=ButtonStyle.PRIMARY,
+                ),
+                InlineKeyboardButton(
+                    text="📢 Создать пост",
+                    callback_data=f"pipeline:social:project:{pid}",
+                    style=ButtonStyle.PRIMARY,
+                ),
+            ]
+        )
 
-    rows.append([
-        InlineKeyboardButton(text="Настройки", callback_data=f"project:{pid}:edit"),
-        InlineKeyboardButton(text="Категории", callback_data=f"project:{pid}:categories"),
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(text="⚙️ Настройки", callback_data=f"project:{pid}:edit"),
+            InlineKeyboardButton(text="📂 Категории", callback_data=f"project:{pid}:categories"),
+        ]
+    )
 
-    rows.append([
-        InlineKeyboardButton(text="Контент", callback_data=f"project:{pid}:content_settings"),
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(text="🎛️ Контент", callback_data=f"project:{pid}:content_settings"),
+        ]
+    )
 
     if has_keywords:
-        rows.append([
-            InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
-            InlineKeyboardButton(text="Планировщик", callback_data=f"project:{pid}:scheduler"),
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(text="🔗 Подключения", callback_data=f"project:{pid}:connections"),
+                InlineKeyboardButton(text="📅 Планировщик", callback_data=f"project:{pid}:scheduler"),
+            ]
+        )
     else:
-        rows.append([
-            InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(text="🔗 Подключения", callback_data=f"project:{pid}:connections"),
+            ]
+        )
 
-    rows.append([
-        InlineKeyboardButton(
-            text="Удалить проект",
-            callback_data=f"project:{pid}:delete",
-            style=ButtonStyle.DANGER,
-        ),
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Удалить проект",
+                callback_data=f"project:{pid}:delete",
+                style=ButtonStyle.DANGER,
+            ),
+        ]
+    )
     rows.append([InlineKeyboardButton(text="\u2b05\ufe0f К проектам", callback_data="nav:projects")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -396,11 +429,11 @@ def category_card_kb(category_id: int, project_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Описание", callback_data=f"category:{cid}:description"),
-                InlineKeyboardButton(text="Ключевые фразы", callback_data=f"category:{cid}:keywords"),
+                InlineKeyboardButton(text="📄 Описание", callback_data=f"category:{cid}:description"),
+                InlineKeyboardButton(text="#️⃣ Ключевые фразы", callback_data=f"category:{cid}:keywords"),
             ],
             [
-                InlineKeyboardButton(text="Цены", callback_data=f"category:{cid}:prices"),
+                InlineKeyboardButton(text="🏷️ Цены", callback_data=f"category:{cid}:prices"),
             ],
             [
                 InlineKeyboardButton(
@@ -496,10 +529,10 @@ def connection_list_kb(connections: list[PlatformConnection], project_id: int) -
 
     # Add platform buttons — only for types NOT yet connected
     _ALL_PLATFORMS = [
-        ("wordpress", "Подключить сайт"),
-        ("telegram", "Добавить Telegram"),
-        ("vk", "Добавить VK"),
-        ("pinterest", "Добавить Pinterest"),
+        ("wordpress", "🌐 Подключить сайт"),
+        ("telegram", "✈️ Добавить Telegram"),
+        ("vk", "🔵 Добавить VK"),
+        ("pinterest", "📌 Добавить Pinterest"),
     ]
     add_buttons = [
         InlineKeyboardButton(text=label, callback_data=f"conn:{project_id}:add:{ptype}")
@@ -872,7 +905,8 @@ def project_platform_card_kb(pid: int, target: str) -> InlineKeyboardMarkup:
     p = f"psettings:{pid}:{target}"
     back_cb = f"psettings:{pid}:back"
     text_btn = InlineKeyboardButton(
-        text="\u270f \u0422\u0435\u043a\u0441\u0442", callback_data=f"{p}:text",
+        text="\u270f \u0422\u0435\u043a\u0441\u0442",
+        callback_data=f"{p}:text",
     )
     img_btn = InlineKeyboardButton(
         text="\U0001f5bc \u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f",
@@ -1028,16 +1062,28 @@ def project_image_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:
     btn = InlineKeyboardButton
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn(text="\u041f\u0440\u0435\u0432\u044c\u044e", callback_data=f"{p}:pfmt"),
-             btn(text="\u0424\u043e\u0440\u043c\u0430\u0442\u044b", callback_data=f"{p}:afmts")],
-            [btn(text="\u0421\u0442\u0438\u043b\u044c", callback_data=f"{p}:istyle"),
-             btn(text="\u041a\u043e\u043b-\u0432\u043e", callback_data=f"{p}:icount")],
-            [btn(text="\u0422\u0435\u043a\u0441\u0442/\u0444\u043e\u0442\u043e", callback_data=f"{p}:tximg"),
-             btn(text="\u041a\u0430\u043c\u0435\u0440\u0430", callback_data=f"{p}:camera")],
-            [btn(text="\u0420\u0430\u043a\u0443\u0440\u0441", callback_data=f"{p}:angle"),
-             btn(text="\u041a\u0430\u0447\u0435\u0441\u0442\u0432\u043e", callback_data=f"{p}:quality")],
-            [btn(text="\u0422\u043e\u043d\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c", callback_data=f"{p}:tone"),
-             btn(text="\u041d\u0430\u0437\u0430\u0434", callback_data=f"{p}:card")],
+            [
+                btn(text="\u041f\u0440\u0435\u0432\u044c\u044e", callback_data=f"{p}:pfmt"),
+                btn(text="\u0424\u043e\u0440\u043c\u0430\u0442\u044b", callback_data=f"{p}:afmts"),
+            ],
+            [
+                btn(text="\u0421\u0442\u0438\u043b\u044c", callback_data=f"{p}:istyle"),
+                btn(text="\u041a\u043e\u043b-\u0432\u043e", callback_data=f"{p}:icount"),
+            ],
+            [
+                btn(text="\u0422\u0435\u043a\u0441\u0442/\u0444\u043e\u0442\u043e", callback_data=f"{p}:tximg"),
+                btn(text="\u041a\u0430\u043c\u0435\u0440\u0430", callback_data=f"{p}:camera"),
+            ],
+            [
+                btn(text="\u0420\u0430\u043a\u0443\u0440\u0441", callback_data=f"{p}:angle"),
+                btn(text="\u041a\u0430\u0447\u0435\u0441\u0442\u0432\u043e", callback_data=f"{p}:quality"),
+            ],
+            [
+                btn(
+                    text="\u0422\u043e\u043d\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c", callback_data=f"{p}:tone"
+                ),
+                btn(text="\u041d\u0430\u0437\u0430\u0434", callback_data=f"{p}:card"),
+            ],
         ]
     )
 
@@ -1113,12 +1159,14 @@ def project_text_on_image_kb(pid: int, current: int | None, target: str = "d") -
     rows: list[list[InlineKeyboardButton]] = []
     for pct in TEXT_ON_IMAGE:
         prefix = "\u2713 " if pct == current else ""
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{prefix}{pct}%",
-                callback_data=f"{p}:to:{pct}",
-            ),
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{prefix}{pct}%",
+                    callback_data=f"{p}:to:{pct}",
+                ),
+            ]
+        )
     rows.append([InlineKeyboardButton(text="\u041d\u0430\u0437\u0430\u0434", callback_data=f"{p}:images")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
