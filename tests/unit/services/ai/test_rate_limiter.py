@@ -50,7 +50,7 @@ class TestRateLimitsConfig:
         assert RATE_LIMITS["image_generation"] == (20, 3600)
 
     def test_keyword_generation_limit(self) -> None:
-        assert RATE_LIMITS["keyword_generation"] == (5, 3600)
+        assert RATE_LIMITS["keyword_generation"] == (15, 3600)
 
     def test_token_purchase_limit(self) -> None:
         assert RATE_LIMITS["token_purchase"] == (5, 600)
@@ -114,7 +114,7 @@ class TestCheckOverLimit:
         self, limiter: RateLimiter, mock_redis: AsyncMock
     ) -> None:
         """Error message should mention the action name."""
-        mock_redis.incr.return_value = 6
+        mock_redis.incr.return_value = 16
         mock_redis.ttl.return_value = 300
         with pytest.raises(RateLimitError, match="keyword_generation"):
             await limiter.check(123, "keyword_generation")
@@ -280,7 +280,7 @@ class TestRateLimitErrorProperties:
 
     async def test_rate_limit_error_has_user_message(self, limiter: RateLimiter, mock_redis: AsyncMock) -> None:
         """RateLimitError should have a Russian user_message."""
-        mock_redis.incr.return_value = 6
+        mock_redis.incr.return_value = 16
         mock_redis.ttl.return_value = 500
         with pytest.raises(RateLimitError) as exc_info:
             await limiter.check(123, "keyword_generation")

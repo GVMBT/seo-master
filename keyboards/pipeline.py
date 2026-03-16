@@ -67,7 +67,7 @@ def pipeline_no_wp_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Подключить WordPress",
+                    text="Подключить сайт",
                     callback_data="pipeline:article:connect_wp",
                     style=ButtonStyle.PRIMARY,
                 ),
@@ -154,22 +154,22 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     """
     rows: list[list[InlineKeyboardButton]] = []
 
-    if not report.has_keywords:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Подобрать ключевики",
-                    callback_data="pipeline:readiness:keywords",
-                ),
-            ]
-        )
-
     if not report.has_description:
         rows.append(
             [
                 InlineKeyboardButton(
                     text="Описание",
                     callback_data="pipeline:readiness:description",
+                ),
+            ]
+        )
+
+    if not report.has_keywords:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Подобрать ключевики",
+                    callback_data="pipeline:readiness:keywords",
                 ),
             ]
         )
@@ -367,7 +367,7 @@ def pipeline_preview_no_wp_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="Подключить WordPress и опубликовать",
+                text="Подключить сайт и опубликовать",
                 callback_data="pipeline:article:connect_wp_publish",
                 style=ButtonStyle.SUCCESS,
             ),
@@ -789,22 +789,22 @@ def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     """
     rows: list[list[InlineKeyboardButton]] = []
 
-    if not report.has_keywords:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Подобрать ключевики",
-                    callback_data="pipeline:social:readiness:keywords",
-                ),
-            ]
-        )
-
     if not report.has_description:
         rows.append(
             [
                 InlineKeyboardButton(
                     text="Описание",
                     callback_data="pipeline:social:readiness:description",
+                ),
+            ]
+        )
+
+    if not report.has_keywords:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Подобрать ключевики",
+                    callback_data="pipeline:social:readiness:keywords",
                 ),
             ]
         )

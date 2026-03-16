@@ -427,12 +427,8 @@ async def process_excel(
 
     safe_name = html.escape(updated.name)
     count = len(lines)
-    preview_lines = lines[:10]
-    preview = "\n".join(f"  \u2022 {html.escape(ln)}" for ln in preview_lines)
-    if count > 10:
-        preview += f"\n  ... ещё {count - 10}"
 
-    result_text = f"<b>Цены \u2014 {safe_name}</b>\n\nПрайс загружен из Excel ({count} позиций):\n{preview}"
+    result_text = f"<b>Цены \u2014 {safe_name}</b>\n\nФайл загружен ({count} позиций)"
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 
 

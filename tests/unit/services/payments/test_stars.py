@@ -240,7 +240,7 @@ class TestFormatting:
     def test_tariffs_text_contains_balance(self, service: StarsPaymentService) -> None:
         text = service.format_tariffs_text(1500)
         assert "1500" in text
-        assert "Тарифы" in text
+        assert "ПАКЕТЫ ТОКЕНОВ" in text
 
     def test_package_text_contains_tokens(self, service: StarsPaymentService) -> None:
         text = service.format_package_text("start")

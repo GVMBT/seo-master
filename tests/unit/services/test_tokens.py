@@ -12,13 +12,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from services.tokens import (
-    COST_DESCRIPTION,
     COST_PER_100_WORDS,
     COST_PER_IMAGE,
     TokenService,
     _avg_cost_by_platform,
     estimate_article_cost,
-    estimate_keywords_cost,
     estimate_social_post_cost,
     estimate_text_cost,
 )
@@ -74,29 +72,12 @@ class TestEstimateSocialPostCost:
         assert estimate_social_post_cost(word_count=300, images_count=1) == 60
 
 
-class TestEstimateKeywordsCost:
-    def test_50_keywords(self) -> None:
-        assert estimate_keywords_cost(50) == 50
-
-    def test_200_keywords(self) -> None:
-        assert estimate_keywords_cost(200) == 200
-
-    def test_zero_keywords(self) -> None:
-        assert estimate_keywords_cost(0) == 0
-
-    def test_negative_returns_zero(self) -> None:
-        assert estimate_keywords_cost(-10) == 0
-
-
 class TestCostConstants:
     def test_per_100_words(self) -> None:
         assert COST_PER_100_WORDS == 10
 
     def test_per_image(self) -> None:
         assert COST_PER_IMAGE == 30
-
-    def test_description(self) -> None:
-        assert COST_DESCRIPTION == 20
 
 
 # ---------------------------------------------------------------------------

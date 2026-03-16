@@ -72,6 +72,12 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
         f"Тема: {category_name}\n",
     ]
 
+    # Description status (first — keywords are generated from it)
+    if report.has_description:
+        lines.append("\u2705 Описание")
+    elif "description" in report.missing_items:
+        lines.append("\u274c Описание")
+
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
@@ -80,12 +86,6 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
         lines.append(f"\u2705 Ключевые фразы \u2014 {kw_info}")
     else:
         lines.append("\u274c Ключевые фразы (обязательно)")
-
-    # Description status
-    if report.has_description:
-        lines.append("\u2705 Описание")
-    elif "description" in report.missing_items:
-        lines.append("\u274c Описание")
 
     # Prices status (progressive: shown for 2+ pubs)
     if "prices" in report.missing_items:

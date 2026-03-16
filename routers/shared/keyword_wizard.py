@@ -111,6 +111,39 @@ class KeywordWizardConfig:
 
 
 # ---------------------------------------------------------------------------
+# Error messages (specific + actionable)
+# ---------------------------------------------------------------------------
+
+
+def _keyword_error_message(exc: Exception) -> str:
+    """Map exception to user-friendly keyword-specific error message."""
+    from bot.exceptions import AIGenerationError, RateLimitError
+
+    if isinstance(exc, RateLimitError):
+        minutes = max(exc.retry_after_seconds // 60, 1)
+        return f"Слишком много запросов на подбор фраз. Подождите {minutes} мин."
+
+    if isinstance(exc, AIGenerationError):
+        msg_lower = exc.message.lower()
+        if "content" in msg_lower and "filter" in msg_lower:
+            return (
+                "ИИ не смог обработать запрос — возможно, тема или география "
+                "слишком чувствительные.\n\nПопробуйте изменить географию "
+                "или переформулировать описание категории."
+            )
+        if "truncated" in msg_lower:
+            return "Ответ ИИ оказался слишком длинным. Попробуйте ещё раз."
+        if "timeout" in msg_lower or "timed out" in msg_lower:
+            return "ИИ не успел ответить вовремя. Попробуйте ещё раз через минуту."
+        return "ИИ не смог подобрать фразы. Попробуйте ещё раз или измените описание категории."
+
+    if isinstance(exc, RuntimeError) and "ownership" in str(exc):
+        return "Категория не найдена или была удалена."
+
+    return "Не удалось подобрать фразы. Попробуйте позже."
+
+
+# ---------------------------------------------------------------------------
 # Core generation pipeline
 # ---------------------------------------------------------------------------
 
@@ -212,7 +245,7 @@ async def run_keyword_generation(
             phrases=total_phrases,
         )
 
-    except Exception:
+    except Exception as exc:
         log.exception(
             f"{log_prefix}.keywords_failed",
             user_id=user.id,
@@ -225,11 +258,13 @@ async def run_keyword_generation(
         if not bot:
             return
 
+        error_text = _keyword_error_message(exc)
+
         fsm_data = await state.get_data()
         error_kb = cfg.error_kb_fn(fsm_data) if cfg.error_kb_fn else None
         await bot.send_message(
             chat_id=progress_msg.chat.id,
-            text="Ошибка при подборе фраз. Попробуйте позже.",
+            text=error_text,
             reply_markup=error_kb,
         )
         if cfg.error_state is not None:
@@ -334,15 +369,20 @@ async def _run_upload_enrich_pipeline(
             clusters=len(enriched),
         )
 
-    except Exception:
+    except Exception as exc:
         log.exception(f"{log_prefix}.upload_pipeline_failed", cat_id=cat_id, user_id=user.id)
         fsm_data = await state.get_data()
         await state.clear()
+
+        from bot.exceptions import AIGenerationError
+
+        if isinstance(exc, AIGenerationError):
+            error_text = "ИИ не смог обработать загруженные фразы. Попробуйте ещё раз."
+        else:
+            error_text = "Не удалось обработать файл. Проверьте формат и попробуйте снова."
+
         error_kb = cfg.error_kb_fn(fsm_data) if cfg.error_kb_fn else None
-        await msg.answer(
-            "Ошибка при обработке файла. Попробуйте позже.",
-            reply_markup=error_kb,
-        )
+        await msg.answer(error_text, reply_markup=error_kb)
 
 
 # ---------------------------------------------------------------------------

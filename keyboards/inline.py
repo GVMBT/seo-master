@@ -9,7 +9,6 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
 from db.models import Category, PlatformConnection, Project
 from keyboards.pagination import PAGE_SIZE, _safe_cb, paginate
-from services.tokens import COST_DESCRIPTION
 
 # ---------------------------------------------------------------------------
 # Common: cancel keyboard for FSM text input states
@@ -74,7 +73,7 @@ def dashboard_kb(
                 callback_data="nav:profile",
             ),
             InlineKeyboardButton(
-                text="Планы",
+                text="Тарифы",
                 callback_data="nav:tokens",
             ),
         ]
@@ -393,8 +392,8 @@ def category_card_kb(category_id: int, project_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Ключевые фразы", callback_data=f"category:{cid}:keywords"),
                 InlineKeyboardButton(text="Описание", callback_data=f"category:{cid}:description"),
+                InlineKeyboardButton(text="Ключевые фразы", callback_data=f"category:{cid}:keywords"),
             ],
             [
                 InlineKeyboardButton(text="Цены", callback_data=f"category:{cid}:prices"),
@@ -494,7 +493,7 @@ def connection_list_kb(connections: list[PlatformConnection], project_id: int) -
 
     # Add platform buttons — only for types NOT yet connected
     _ALL_PLATFORMS = [
-        ("wordpress", "Добавить WordPress"),
+        ("wordpress", "Подключить сайт"),
         ("telegram", "Добавить Telegram"),
         ("vk", "Добавить VK"),
         ("pinterest", "Добавить Pinterest"),
@@ -735,7 +734,7 @@ def description_kb(cat_id: int, has_description: bool) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Написать вручную", callback_data=f"desc:{cat_id}:manual")],
         [
             InlineKeyboardButton(
-                text=f"✨ Улучшить с ИИ ({COST_DESCRIPTION} токенов)",
+                text="✨ Улучшить с ИИ",
                 callback_data=f"desc:{cat_id}:generate",
             ),
         ],
@@ -758,45 +757,8 @@ def description_kb(cat_id: int, has_description: bool) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def description_confirm_kb(cat_id: int, balance: int) -> InlineKeyboardMarkup:
-    """AI description generation cost confirmation (UX_TOOLBOX section 10.1).
-
-    Shows [Пополнить баланс] instead of [Да, сгенерировать] when balance < 20 (E01).
-    """
-    cost = COST_DESCRIPTION
-    if balance >= cost:
-        return InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="Да, сгенерировать",
-                        callback_data=f"desc:{cat_id}:confirm_yes",
-                        style=ButtonStyle.SUCCESS,
-                    ),
-                    InlineKeyboardButton(text="Отмена", callback_data=f"desc:{cat_id}:confirm_no"),
-                ],
-            ]
-        )
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="Пополнить баланс", callback_data="nav:tokens"),
-                InlineKeyboardButton(text="Отмена", callback_data=f"desc:{cat_id}:confirm_no"),
-            ],
-        ]
-    )
-
-
 def description_review_kb(cat_id: int, regen_count: int) -> InlineKeyboardMarkup:
-    """Review generated description: save / regenerate / cancel (UX_TOOLBOX section 10.1).
-
-    After 2 free regenerations, button shows cost (FSM_SPEC 2.2).
-    Regenerate is always available (paid after limit).
-    """
-    regen_text = "Перегенерировать"
-    if regen_count >= 2:
-        regen_text = f"Перегенерировать ({COST_DESCRIPTION} токенов)"
-
+    """Review generated description: save / regenerate / cancel (UX_TOOLBOX section 10.1)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -807,7 +769,7 @@ def description_review_kb(cat_id: int, regen_count: int) -> InlineKeyboardMarkup
                 ),
             ],
             [
-                InlineKeyboardButton(text=regen_text, callback_data=f"desc:{cat_id}:review_regen"),
+                InlineKeyboardButton(text="Перегенерировать", callback_data=f"desc:{cat_id}:review_regen"),
                 InlineKeyboardButton(text="Отмена", callback_data=f"desc:{cat_id}:review_cancel"),
             ],
         ]
@@ -1102,9 +1064,8 @@ def tariffs_kb() -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     for name, pkg in PACKAGES.items():
         style = ButtonStyle.PRIMARY if name == "profi" else None
-        bonus_text = f" ({pkg.discount})" if pkg.discount else ""
         btn = InlineKeyboardButton(
-            text=f"{pkg.label} — {pkg.total_tokens} токенов / {pkg.price_rub} руб{bonus_text}",
+            text=pkg.label,
             callback_data=f"tariff:{name}:buy",
         )
         if style:
