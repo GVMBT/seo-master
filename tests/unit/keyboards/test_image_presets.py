@@ -1,201 +1,150 @@
-"""Tests for image presets keyboard and recommend logic."""
+"""Tests for project-level image settings keyboards."""
 
 from __future__ import annotations
 
-import pytest
-
-from keyboards.inline import image_custom_kb, image_presets_kb
-from routers.categories.content_settings import (
-    _IMAGE_PRESET_NAMES,
-    _IMAGE_PRESETS,
-    _recommend_preset,
+from bot.texts.content_options import ASPECT_RATIOS, IMAGE_STYLES
+from keyboards.inline import (
+    project_article_format_kb,
+    project_image_count_kb,
+    project_image_menu_kb,
+    project_image_style_kb,
+    project_preview_format_kb,
 )
 
 # ---------------------------------------------------------------------------
-# 1. image_presets_kb layout
+# 1. project_image_menu_kb layout
 # ---------------------------------------------------------------------------
 
 
-def test_image_presets_kb_all_options() -> None:
-    """Keyboard must have 5 presets + custom + stepper + back."""
-    kb = image_presets_kb(
-        cat_id=10,
-        preset_names=_IMAGE_PRESET_NAMES,
-        current_preset=None,
-        recommended_idx=0,
-        count=3,
-    )
+def test_image_menu_has_all_sections() -> None:
+    """Image menu must have all 9 sub-sections + back button."""
+    kb = project_image_menu_kb(pid=10)
     buttons = [btn for row in kb.inline_keyboard for btn in row]
     texts = [btn.text for btn in buttons]
-    # 5 preset names (with possible marks)
-    for name in _IMAGE_PRESET_NAMES:
-        found = any(name in t for t in texts)
-        assert found, f"Preset '{name}' not found in keyboard"
-    # Custom button
-    assert any("Свой вариант" in t for t in texts)
-    # Stepper
-    assert any("Количество:" in t for t in texts)
-    # Back
-    assert any("К настройкам" in t for t in texts)
+    assert "Формат превью" in texts
+    assert "Форматы статьи" in texts
+    assert "Стиль" in texts
+    assert "Количество" in texts
+    assert "Текст на фото" in texts
+    assert "Камера" in texts
+    assert "Ракурс" in texts
+    assert "Качество" in texts
+    assert "Тональность" in texts
+    assert "Назад" in texts
 
 
-def test_image_presets_kb_marks_current() -> None:
-    """Current preset must be marked with checkmark."""
-    kb = image_presets_kb(
-        cat_id=10,
-        preset_names=_IMAGE_PRESET_NAMES,
-        current_preset="Лайфстайл",
-        recommended_idx=0,
-        count=3,
-    )
+# ---------------------------------------------------------------------------
+# 2. project_preview_format_kb
+# ---------------------------------------------------------------------------
+
+
+def test_preview_format_shows_all_ratios() -> None:
+    """Preview format keyboard must show all Gemini-supported aspect ratios."""
+    kb = project_preview_format_kb(pid=10, current=None)
+    buttons = [btn for row in kb.inline_keyboard for btn in row]
+    ratio_buttons = [btn for btn in buttons if btn.callback_data and btn.callback_data.startswith("psettings:")]
+    # 10 ratios + back button
+    ratio_only = [btn for btn in ratio_buttons if ":pf:" in (btn.callback_data or "")]
+    assert len(ratio_only) == len(ASPECT_RATIOS)
+
+
+def test_preview_format_marks_current() -> None:
+    """Current format must be marked with checkmark."""
+    kb = project_preview_format_kb(pid=10, current="16:9")
     buttons = [btn for row in kb.inline_keyboard for btn in row]
     for btn in buttons:
-        if "Лайфстайл" in btn.text:
+        if "16:9" in btn.text:
             assert btn.text.startswith("\u2713 ")
             break
     else:
-        pytest.fail("Lifestyle button not found")
+        raise AssertionError("16:9 button not found")
 
 
-def test_image_presets_kb_marks_recommended() -> None:
-    """Recommended preset must be marked with star when no current is set."""
-    kb = image_presets_kb(
-        cat_id=10,
-        preset_names=_IMAGE_PRESET_NAMES,
-        current_preset=None,
-        recommended_idx=2,
-        count=3,
-    )
+def test_preview_format_callback_data() -> None:
+    """Callback data must follow psettings:{pid}:pf:{idx} format."""
+    kb = project_preview_format_kb(pid=99, current=None)
+    buttons = [btn for row in kb.inline_keyboard for btn in row]
+    pf_buttons = [btn for btn in buttons if btn.callback_data and ":pf:" in btn.callback_data]
+    assert len(pf_buttons) == len(ASPECT_RATIOS)
+    for i, btn in enumerate(pf_buttons):
+        assert btn.callback_data == f"psettings:99:pf:{i}"
+
+
+# ---------------------------------------------------------------------------
+# 3. project_article_format_kb (multi-select)
+# ---------------------------------------------------------------------------
+
+
+def test_article_format_marks_selected() -> None:
+    """Selected formats must be marked with checkmark."""
+    selected = {"1:1", "16:9"}
+    kb = project_article_format_kb(pid=10, selected=selected)
     buttons = [btn for row in kb.inline_keyboard for btn in row]
     for btn in buttons:
-        if _IMAGE_PRESET_NAMES[2] in btn.text:
-            assert btn.text.startswith("\u2605 "), f"Expected star mark, got: {btn.text}"
+        if btn.callback_data and ":af:" in btn.callback_data and ("1:1" in btn.text or "16:9" in btn.text):
+            assert btn.text.startswith("\u2713 ")
+
+
+# ---------------------------------------------------------------------------
+# 4. project_image_style_kb
+# ---------------------------------------------------------------------------
+
+
+def test_image_style_shows_all_styles() -> None:
+    """Image style keyboard must show all 10 styles."""
+    kb = project_image_style_kb(pid=10, selected=set())
+    buttons = [btn for row in kb.inline_keyboard for btn in row]
+    style_buttons = [btn for btn in buttons if btn.callback_data and ":is:" in (btn.callback_data or "")]
+    assert len(style_buttons) == len(IMAGE_STYLES)
+
+
+def test_image_style_marks_selected() -> None:
+    """Selected styles must be marked with checkmark."""
+    kb = project_image_style_kb(pid=10, selected={IMAGE_STYLES[0]})
+    buttons = [btn for row in kb.inline_keyboard for btn in row]
+    for btn in buttons:
+        if btn.callback_data and ":is:0" in btn.callback_data:
+            assert btn.text.startswith("\u2713 ")
             break
     else:
-        pytest.fail("Recommended button not found")
+        raise AssertionError("First style button not found")
 
 
-def test_image_presets_kb_no_star_when_current_set() -> None:
-    """Star must NOT appear when a current preset is already selected."""
-    kb = image_presets_kb(
-        cat_id=10,
-        preset_names=_IMAGE_PRESET_NAMES,
-        current_preset="Фотосток",
-        recommended_idx=2,
-        count=3,
-    )
+# ---------------------------------------------------------------------------
+# 5. project_image_count_kb
+# ---------------------------------------------------------------------------
+
+
+def test_image_count_0_to_10() -> None:
+    """Image count keyboard must offer 0-10 options."""
+    kb = project_image_count_kb(pid=10, current=3)
     buttons = [btn for row in kb.inline_keyboard for btn in row]
-    star_buttons = [btn for btn in buttons if btn.text.startswith("\u2605 ")]
-    assert len(star_buttons) == 0
+    count_buttons = [btn for btn in buttons if btn.callback_data and ":ic:" in (btn.callback_data or "")]
+    assert len(count_buttons) == 11
 
 
-def test_image_presets_kb_stepper_value() -> None:
-    """Stepper must show the provided count value."""
-    kb = image_presets_kb(
-        cat_id=10,
-        preset_names=_IMAGE_PRESET_NAMES,
-        current_preset=None,
-        recommended_idx=0,
-        count=7,
-    )
+def test_image_count_marks_current() -> None:
+    """Current count must be marked with checkmark."""
+    kb = project_image_count_kb(pid=10, current=5)
     buttons = [btn for row in kb.inline_keyboard for btn in row]
-    count_btn = [btn for btn in buttons if "Количество:" in btn.text]
-    assert len(count_btn) == 1
-    assert "7" in count_btn[0].text
-
-
-def test_image_presets_kb_callback_data_format() -> None:
-    """Callback data must follow settings:{cat_id}:ip:{idx} format."""
-    kb = image_presets_kb(
-        cat_id=99,
-        preset_names=_IMAGE_PRESET_NAMES,
-        current_preset=None,
-        recommended_idx=0,
-        count=3,
-    )
-    buttons = [btn for row in kb.inline_keyboard for btn in row]
-    preset_buttons = [btn for btn in buttons if btn.callback_data and btn.callback_data.startswith("settings:99:ip:")]
-    assert len(preset_buttons) == len(_IMAGE_PRESET_NAMES)
-    for i, btn in enumerate(preset_buttons):
-        assert btn.callback_data == f"settings:99:ip:{i}"
+    for btn in buttons:
+        if btn.callback_data == "psettings:10:ic:5":
+            assert btn.text.startswith("\u2713 ")
+            break
+    else:
+        raise AssertionError("Count 5 button not found")
 
 
 # ---------------------------------------------------------------------------
-# 2. _recommend_preset
+# 6. Content options data integrity
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("niche", "expected_idx"),
-    [
-        ("realestate", 0),
-        ("auto", 0),
-        ("beauty", 2),
-        ("food", 2),
-        ("finance", 3),
-        ("it", 3),
-        ("children", 4),
-        ("unknown_niche", 0),
-        ("general", 0),
-    ],
-)
-def test_recommend_preset_by_niche(niche: str, expected_idx: int) -> None:
-    """_recommend_preset must return correct index for known niches."""
-    assert _recommend_preset(niche) == expected_idx
+def test_aspect_ratios_count() -> None:
+    """Must have exactly 10 Gemini-supported aspect ratios."""
+    assert len(ASPECT_RATIOS) == 10
 
 
-# ---------------------------------------------------------------------------
-# 3. Backward compatibility
-# ---------------------------------------------------------------------------
-
-
-def test_backward_compat_no_preset() -> None:
-    """Keyboard works when no current preset is set (None)."""
-    kb = image_presets_kb(
-        cat_id=10,
-        preset_names=_IMAGE_PRESET_NAMES,
-        current_preset=None,
-        recommended_idx=0,
-        count=4,
-    )
-    # Should not crash, should have the star on index 0
-    buttons = [btn for row in kb.inline_keyboard for btn in row]
-    first_preset = buttons[0]
-    assert first_preset.text.startswith("\u2605 ")
-
-
-# ---------------------------------------------------------------------------
-# 4. image_custom_kb
-# ---------------------------------------------------------------------------
-
-
-def test_image_custom_kb_buttons() -> None:
-    """Custom kb must have style button and back-to-presets."""
-    kb = image_custom_kb(cat_id=10)
-    buttons = [btn for row in kb.inline_keyboard for btn in row]
-    texts = [btn.text for btn in buttons]
-    assert "Стиль изображений" in texts
-    assert "К пресетам" in texts
-
-
-# ---------------------------------------------------------------------------
-# 5. Preset data integrity
-# ---------------------------------------------------------------------------
-
-
-def test_preset_names_list_matches_presets() -> None:
-    """_IMAGE_PRESET_NAMES must match _IMAGE_PRESETS names."""
-    assert [p["name"] for p in _IMAGE_PRESETS] == _IMAGE_PRESET_NAMES
-
-
-def test_preset_count() -> None:
-    """Must have exactly 5 presets."""
-    assert len(_IMAGE_PRESETS) == 5
-
-
-def test_preset_styles_are_valid() -> None:
-    """Each preset style must be in _IMAGE_STYLES list."""
-    from routers.categories.content_settings import _VALID_IMAGE_STYLES
-
-    for p in _IMAGE_PRESETS:
-        assert p["style"] in _VALID_IMAGE_STYLES, f"Preset '{p['name']}' has unknown style '{p['style']}'"
+def test_image_styles_count() -> None:
+    """Must have exactly 10 image styles."""
+    assert len(IMAGE_STYLES) == 10

@@ -183,30 +183,6 @@ class CategoryService:
     # Update operations
     # ------------------------------------------------------------------
 
-    async def update_text_settings(
-        self,
-        category_id: int,
-        user_id: int,
-        text_settings: dict[str, Any],
-    ) -> Category | None:
-        """Update text_settings for an owned category."""
-        category = await self.get_owned_category(category_id, user_id)
-        if not category:
-            return None
-        return await self._cats_repo.update(category_id, CategoryUpdate(text_settings=text_settings))
-
-    async def update_image_settings(
-        self,
-        category_id: int,
-        user_id: int,
-        image_settings: dict[str, Any],
-    ) -> Category | None:
-        """Update image_settings for an owned category."""
-        category = await self.get_owned_category(category_id, user_id)
-        if not category:
-            return None
-        return await self._cats_repo.update(category_id, CategoryUpdate(image_settings=image_settings))
-
     async def update_prices(
         self,
         category_id: int,
