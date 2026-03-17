@@ -64,39 +64,15 @@ def dashboard_kb(
     *,
     is_admin: bool = False,
 ) -> InlineKeyboardMarkup:
-    """Dashboard keyboard with pipeline CTA + nav row (Projects | Profile | Tokens)."""
+    """Dashboard keyboard: nav row only (no pipeline CTA per Alexander feedback)."""
     rows: list[list[InlineKeyboardButton]] = []
 
-    # Pipeline CTA row
+    # Nav row — no emoji on buttons
     rows.append(
         [
-            InlineKeyboardButton(
-                text="✏️ Написать статью",
-                callback_data="pipeline:article:start",
-                style=ButtonStyle.PRIMARY,
-            ),
-            InlineKeyboardButton(
-                text="📢 Создать пост",
-                callback_data="pipeline:social:start",
-            ),
-        ]
-    )
-
-    # Nav row
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="📁 Проекты",
-                callback_data="nav:projects",
-            ),
-            InlineKeyboardButton(
-                text="👤 Профиль",
-                callback_data="nav:profile",
-            ),
-            InlineKeyboardButton(
-                text="👑 Тарифы",
-                callback_data="nav:tokens",
-            ),
+            InlineKeyboardButton(text="Проекты", callback_data="nav:projects"),
+            InlineKeyboardButton(text="Профиль", callback_data="nav:profile"),
+            InlineKeyboardButton(text="Токены", callback_data="nav:tokens"),
         ]
     )
 
@@ -104,7 +80,7 @@ def dashboard_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="⚙️ Админка",
+                    text="Админка",
                     callback_data="admin:panel",
                 ),
             ]
@@ -216,28 +192,28 @@ def project_card_kb(project_id: int, *, has_keywords: bool) -> InlineKeyboardMar
 
     rows.append(
         [
-            InlineKeyboardButton(text="⚙️ Настройки", callback_data=f"project:{pid}:edit"),
-            InlineKeyboardButton(text="📂 Категории", callback_data=f"project:{pid}:categories"),
+            InlineKeyboardButton(text="Настройки", callback_data=f"project:{pid}:edit"),
+            InlineKeyboardButton(text="Категории", callback_data=f"project:{pid}:categories"),
         ]
     )
 
     rows.append(
         [
-            InlineKeyboardButton(text="🎛️ Контент", callback_data=f"project:{pid}:content_settings"),
+            InlineKeyboardButton(text="Контент", callback_data=f"project:{pid}:content_settings"),
         ]
     )
 
     if has_keywords:
         rows.append(
             [
-                InlineKeyboardButton(text="🔗 Подключения", callback_data=f"project:{pid}:connections"),
-                InlineKeyboardButton(text="📅 Планировщик", callback_data=f"project:{pid}:scheduler"),
+                InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
+                InlineKeyboardButton(text="Планировщик", callback_data=f"project:{pid}:scheduler"),
             ]
         )
     else:
         rows.append(
             [
-                InlineKeyboardButton(text="🔗 Подключения", callback_data=f"project:{pid}:connections"),
+                InlineKeyboardButton(text="Подключения", callback_data=f"project:{pid}:connections"),
             ]
         )
 
@@ -429,11 +405,11 @@ def category_card_kb(category_id: int, project_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="📄 Описание", callback_data=f"category:{cid}:description"),
-                InlineKeyboardButton(text="#️⃣ Ключевые фразы", callback_data=f"category:{cid}:keywords"),
+                InlineKeyboardButton(text="Описание", callback_data=f"category:{cid}:description"),
+                InlineKeyboardButton(text="Ключевые фразы", callback_data=f"category:{cid}:keywords"),
             ],
             [
-                InlineKeyboardButton(text="🏷️ Цены", callback_data=f"category:{cid}:prices"),
+                InlineKeyboardButton(text="Цены", callback_data=f"category:{cid}:prices"),
             ],
             [
                 InlineKeyboardButton(
