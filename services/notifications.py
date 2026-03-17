@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import structlog
 
-from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.repositories.publications import PublicationsRepository
 from db.repositories.users import UsersRepository
@@ -16,6 +15,13 @@ log = structlog.get_logger()
 
 # Inactivity threshold for reactivation (days)
 _REACTIVATION_DAYS = 14
+
+# Emoji constants (local, no bot/ dependency per service layer rules)
+_WARNING = "\u26a0\ufe0f"
+_WALLET = "\U0001f4b0"
+_ANALYTICS = "\U0001f4ca"
+_EDIT_DOC = "\U0001f4dd"
+_BELL = "\U0001f514"
 
 
 class NotifyService:
@@ -34,8 +40,8 @@ class NotifyService:
         result: list[tuple[int, str]] = []
         for u in users:
             text = (
-                f"{E.t.WARNING} <b>Низкий баланс</b>\n\n"
-                f"{E.t.WALLET} Баланс: {u.balance} токенов\n\n"
+                f"{_WARNING} <b>Низкий баланс</b>\n\n"
+                f"{_WALLET} Баланс: {u.balance} токенов\n\n"
                 "Этого может не хватить для автопубликации. Пополните баланс."
             )
             result.append((u.id, text))
@@ -63,9 +69,9 @@ class NotifyService:
         for u in eligible:
             total = pub_counts.get(u.id, 0)
             text = (
-                f"{E.t.ANALYTICS} <b>Еженедельный дайджест</b>\n\n"
-                f"{E.t.EDIT_DOC} Публикаций за все время: {total}\n"
-                f"{E.t.WALLET} Баланс: {u.balance} токенов\n\n"
+                f"{_ANALYTICS} <b>Еженедельный дайджест</b>\n\n"
+                f"{_EDIT_DOC} Публикаций за все время: {total}\n"
+                f"{_WALLET} Баланс: {u.balance} токенов\n\n"
                 "Продолжайте публиковать контент!"
             )
             result.append((u.id, text))
@@ -81,9 +87,9 @@ class NotifyService:
         result: list[tuple[int, str]] = []
         for u in users:
             text = (
-                f"{E.t.BELL} <b>Мы скучаем!</b>\n\n"
+                f"{_BELL} <b>Мы скучаем!</b>\n\n"
                 f"Вы не заходили более {_REACTIVATION_DAYS} дней.\n"
-                f"{E.t.WALLET} На балансе: {u.balance} токенов.\n\n"
+                f"{_WALLET} На балансе: {u.balance} токенов.\n\n"
                 "Вернитесь и продолжите публикации!"
             )
             result.append((u.id, text))
