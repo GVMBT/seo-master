@@ -6,6 +6,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, P
 
 from bot.assets import asset_photo, cache_file_id
 from bot.config import get_settings
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import menu_kb
@@ -88,8 +89,8 @@ async def refunded_payment_handler(
             ]
         )
         await message.answer(
-            f"\u26a0\ufe0f Возврат Stars обработан.\n\n"
-            f"\U0001f4b0 Списано: <b>{tokens_debited}</b> токенов\n"
+            f"{E.WARNING} Возврат Stars обработан.\n\n"
+            f"{E.WALLET} Списано: <b>{tokens_debited}</b> токенов\n"
             f"Ваш баланс отрицателен ({new_balance} токенов) из-за возврата средств.\n"
             f"Пополните баланс для продолжения работы.",
             reply_markup=kb,
@@ -124,7 +125,7 @@ async def successful_payment_handler(
 
     if result.get("error"):
         log.error("payment_processing_error", error=result["error"])
-        await message.answer("\u26a0\ufe0f Ошибка обработки платежа. Попробуйте позже.", reply_markup=menu_kb())
+        await message.answer(f"{E.WARNING} Ошибка обработки платежа. Попробуйте позже.", reply_markup=menu_kb())
         return
 
     tokens = result["tokens_credited"]
@@ -134,7 +135,7 @@ async def successful_payment_handler(
         inline_keyboard=[
             [InlineKeyboardButton(text="Написать статью", callback_data="pipeline:article:start")],
             [
-                InlineKeyboardButton(text="\U0001f4cb Главное меню", callback_data="nav:dashboard"),
+                InlineKeyboardButton(text="Меню", callback_data="nav:dashboard"),
                 InlineKeyboardButton(text="Пополнить ещё", callback_data="nav:tokens"),
             ],
         ]
@@ -142,9 +143,9 @@ async def successful_payment_handler(
     photo_msg = await message.answer_photo(
         asset_photo("payment_success.png"),
         caption=(
-            f"\U0001f389 Оплата прошла успешно!\n\n"
-            f"\U0001f4b0 Начислено: <b>{tokens}</b> токенов\n"
-            f"\U0001f4b0 Баланс: <b>{new_balance}</b> токенов"
+            f"{E.ROCKET} Оплата прошла успешно!\n\n"
+            f"{E.WALLET} Начислено: <b>{tokens}</b> токенов\n"
+            f"{E.WALLET} Баланс: <b>{new_balance}</b> токенов"
         ),
         reply_markup=kb,
     )

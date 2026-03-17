@@ -12,6 +12,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts.emoji import E
 from bot.validators import URL_RE
 from db.client import SupabaseClient
 from db.models import Project, ProjectCreate, ProjectUpdate, User
@@ -340,7 +341,7 @@ async def process_field_value(
         edit_text = f"Поле «{label}» обновлено.\n\n" + _build_edit_text(project)
         await message.answer(edit_text, reply_markup=project_edit_kb(project_id, _project_completed(project)))
     else:
-        await message.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", reply_markup=menu_kb())
+        await message.answer(f"{E.t.WARNING} Ошибка обновления. Попробуйте позже.", reply_markup=menu_kb())
 
     log.info("project_field_updated", project_id=project_id, field=field, user_id=user.id)
 

@@ -371,7 +371,7 @@ async def execute_category_delete(
         )
     else:
         await safe_edit_text(
-            msg, "\u26a0\ufe0f Не удалось удалить категорию. Попробуйте позже.", reply_markup=menu_kb(),
+            msg, f"{E.WARNING} Не удалось удалить категорию. Попробуйте позже.", reply_markup=menu_kb(),
         )
 
     await callback.answer()

@@ -22,6 +22,7 @@ from bot.exceptions import AppError
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import AdminServiceFactory
+from bot.texts.emoji import E
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -99,7 +100,8 @@ async def admin_panel(
     stats = await admin_svc.get_panel_stats()
 
     text = (
-        "<b>\U0001f6e1 Админ-панель</b>\n\n"
+        f"<b>{E.CROWN} АДМИН-ПАНЕЛЬ</b>\n\n"
+        f"{E.ANALYTICS} \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
         f"Пользователей: {stats.total_users}\n"
         f"Оплативших: {stats.paid_users}\n"
         f"Проектов: {stats.total_projects}\n"
@@ -144,20 +146,22 @@ async def admin_api_status(
         qstash_token=settings.qstash_token.get_secret_value(),
     )
 
-    db_icon = "\u2705" if status.db_ok else "\u274c"
-    redis_icon = "\u2705" if status.redis_ok else "\u274c"
-    or_icon = "\u2705" if status.openrouter_ok else "\u274c"
-    qs_icon = "\u2705" if status.qstash_ok else "\u274c"
+    db_icon = E.t.CHECK if status.db_ok else E.t.CLOSE
+    redis_icon = E.t.CHECK if status.redis_ok else E.t.CLOSE
+    or_icon = E.t.CHECK if status.openrouter_ok else E.t.CLOSE
+    qs_icon = E.t.CHECK if status.qstash_ok else E.t.CLOSE
 
     credits_str = f"${status.openrouter_credits:.2f}" if status.openrouter_credits is not None else "\u2014"
 
     text = (
-        "<b>Статус API</b>\n\n"
-        f"База данных: {db_icon} ({status.db_latency_ms}ms)\n"
-        f"Redis: {redis_icon} ({status.redis_latency_ms}ms)\n"
-        f"OpenRouter: {or_icon} | Кредиты: {credits_str}\n"
-        f"QStash: {qs_icon}\n"
-        f"Активных расписаний: {status.active_schedules}\n"
+        f"{E.t.PULSE} <b>МОНИТОРИНГ</b>\n\n"
+        f"{E.t.AI_BRAIN} AI:\n"
+        f"  OpenRouter: {or_icon} | Кредиты: {credits_str}\n"
+        f"  QStash: {qs_icon}\n"
+        f"  Активных расписаний: {status.active_schedules}\n\n"
+        f"{E.t.DATABASE} Инфраструктура:\n"
+        f"  База данных: {db_icon} ({status.db_latency_ms}ms)\n"
+        f"  Redis: {redis_icon} ({status.redis_latency_ms}ms)\n"
     )
 
     await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
@@ -189,7 +193,10 @@ async def admin_api_costs(
         admin_svc.get_api_costs(90),
     )
 
-    text = f"<b>Затраты API</b>\n\n7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
+    text = (
+        f"{E.t.WALLET} <b>ЗАТРАТЫ API</b>\n\n"
+        f"7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
+    )
 
     await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
     await callback.answer()
@@ -208,7 +215,7 @@ def _format_user_card(card: UserCard) -> str:
     activity = card.last_activity[:10] if card.last_activity else "\u2014"
 
     return (
-        f"<b>Пользователь #{card.user_id}</b>\n\n"
+        f"{E.t.USER} <b>Пользователь #{card.user_id}</b>\n\n"
         f"Имя: {name}\n"
         f"Username: {uname}\n"
         f"Роль: {html.escape(card.role)}\n"
@@ -536,7 +543,7 @@ async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext
     await state.set_state(BroadcastFSM.audience)
     await safe_edit_text(
         msg,
-        "<b>Рассылка</b>\n\nВыберите аудиторию:",
+        f"{E.t.MEGAPHONE} <b>РАССЫЛКА</b>\n\n<i>Выберите аудиторию:</i>",
         reply_markup=broadcast_audience_kb(),
     )
     await callback.answer()

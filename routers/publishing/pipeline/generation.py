@@ -33,6 +33,7 @@ from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts.emoji import E
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
@@ -181,7 +182,7 @@ def _build_confirm_text(fsm_data: dict[str, Any], report: Any, user: User) -> st
         cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE — бесплатно)"
 
     return (
-        "Статья (5/5) — Подтверждение\n\n"
+        f"{E.t.DOC} Статья (5/5) — Подтверждение\n\n"
         f"{project_name}"
         f"{' → ' + wp_display if wp_display else ''}\n"
         f"Тема: {category_name}\n"
@@ -358,7 +359,7 @@ async def _progress_task(
     done_event: asyncio.Event,
 ) -> None:
     """Send cumulative progress messages while generation runs (G7: cancel on fast gen)."""
-    title = "\U0001f4dd Генерация статьи"
+    title = f"{E.t.PEN} Генерация статьи"
     for step_idx, delay in enumerate(_ARTICLE_STEP_DELAYS):
         if done_event.is_set():
             return
@@ -684,7 +685,7 @@ async def publish_article(
     await state.update_data(last_update_time=time.time())
     await state.set_state(ArticlePipelineFSM.publishing)
     await safe_edit_text(
-        msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 0),
+        msg, _progress_text(f"{E.t.UPLOAD} Публикация", _ARTICLE_PUBLISH_STEPS, 0),
     )
 
     try:
@@ -702,7 +703,7 @@ async def publish_article(
         # Step 2: Uploading to WordPress
         with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await safe_edit_text(
-                msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 1),
+                msg, _progress_text(f"{E.t.UPLOAD} Публикация", _ARTICLE_PUBLISH_STEPS, 1),
             )
 
         try:
@@ -733,7 +734,7 @@ async def publish_article(
         # Step 3: Saving result
         with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await safe_edit_text(
-                msg, _progress_text("\U0001f4e4 Публикация статьи", _ARTICLE_PUBLISH_STEPS, 2),
+                msg, _progress_text(f"{E.t.UPLOAD} Публикация", _ARTICLE_PUBLISH_STEPS, 2),
             )
 
         # Log publication
@@ -1140,7 +1141,7 @@ async def _jump_to_category_selection(
         from keyboards.inline import cancel_kb
 
         await safe_edit_text(msg, 
-            "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
+            f"{E.t.DOC} Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         await state.set_state(ArticlePipelineFSM.create_category_name)
@@ -1152,7 +1153,7 @@ async def _jump_to_category_selection(
         await show_readiness_check(callback, state, user, db, redis)
     else:
         await safe_edit_text(msg, 
-            "Статья (3/5) — Тема\n\nКакая тема?",
+            f"{E.t.DOC} Статья (3/5) — Тема\n\nКакая тема?",
             reply_markup=pipeline_categories_kb(categories, project_id),
         )
         await state.set_state(ArticlePipelineFSM.select_category)

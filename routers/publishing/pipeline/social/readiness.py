@@ -24,6 +24,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts.emoji import E
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -70,7 +71,7 @@ def _build_social_checklist_text(report: ReadinessReport, fsm_data: dict[str, An
     platform_label = platform_labels.get(platform_type, platform_type)
 
     lines: list[str] = [
-        f"Пост (4/{_TOTAL_STEPS}) -- Подготовка\n",
+        f"{E.t.MEGAPHONE} Пост (4/{_TOTAL_STEPS}) -- Подготовка\n",
         f"Проект: {project_name}",
         f"Платформа: {platform_label} ({identifier})",
         f"Тема: {category_name}\n",
@@ -78,18 +79,18 @@ def _build_social_checklist_text(report: ReadinessReport, fsm_data: dict[str, An
 
     # Description status (first — keywords are generated from it)
     if report.has_description:
-        lines.append("\u2705 Описание")
+        lines.append(f"{E.t.CHECK} Описание")
     else:
-        lines.append("\u274c Описание")
+        lines.append(f"{E.t.CLOSE} Описание")
 
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"\u2705 Ключевые фразы \u2014 {kw_info}")
+        lines.append(f"{E.t.CHECK} Ключевые фразы \u2014 {kw_info}")
     else:
-        lines.append("\u274c Ключевые фразы (обязательно)")
+        lines.append(f"{E.t.CLOSE} Ключевые фразы (обязательно)")
 
     # Cost estimate
     lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")

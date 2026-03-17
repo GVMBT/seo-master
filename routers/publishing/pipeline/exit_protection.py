@@ -18,6 +18,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts.emoji import E
 from cache.client import RedisClient
 from db.models import User
 from keyboards.pipeline import pipeline_exit_confirm_kb, social_exit_confirm_kb
@@ -58,7 +59,7 @@ _SOCIAL_PROTECTED = StateFilter(
 async def exit_protection_reply_article(message: Message) -> None:
     """Intercept reply keyboard 'Отмена' on protected article steps."""
     await message.answer(
-        "\u26a0\ufe0f Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.t.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
@@ -70,7 +71,7 @@ async def exit_protection_reply_article(message: Message) -> None:
 async def exit_protection_reply_social(message: Message) -> None:
     """Intercept reply keyboard 'Отмена' on protected social steps."""
     await message.answer(
-        "\u26a0\ufe0f Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.t.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=social_exit_confirm_kb(),
     )
 
@@ -82,7 +83,7 @@ async def exit_protection_reply_social(message: Message) -> None:
 async def exit_protection_cancel_cmd_article(message: Message) -> None:
     """Intercept /cancel command on protected article steps."""
     await message.answer(
-        "\u26a0\ufe0f Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.t.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
@@ -94,7 +95,7 @@ async def exit_protection_cancel_cmd_article(message: Message) -> None:
 async def exit_protection_cancel_cmd_social(message: Message) -> None:
     """Intercept /cancel command on protected social steps."""
     await message.answer(
-        "\u26a0\ufe0f Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.t.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=social_exit_confirm_kb(),
     )
 

@@ -17,6 +17,7 @@ from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import DashboardServiceFactory
+from bot.texts.emoji import E
 from bot.texts.legal import LEGAL_NOTICE
 from cache.client import RedisClient
 from cache.keys import CacheKeys
@@ -504,7 +505,8 @@ async def _get_checkpoint_text(redis: RedisClient, user_id: int) -> str:
         pipeline_type = checkpoint.get("pipeline_type", "article")
         label = "статья" if pipeline_type == "article" else "пост"
         return (
-            f"\n\n\u23f3 У вас есть незавершённый {label}:\n\U0001f4c1 Проект: {project_name}\nОстановились на: {step}"
+            f"\n\n{E.SCHEDULE} У вас есть незавершённый {label}:\n"
+            f"{E.FOLDER} Проект: {project_name}\nОстановились на: {step}"
         )
     except (json.JSONDecodeError, TypeError):  # fmt: skip
         return ""
@@ -734,7 +736,7 @@ async def _route_to_step(
         if not project_id:
             await safe_edit_text(
                 msg,
-                "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.",
+                f"{E.WARNING} Сессия устарела. Нажмите /start чтобы начать заново.",
                 reply_markup=menu_kb(),
             )
             await redis.delete(CacheKeys.pipeline_state(user.id))
@@ -797,7 +799,7 @@ async def _route_to_step(
         # Preview expired or already published
         await safe_edit_text(
             msg,
-            "\u26a0\ufe0f Превью устарело. Нажмите /start чтобы начать заново.",
+            f"{E.WARNING} Превью устарело. Нажмите /start чтобы начать заново.",
             reply_markup=menu_kb(),
         )
         await redis.delete(CacheKeys.pipeline_state(user.id))
@@ -1022,7 +1024,7 @@ async def _expire_social_checkpoint(
     await state.clear()
     await safe_edit_text(
         msg,
-        "\u26a0\ufe0f Сессия устарела. Нажмите /start чтобы начать заново.",
+        f"{E.WARNING} Сессия устарела. Нажмите /start чтобы начать заново.",
         reply_markup=menu_kb(),
     )
 

@@ -33,6 +33,7 @@ from aiogram.types import (
 
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts.emoji import E
 from bot.validators import TG_CHANNEL_RE
 from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
@@ -56,6 +57,10 @@ log = structlog.get_logger()
 router = Router()
 
 _TOTAL_STEPS = 5
+
+# Step header prefixes for social pipeline screens
+_LH = f"{E.t.LINK} "   # Connection step (step 2)
+_SH = f"{E.t.MEGAPHONE} "  # Project step (step 1, back nav)
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +100,7 @@ async def _show_connection_step(
     if len(social_conns) == 0:
         await safe_edit_text(
             msg,
-            f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nПодключите соцсеть для публикации.",
+            f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nПодключите соцсеть для публикации.",
             reply_markup=social_no_connections_kb(),
         )
         await state.set_state(SocialPipelineFSM.select_connection)
@@ -128,7 +133,7 @@ async def _show_connection_step(
 
     await safe_edit_text(
         msg,
-        f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nКуда публикуем?",
+        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nКуда публикуем?",
         reply_markup=social_connections_kb(social_conns, project_id),
     )
     await state.set_state(SocialPipelineFSM.select_connection)
@@ -161,7 +166,7 @@ async def _show_connection_step_msg(
 
     if len(social_conns) == 0:
         await message.answer(
-            f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nПодключите соцсеть для публикации.",
+            f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nПодключите соцсеть для публикации.",
             reply_markup=social_no_connections_kb(),
         )
         await state.set_state(SocialPipelineFSM.select_connection)
@@ -193,7 +198,7 @@ async def _show_connection_step_msg(
         return
 
     await message.answer(
-        f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nКуда публикуем?",
+        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nКуда публикуем?",
         reply_markup=social_connections_kb(social_conns, project_id),
     )
     await state.set_state(SocialPipelineFSM.select_connection)
@@ -236,13 +241,13 @@ async def pipeline_back_to_project(
     if not projects:
         await safe_edit_text(
             msg,
-            f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+            f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля начала создадим проект — это 30 секунд.",
             reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
         )
     else:
         await safe_edit_text(
             msg,
-            f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
+            f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
             reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
         )
 
@@ -362,7 +367,7 @@ async def pipeline_add_connection(
         return
 
     await safe_edit_text(msg, 
-        f"Пост (2/{_TOTAL_STEPS}) — Подключение\n\nВыберите платформу:",
+        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nВыберите платформу:",
         reply_markup=social_no_connections_kb(exclude_types=already_connected),
     )
     await callback.answer()
@@ -389,7 +394,7 @@ async def pipeline_start_connect_tg(
 
     await state.set_state(SocialPipelineFSM.connect_tg_channel)
     await safe_edit_text(msg, 
-        f"Пост (2/{_TOTAL_STEPS}) — Подключение Телеграм\n\n"
+        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение Телеграм\n\n"
         "Введите ID или ссылку на канал.\n"
         "<i>Примеры: @mychannel, t.me/mychannel, -1001234567890</i>",
         reply_markup=cancel_kb("pipeline:social:cancel"),
@@ -626,7 +631,7 @@ async def pipeline_start_connect_vk(
     await state.set_state(SocialPipelineFSM.connect_vk_group_url)
     await safe_edit_text(
         msg,
-        f"Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
+        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
         "Отправьте ссылку на группу VK:\n\n"
         "Примеры:\n"
         "• https://vk.com/club123456\n"
@@ -783,7 +788,7 @@ async def pipeline_start_connect_pinterest(
 
     await state.set_state(SocialPipelineFSM.connect_pinterest_oauth)
     await safe_edit_text(msg, 
-        f"Пост (2/{_TOTAL_STEPS}) — Подключение Pinterest\n\n"
+        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение Pinterest\n\n"
         "Нажмите кнопку ниже для авторизации.\n"
         f"Ссылка действительна {PINTEREST_AUTH_TTL // 60} минут.",
         reply_markup=kb,

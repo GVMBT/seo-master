@@ -6,6 +6,7 @@ from typing import Any
 from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from bot.texts.emoji import TOGGLE_ON, E
 from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
 from db.models import Category, PlatformConnection, Project
 from keyboards.pagination import PAGE_SIZE, _safe_cb, paginate
@@ -141,7 +142,7 @@ def project_list_kb(projects: list[Project], page: int = 1) -> InlineKeyboardMar
     )
     kb.inline_keyboard.append(
         [
-            InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard"),
+            InlineKeyboardButton(text="Меню", callback_data="nav:dashboard"),
         ]
     )
     return kb
@@ -158,7 +159,7 @@ def project_list_empty_kb() -> InlineKeyboardMarkup:
                     style=ButtonStyle.SUCCESS,
                 ),
             ],
-            [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
+            [InlineKeyboardButton(text="Меню", callback_data="nav:dashboard")],
         ]
     )
 
@@ -258,7 +259,7 @@ def project_edit_kb(
     for i in range(0, len(_EDIT_FIELDS), 2):
         row: list[InlineKeyboardButton] = []
         for field, label in _EDIT_FIELDS[i : i + 2]:
-            prefix = "\u2705 " if filled.get(field) else ""
+            prefix = TOGGLE_ON if filled.get(field) else ""
             row.append(
                 InlineKeyboardButton(
                     text=f"{prefix}{label}",
@@ -295,7 +296,7 @@ def project_delete_confirm_kb(project_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Подтвердить удаление",
+                    text="Удалить",
                     callback_data=f"project:{project_id}:delete:confirm",
                     style=ButtonStyle.DANGER,
                 ),
@@ -420,7 +421,7 @@ def category_delete_confirm_kb(category_id: int, project_id: int) -> InlineKeybo
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Подтвердить удаление",
+                    text="Удалить",
                     callback_data=f"category:{category_id}:delete:confirm",
                     style=ButtonStyle.DANGER,
                 ),
@@ -496,10 +497,10 @@ def connection_list_kb(connections: list[PlatformConnection], project_id: int) -
 
     # Add platform buttons — only for types NOT yet connected
     _ALL_PLATFORMS = [
-        ("wordpress", "Подключить сайт"),
-        ("telegram", "Добавить Telegram"),
-        ("vk", "Добавить VK"),
-        ("pinterest", "Добавить Pinterest"),
+        ("wordpress", "+ Сайт"),
+        ("telegram", "+ Telegram"),
+        ("vk", "+ VK"),
+        ("pinterest", "+ Pinterest"),
     ]
     add_buttons = [
         InlineKeyboardButton(text=label, callback_data=f"conn:{project_id}:add:{ptype}")
@@ -529,7 +530,7 @@ def connection_manage_kb(conn_id: int, project_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Удалить подключение",
+                    text="Удалить",
                     callback_data=f"conn:{conn_id}:delete",
                     style=ButtonStyle.DANGER,
                 ),
@@ -545,7 +546,7 @@ def connection_delete_confirm_kb(conn_id: int, project_id: int) -> InlineKeyboar
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Подтвердить удаление",
+                    text="Удалить",
                     callback_data=f"conn:{conn_id}:delete:confirm",
                     style=ButtonStyle.DANGER,
                 ),
@@ -565,7 +566,7 @@ def keywords_empty_kb(cat_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Начать подбор", callback_data=f"kw:{cat_id}:generate")],
-            [InlineKeyboardButton(text="Загрузить свои фразы", callback_data=f"kw:{cat_id}:upload")],
+            [InlineKeyboardButton(text="Загрузить", callback_data=f"kw:{cat_id}:upload")],
             [InlineKeyboardButton(text="К категории", callback_data=f"category:{cat_id}:card")],
         ]
     )
@@ -575,10 +576,10 @@ def keywords_summary_kb(cat_id: int) -> InlineKeyboardMarkup:
     """Keywords summary with actions (UX_TOOLBOX section 9.2)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Посмотреть кластеры", callback_data=f"kw:{cat_id}:clusters")],
-            [InlineKeyboardButton(text="Скачать все (CSV)", callback_data=f"kw:{cat_id}:download")],
-            [InlineKeyboardButton(text="Добавить ещё фразы", callback_data=f"kw:{cat_id}:generate")],
-            [InlineKeyboardButton(text="Загрузить свои фразы", callback_data=f"kw:{cat_id}:upload")],
+            [InlineKeyboardButton(text="Кластеры", callback_data=f"kw:{cat_id}:clusters")],
+            [InlineKeyboardButton(text="CSV", callback_data=f"kw:{cat_id}:download")],
+            [InlineKeyboardButton(text="Добавить ещё", callback_data=f"kw:{cat_id}:generate")],
+            [InlineKeyboardButton(text="Загрузить", callback_data=f"kw:{cat_id}:upload")],
             [InlineKeyboardButton(text="Удалить кластер", callback_data=f"kw:{cat_id}:delete_cluster")],
             [
                 InlineKeyboardButton(
@@ -704,7 +705,7 @@ def keywords_results_kb(cat_id: int) -> InlineKeyboardMarkup:
     """Post-generation results navigation."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Посмотреть кластеры", callback_data=f"kw:{cat_id}:clusters")],
+            [InlineKeyboardButton(text="Кластеры", callback_data=f"kw:{cat_id}:clusters")],
             [InlineKeyboardButton(text="К категории", callback_data=f"category:{cat_id}:card")],
         ]
     )
@@ -817,10 +818,10 @@ def prices_kb(cat_id: int, has_prices: bool) -> InlineKeyboardMarkup:
 
 # Platform emoji mapping for button labels
 _PLATFORM_EMOJI: dict[str, str] = {
-    "wordpress": "\U0001f310",
-    "telegram": "\u2708",
-    "vk": "\U0001f535",
-    "pinterest": "\U0001f4cc",
+    "wordpress": E.WORDPRESS,
+    "telegram": E.TELEGRAM,
+    "vk": E.VK,
+    "pinterest": E.PINTEREST,
 }
 
 # Human-readable platform names
@@ -910,7 +911,7 @@ def _multi_select_grid(
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for idx, item in enumerate(items):
-        prefix = "\u2713 " if item in selected else ""
+        prefix = TOGGLE_ON if item in selected else ""
         row.append(
             InlineKeyboardButton(
                 text=f"{prefix}{item}",
@@ -938,7 +939,7 @@ def _single_select_grid(
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for idx, item in enumerate(items):
-        prefix = "\u2713 " if item == current else ""
+        prefix = TOGGLE_ON if item == current else ""
         row.append(
             InlineKeyboardButton(
                 text=f"{prefix}{item}",
@@ -980,7 +981,7 @@ def project_word_count_kb(pid: int, current: int | None, target: str = "d") -> I
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for wc in WORD_COUNTS:
-        prefix = "\u2713 " if wc == current else ""
+        prefix = TOGGLE_ON if wc == current else ""
         row.append(
             InlineKeyboardButton(
                 text=f"{prefix}{wc}",
@@ -1089,7 +1090,7 @@ def project_image_count_kb(pid: int, current: int | None, target: str = "d") -> 
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for n in range(11):
-        prefix = "\u2713 " if n == current else ""
+        prefix = TOGGLE_ON if n == current else ""
         row.append(
             InlineKeyboardButton(
                 text=f"{prefix}{n}",
@@ -1112,7 +1113,7 @@ def project_text_on_image_kb(pid: int, current: int | None, target: str = "d") -
     p = f"psettings:{pid}:{target}"
     rows: list[list[InlineKeyboardButton]] = []
     for pct in TEXT_ON_IMAGE:
-        prefix = "\u2713 " if pct == current else ""
+        prefix = TOGGLE_ON if pct == current else ""
         rows.append([
             InlineKeyboardButton(
                 text=f"{prefix}{pct}%",
@@ -1433,7 +1434,7 @@ def scheduler_config_kb(
     for label, key in presets:
         if active_preset and active_preset == key:
             style = ButtonStyle.SUCCESS
-            text = f"\u2705 {label}"
+            text = f"{TOGGLE_ON}{label}"
         elif not active_preset and key == "3w":
             style = ButtonStyle.PRIMARY
             text = label
@@ -1449,7 +1450,7 @@ def scheduler_config_kb(
                 )
             ]
         )
-    manual_text = "\u2705 Настроить вручную" if active_preset == "manual" else "Настроить вручную"
+    manual_text = f"{TOGGLE_ON}Настроить вручную" if active_preset == "manual" else "Настроить вручную"
     manual_style = ButtonStyle.SUCCESS if active_preset == "manual" else None
     rows.append(
         [
@@ -1479,7 +1480,7 @@ def schedule_days_kb(selected: set[str]) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for key, label in _DAY_LABELS.items():
-        mark = "\u2713 " if key in selected else ""
+        mark = TOGGLE_ON if key in selected else ""
         row.append(InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"sched:day:{key}"))
         if len(row) == 4:
             rows.append(row)
@@ -1555,7 +1556,7 @@ def scheduler_crosspost_kb(
     for conn in social_connections:
         if conn.id == conn_id:
             continue  # skip lead connection
-        mark = "\u2713 " if conn.id in selected_ids else ""
+        mark = TOGGLE_ON if conn.id in selected_ids else ""
         display = format_connection_display(conn)
         rows.append(
             [
@@ -1600,7 +1601,7 @@ def scheduler_social_config_kb(
     for label, key in presets:
         if active_preset and active_preset == key:
             style = ButtonStyle.SUCCESS
-            text = f"\u2705 {label}"
+            text = f"{TOGGLE_ON}{label}"
         elif not active_preset and key == "3w":
             style = ButtonStyle.PRIMARY
             text = label
@@ -1616,7 +1617,7 @@ def scheduler_social_config_kb(
                 )
             ]
         )
-    manual_text = "\u2705 Настроить вручную" if active_preset == "manual" else "Настроить вручную"
+    manual_text = f"{TOGGLE_ON}Настроить вручную" if active_preset == "manual" else "Настроить вручную"
     manual_style = ButtonStyle.SUCCESS if active_preset == "manual" else None
     rows.append(
         [
@@ -1656,7 +1657,7 @@ def schedule_times_kb(selected: set[str], required: int) -> InlineKeyboardMarkup
     row: list[InlineKeyboardButton] = []
     for hour in range(6, 24):
         time_str = f"{hour:02d}:00"
-        mark = "\u2713 " if time_str in selected else ""
+        mark = TOGGLE_ON if time_str in selected else ""
         row.append(InlineKeyboardButton(text=f"{mark}{time_str}", callback_data=f"sched:time:{time_str}"))
         if len(row) == 4:
             rows.append(row)

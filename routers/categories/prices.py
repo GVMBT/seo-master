@@ -15,6 +15,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import cancel_kb, category_card_kb, menu_kb, prices_kb
@@ -103,10 +104,11 @@ async def _show_prices_screen(
     if prices:
         lines = [ln for ln in prices.splitlines() if ln.strip()]
         count = len(lines)
-        text = f"<b>Цены \u2014 {safe_name}</b>\n\n\U0001f4ce Файл загружен ({count} позиций)"
+        text = f"<b>{E.PRICE} Цены \u2014 {safe_name}</b>\n\n{E.UPLOAD} Файл загружен ({count} позиций)"
     else:
         text = (
-            f"<b>Цены \u2014 {safe_name}</b>\n\nПрайс-лист не загружен. Добавьте \u2014 в статьях будут реальные цены."
+            f"<b>{E.PRICE} Цены \u2014 {safe_name}</b>\n\n"
+            "Прайс-лист не загружен. Добавьте \u2014 в статьях будут реальные цены."
         )
 
     await safe_edit_text(message, text, reply_markup=prices_kb(category_id, has_prices=bool(prices)))
@@ -401,7 +403,7 @@ async def process_excel(
 
     if result == "too_many_rows":
         await state.clear()
-        await message.answer(f"\u26a0\ufe0f Максимум {_MAX_ROWS} строк.", reply_markup=menu_kb())
+        await message.answer(f"{E.WARNING} Максимум {_MAX_ROWS} строк.", reply_markup=menu_kb())
         return
 
     lines = result

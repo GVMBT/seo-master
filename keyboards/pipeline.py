@@ -5,6 +5,7 @@ from __future__ import annotations
 from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from bot.texts.emoji import TOGGLE_ON
 from db.models import Category, PlatformConnection, Project
 from keyboards.inline import format_connection_display
 from keyboards.pagination import paginate
@@ -199,7 +200,7 @@ def pipeline_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="\u2705 Всё готово \u2014 генерировать",
+                text=TOGGLE_ON + "Готово \u2014 генерировать",
                 callback_data="pipeline:readiness:done",
                 style=ButtonStyle.SUCCESS,
             ),
@@ -237,7 +238,7 @@ def pipeline_confirm_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Вернуться к чеклисту",
+                    text="К чеклисту",
                     callback_data="pipeline:article:back_readiness",
                 ),
             ],
@@ -332,7 +333,7 @@ def pipeline_preview_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="Отмена — вернуть токены",
+                text="Отмена (возврат)",
                 callback_data="pipeline:article:cancel_refund",
                 style=ButtonStyle.DANGER,
             ),
@@ -398,7 +399,7 @@ def pipeline_preview_no_wp_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="Отмена — вернуть токены",
+                text="Отмена (возврат)",
                 callback_data="pipeline:article:cancel_refund",
                 style=ButtonStyle.DANGER,
             ),
@@ -430,7 +431,7 @@ def pipeline_result_kb(post_url: str | None = None) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="\U0001f4cb Главное меню",
+                text="Меню",
                 callback_data="nav:dashboard",
             ),
         ]
@@ -466,7 +467,7 @@ def pipeline_generation_error_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="\U0001f4cb Главное меню",
+                    text="Меню",
                     callback_data="nav:dashboard",
                 ),
             ],
@@ -509,7 +510,7 @@ def pipeline_keywords_options_kb(prefix: str = "pipeline:readiness") -> InlineKe
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Подобрать автоматически (100 фраз — 100 ток.)",
+                    text="Авто (100 фраз)",
                     callback_data=f"{prefix}:keywords:auto",
                 ),
             ],
@@ -812,7 +813,7 @@ def social_readiness_kb(report: ReadinessReport) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="\u2705 Всё готово \u2014 генерировать",
+                text=TOGGLE_ON + "Готово \u2014 генерировать",
                 callback_data="pipeline:social:readiness:done",
                 style=ButtonStyle.SUCCESS,
             ),
@@ -868,7 +869,7 @@ def social_confirm_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Вернуться к чеклисту",
+                    text="К чеклисту",
                     callback_data="pipeline:social:back_readiness",
                 ),
             ],
@@ -940,7 +941,7 @@ def social_review_kb(regen_count: int = 0, regen_cost: int = 40) -> InlineKeyboa
     rows.append(
         [
             InlineKeyboardButton(
-                text="Отмена — вернуть токены",
+                text="Отмена (возврат)",
                 callback_data="pipeline:social:cancel_refund",
                 style=ButtonStyle.DANGER,
             ),
@@ -986,7 +987,7 @@ def social_result_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="\U0001f4cb Главное меню",
+                text="Меню",
                 callback_data="nav:dashboard",
             ),
         ]
@@ -1012,7 +1013,7 @@ def crosspost_select_kb(
     rows: list[list[InlineKeyboardButton]] = []
     for conn in connections:
         display = format_connection_display(conn)
-        check = "\u2705 " if conn.id in selected_ids else ""
+        check = TOGGLE_ON if conn.id in selected_ids else ""
         rows.append(
             [
                 InlineKeyboardButton(
@@ -1049,7 +1050,7 @@ def crosspost_result_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="\U0001f4cb Главное меню",
+                    text="Меню",
                     callback_data="nav:dashboard",
                 ),
             ]

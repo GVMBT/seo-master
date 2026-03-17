@@ -29,6 +29,7 @@ from bot.config import get_settings
 from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts.emoji import E
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
@@ -90,7 +91,7 @@ _SOCIAL_STEPS = [
 
 def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
     """Build cumulative progress text for social post generation."""
-    lines = ["\U0001f4dd Генерация поста", ""]
+    lines = [f"{E.t.PEN} Генерация поста", ""]
     for i, (active_label, done_label) in enumerate(steps):
         if i < current:
             lines.append(f"{EMOJI_DONE} {done_label}")
@@ -102,7 +103,7 @@ def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
 def _social_publish_progress(platform: str, current: int) -> str:
     """Build cumulative progress text for social post publishing."""
     name = _PLATFORM_NAMES.get(platform, platform.title())
-    lines = ["\U0001f4e4 Публикация поста", ""]
+    lines = [f"{E.t.UPLOAD} Публикация поста", ""]
     for i, (active_tpl, done_tpl) in enumerate(_SOCIAL_PUBLISH_STEPS):
         active_label = active_tpl.format(platform=name)
         done_label = done_tpl.format(platform=name)
@@ -203,7 +204,7 @@ def _build_social_confirm_text(
         cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE -- бесплатно)"
 
     return (
-        "Пост (5/5) -- Подтверждение\n\n"
+        f"{E.t.MEGAPHONE} Пост (5/5) -- Подтверждение\n\n"
         f"{project_name} -> {platform_label} ({identifier})\n"
         f"Тема: {category_name}\n"
         f"Ключевики: {report.keyword_count} фраз\n\n"

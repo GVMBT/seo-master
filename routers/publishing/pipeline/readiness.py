@@ -22,6 +22,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
+from bot.texts.emoji import E
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -67,38 +68,38 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     category_name = html.escape(fsm_data.get("category_name", ""))
 
     lines: list[str] = [
-        "Статья (4/5) — Подготовка\n",
+        f"{E.t.DOC} Статья (4/5) — Подготовка\n",
         f"Проект: {project_name}",
         f"Тема: {category_name}\n",
     ]
 
     # Description status (first — keywords are generated from it)
     if report.has_description:
-        lines.append("\u2705 Описание")
+        lines.append(f"{E.t.CHECK} Описание")
     elif "description" in report.missing_items:
-        lines.append("\u274c Описание")
+        lines.append(f"{E.t.CLOSE} Описание")
 
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"\u2705 Ключевые фразы \u2014 {kw_info}")
+        lines.append(f"{E.t.CHECK} Ключевые фразы \u2014 {kw_info}")
     else:
-        lines.append("\u274c Ключевые фразы (обязательно)")
+        lines.append(f"{E.t.CLOSE} Ключевые фразы (обязательно)")
 
     # Prices status (progressive: shown for 2+ pubs)
     if "prices" in report.missing_items:
-        lines.append("\u274c Цены")
+        lines.append(f"{E.t.CLOSE} Цены")
     elif report.has_prices:
-        lines.append("\u2705 Цены")
+        lines.append(f"{E.t.CHECK} Цены")
 
     # Images (generated WITH the article, not separately)
     if report.image_count > 0:
         img_cost = report.image_count * COST_PER_IMAGE
-        lines.append(f"\u2705 Медиа \u2014 {report.image_count} шт. ({img_cost} ток.)")
+        lines.append(f"{E.t.CHECK} Медиа \u2014 {report.image_count} шт. ({img_cost} ток.)")
     else:
-        lines.append("\u274c Медиа")
+        lines.append(f"{E.t.CLOSE} Медиа")
 
     # Cost estimate
     lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")

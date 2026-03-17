@@ -167,7 +167,9 @@ async def start_generate(
     except Exception:
         log.exception("description_generation_failed", cat_id=cat_id, user_id=user.id)
         await state.clear()
-        await safe_edit_text(msg, "\u26a0\ufe0f Ошибка генерации. Попробуйте ещё раз.", reply_markup=menu_kb())
+        from bot.texts.emoji import E
+
+        await safe_edit_text(msg, f"{E.WARNING} Ошибка генерации. Попробуйте ещё раз.", reply_markup=menu_kb())
         return
 
     # Move to review state
