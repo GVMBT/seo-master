@@ -11,6 +11,7 @@ from aiohttp import web
 
 from api import require_qstash_signature
 from api.models import PublishPayload
+from bot.texts.emoji import E
 from cache.keys import PUBLISH_LOCK_TTL, CacheKeys
 from services.publish import PublishOutcome, PublishService
 
@@ -19,21 +20,22 @@ log = structlog.get_logger()
 # Notification text templates per EDGE_CASES.md - missed auto-publish notifications
 _REASON_TEMPLATES: dict[str, str] = {
     "insufficient_balance": (
-        "\u26a0\ufe0f Автопубликация пропущена: недостаточно токенов. "
+        f"{E.t.WARNING} Автопубликация пропущена: недостаточно токенов. "
         "Расписание приостановлено.\nПополните баланс через /start."
     ),
     "no_keywords": (
-        "\u26a0\ufe0f Автопубликация пропущена: нет ключевых фраз в категории.\n"
+        f"{E.t.WARNING} Автопубликация пропущена: нет ключевых фраз в категории.\n"
         "Добавьте фразы через карточку категории."
     ),
     "connection_inactive": (
-        "\u26a0\ufe0f Автопубликация не удалась: платформа не отвечает.\nПроверьте подключение в настройках проекта."
+        f"{E.t.WARNING} Автопубликация не удалась: платформа не отвечает.\n"
+        "Проверьте подключение в настройках проекта."
     ),
     "content_validation_failed": (
-        "\u26a0\ufe0f Автопубликация пропущена: контент не прошёл проверку качества. Токены возвращены."
+        f"{E.t.WARNING} Автопубликация пропущена: контент не прошёл проверку качества. Токены возвращены."
     ),
     "ai_service_unavailable": (
-        "\u26a0\ufe0f Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."
+        f"{E.t.WARNING} Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."
     ),
 }
 
@@ -52,7 +54,7 @@ def _build_notification_text(result: PublishOutcome) -> str:
 
     if result.status == "ok":
         keyword_safe = html_mod.escape(result.keyword)
-        text = f"\u2705 Автопубликация выполнена: <b>{keyword_safe}</b>"
+        text = f"{E.t.CHECK} Автопубликация выполнена: <b>{keyword_safe}</b>"
         if result.post_url:
             text += f"\n{result.post_url}"
         # Append cross-post results

@@ -26,6 +26,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
+from bot.texts.emoji import E
 from bot.validators import URL_RE
 from cache.client import RedisClient
 from db.client import SupabaseClient
@@ -54,6 +55,9 @@ from services.connections import ConnectionService
 
 log = structlog.get_logger()
 router = Router()
+
+# Step header prefix for article pipeline screens
+_H = f"{E.t.DOC} "
 
 
 def _get_image_count(category: object, project: object | None = None) -> int:
@@ -107,7 +111,7 @@ async def pipeline_article_start(
         # No projects — offer inline create
         await safe_edit_text(
             msg,
-            "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+            f"{_H}Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
             reply_markup=pipeline_no_projects_kb(),
         )
         await state.set_state(ArticlePipelineFSM.select_project)
@@ -130,7 +134,7 @@ async def pipeline_article_start(
     # Multiple projects — show list
     await safe_edit_text(
         msg,
-        "Статья (1/5) — Проект\n\nДля какого проекта?",
+        f"{_H}Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects),
     )
     await state.set_state(ArticlePipelineFSM.select_project)
@@ -200,7 +204,7 @@ async def pipeline_projects_page(
 
     await safe_edit_text(
         msg,
-        "Статья (1/5) — Проект\n\nДля какого проекта?",
+        f"{_H}Статья (1/5) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, page=page),
     )
     await callback.answer()
@@ -275,7 +279,7 @@ async def pipeline_start_create_project(
     await state.update_data(last_update_time=time.time())
     await safe_edit_text(
         msg,
-        "Статья (1/5) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
+        f"{_H}Статья (1/5) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
 
@@ -368,7 +372,7 @@ async def _show_wp_step(
         await state.update_data(connection_id=conn.id, wp_identifier=conn.identifier)
         await safe_edit_text(
             msg,
-            f"Статья (2/5) — Сайт\n\n\u2705 WordPress подключён: {html.escape(conn.identifier)}",
+            f"{_H}Статья (2/5) — Сайт\n\n{E.t.CHECK} WordPress подключён: {html.escape(conn.identifier)}",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="Продолжить", callback_data="pipeline:article:wp_continue")],
@@ -389,7 +393,7 @@ async def _show_wp_step(
     # No WP connections — offer connect or preview-only
     await safe_edit_text(
         msg,
-        "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
+        f"{_H}Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
         reply_markup=pipeline_no_wp_kb(),
     )
     await state.set_state(ArticlePipelineFSM.select_wp)
@@ -490,7 +494,7 @@ async def _show_wp_step_msg(
         return
 
     await message.answer(
-        "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
+        f"{_H}Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
         reply_markup=pipeline_no_wp_kb(),
     )
     await state.set_state(ArticlePipelineFSM.select_wp)
@@ -537,7 +541,7 @@ async def pipeline_start_connect_wp(
             await state.set_state(ArticlePipelineFSM.connect_wp_login)
             await safe_edit_text(
                 msg,
-                f"Статья (2/5) — Подключение WordPress\n\n"
+                f"{_H}Статья (2/5) — Подключение WordPress\n\n"
                 f"Сайт: {html.escape(project.website_url)}\n\n"
                 f"Введите логин WordPress (имя пользователя).",
             )
@@ -548,7 +552,7 @@ async def pipeline_start_connect_wp(
     await state.update_data(last_update_time=time.time())
     await safe_edit_text(
         msg,
-        "Статья (2/5) — Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
+        f"{_H}Статья (2/5) — Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
     )
     await callback.answer()
 
@@ -713,7 +717,7 @@ async def pipeline_cancel_wp_subflow(
     if project_id:
         await safe_edit_text(
             msg,
-            "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
+            f"{_H}Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
             reply_markup=pipeline_no_wp_kb(),
         )
         await state.set_state(ArticlePipelineFSM.select_wp)
@@ -764,7 +768,7 @@ async def _show_category_step(
         # No categories — prompt for inline creation
         await safe_edit_text(
             msg,
-            "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
+            f"{_H}Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         await state.set_state(ArticlePipelineFSM.create_category_name)
@@ -792,7 +796,7 @@ async def _show_category_step(
     # Multiple categories — show list
     await safe_edit_text(
         msg,
-        "Статья (3/5) — Тема\n\nКакая тема?",
+        f"{_H}Статья (3/5) — Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id),
     )
     await state.set_state(ArticlePipelineFSM.select_category)
@@ -824,7 +828,7 @@ async def _show_category_step_msg(
 
     if not categories:
         await message.answer(
-            "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
+            f"{_H}Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         await state.set_state(ArticlePipelineFSM.create_category_name)
@@ -849,7 +853,7 @@ async def _show_category_step_msg(
         return
 
     await message.answer(
-        "Статья (3/5) — Тема\n\nКакая тема?",
+        f"{_H}Статья (3/5) — Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id),
     )
     await state.set_state(ArticlePipelineFSM.select_category)
@@ -975,13 +979,13 @@ async def pipeline_back_to_project(
     if not projects:
         await safe_edit_text(
             msg,
-            "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+            f"{_H}Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
             reply_markup=pipeline_no_projects_kb(),
         )
     else:
         await safe_edit_text(
             msg,
-            "Статья (1/5) — Проект\n\nДля какого проекта?",
+            f"{_H}Статья (1/5) — Проект\n\nДля какого проекта?",
             reply_markup=pipeline_projects_kb(projects),
         )
 

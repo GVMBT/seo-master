@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
 from bot.assets import edit_screen
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts.emoji import E
 from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
 from cache.client import RedisClient
 from db.client import SupabaseClient
@@ -48,8 +49,6 @@ async def nav_profile(
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
     stats = await token_service.get_profile_stats(user)
 
-    from bot.texts.emoji import E
-
     text = (
         f"<b>{E.USER} Профиль</b>\n\n"
         f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов\n\n"
@@ -86,9 +85,7 @@ async def show_notifications(
         await callback.answer()
         return
 
-    from bot.texts.emoji import E
-
-    text = f"<b>{E.BELL} Уведомления</b>\n\nНажмите для переключения:"
+    text = f"<b>{E.t.BELL} УВЕДОМЛЕНИЯ</b>\n\n<i>Нажмите для переключения:</i>"
 
     await safe_edit_text(
         msg,
@@ -129,11 +126,10 @@ async def toggle_notification(
         await callback.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", show_alert=True)
         return
 
-    from bot.texts.emoji import E
+    text = f"<b>{E.t.BELL} УВЕДОМЛЕНИЯ</b>\n\n<i>Нажмите для переключения:</i>"
 
-    text = f"<b>{E.BELL} Уведомления</b>\n\nНажмите для переключения:"
-
-    await safe_edit_text(msg, 
+    await safe_edit_text(
+        msg,
         text,
         reply_markup=notifications_kb(
             notify_publications=updated_user.notify_publications,

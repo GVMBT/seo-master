@@ -23,6 +23,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
+from bot.texts.emoji import E
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import ProjectCreate, User
@@ -52,6 +53,9 @@ router = Router()
 
 # Total step count for social pipeline (displayed in step headers)
 _TOTAL_STEPS = 5
+
+# Step header prefix for social pipeline screens
+_SH = f"{E.t.MEGAPHONE} "
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +96,7 @@ async def pipeline_social_start(
     if not projects:
         await safe_edit_text(
             msg,
-            f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+            f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля начала создадим проект — это 30 секунд.",
             reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
         )
         await state.set_state(SocialPipelineFSM.select_project)
@@ -122,7 +126,7 @@ async def pipeline_social_start(
 
     await safe_edit_text(
         msg,
-        f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
+        f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
     )
     await state.set_state(SocialPipelineFSM.select_project)
@@ -201,7 +205,7 @@ async def pipeline_projects_page(
 
     await safe_edit_text(
         msg,
-        f"Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
+        f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
         reply_markup=pipeline_projects_kb(projects, page=page, pipeline_type="social"),
     )
     await callback.answer()
@@ -284,7 +288,7 @@ async def pipeline_start_create_project(
     await state.update_data(last_update_time=time.time())
     await safe_edit_text(
         msg,
-        f"Пост (1/{_TOTAL_STEPS}) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
+        f"{_SH}Пост (1/{_TOTAL_STEPS}) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
     )
     await callback.answer()
 
@@ -380,7 +384,7 @@ async def _show_category_step(
     if not categories:
         await safe_edit_text(
             msg,
-            f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nО чём будет пост? Назовите тему.",
+            f"{_SH}Пост (3/{_TOTAL_STEPS}) — Тема\n\nО чём будет пост? Назовите тему.",
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         await state.set_state(SocialPipelineFSM.create_category_name)
@@ -402,7 +406,7 @@ async def _show_category_step(
 
     await safe_edit_text(
         msg,
-        f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
+        f"{_SH}Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
     await state.set_state(SocialPipelineFSM.select_category)
@@ -431,7 +435,7 @@ async def _show_category_step_msg(
 
     if not categories:
         await message.answer(
-            f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nО чём будет пост? Назовите тему.",
+            f"{_SH}Пост (3/{_TOTAL_STEPS}) -- Тема\n\nО чём будет пост? Назовите тему.",
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         await state.set_state(SocialPipelineFSM.create_category_name)
@@ -452,7 +456,7 @@ async def _show_category_step_msg(
         return
 
     await message.answer(
-        f"Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
+        f"{_SH}Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
     await state.set_state(SocialPipelineFSM.select_category)
@@ -571,7 +575,7 @@ async def pipeline_categories_page(
 
     await safe_edit_text(
         msg,
-        f"Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
+        f"{_SH}Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
         reply_markup=pipeline_categories_kb(categories, project_id, page=page, pipeline_type="social"),
     )
     await callback.answer()

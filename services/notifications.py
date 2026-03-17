@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import structlog
 
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.repositories.publications import PublicationsRepository
 from db.repositories.users import UsersRepository
@@ -33,8 +34,8 @@ class NotifyService:
         result: list[tuple[int, str]] = []
         for u in users:
             text = (
-                "\u26a0\ufe0f <b>Низкий баланс</b>\n\n"
-                f"\U0001f4b0 Баланс: {u.balance} токенов\n\n"
+                f"{E.t.WARNING} <b>Низкий баланс</b>\n\n"
+                f"{E.t.WALLET} Баланс: {u.balance} токенов\n\n"
                 "Этого может не хватить для автопубликации. Пополните баланс."
             )
             result.append((u.id, text))
@@ -62,9 +63,9 @@ class NotifyService:
         for u in eligible:
             total = pub_counts.get(u.id, 0)
             text = (
-                "\U0001f4ca <b>Еженедельный дайджест</b>\n\n"
-                f"\U0001f4dd Публикаций за все время: {total}\n"
-                f"\U0001f4b0 Баланс: {u.balance} токенов\n\n"
+                f"{E.t.ANALYTICS} <b>Еженедельный дайджест</b>\n\n"
+                f"{E.t.EDIT_DOC} Публикаций за все время: {total}\n"
+                f"{E.t.WALLET} Баланс: {u.balance} токенов\n\n"
                 "Продолжайте публиковать контент!"
             )
             result.append((u.id, text))
@@ -80,9 +81,9 @@ class NotifyService:
         result: list[tuple[int, str]] = []
         for u in users:
             text = (
-                "\U0001f44b <b>Мы скучаем!</b>\n\n"
+                f"{E.t.BELL} <b>Мы скучаем!</b>\n\n"
                 f"Вы не заходили более {_REACTIVATION_DAYS} дней.\n"
-                f"\U0001f4b0 На балансе: {u.balance} токенов.\n\n"
+                f"{E.t.WALLET} На балансе: {u.balance} токенов.\n\n"
                 "Вернитесь и продолжите публикации!"
             )
             result.append((u.id, text))
