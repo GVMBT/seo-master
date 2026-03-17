@@ -18,6 +18,25 @@ from services.scheduler import SchedulerService
 log = structlog.get_logger()
 router = Router()
 
+# Platform type -> (emoji constant, display name)
+_PLATFORM_E: dict[str, tuple[str, str]] = {
+    "wordpress": (E.WORDPRESS, "WordPress"),
+    "telegram": (E.TELEGRAM, "Telegram"),
+    "vk": (E.VK, "ВКонтакте"),
+    "pinterest": (E.PINTEREST, "Pinterest"),
+}
+
+
+def _build_platform_lines(platform_types: list[str]) -> list[str]:
+    """Build vertical platform list with per-platform emoji."""
+    if not platform_types:
+        return [f"{E.LINK} Платформы: не подключены"]
+    lines: list[str] = []
+    for pt in platform_types:
+        emoji, name = _PLATFORM_E.get(pt, (E.LINK, pt.capitalize()))
+        lines.append(f"{emoji} {name}")
+    return lines
+
 
 # ---------------------------------------------------------------------------
 # Project card
@@ -50,23 +69,20 @@ async def show_project_card(
     # Build compact card text
     safe_name = html.escape(project.name)
 
-    if card_data.platform_types:
-        platforms_str = ", ".join(p.capitalize() for p in card_data.platform_types)
-    else:
-        platforms_str = "не подключены"
-
     header = f"{E.ROCKET} <b>{safe_name}</b>"
     if project.website_url:
         header += f"\n{E.WORDPRESS} {html.escape(project.website_url)}"
 
-    text = (
-        f"{header}\n\n"
-        f"{E.LINK} Платформы: {platforms_str}\n"
-        f"{E.FOLDER} Категорий: {len(card_data.categories)}\n"
-        f"{E.ANALYTICS} Публикаций: {card_data.pub_count}\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Управляйте проектом и контентом</i>"
-    )
+    # Platform list: vertical with per-platform emoji
+    platform_lines = _build_platform_lines(card_data.platform_types)
+
+    lines = [header, ""]
+    lines.extend(platform_lines)
+    lines.append(f"{E.FOLDER} Категорий: {len(card_data.categories)}")
+    lines.append(f"{E.ANALYTICS} Публикаций: {card_data.pub_count}")
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"{E.LIGHTBULB} <i>Управляйте проектом и контентом</i>")
+    text = "\n".join(lines)
     has_keywords = any(cat.keywords for cat in card_data.categories)
     kb = project_card_kb(project_id, has_keywords=has_keywords)
     await edit_screen(msg, "project_card.png", text, reply_markup=kb)

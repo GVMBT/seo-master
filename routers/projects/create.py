@@ -92,6 +92,46 @@ _FIELD_LIMITS: dict[str, tuple[int, int]] = {
     "company_email": (5, 100),
 }
 
+# Display label capitalized for edit prompt header
+_FIELD_DISPLAY: dict[str, str] = {
+    "name": "Название проекта",
+    "company_name": "Название компании",
+    "specialization": "Специализация",
+    "website_url": "URL сайта",
+    "description": "Описание компании",
+    "advantages": "Преимущества",
+    "experience": "Опыт работы",
+    "company_city": "Город",
+    "company_address": "Адрес",
+    "company_phone": "Телефон",
+    "company_email": "Email",
+}
+
+
+def _build_field_edit_prompt(field: str, current_value: str) -> str:
+    """Build structured edit prompt with header, current value, and hint."""
+    display_label = _FIELD_DISPLAY.get(field, field)
+
+    if current_value:
+        display_value = html.escape(_truncate(current_value, 100))
+        current_block = (
+            "Текущее значение:\n"
+            f"<i>{display_value}</i>"
+        )
+    else:
+        current_block = (
+            "Текущее значение: "
+            "<i>не заполнено</i>"
+        )
+
+    return (
+        f"{E.PEN} <b>РЕДАКТИРОВАНИЕ</b>\n\n"
+        f"Поле: <b>{display_label}</b>\n\n"
+        f"{current_block}\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Введите новое значение</i>"
+    )
+
 
 # ---------------------------------------------------------------------------
 # ProjectCreateFSM
@@ -310,10 +350,9 @@ async def start_field_edit(
         edit_field=field,
     )
 
-    label = _FIELD_LABELS[field]
-    current = getattr(project, field, None) or "—"
+    current_raw = getattr(project, field, None) or ""
     await msg.answer(
-        f"Введите новое значение для поля «{label}».\nТекущее: {html.escape(str(current))}",
+        _build_field_edit_prompt(field, current_raw),
         reply_markup=cancel_kb("project:edit:cancel"),
     )
     await callback.answer()
