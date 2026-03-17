@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery
 from bot.assets import edit_screen
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory, TokenServiceFactory
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import project_card_kb, project_delete_confirm_kb, project_deleted_kb
@@ -54,12 +55,11 @@ async def show_project_card(
     else:
         platforms_str = "не подключены"
 
-    # Plain Unicode — edit_screen caption does NOT support <tg-emoji>
     text = (
         f"<b>{safe_name}</b>\n"
-        f"\n\U0001f517 Платформы: {platforms_str}"
-        f"\n\U0001f4c1 Категорий: {len(card_data.categories)}"
-        f"\n\U0001f4ca Публикаций: {card_data.pub_count}"
+        f"\n{E.LINK} Платформы: {platforms_str}"
+        f"\n{E.FOLDER} Категорий: {len(card_data.categories)}"
+        f"\n{E.ANALYTICS} Публикаций: {card_data.pub_count}"
     )
     has_keywords = any(cat.keywords for cat in card_data.categories)
     kb = project_card_kb(project_id, has_keywords=has_keywords)

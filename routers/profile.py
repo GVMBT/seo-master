@@ -49,19 +49,18 @@ async def nav_profile(
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
     stats = await token_service.get_profile_stats(user)
 
-    # Plain Unicode — edit_screen caption does NOT support <tg-emoji>
     text = (
-        f"<b>\U0001f464 Профиль</b>\n\n"
-        f"\U0001f4b0 Баланс: <b>{user.balance}</b> токенов\n\n"
-        f"\U0001f4c1 Проектов: {stats['project_count']}\n"
-        f"# Категорий: {stats['category_count']}\n"
-        f"\U0001f4c5 Расписаний: {stats['schedule_count']}\n"
-        f"\U0001f500 Рефералов: {stats['referral_count']}\n\n"
+        f"<b>{E.USER} Профиль</b>\n\n"
+        f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов\n\n"
+        f"{E.FOLDER} Проектов: {stats['project_count']}\n"
+        f"{E.HASHTAG} Категорий: {stats['category_count']}\n"
+        f"{E.SCHEDULE} Расписаний: {stats['schedule_count']}\n"
+        f"{E.TRANSFER} Рефералов: {stats['referral_count']}\n\n"
     )
 
     if stats["posts_per_week"] > 0:
         text += (
-            f"\U0001f4c8 Прогноз расхода:\n"
+            f"{E.CHART} Прогноз расхода:\n"
             f"~{stats['tokens_per_week']} токенов/неделю\n"
             f"~{stats['tokens_per_month']} токенов/месяц"
         )

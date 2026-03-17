@@ -73,7 +73,7 @@ async def show_category_list(
             msg,
             "empty_categories.png",
             f"<b>{safe_name}</b> \u2014 Категории\n\n"
-            f"\U0001f4c1 Категорий пока нет.\n\n"
+            f"{E.FOLDER} Категорий пока нет.\n\n"
             "Категория = тема контента "
             "(например: \u00abSEO-оптимизация\u00bb или \u00abКулинарные рецепты\u00bb).",
             reply_markup=category_list_empty_kb(project_id),

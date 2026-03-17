@@ -7,9 +7,7 @@ Usage:
     text = f"{E.WALLET} <b>Balance: 1500</b>"
 
 Renders as premium custom emoji via <tg-emoji> HTML tags.
-Works in edit_text / send_message with parse_mode="HTML".
-Does NOT work in edit_media captions (ENTITY_TEXT_INVALID) —
-use plain Unicode strings for photo captions.
+Works in edit_text / send_message / photo captions with parse_mode="HTML".
 """
 
 

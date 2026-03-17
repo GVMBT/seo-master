@@ -99,10 +99,9 @@ async def admin_panel(
     admin_svc = admin_service_factory(db)
     stats = await admin_svc.get_panel_stats()
 
-    # Plain Unicode — edit_screen caption does NOT support <tg-emoji>
     text = (
-        f"<b>\U0001f451 АДМИН-ПАНЕЛЬ</b>\n\n"
-        f"\U0001f4ca \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"<b>{E.CROWN} АДМИН-ПАНЕЛЬ</b>\n\n"
+        f"{E.ANALYTICS} \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
         f"Пользователей: {stats.total_users}\n"
         f"Оплативших: {stats.paid_users}\n"
         f"Проектов: {stats.total_projects}\n"
