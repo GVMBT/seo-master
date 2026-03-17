@@ -9,8 +9,14 @@ Renders as premium emoji for Premium users, Unicode fallback for others.
 
 
 def _e(eid: str, fb: str) -> str:
-    """Build tg-emoji HTML tag."""
-    return f'<tg-emoji emoji-id="{eid}">{fb}</tg-emoji>'
+    """Return emoji fallback.
+
+    <tg-emoji> tags cause ENTITY_TEXT_INVALID when used in edit_media captions.
+    Using plain Unicode until custom emoji sticker pack is configured for the bot.
+    IDs are preserved for future activation.
+    """
+    _ = eid
+    return fb
 
 
 class E:

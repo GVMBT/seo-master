@@ -559,8 +559,8 @@ class PublishService:
             raise RuntimeError("External data unavailable (Serper + Research empty), skipping slot")
 
         # Load previous keywords for anti-repetition in prompts
-        previous_keywords = await self._publications.get_recent_keywords(
-            category_id, content_type="article", limit=10,
+        previous_keywords = await self._publications.get_recently_used_keywords(
+            category_id, content_type="article",
         )
 
         # Phase 2: Text generation (sequential — Director needs article text)
