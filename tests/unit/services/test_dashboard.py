@@ -249,8 +249,8 @@ class TestBuildText:
         text = DashboardService.build_text(
             "Test", 1500, False, _data(tokens_per_week=960, tokens_per_month=3840),
         )
-        assert "960/нед" in text
-        assert "3 840/мес" in text
+        assert "960 ток/нед" in text
+        assert "3 840 ток/мес" in text
 
     def test_returning_user_no_projects_shows_prompt(self) -> None:
         text = DashboardService.build_text("Test", 1500, False, _data(project_count=0))

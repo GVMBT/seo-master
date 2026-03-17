@@ -2,6 +2,7 @@
 
 import html
 import time
+from collections.abc import Sequence
 
 import structlog
 from aiogram import F, Router
@@ -210,28 +211,64 @@ async def show_edit_screen(
 
 
 def _build_edit_text(project: Project) -> str:
-    """Build edit screen text with current field values."""
-    fields = [
+    """Build edit screen text with current field values grouped in sections.
+
+    Empty fields (None or empty string) are hidden.
+    Long values are truncated to 60 chars.
+    Sections with all empty fields are hidden entirely.
+    """
+    safe_name = html.escape(project.name)
+    lines: list[str] = [f"{E.PEN} <b>{safe_name} \u2014 РЕДАКТИРОВАНИЕ</b>"]
+
+    # Section 1: Basic info
+    basic_fields = [
         ("Название", project.name),
         ("Компания", project.company_name),
         ("Специализация", project.specialization),
-        ("Сайт", project.website_url or "\u2014"),
-        ("Описание", _truncate(project.description, 100) if project.description else "\u2014"),
-        ("Преимущества", _truncate(project.advantages, 100) if project.advantages else "\u2014"),
-        ("Опыт", _truncate(project.experience, 100) if project.experience else "\u2014"),
-        ("Город", project.company_city or "\u2014"),
-        ("Адрес", project.company_address or "\u2014"),
-        ("Телефон", project.company_phone or "\u2014"),
-        ("Email", project.company_email or "\u2014"),
     ]
+    basic_lines = _render_section_fields(basic_fields)
+    if basic_lines:
+        lines.append(f"\n{E.FOLDER} <b>Основное</b>")
+        lines.extend(basic_lines)
 
-    safe_name = html.escape(project.name)
-    lines = [f"{E.PEN} <b>{safe_name} \u2014 РЕДАКТИРОВАНИЕ</b>\n"]
-    for label, value in fields:
-        lines.append(f"{label}: {html.escape(str(value))}")
+    # Section 2: About company
+    about_fields = [
+        ("Описание", project.description),
+        ("Преимущества", project.advantages),
+        ("Опыт", project.experience),
+    ]
+    about_lines = _render_section_fields(about_fields)
+    if about_lines:
+        lines.append(f"\n{E.DOC} <b>О компании</b>")
+        lines.extend(about_lines)
+
+    # Section 3: Contacts
+    contact_fields = [
+        ("Сайт", project.website_url),
+        ("Город", project.company_city),
+        ("Адрес", project.company_address),
+        ("Телефон", project.company_phone),
+        ("Email", project.company_email),
+    ]
+    contact_lines = _render_section_fields(contact_fields)
+    if contact_lines:
+        lines.append(f"\n{E.LINK} <b>Контакты</b>")
+        lines.extend(contact_lines)
+
     lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
     lines.append(f"{E.LIGHTBULB} <i>Нажмите на поле для редактирования</i>")
     return "\n".join(lines)
+
+
+def _render_section_fields(fields: Sequence[tuple[str, str | None]]) -> list[str]:
+    """Render non-empty fields, truncating long values to 60 chars."""
+    result: list[str] = []
+    for label, value in fields:
+        if not value:
+            continue
+        display = _truncate(value, 60)
+        result.append(f"{label}: {html.escape(display)}")
+    return result
 
 
 @router.callback_query(F.data.regexp(r"^project:\d+:edit:\w+$"))

@@ -163,35 +163,32 @@ class DashboardService:
         lines: list[str] = []
 
         # Balance
-        lines.append(f"{E.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b> (~{articles_est} статей)")
+        lines.append(f"{E.WALLET} Баланс: {_format_balance(balance)} токенов (~{articles_est} статей)")
         lines.append("")
 
         if data.project_count > 0:
-            # Stats
-            lines.append(
-                f"{E.FOLDER} Проектов: {data.project_count}  \u00b7  "
-                f"{E.SCHEDULE} Расписаний: {data.schedule_count}"
-            )
+            # Stats — each on its own line
+            lines.append(f"{E.FOLDER} Проектов: {data.project_count}")
+            lines.append(f"{E.SCHEDULE} Расписаний: {data.schedule_count}")
             if data.total_publications > 0:
                 lines.append(f"{E.ANALYTICS} Публикаций: {data.total_publications}")
 
             # Last publication
             if data.last_publication and data.last_publication.keyword:
                 lp = data.last_publication
-                label = "Статья" if lp.content_type == "article" else "Пост"
                 date_str = lp.created_at.strftime("%d.%m") if lp.created_at else ""
                 kw_short = html.escape(
-                    lp.keyword[:40] + "\u2026" if len(lp.keyword) > 40 else lp.keyword,
+                    lp.keyword[:30] + "\u2026" if len(lp.keyword) > 30 else lp.keyword,
                 )
-                suffix = f" \u2014 {date_str}" if date_str else ""
-                lines.append(f"{E.DOC} {label}: \u00ab{kw_short}\u00bb{suffix}")
+                suffix = f" {date_str}" if date_str else ""
+                lines.append(f"\n{E.DOC} Последняя: \u00ab{kw_short}\u00bb{suffix}")
 
             # Forecast
             if data.tokens_per_week > 0:
                 lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
                 lines.append(
-                    f"{E.CHART} Расход: ~{_format_balance(data.tokens_per_week)}/нед"
-                    f"  \u00b7  ~{_format_balance(data.tokens_per_month)}/мес"
+                    f"{E.CHART} ~{_format_balance(data.tokens_per_week)} ток/нед"
+                    f"  \u00b7  ~{_format_balance(data.tokens_per_month)} ток/мес"
                 )
         else:
             lines.append("У вас пока нет проектов.")

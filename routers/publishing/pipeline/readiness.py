@@ -69,7 +69,7 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
 
     lines: list[str] = [
         f"{E.DOC} <b>СТАТЬЯ (4/5) \u2014 ПОДГОТОВКА</b>\n",
-        f"{E.FOLDER} Проект: {project_name}",
+        f"{E.FOLDER} Проект: {project_name}\n",
         f"{E.HASHTAG} Тема: {category_name}\n",
     ]
 

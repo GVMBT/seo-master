@@ -59,13 +59,11 @@ async def nav_profile(
     ]
 
     if stats["posts_per_week"] > 0:
-        lines.append("")
-        lines.append(f"{E.CHART} Прогноз расхода:")
-        lines.append(f"  ~{stats['tokens_per_week']} токенов/неделю")
-        lines.append(f"  ~{stats['tokens_per_month']} токенов/месяц")
-
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-    lines.append(f"{E.LIGHTBULB} <i>Управляйте подписками и уведомлениями</i>")
+        lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+        lines.append(
+            f"{E.CHART} ~{stats['tokens_per_week']} ток/нед"
+            f"  \u00b7  ~{stats['tokens_per_month']} ток/мес"
+        )
 
     text = "\n".join(lines)
 

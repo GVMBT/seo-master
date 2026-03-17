@@ -129,15 +129,16 @@ def _build_keywords_summary(category: Any) -> str:
     total_volume = sum(c.get("total_volume", 0) for c in clusters)
     cluster_count = len(clusters)
 
-    volume_line = f"\nОбъём: {total_volume:,}/мес" if total_volume > 0 else ""
-    return (
-        f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n\n"
-        f"Кластеров: {cluster_count}\n"
-        f"Фраз: {total_phrases}"
-        f"{volume_line}\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Ключевики \u2014 основа для качественных статей</i>"
-    )
+    lines = [
+        f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n",
+        f"Кластеров: {cluster_count}",
+        f"Фраз: {total_phrases}",
+    ]
+    if total_volume > 0:
+        lines.append(f"Объём: {total_volume:,}/мес")
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"{E.LIGHTBULB} <i>Ключевики \u2014 основа для качественных статей</i>")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

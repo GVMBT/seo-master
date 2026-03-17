@@ -286,15 +286,17 @@ async def manage_connection(
         return
 
     icon = _PLAT_EMOJI.get(conn.platform_type, "")
+    plat_label = _PLAT_LABEL.get(conn.platform_type, conn.platform_type.capitalize())
     status_icon = E.CHECK if conn.status == "active" else E.WARNING
     status_text = "Активно" if conn.status == "active" else "Ошибка"
     safe_id = html.escape(conn.identifier)
     text = (
-        f"{icon} <b>{conn.platform_type.upper()}</b>\n\n"
+        f"{icon} <b>ПОДКЛЮЧЕНИЕ</b>\n\n"
+        f"Платформа: {plat_label}\n"
         f"Идентификатор: {safe_id}\n"
         f"Статус: {status_icon} {status_text}\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Управление подключением</i>"
+        f"{E.LIGHTBULB} <i>Управляйте подключением</i>"
     )
     await safe_edit_text(
         msg,

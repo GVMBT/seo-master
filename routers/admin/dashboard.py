@@ -155,13 +155,14 @@ async def admin_api_status(
 
     text = (
         f"{E.PULSE} <b>МОНИТОРИНГ</b>\n\n"
-        f"{E.AI_BRAIN} AI:\n"
-        f"  OpenRouter: {or_icon} | Кредиты: {credits_str}\n"
-        f"  QStash: {qs_icon}\n"
-        f"  Активных расписаний: {status.active_schedules}\n\n"
-        f"{E.DATABASE} Инфраструктура:\n"
-        f"  База данных: {db_icon} ({status.db_latency_ms}ms)\n"
-        f"  Redis: {redis_icon} ({status.redis_latency_ms}ms)\n"
+        f"{E.AI_BRAIN} <b>AI</b>\n"
+        f"{or_icon} OpenRouter (кредиты: {credits_str})\n"
+        f"{qs_icon} QStash\n\n"
+        f"{E.DATABASE} <b>Инфраструктура</b>\n"
+        f"{db_icon} База данных ({status.db_latency_ms}ms)\n"
+        f"{redis_icon} Redis ({status.redis_latency_ms}ms)\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.SCHEDULE} Активных расписаний: {status.active_schedules}"
     )
 
     await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
@@ -208,21 +209,22 @@ async def admin_api_costs(
 
 
 def _format_user_card(card: UserCard) -> str:
-    """Format user card text for display."""
+    """Format user card text for display with grouped sections."""
     name_parts = [p for p in (card.first_name, card.last_name) if p]
     name = html.escape(" ".join(name_parts)) or "\u2014"
     uname = f"@{html.escape(card.username)}" if card.username else "\u2014"
     activity = card.last_activity[:10] if card.last_activity else "\u2014"
 
     return (
-        f"{E.USER} <b>Пользователь #{card.user_id}</b>\n\n"
+        f"{E.USER} <b>ПОЛЬЗОВАТЕЛЬ #{card.user_id}</b>\n\n"
         f"Имя: {name}\n"
-        f"Username: {uname}\n"
-        f"Роль: {html.escape(card.role)}\n"
-        f"Баланс: {card.balance} токенов\n"
-        f"Проектов: {card.projects_count}\n"
-        f"Публикаций: {card.publications_count}\n"
-        f"Последняя активность: {activity}\n"
+        f"Username: {uname}\n\n"
+        f"{E.WALLET} Баланс: {card.balance} токенов\n"
+        f"Роль: {html.escape(card.role)}\n\n"
+        f"{E.ANALYTICS} Статистика:\n"
+        f"  Проектов: {card.projects_count}\n"
+        f"  Публикаций: {card.publications_count}\n"
+        f"  Активность: {activity}"
     )
 
 
