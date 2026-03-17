@@ -13,6 +13,7 @@ from bot.assets import edit_screen
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import get_owned_project, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.projects import ProjectsRepository
@@ -72,7 +73,7 @@ async def show_category_list(
             msg,
             "empty_categories.png",
             f"<b>{safe_name}</b> \u2014 Категории\n\n"
-            "\U0001f4c2 Категорий пока нет.\n\n"
+            f"{E.FOLDER} Категорий пока нет.\n\n"
             "Категория = тема контента "
             "(например: \u00abSEO-оптимизация\u00bb или \u00abКулинарные рецепты\u00bb).",
             reply_markup=category_list_empty_kb(project_id),
@@ -263,32 +264,32 @@ async def show_category_card(
     if keyword_count > 0:
         cluster_count = sum(1 for k in category.keywords if k.get("cluster_name"))
         if cluster_count > 0:
-            lines.append(f"\U0001f511 Ключевые фразы: \u2705 {cluster_count} кластеров")
+            lines.append(f"{E.HASHTAG} Ключевые фразы: {E.CHECK} {cluster_count} кластеров")
         else:
-            lines.append(f"\U0001f511 Ключевые фразы: \u2705 {keyword_count} фраз")
+            lines.append(f"{E.HASHTAG} Ключевые фразы: {E.CHECK} {keyword_count} фраз")
     else:
-        lines.append("\U0001f511 Ключевые фразы: \u274c не заданы")
+        lines.append(f"{E.HASHTAG} Ключевые фразы: {E.CLOSE} не заданы")
 
     # Description
     if category.description:
-        lines.append("\U0001f4dd Описание: \u2705 есть")
+        lines.append(f"{E.PEN} Описание: {E.CHECK} есть")
     else:
-        lines.append("\U0001f4dd Описание: \u274c не задано")
+        lines.append(f"{E.PEN} Описание: {E.CLOSE} не задано")
 
     # Prices
     if category.prices:
-        lines.append("\U0001f4b0 Цены: \u2705 есть")
+        lines.append(f"{E.PRICE} Цены: {E.CHECK} есть")
     else:
-        lines.append("\U0001f4b0 Цены: \u274c не заданы")
+        lines.append(f"{E.PRICE} Цены: {E.CLOSE} не заданы")
 
     # Image settings (project fallback → category)
     proj = await ProjectsRepository(db).get_by_id(category.project_id)
     eff_image_settings = (proj.image_settings if proj else None) or category.image_settings or {}
     img_count = eff_image_settings.get("count")
     if img_count is not None:
-        lines.append(f"\U0001f5bc Медиа: \u2705 {img_count} файлов")
+        lines.append(f"{E.IMAGE} Медиа: {E.CHECK} {img_count} файлов")
     else:
-        lines.append("\U0001f5bc Медиа: \u274c нет файлов")
+        lines.append(f"{E.IMAGE} Медиа: {E.CLOSE} нет файлов")
 
     text = "\n".join(lines)
     await safe_edit_text(msg, text, reply_markup=category_card_kb(category_id, category.project_id))
