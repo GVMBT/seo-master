@@ -22,7 +22,6 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
-from bot.texts.emoji import Emoji
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -75,31 +74,31 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
 
     # Description status (first — keywords are generated from it)
     if report.has_description:
-        lines.append(f"{Emoji.CHECKMARK} Описание")
+        lines.append("\u2705 Описание")
     elif "description" in report.missing_items:
-        lines.append(f"{Emoji.CLOSE} Описание")
+        lines.append("\u274c Описание")
 
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"{Emoji.CHECKMARK} Ключевые фразы \u2014 {kw_info}")
+        lines.append(f"\u2705 Ключевые фразы \u2014 {kw_info}")
     else:
-        lines.append(f"{Emoji.CLOSE} Ключевые фразы (обязательно)")
+        lines.append("\u274c Ключевые фразы (обязательно)")
 
     # Prices status (progressive: shown for 2+ pubs)
     if "prices" in report.missing_items:
-        lines.append(f"{Emoji.CLOSE} Цены")
+        lines.append("\u274c Цены")
     elif report.has_prices:
-        lines.append(f"{Emoji.CHECKMARK} Цены")
+        lines.append("\u2705 Цены")
 
     # Images (generated WITH the article, not separately)
     if report.image_count > 0:
         img_cost = report.image_count * COST_PER_IMAGE
-        lines.append(f"{Emoji.CHECKMARK} Медиа \u2014 {report.image_count} шт. ({img_cost} ток.)")
+        lines.append(f"\u2705 Медиа \u2014 {report.image_count} шт. ({img_cost} ток.)")
     else:
-        lines.append(f"{Emoji.CLOSE} Медиа")
+        lines.append("\u274c Медиа")
 
     # Cost estimate
     lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")
@@ -276,8 +275,7 @@ async def readiness_prices_menu(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    await safe_edit_text(
-        msg,
+    await safe_edit_text(msg, 
         "Добавить прайс-лист?\n\nВ статье будут реальные цены ваших товаров.",
         reply_markup=pipeline_prices_options_kb(),
     )
@@ -298,8 +296,7 @@ async def readiness_prices_text_start(
         await callback.answer()
         return
 
-    await safe_edit_text(
-        msg,
+    await safe_edit_text(msg, 
         "Введите прайс-лист текстом.\n"
         "Формат: Товар — Цена (каждый с новой строки).\n\n"
         "<i>Пример:\nКухня Прага — от 120 000 руб.\nШкаф-купе — от 45 000 руб.</i>",
@@ -381,8 +378,7 @@ async def readiness_prices_excel_start(
         await callback.answer()
         return
 
-    await safe_edit_text(
-        msg,
+    await safe_edit_text(msg, 
         "Загрузите Excel-файл (.xlsx) с прайсом.\n"
         "Колонки: A — Название, B — Цена, C — Описание (опц.).\n"
         "Максимум 1000 строк, 5 МБ.",
@@ -496,8 +492,7 @@ async def readiness_images_menu(callback: CallbackQuery, state: FSMContext) -> N
     data = await state.get_data()
     current_count = data.get("image_count", 4)
 
-    await safe_edit_text(
-        msg,
+    await safe_edit_text(msg, 
         f"Изображения — сейчас: {current_count} AI\n\nВыберите количество:",
         reply_markup=pipeline_images_options_kb(current_count),
     )

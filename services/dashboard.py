@@ -11,7 +11,6 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from bot.texts.emoji import Emoji
 from db.client import SupabaseClient
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
@@ -140,19 +139,19 @@ class DashboardService:
         # Balance warning overrides (section 2.7)
         if balance < 0:
             return (
-                f"{Emoji.WARNING} <b>Баланс: {balance} токенов</b>\n\n"
+                f"\u26a0\ufe0f <b>Баланс: {balance} токенов</b>\n\n"
                 f"Долг {abs(balance)} токенов будет списан при следующей покупке.\n"
                 "Для генерации контента пополните баланс."
             )
         if balance == 0:
-            return f"{Emoji.WALLET} <b>Баланс: 0 токенов</b>\n\nДля генерации контента нужно пополнить баланс."
+            return "\U0001f4b0 <b>Баланс: 0 токенов</b>\n\nДля генерации контента нужно пополнить баланс."
 
         if is_new_user and data.project_count == 0:
             articles_est = balance // _AVG_ARTICLE_COST
             return (
                 f"Привет{', ' + name if name else ''}! "
                 "Я помогу создать и опубликовать SEO-контент.\n\n"
-                f"{Emoji.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b>"
+                f"\U0001f4b0 <b>Баланс: {_format_balance(balance)} токенов</b>"
                 f" (~{articles_est} статей)\n\n"
                 "Что хотите сделать?"
             )
@@ -161,40 +160,39 @@ class DashboardService:
         lines: list[str] = []
 
         # Balance line
-        lines.append(f"{Emoji.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b> (~{articles_est} статей)")
+        lines.append(f"\U0001f4b0 <b>Баланс: {_format_balance(balance)} токенов</b> (~{articles_est} статей)")
         lines.append("")
 
         if data.project_count > 0:
             # Stats block
             lines.append(
-                f"{Emoji.FUNNEL} Проектов: {data.project_count}  \u00b7  "
-                f"{Emoji.SCHEDULE} Расписаний: {data.schedule_count}"
+                f"\U0001f4c1 Проектов: {data.project_count}  \u00b7  \U0001f4c5 Расписаний: {data.schedule_count}"
             )
             if data.total_publications > 0:
-                lines.append(f"{Emoji.ANALYTICS} Публикаций: {data.total_publications}")
+                lines.append(f"\U0001f4ca Публикаций: {data.total_publications}")
 
             # Last publication
             if data.last_publication and data.last_publication.keyword:
                 lp = data.last_publication
-                label = "Статья" if lp.content_type == "article" else "Пост"
+                label = "статья" if lp.content_type == "article" else "пост"
                 date_str = lp.created_at.strftime("%d.%m") if lp.created_at else ""
                 kw_short = html.escape(
                     lp.keyword[:40] + "\u2026" if len(lp.keyword) > 40 else lp.keyword,
                 )
                 suffix = f" \u2014 {date_str}" if date_str else ""
-                lines.append(f"{Emoji.EDIT_DOC} {label}: \u00ab{kw_short}\u00bb{suffix}")
+                lines.append(f"\U0001f4dd {label.capitalize()}: \u00ab{kw_short}\u00bb{suffix}")
 
             # Forecast
             if data.tokens_per_week > 0:
                 lines.append("")
                 lines.append(
-                    f"{Emoji.CHART_UP} Расход: ~{_format_balance(data.tokens_per_week)}/нед"
+                    f"\u23f0 Расход: ~{_format_balance(data.tokens_per_week)}/нед"
                     f"  \u00b7  ~{_format_balance(data.tokens_per_month)}/мес"
                 )
         else:
             # Returning user, 0 projects
             lines.append("У вас пока нет проектов.")
-            lines.append(f"{Emoji.ROCKET} Создайте первый \u2014 это займёт 30 секунд.")
+            lines.append("Создайте первый \u2014 это займёт 30 секунд.")
 
         return "\n".join(lines)
 

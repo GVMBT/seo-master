@@ -8,7 +8,6 @@ from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
 from bot.assets import edit_screen
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
-from bot.texts.emoji import Emoji
 from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
 from cache.client import RedisClient
 from db.client import SupabaseClient
@@ -50,19 +49,17 @@ async def nav_profile(
     stats = await token_service.get_profile_stats(user)
 
     text = (
-        f"<b>{Emoji.USER} Профиль</b>\n\n"
-        f"{Emoji.WALLET} Баланс: <b>{user.balance}</b> токенов\n\n"
-        f"{Emoji.FUNNEL} Проектов: {stats['project_count']}\n"
-        f"{Emoji.HASHTAG} Категорий: {stats['category_count']}\n"
-        f"{Emoji.SCHEDULE} Расписаний: {stats['schedule_count']}\n"
-        f"{Emoji.TRANSFER} Рефералов: {stats['referral_count']}\n\n"
+        f"<b>\U0001f464 Профиль</b>\n\n"
+        f"\U0001f4b0 Баланс: <b>{user.balance}</b> токенов\n\n"
+        f"\U0001f4c1 Проектов: {stats['project_count']}\n"
+        f"\U0001f4c2 Категорий: {stats['category_count']}\n"
+        f"\U0001f4c5 Расписаний: {stats['schedule_count']}\n"
+        f"Рефералов: {stats['referral_count']}\n\n"
     )
 
     if stats["posts_per_week"] > 0:
         text += (
-            f"{Emoji.CHART_UP} Прогноз расхода:\n"
-            f"~{stats['tokens_per_week']} токенов/неделю\n"
-            f"~{stats['tokens_per_month']} токенов/месяц"
+            f"Прогноз расхода:\n~{stats['tokens_per_week']} токенов/неделю\n~{stats['tokens_per_month']} токенов/месяц"
         )
 
     await edit_screen(msg, "profile.png", text, reply_markup=profile_kb())
@@ -85,7 +82,7 @@ async def show_notifications(
         await callback.answer()
         return
 
-    text = f"<b>{Emoji.BELL} Уведомления</b>\n\nНажмите для переключения:"
+    text = "<b>\U0001f514 Уведомления</b>\n\nНажмите для переключения:"
 
     await safe_edit_text(
         msg,
@@ -123,13 +120,12 @@ async def toggle_notification(
     updated_user = await users_svc.toggle_notification(user.id, field, current_value, redis)
 
     if updated_user is None:
-        await callback.answer(f"{Emoji.WARNING} Ошибка обновления. Попробуйте позже.", show_alert=True)
+        await callback.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", show_alert=True)
         return
 
-    text = f"<b>{Emoji.BELL} Уведомления</b>\n\nНажмите для переключения:"
+    text = "<b>\U0001f514 Уведомления</b>\n\nНажмите для переключения:"
 
-    await safe_edit_text(
-        msg,
+    await safe_edit_text(msg, 
         text,
         reply_markup=notifications_kb(
             notify_publications=updated_user.notify_publications,
@@ -167,11 +163,11 @@ async def show_referral(
     link = f"https://t.me/{bot_info.username}?start=referrer_{user.id}"
 
     text = (
-        f"<b>{Emoji.TRANSFER} Реферальная программа</b>\n\n"
+        f"<b>Реферальная программа</b>\n\n"
         f"Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!\n\n"
         f"Ваша ссылка:\n<code>{link}</code>\n\n"
-        f"{Emoji.USER} Рефералов: <b>{referral_count}</b>\n"
-        f"{Emoji.WALLET} Заработано: <b>{referral_earned}</b> токенов"
+        f"Рефералов: <b>{referral_count}</b>\n"
+        f"Заработано: <b>{referral_earned}</b> токенов"
     )
 
     await edit_screen(msg, "referral.png", text, reply_markup=referral_kb())
@@ -213,7 +209,7 @@ async def cmd_delete_account(
 ) -> None:
     """Show account deletion warning with confirmation buttons."""
     text = (
-        f"<b>{Emoji.WARNING} Удаление аккаунта</b>\n\n"
+        "<b>\u26a0\ufe0f Удаление аккаунта</b>\n\n"
         "Будут безвозвратно удалены:\n"
         "- Все проекты и категории\n"
         "- Все подключения к платформам\n"
@@ -255,8 +251,7 @@ async def confirm_delete_account(
         await safe_edit_text(msg, "Ваш аккаунт и все данные удалены.\n\nВы можете начать заново с /start")
         log.info("delete_account_success", user_id=user.id)
     else:
-        await safe_edit_text(
-            msg,
+        await safe_edit_text(msg, 
             "Произошла ошибка при удалении аккаунта. Обратитесь в поддержку.",
             reply_markup=delete_account_cancelled_kb(),
         )
@@ -279,8 +274,7 @@ async def cancel_delete_account(
         await callback.answer()
         return
 
-    await safe_edit_text(
-        msg,
+    await safe_edit_text(msg, 
         "Удаление отменено.",
         reply_markup=delete_account_cancelled_kb(),
     )

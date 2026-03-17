@@ -29,7 +29,6 @@ from bot.config import get_settings
 from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
 from bot.helpers import safe_edit_text, safe_message
-from bot.texts.emoji import Emoji
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
@@ -91,7 +90,7 @@ _SOCIAL_STEPS = [
 
 def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
     """Build cumulative progress text for social post generation."""
-    lines = [f"{Emoji.EDIT_DOC} Генерация поста", ""]
+    lines = ["\U0001f4dd Генерация поста", ""]
     for i, (active_label, done_label) in enumerate(steps):
         if i < current:
             lines.append(f"{EMOJI_DONE} {done_label}")
@@ -103,7 +102,7 @@ def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
 def _social_publish_progress(platform: str, current: int) -> str:
     """Build cumulative progress text for social post publishing."""
     name = _PLATFORM_NAMES.get(platform, platform.title())
-    lines = [f"{Emoji.UPLOAD} Публикация поста", ""]
+    lines = ["\U0001f4e4 Публикация поста", ""]
     for i, (active_tpl, done_tpl) in enumerate(_SOCIAL_PUBLISH_STEPS):
         active_label = active_tpl.format(platform=name)
         done_label = done_tpl.format(platform=name)
@@ -355,8 +354,7 @@ async def _run_social_generation(
     keyword = await select_keyword(db, category_id, content_type="social")
     if not keyword:
         await try_refund(db, user, cost, "Нет ключевых фраз")
-        await safe_edit_text(
-            message,
+        await safe_edit_text(message, 
             "Нет доступных ключевых фраз. Добавьте их в категорию.",
             reply_markup=menu_kb(),
         )
@@ -398,7 +396,9 @@ async def _run_social_generation(
             image_service = ImageService(ai_orchestrator)
             cat = await CategoriesRepository(db).get_by_id(category_id)
             proj = await ProjectsRepository(db).get_by_id(project_id)
-            img_settings = dict((proj.image_settings if proj else None) or (cat.image_settings if cat else None) or {})
+            img_settings = dict(
+                (proj.image_settings if proj else None) or (cat.image_settings if cat else None) or {}
+            )
             # Pinterest: vertical 2:3 aspect ratio
             if platform_type == "pinterest":
                 img_settings["formats"] = ["2:3"]
@@ -468,8 +468,7 @@ async def _run_social_generation(
     except Exception as exc:
         log.exception("pipeline.social.generation_failed", user_id=user.id, error=str(exc))
         await try_refund(db, user, cost, "Ошибка генерации поста")
-        await safe_edit_text(
-            message,
+        await safe_edit_text(message, 
             "Ошибка генерации поста. Токены возвращены.\n\nПопробуйте ещё раз.",
             reply_markup=menu_kb(),
         )
@@ -541,7 +540,9 @@ def _build_review_text(
         lines.append(html.escape(html.unescape(post_text)))
 
     if hashtags:
-        lines.append("\n" + " ".join(f"#{html.escape(h.lstrip('#'))}" for h in hashtags))
+        lines.append("\n" + " ".join(
+            f"#{html.escape(h.lstrip('#'))}" for h in hashtags
+        ))
     lines.append("---")
     return "\n".join(lines)
 
@@ -599,8 +600,7 @@ async def publish_social_post(
         conn_svc = ConnectionService(db, http_client)
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
-            await safe_edit_text(
-                msg,
+            await safe_edit_text(msg,
                 "Подключение не найдено. Проверьте настройки.",
                 reply_markup=menu_kb(),
             )
@@ -651,7 +651,8 @@ async def publish_social_post(
         if platform_type == "pinterest" and not publish_images:
             await safe_edit_text(
                 msg,
-                "Для Pinterest требуется изображение, но оно не было сгенерировано.\nПопробуйте перегенерировать пост.",
+                "Для Pinterest требуется изображение, но оно не было сгенерировано.\n"
+                "Попробуйте перегенерировать пост.",
                 reply_markup=social_review_kb(
                     regen_count=data.get("regen_count", 0),
                     regen_cost=tokens_charged,
@@ -677,8 +678,7 @@ async def publish_social_post(
             )
         except Exception as exc:
             log.exception("pipeline.social.publish_failed", error=str(exc))
-            await safe_edit_text(
-                msg,
+            await safe_edit_text(msg, 
                 "Ошибка публикации. Попробуйте снова.",
                 reply_markup=social_review_kb(
                     regen_count=data.get("regen_count", 0),
@@ -690,8 +690,7 @@ async def publish_social_post(
             return
 
         if not pub_result.success:
-            await safe_edit_text(
-                msg,
+            await safe_edit_text(msg, 
                 f"Ошибка публикации: {pub_result.error or 'неизвестная ошибка'}",
                 reply_markup=social_review_kb(
                     regen_count=data.get("regen_count", 0),
@@ -730,7 +729,10 @@ async def publish_social_post(
         has_crosspost = False
         if project_id:
             all_connections = await conn_svc.get_by_project(project_id)
-            has_crosspost = any(c.id != connection_id and c.platform_type != "wordpress" for c in all_connections)
+            has_crosspost = any(
+                c.id != connection_id and c.platform_type != "wordpress"
+                for c in all_connections
+            )
 
         # Show result
         balance = await TokenService(db=db, admin_ids=get_settings().admin_ids).get_balance(user.id)
@@ -740,8 +742,7 @@ async def publish_social_post(
             f"Ключевая фраза: {html.escape(keyword)}\n"
             f"Списано: {tokens_charged} ток. | Баланс: {balance} ток."
         )
-        await safe_edit_text(
-            msg,
+        await safe_edit_text(msg,
             result_text,
             reply_markup=social_result_kb(pub_result.post_url, has_crosspost),
         )
@@ -968,7 +969,10 @@ async def crosspost_start(
 
     conn_svc = ConnectionService(db, http_client)
     all_conns = await conn_svc.get_by_project(project_id)
-    targets = [c for c in all_conns if c.id != connection_id and c.platform_type in _SOCIAL_TYPES]
+    targets = [
+        c for c in all_conns
+        if c.id != connection_id and c.platform_type in _SOCIAL_TYPES
+    ]
 
     if not targets:
         await callback.answer("Нет других подключений для кросс-поста.", show_alert=True)
@@ -992,7 +996,8 @@ async def crosspost_start(
 
     await safe_edit_text(
         msg,
-        f"Кросс-пост: {html.escape(keyword)}\n\nНа какие платформы адаптировать?",
+        f"Кросс-пост: {html.escape(keyword)}\n\n"
+        "На какие платформы адаптировать?",
         reply_markup=crosspost_select_kb(targets, target_ids),
     )
     await state.set_state(SocialPipelineFSM.cross_post_select)
@@ -1139,7 +1144,7 @@ async def _execute_crosspost(
         for conn_id in selected_ids:
             conn = await conn_svc.get_by_id(conn_id)
             if not conn or conn.status != "active":
-                results.append(f"{Emoji.CLOSE} {conn_id}: подключение неактивно")
+                results.append(f"\u274c {conn_id}: подключение неактивно")
                 continue
 
             cost = estimate_cross_post_cost()
@@ -1147,7 +1152,7 @@ async def _execute_crosspost(
             # Balance check (not GOD_MODE)
             is_god = user.id in settings.admin_ids
             if not is_god and not await token_svc.check_balance(user.id, cost):
-                results.append(f"{Emoji.CLOSE} {conn.platform_type.upper()}: недостаточно токенов")
+                results.append(f"\u274c {conn.platform_type.upper()}: недостаточно токенов")
                 break
 
             try:
@@ -1201,15 +1206,13 @@ async def _execute_crosspost(
                 )
 
                 if not pub_result.success:
-                    results.append(f"{Emoji.CLOSE} {conn.platform_type.upper()}: {pub_result.error}")
+                    results.append(f"\u274c {conn.platform_type.upper()}: {pub_result.error}")
                     continue
 
                 # Charge after successful publish
                 if not is_god:
                     await token_svc.charge(
-                        user.id,
-                        cost,
-                        "cross_post",
+                        user.id, cost, "cross_post",
                         description=f"Cross-post: {keyword}",
                     )
                 total_cost += cost
@@ -1231,7 +1234,7 @@ async def _execute_crosspost(
                 )
 
                 url_part = f": {pub_result.post_url}" if pub_result.post_url else ""
-                results.append(f"{Emoji.CHECKMARK} {conn.platform_type.upper()}{url_part}")
+                results.append(f"\u2705 {conn.platform_type.upper()}{url_part}")
 
                 log.info(
                     "pipeline.crosspost.published",
@@ -1242,14 +1245,18 @@ async def _execute_crosspost(
 
             except Exception:
                 log.exception("pipeline.crosspost.failed", conn_id=conn_id)
-                results.append(f"{Emoji.CLOSE} {conn.platform_type.upper()}: ошибка адаптации")
+                results.append(f"\u274c {conn.platform_type.upper()}: ошибка адаптации")
     finally:
         await redis.delete(lock_key)
 
     # Show results
     balance = await token_svc.get_balance(user.id)
     result_lines = "\n".join(results)
-    text = f"Кросс-постинг завершён:\n\n{result_lines}\n\nСписано: {total_cost} ток. | Баланс: {balance} ток."
+    text = (
+        f"Кросс-постинг завершён:\n\n"
+        f"{result_lines}\n\n"
+        f"Списано: {total_cost} ток. | Баланс: {balance} ток."
+    )
 
     from keyboards.pipeline import crosspost_result_kb
 

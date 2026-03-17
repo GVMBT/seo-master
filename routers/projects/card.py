@@ -9,7 +9,6 @@ from aiogram.types import CallbackQuery
 from bot.assets import edit_screen
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory, TokenServiceFactory
-from bot.texts.emoji import Emoji
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import project_card_kb, project_delete_confirm_kb, project_deleted_kb
@@ -57,9 +56,9 @@ async def show_project_card(
 
     text = (
         f"<b>{safe_name}</b>\n"
-        f"\n{Emoji.DB_CONNECT} Платформы: {platforms_str}"
-        f"\n{Emoji.FUNNEL} Категорий: {len(card_data.categories)}"
-        f"\n{Emoji.ANALYTICS} Публикаций: {card_data.pub_count}"
+        f"\n\U0001f517 Платформы: {platforms_str}"
+        f"\n\U0001f4c2 Категорий: {len(card_data.categories)}"
+        f"\n\U0001f4ca Публикаций: {card_data.pub_count}"
     )
     has_keywords = any(cat.keywords for cat in card_data.categories)
     kb = project_card_kb(project_id, has_keywords=has_keywords)
@@ -73,6 +72,7 @@ async def show_project_card(
 
 # project:{id}:categories — handled by routers/categories/manage.py
 # project:{id}:connections — handled by routers/platforms/connections.py
+
 
 
 # ---------------------------------------------------------------------------
@@ -136,14 +136,12 @@ async def execute_delete(
 
     if deleted and project:
         safe_name = html.escape(project.name)
-        await safe_edit_text(
-            msg,
+        await safe_edit_text(msg, 
             f"Проект «{safe_name}» удалён.",
             reply_markup=project_deleted_kb(),
         )
     else:
-        await safe_edit_text(
-            msg,
+        await safe_edit_text(msg, 
             "\u26a0\ufe0f Не удалось удалить проект. Попробуйте позже.",
             reply_markup=project_deleted_kb(),
         )

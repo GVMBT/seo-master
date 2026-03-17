@@ -13,7 +13,6 @@ from aiogram.types import CallbackQuery
 
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
-from bot.texts.emoji import Emoji
 from bot.texts.content_options import (
     ANGLES,
     ASPECT_RATIOS,
@@ -53,15 +52,18 @@ log = structlog.get_logger()
 router = Router()
 
 # Premium emoji (centralized in bot/texts/emoji.py)
-_E_SET = Emoji.SLIDERS
-_E_TXT = Emoji.PEN
-_E_IMG = Emoji.IMAGE
+def _e(eid: str, fb: str) -> str:
+    return f'<tg-emoji emoji-id="{eid}">{fb}</tg-emoji>'
+
+_E_SET = _e("5305307637410206511", "\u2699")
+_E_TXT = _e("5305682317472208455", "\u270f")
+_E_IMG = _e("5305545582893373314", "\U0001f5bc")
 
 _PLAT_ICONS: dict[str, str] = {
-    "wordpress": Emoji.WORDPRESS,
-    "telegram": Emoji.TELEGRAM,
-    "vk": Emoji.VK,
-    "pinterest": Emoji.PINTEREST,
+    "wordpress": _e("5305702774401439462", "\U0001f310"),
+    "telegram": _e("5305643301989290953", "\u2708"),
+    "vk": _e("5305396259765394964", "\U0001f535"),
+    "pinterest": _e("5305654597753279465", "\U0001f4cc"),
 }
 
 _PLAT_NAMES: dict[str, str] = {
