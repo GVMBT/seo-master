@@ -13,6 +13,7 @@ from bot.assets import edit_screen
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import get_owned_project, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.projects import ProjectsRepository
@@ -72,7 +73,7 @@ async def show_category_list(
             msg,
             "empty_categories.png",
             f"<b>{safe_name}</b> \u2014 Категории\n\n"
-            "\U0001f4c2 Категорий пока нет.\n\n"
+            f"{E.FOLDER} Категорий пока нет.\n\n"
             "Категория = тема контента "
             "(например: \u00abSEO-оптимизация\u00bb или \u00abКулинарные рецепты\u00bb).",
             reply_markup=category_list_empty_kb(project_id),
@@ -255,8 +256,6 @@ async def show_category_card(
         return
 
     # Build card text
-    from bot.texts.emoji import E
-
     safe_name = html.escape(category.name)
     lines = [f"<b>{safe_name}</b>\n"]
 
