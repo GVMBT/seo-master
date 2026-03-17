@@ -45,6 +45,8 @@ class LoggingMiddleware(BaseMiddleware):
             )
             return result
         except Exception:
+            import traceback as tb
+
             latency_ms = round((time.monotonic() - start) * 1000, 2)
             log.error(
                 "request_failed",
@@ -53,5 +55,6 @@ class LoggingMiddleware(BaseMiddleware):
                 update_type=update_type,
                 latency_ms=latency_ms,
                 exc_info=True,
+                traceback=tb.format_exc(),
             )
             raise
