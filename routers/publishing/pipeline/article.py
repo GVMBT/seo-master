@@ -57,7 +57,7 @@ log = structlog.get_logger()
 router = Router()
 
 # Step header prefix for article pipeline screens
-_H = f"{E.t.DOC} "
+_H = f"{E.DOC} "
 
 
 def _get_image_count(category: object, project: object | None = None) -> int:
@@ -372,7 +372,7 @@ async def _show_wp_step(
         await state.update_data(connection_id=conn.id, wp_identifier=conn.identifier)
         await safe_edit_text(
             msg,
-            f"{_H}Статья (2/5) — Сайт\n\n{E.t.CHECK} WordPress подключён: {html.escape(conn.identifier)}",
+            f"{_H}Статья (2/5) — Сайт\n\n{E.CHECK} WordPress подключён: {html.escape(conn.identifier)}",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="Продолжить", callback_data="pipeline:article:wp_continue")],

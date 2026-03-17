@@ -20,22 +20,22 @@ log = structlog.get_logger()
 # Notification text templates per EDGE_CASES.md - missed auto-publish notifications
 _REASON_TEMPLATES: dict[str, str] = {
     "insufficient_balance": (
-        f"{E.t.WARNING} Автопубликация пропущена: недостаточно токенов. "
+        f"{E.WARNING} Автопубликация пропущена: недостаточно токенов. "
         "Расписание приостановлено.\nПополните баланс через /start."
     ),
     "no_keywords": (
-        f"{E.t.WARNING} Автопубликация пропущена: нет ключевых фраз в категории.\n"
+        f"{E.WARNING} Автопубликация пропущена: нет ключевых фраз в категории.\n"
         "Добавьте фразы через карточку категории."
     ),
     "connection_inactive": (
-        f"{E.t.WARNING} Автопубликация не удалась: платформа не отвечает.\n"
+        f"{E.WARNING} Автопубликация не удалась: платформа не отвечает.\n"
         "Проверьте подключение в настройках проекта."
     ),
     "content_validation_failed": (
-        f"{E.t.WARNING} Автопубликация пропущена: контент не прошёл проверку качества. Токены возвращены."
+        f"{E.WARNING} Автопубликация пропущена: контент не прошёл проверку качества. Токены возвращены."
     ),
     "ai_service_unavailable": (
-        f"{E.t.WARNING} Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."
+        f"{E.WARNING} Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."
     ),
 }
 
@@ -54,7 +54,7 @@ def _build_notification_text(result: PublishOutcome) -> str:
 
     if result.status == "ok":
         keyword_safe = html_mod.escape(result.keyword)
-        text = f"{E.t.CHECK} Автопубликация выполнена: <b>{keyword_safe}</b>"
+        text = f"{E.CHECK} Автопубликация выполнена: <b>{keyword_safe}</b>"
         if result.post_url:
             text += f"\n{result.post_url}"
         # Append cross-post results

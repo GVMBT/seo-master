@@ -341,7 +341,7 @@ async def process_field_value(
         edit_text = f"Поле «{label}» обновлено.\n\n" + _build_edit_text(project)
         await message.answer(edit_text, reply_markup=project_edit_kb(project_id, _project_completed(project)))
     else:
-        await message.answer(f"{E.t.WARNING} Ошибка обновления. Попробуйте позже.", reply_markup=menu_kb())
+        await message.answer(f"{E.WARNING} Ошибка обновления. Попробуйте позже.", reply_markup=menu_kb())
 
     log.info("project_field_updated", project_id=project_id, field=field, user_id=user.id)
 

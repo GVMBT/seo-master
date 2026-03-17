@@ -217,7 +217,7 @@ class TestBuildChecklistText:
         assert "Test Project" in text
         assert "Test Category" in text
         assert "5 кластеров (50 фраз)" in text
-        # E.t.CHECK wraps checkmark in <tg-emoji> tag; check both emoji and label
+        # E.CHECK wraps checkmark in <tg-emoji> tag; check both emoji and label
         assert "\u2705" in text and "Описание" in text
 
     async def test_keywords_missing(self) -> None:

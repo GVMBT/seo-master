@@ -53,10 +53,10 @@ log = structlog.get_logger()
 router = Router()
 
 _PLAT_ICONS: dict[str, str] = {
-    "wordpress": E.t.WORDPRESS,
-    "telegram": E.t.TELEGRAM,
-    "vk": E.t.VK,
-    "pinterest": E.t.PINTEREST,
+    "wordpress": E.WORDPRESS,
+    "telegram": E.TELEGRAM,
+    "vk": E.VK,
+    "pinterest": E.PINTEREST,
 }
 
 _PLAT_NAMES: dict[str, str] = {
@@ -84,12 +84,12 @@ def _settings_text(ts: dict[str, Any], is_: dict[str, Any]) -> str:
     na = "не выбран"
     df = "по умолчанию"
     lines: list[str] = []
-    lines.append(f"{E.t.PEN} <b>Текст:</b>")
+    lines.append(f"{E.PEN} <b>Текст:</b>")
     lines.append(f"  Стиль: {_fmt(ts.get('styles', []))}")
     lines.append(f"  HTML: {ts.get('html_style') or na}")
     wc = ts.get("word_count")
     lines.append(f"  Длина: {wc} слов" if wc else f"  Длина: {df}")
-    lines.append(f"\n{E.t.IMAGE} <b>Изображения:</b>")
+    lines.append(f"\n{E.IMAGE} <b>Изображения:</b>")
     lines.append(f"  Превью: {is_.get('preview_format') or na}")
     af = _fmt(is_.get("article_formats", []), "не выбраны")
     lines.append(f"  Форматы: {af}")
@@ -101,7 +101,7 @@ def _settings_text(ts: dict[str, Any], is_: dict[str, Any]) -> str:
 
 def _main_screen_text() -> str:
     return (
-        f"{E.t.SLIDERS} <b>НАСТРОЙКИ КОНТЕНТА</b>\n\n"
+        f"{E.SLIDERS} <b>НАСТРОЙКИ КОНТЕНТА</b>\n\n"
         "Настройки по умолчанию для всех площадок.\n"
         "Для отдельной площадки \u2014 выберите ниже."
     )
@@ -123,7 +123,7 @@ def _platform_card_text(
 def _default_card_text(ts: dict[str, Any], is_: dict[str, Any]) -> str:
     body = _settings_text(ts, is_)
     return (
-        f"{E.t.SLIDERS} <b>ПО УМОЛЧАНИЮ</b>\n\n{body}\n\n"
+        f"{E.SLIDERS} <b>ПО УМОЛЧАНИЮ</b>\n\n{body}\n\n"
         "Эти настройки применяются ко всем площадкам,\n"
         "если не переопределены для конкретной."
     )
@@ -350,7 +350,7 @@ async def show_text_menu(
     if not project:
         return
     await safe_edit_text(
-        msg, f"{E.t.PEN} <b>Настройки текста</b>",
+        msg, f"{E.PEN} <b>Настройки текста</b>",
         reply_markup=project_text_menu_kb(pid, target),
     )
     await callback.answer()
@@ -562,7 +562,7 @@ async def show_image_menu(
     if not project:
         return
     await safe_edit_text(
-        msg, f"{E.t.IMAGE} <b>Настройки изображений</b>",
+        msg, f"{E.IMAGE} <b>Настройки изображений</b>",
         reply_markup=project_image_menu_kb(pid, target),
     )
     await callback.answer()
