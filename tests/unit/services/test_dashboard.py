@@ -33,7 +33,7 @@ def dash_svc(mock_db: MagicMock) -> DashboardService:
 class TestDashboardData:
     def test_create_frozen_model_raises_on_mutation(self) -> None:
         data = DashboardData(
-            project_count=1, schedule_count=2,
+            project_count=1, category_count=0, schedule_count=2,
             total_publications=0, last_publication=None, tokens_per_week=0, tokens_per_month=0,
         )
         with pytest.raises(ValidationError):
@@ -41,7 +41,7 @@ class TestDashboardData:
 
     def test_create_model_stores_fields(self) -> None:
         data = DashboardData(
-            project_count=3, schedule_count=7,
+            project_count=3, category_count=5, schedule_count=7,
             total_publications=10, last_publication=None, tokens_per_week=960, tokens_per_month=3840,
         )
         assert data.project_count == 3
@@ -203,6 +203,7 @@ def _data(**overrides: object) -> DashboardData:
     """Create DashboardData with sensible defaults."""
     defaults: dict[str, object] = {
         "project_count": 1,
+        "category_count": 0,
         "schedule_count": 0,
         "total_publications": 0,
         "last_publication": None,

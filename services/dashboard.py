@@ -29,6 +29,8 @@ _DEFAULT_PLATFORM_COST = 40
 
 # Average article cost for "~N articles" estimate (UX_PIPELINE.md section 2.5)
 _AVG_ARTICLE_COST = 320
+# Average social post cost for "~N posts" estimate
+_AVG_SOCIAL_COST = 40
 
 
 class LastPublication(BaseModel, frozen=True):
@@ -43,6 +45,7 @@ class DashboardData(BaseModel, frozen=True):
     """Aggregated data for the Dashboard screen."""
 
     project_count: int
+    category_count: int
     schedule_count: int
     total_publications: int
     last_publication: LastPublication | None
@@ -74,10 +77,11 @@ class DashboardService:
         project_count = len(projects)
         project_ids = [p.id for p in projects]
 
+        category_count = 0
         schedule_count = 0
         tokens_per_week = 0
         if project_count > 0:
-            schedule_count, tokens_per_week = await self._get_schedule_stats(project_ids)
+            category_count, schedule_count, tokens_per_week = await self._get_schedule_stats(project_ids)
 
         last_pub = None
         if last_pub_row:
@@ -89,6 +93,7 @@ class DashboardService:
 
         return DashboardData(
             project_count=project_count,
+            category_count=category_count,
             schedule_count=schedule_count,
             total_publications=pub_stats.get("total_publications", 0),
             last_publication=last_pub,
@@ -99,19 +104,21 @@ class DashboardService:
     async def _get_schedule_stats(
         self,
         project_ids: list[int],
-    ) -> tuple[int, int]:
-        """Count enabled schedules and compute weekly token forecast.
+    ) -> tuple[int, int, int]:
+        """Count categories, enabled schedules and compute weekly token forecast.
 
-        Returns: (schedule_count, tokens_per_week).
+        Returns: (category_count, schedule_count, tokens_per_week).
         """
         cats_repo = CategoriesRepository(self._db)
         sched_repo = SchedulesRepository(self._db)
 
         cat_lists = await asyncio.gather(*(cats_repo.get_by_project(pid) for pid in project_ids))
 
-        all_cat_ids = [c.id for cats in cat_lists for c in cats]
+        all_cats = [c for cats in cat_lists for c in cats]
+        category_count = len(all_cats)
+        all_cat_ids = [c.id for c in all_cats]
         if not all_cat_ids:
-            return 0, 0
+            return category_count, 0, 0
 
         schedules = await sched_repo.get_by_project(all_cat_ids)
 
@@ -125,7 +132,7 @@ class DashboardService:
                 avg_cost = _PLATFORM_COST.get(s.platform_type, _DEFAULT_PLATFORM_COST)
                 tokens_per_week += weekly_posts * avg_cost
 
-        return schedule_count, tokens_per_week
+        return category_count, schedule_count, tokens_per_week
 
     @staticmethod
     def build_text(
@@ -160,15 +167,20 @@ class DashboardService:
             )
 
         articles_est = balance // _AVG_ARTICLE_COST
+        posts_est = balance // _AVG_SOCIAL_COST
         lines: list[str] = []
 
         # Balance
-        lines.append(f"{E.WALLET} Баланс: {_format_balance(balance)} токенов (~{articles_est} статей)")
+        lines.append(
+            f"{E.WALLET} Баланс: {_format_balance(balance)} токенов"
+            f" (~{articles_est} статей / ~{posts_est} постов)"
+        )
         lines.append("")
 
         if data.project_count > 0:
             # Stats — each on its own line
             lines.append(f"{E.FOLDER} Проектов: {data.project_count}")
+            lines.append(f"{E.HASHTAG} Категорий: {data.category_count}")
             lines.append(f"{E.SCHEDULE} Расписаний: {data.schedule_count}")
             if data.total_publications > 0:
                 lines.append(f"{E.ANALYTICS} Публикаций: {data.total_publications}")

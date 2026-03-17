@@ -359,3 +359,15 @@ class UsersRepository(BaseRepository):
             .execute()
         )
         return self._count(resp)
+
+    async def get_referrals(self, referrer_id: int, limit: int = 10) -> list[User]:
+        """Get list of users referred by this user, newest first."""
+        resp = (
+            await self._table(_TABLE)
+            .select("*")
+            .eq("referrer_id", referrer_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return [User(**row) for row in self._rows(resp)]

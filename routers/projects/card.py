@@ -55,8 +55,12 @@ async def show_project_card(
     else:
         platforms_str = "не подключены"
 
+    header = f"{E.ROCKET} <b>{safe_name}</b>"
+    if project.website_url:
+        header += f"\n{E.WORDPRESS} {html.escape(project.website_url)}"
+
     text = (
-        f"{E.ROCKET} <b>{safe_name}</b>\n\n"
+        f"{header}\n\n"
         f"{E.LINK} Платформы: {platforms_str}\n"
         f"{E.FOLDER} Категорий: {len(card_data.categories)}\n"
         f"{E.ANALYTICS} Публикаций: {card_data.pub_count}\n"

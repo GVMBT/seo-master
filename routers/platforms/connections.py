@@ -40,6 +40,7 @@ from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
 from db.client import SupabaseClient
 from db.models import PlatformConnectionCreate, User
+from db.repositories.publications import PublicationsRepository
 from keyboards.inline import (
     cancel_kb,
     connection_delete_confirm_kb,
@@ -290,11 +291,18 @@ async def manage_connection(
     status_icon = E.CHECK if conn.status == "active" else E.WARNING
     status_text = "Активно" if conn.status == "active" else "Ошибка"
     safe_id = html.escape(conn.identifier)
+    created_str = conn.created_at.strftime("%d.%m.%Y") if conn.created_at else "---"
+
+    pub_repo = PublicationsRepository(db)
+    pub_count = await pub_repo.get_count_by_connection(conn_id)
+
     text = (
         f"{icon} <b>ПОДКЛЮЧЕНИЕ</b>\n\n"
         f"Платформа: {plat_label}\n"
         f"Идентификатор: {safe_id}\n"
         f"Статус: {status_icon} {status_text}\n"
+        f"Подключено: {created_str}\n"
+        f"{E.ANALYTICS} Публикаций: {pub_count}\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
         f"{E.LIGHTBULB} <i>Управляйте подключением</i>"
     )

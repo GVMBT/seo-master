@@ -17,6 +17,7 @@ from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.projects import ProjectsRepository
+from db.repositories.publications import PublicationsRepository
 from keyboards.inline import (
     category_card_kb,
     category_created_kb,
@@ -294,6 +295,10 @@ async def show_category_card(
         lines.append(f"{E.CLOSE} Медиа \u2014 нет файлов")
 
     # Publication count
+    pub_repo = PublicationsRepository(db)
+    pub_count = await pub_repo.get_count_by_category(category_id)
+    lines.append(f"{E.ANALYTICS} Публикаций: {pub_count}")
+
     lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
 
     text = "\n".join(lines)

@@ -13,6 +13,8 @@ from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
+from db.repositories.payments import PaymentsRepository
+from db.repositories.users import UsersRepository
 from keyboards.inline import (
     delete_account_cancelled_kb,
     delete_account_confirm_kb,
@@ -49,6 +51,14 @@ async def nav_profile(
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
     stats = await token_service.get_profile_stats(user)
 
+    # Registration date
+    reg_str = user.created_at.strftime("%d.%m.%Y") if user.created_at else "---"
+
+    # Last completed payment
+    pay_repo = PaymentsRepository(db)
+    last_payments = await pay_repo.get_by_user(user.id, limit=1)
+    last_completed = next((p for p in last_payments if p.status == "completed"), None)
+
     lines = [
         f"{E.USER} <b>ПРОФИЛЬ</b>\n",
         f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов\n",
@@ -64,6 +74,14 @@ async def nav_profile(
             f"{E.CHART} ~{stats['tokens_per_week']} ток/нед"
             f"  \u00b7  ~{stats['tokens_per_month']} ток/мес"
         )
+
+    # Footer with registration and payment info
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"Регистрация: {reg_str}")
+    if last_completed and last_completed.created_at:
+        pay_date = last_completed.created_at.strftime("%d.%m.%Y")
+        pay_amount = int(last_completed.amount_rub) if last_completed.amount_rub else last_completed.tokens_amount
+        lines.append(f"Последняя оплата: {pay_date} ({pay_amount} руб.)")
 
     text = "\n".join(lines)
 
@@ -172,24 +190,42 @@ async def show_referral(
         await callback.answer()
         return
 
+    import html as html_mod
+
     settings = get_settings()
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
-    users_svc = UsersService(db=db)
-    referral_count = await users_svc.get_referral_count(user.id)
+    users_repo = UsersRepository(db)
+    referral_count = await users_repo.get_referral_count(user.id)
     referral_earned = await token_service.get_referral_bonus_total(user.id)
 
     bot_info = await callback.bot.me()  # type: ignore[union-attr]
     link = f"https://t.me/{bot_info.username}?start=referrer_{user.id}"
 
-    text = (
-        f"{E.TRANSFER} <b>РЕФЕРАЛЬНАЯ ПРОГРАММА</b>\n\n"
-        f"Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!\n\n"
-        f"Ваша ссылка:\n<code>{link}</code>\n\n"
-        f"{E.USER} Рефералов: <b>{referral_count}</b>\n"
-        f"{E.WALLET} Заработано: <b>{referral_earned}</b> токенов\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Скопируйте ссылку и отправьте друзьям</i>"
-    )
+    lines = [
+        f"{E.TRANSFER} <b>РЕФЕРАЛЬНАЯ ПРОГРАММА</b>\n",
+        "Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!\n",
+        f"Ваша ссылка:\n<code>{link}</code>\n",
+        f"{E.USER} Рефералов: <b>{referral_count}</b>",
+        f"{E.WALLET} Заработано: <b>{referral_earned}</b> токенов",
+    ]
+
+    # Show referral list (up to 10)
+    _DISPLAY_LIMIT = 10
+    referrals = await users_repo.get_referrals(user.id, limit=_DISPLAY_LIMIT)
+    if referrals:
+        lines.append("")
+        lines.append("<b>Ваши рефералы:</b>")
+        for idx, ref in enumerate(referrals, 1):
+            ref_name = html_mod.escape(ref.first_name or "Пользователь")
+            ref_date = ref.created_at.strftime("%d.%m.%Y") if ref.created_at else "---"
+            lines.append(f"  {idx}. {ref_name} \u2014 {ref_date}")
+        if referral_count > _DISPLAY_LIMIT:
+            lines.append(f"  ...и ещё {referral_count - _DISPLAY_LIMIT}")
+
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"{E.LIGHTBULB} <i>Скопируйте ссылку и отправьте друзьям</i>")
+
+    text = "\n".join(lines)
 
     await edit_screen(msg, "referral.png", text, reply_markup=referral_kb())
     await callback.answer()

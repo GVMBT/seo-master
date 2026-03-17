@@ -278,6 +278,28 @@ class PublicationsRepository(BaseRepository):
         resp = await self._table(_TABLE).delete().lt("created_at", cutoff_iso).execute()
         return len(self._rows(resp))
 
+    async def get_count_by_category(self, category_id: int) -> int:
+        """Count successful publications for a category."""
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .eq("category_id", category_id)
+            .eq("status", "success")
+            .execute()
+        )
+        return self._count(resp)
+
+    async def get_count_by_connection(self, connection_id: int) -> int:
+        """Count successful publications for a connection."""
+        resp = (
+            await self._table(_TABLE)
+            .select("id", count="exact")  # type: ignore[arg-type]
+            .eq("connection_id", connection_id)
+            .eq("status", "success")
+            .execute()
+        )
+        return self._count(resp)
+
     async def get_count_by_project(self, project_id: int) -> int:
         """Count successful publications for a project."""
         resp = (
