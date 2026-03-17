@@ -816,12 +816,12 @@ def prices_kb(cat_id: int, has_prices: bool) -> InlineKeyboardMarkup:
 # target = "d" (default) | "wordpress" | "telegram" | "vk" | "pinterest"
 # ---------------------------------------------------------------------------
 
-# Platform emoji mapping for button labels
+# Platform emoji mapping for button labels (plain Unicode — buttons don't support <tg-emoji>)
 _PLATFORM_EMOJI: dict[str, str] = {
-    "wordpress": E.WORDPRESS,
-    "telegram": E.TELEGRAM,
-    "vk": E.VK,
-    "pinterest": E.PINTEREST,
+    "wordpress": "\U0001f310",
+    "telegram": "\u2708",
+    "vk": "\U0001f535",
+    "pinterest": "\U0001f4cc",
 }
 
 # Human-readable platform names
