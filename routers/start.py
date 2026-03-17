@@ -499,7 +499,7 @@ async def _get_checkpoint_text(redis: RedisClient, user_id: int) -> str:
         return ""
     try:
         checkpoint = json.loads(checkpoint_raw)
-        project_name = html.escape(checkpoint.get("project_name", ""))
+        project_name = html.escape(checkpoint.get("project_name") or "")
         step = checkpoint.get("step_label", "подготовка")
         pipeline_type = checkpoint.get("pipeline_type", "article")
         label = "статья" if pipeline_type == "article" else "пост"
