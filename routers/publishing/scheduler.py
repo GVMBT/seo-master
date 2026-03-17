@@ -74,7 +74,7 @@ async def scheduler_entry(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     await safe_edit_text(
         msg,
-        f"{E.t.SCHEDULE} <b>ПЛАНИРОВЩИК</b>\n\nВыберите тип контента:",
+        f"{E.SCHEDULE} <b>ПЛАНИРОВЩИК</b>\n\nВыберите тип контента:",
         reply_markup=scheduler_type_kb(project_id),
     )
     await callback.answer()
@@ -241,7 +241,7 @@ async def scheduler_connection(
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
     existing = schedules_map.get(conn_id)
 
-    text = f"{E.t.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\n"
+    text = f"{E.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\n"
     if existing and existing.enabled:
         days_str = ", ".join(_DAY_LABELS.get(d, d) for d in existing.schedule_days)
         times_str = ", ".join(existing.schedule_times)
@@ -419,7 +419,7 @@ async def scheduler_manual(
     await state.set_state(ScheduleSetupFSM.select_days)
 
     await safe_edit_text(msg, 
-        f"{E.t.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\nВыберите дни публикации:",
+        f"{E.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\nВыберите дни публикации:",
         reply_markup=schedule_days_kb(set()),
     )
     await callback.answer()
@@ -477,7 +477,7 @@ async def schedule_days_done(callback: CallbackQuery, state: FSMContext) -> None
 
     await state.set_state(ScheduleSetupFSM.select_count)
     await safe_edit_text(msg, 
-        f"{E.t.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\nСколько постов в день?",
+        f"{E.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\nСколько постов в день?",
         reply_markup=schedule_count_kb(),
     )
     await callback.answer()
@@ -501,7 +501,7 @@ async def schedule_count_select(callback: CallbackQuery, state: FSMContext) -> N
     await state.set_state(ScheduleSetupFSM.select_times)
 
     await safe_edit_text(msg, 
-        f"{E.t.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\nВыберите {count} временных слотов:",
+        f"{E.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\nВыберите {count} временных слотов:",
         reply_markup=schedule_times_kb(set(), count),
     )
     await callback.answer()
@@ -719,7 +719,7 @@ async def scheduler_social_connection(
     social_conns = await scheduler_service.get_social_connections(ctx.project.id, user.id)
     has_other_social = len(social_conns or []) > 1
 
-    text = f"{E.t.SCHEDULE} <b>РАСПИСАНИЕ (соцсети)</b>\n\n"
+    text = f"{E.SCHEDULE} <b>РАСПИСАНИЕ (соцсети)</b>\n\n"
     if existing and existing.enabled:
         days_str = ", ".join(_DAY_LABELS.get(d, d) for d in existing.schedule_days)
         times_str = ", ".join(existing.schedule_times)

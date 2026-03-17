@@ -99,9 +99,10 @@ async def admin_panel(
     admin_svc = admin_service_factory(db)
     stats = await admin_svc.get_panel_stats()
 
+    # Plain Unicode — edit_screen caption does NOT support <tg-emoji>
     text = (
-        f"<b>{E.CROWN} АДМИН-ПАНЕЛЬ</b>\n\n"
-        f"{E.ANALYTICS} \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"<b>\U0001f451 АДМИН-ПАНЕЛЬ</b>\n\n"
+        f"\U0001f4ca \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
         f"Пользователей: {stats.total_users}\n"
         f"Оплативших: {stats.paid_users}\n"
         f"Проектов: {stats.total_projects}\n"
@@ -146,20 +147,20 @@ async def admin_api_status(
         qstash_token=settings.qstash_token.get_secret_value(),
     )
 
-    db_icon = E.t.CHECK if status.db_ok else E.t.CLOSE
-    redis_icon = E.t.CHECK if status.redis_ok else E.t.CLOSE
-    or_icon = E.t.CHECK if status.openrouter_ok else E.t.CLOSE
-    qs_icon = E.t.CHECK if status.qstash_ok else E.t.CLOSE
+    db_icon = E.CHECK if status.db_ok else E.CLOSE
+    redis_icon = E.CHECK if status.redis_ok else E.CLOSE
+    or_icon = E.CHECK if status.openrouter_ok else E.CLOSE
+    qs_icon = E.CHECK if status.qstash_ok else E.CLOSE
 
     credits_str = f"${status.openrouter_credits:.2f}" if status.openrouter_credits is not None else "\u2014"
 
     text = (
-        f"{E.t.PULSE} <b>МОНИТОРИНГ</b>\n\n"
-        f"{E.t.AI_BRAIN} AI:\n"
+        f"{E.PULSE} <b>МОНИТОРИНГ</b>\n\n"
+        f"{E.AI_BRAIN} AI:\n"
         f"  OpenRouter: {or_icon} | Кредиты: {credits_str}\n"
         f"  QStash: {qs_icon}\n"
         f"  Активных расписаний: {status.active_schedules}\n\n"
-        f"{E.t.DATABASE} Инфраструктура:\n"
+        f"{E.DATABASE} Инфраструктура:\n"
         f"  База данных: {db_icon} ({status.db_latency_ms}ms)\n"
         f"  Redis: {redis_icon} ({status.redis_latency_ms}ms)\n"
     )
@@ -194,7 +195,7 @@ async def admin_api_costs(
     )
 
     text = (
-        f"{E.t.WALLET} <b>ЗАТРАТЫ API</b>\n\n"
+        f"{E.WALLET} <b>ЗАТРАТЫ API</b>\n\n"
         f"7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
     )
 
@@ -215,7 +216,7 @@ def _format_user_card(card: UserCard) -> str:
     activity = card.last_activity[:10] if card.last_activity else "\u2014"
 
     return (
-        f"{E.t.USER} <b>Пользователь #{card.user_id}</b>\n\n"
+        f"{E.USER} <b>Пользователь #{card.user_id}</b>\n\n"
         f"Имя: {name}\n"
         f"Username: {uname}\n"
         f"Роль: {html.escape(card.role)}\n"
@@ -543,7 +544,7 @@ async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext
     await state.set_state(BroadcastFSM.audience)
     await safe_edit_text(
         msg,
-        f"{E.t.MEGAPHONE} <b>РАССЫЛКА</b>\n\n<i>Выберите аудиторию:</i>",
+        f"{E.MEGAPHONE} <b>РАССЫЛКА</b>\n\n<i>Выберите аудиторию:</i>",
         reply_markup=broadcast_audience_kb(),
     )
     await callback.answer()

@@ -59,7 +59,7 @@ _SOCIAL_PROTECTED = StateFilter(
 async def exit_protection_reply_article(message: Message) -> None:
     """Intercept reply keyboard 'Отмена' on protected article steps."""
     await message.answer(
-        f"{E.t.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
@@ -71,7 +71,7 @@ async def exit_protection_reply_article(message: Message) -> None:
 async def exit_protection_reply_social(message: Message) -> None:
     """Intercept reply keyboard 'Отмена' on protected social steps."""
     await message.answer(
-        f"{E.t.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=social_exit_confirm_kb(),
     )
 
@@ -83,7 +83,7 @@ async def exit_protection_reply_social(message: Message) -> None:
 async def exit_protection_cancel_cmd_article(message: Message) -> None:
     """Intercept /cancel command on protected article steps."""
     await message.answer(
-        f"{E.t.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
@@ -95,7 +95,7 @@ async def exit_protection_cancel_cmd_article(message: Message) -> None:
 async def exit_protection_cancel_cmd_social(message: Message) -> None:
     """Intercept /cancel command on protected social steps."""
     await message.answer(
-        f"{E.t.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
         reply_markup=social_exit_confirm_kb(),
     )
 

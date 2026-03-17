@@ -134,26 +134,25 @@ class DashboardService:
         data: DashboardData,
     ) -> str:
         """Build Dashboard text based on user state (UX_PIPELINE.md section 2.1-2.3, 2.7)."""
-        from bot.texts.emoji import E
-
+        # Plain Unicode — text is used as edit_screen caption (no <tg-emoji>)
         name = html.escape(first_name or "")
 
         # Balance warning overrides (section 2.7)
         if balance < 0:
             return (
-                f"{E.WARNING} <b>Баланс: {balance} токенов</b>\n\n"
+                f"\u26a0 <b>Баланс: {balance} токенов</b>\n\n"
                 f"Долг {abs(balance)} токенов будет списан при следующей покупке.\n"
                 "Для генерации контента пополните баланс."
             )
         if balance == 0:
-            return f"{E.WALLET} <b>Баланс: 0 токенов</b>\n\nДля генерации контента нужно пополнить баланс."
+            return "\U0001f4b0 <b>Баланс: 0 токенов</b>\n\nДля генерации контента нужно пополнить баланс."
 
         if is_new_user and data.project_count == 0:
             articles_est = balance // _AVG_ARTICLE_COST
             return (
                 f"Привет{', ' + name if name else ''}! "
                 "Я помогу создать и опубликовать SEO-контент.\n\n"
-                f"{E.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b>"
+                f"\U0001f4b0 <b>Баланс: {_format_balance(balance)} токенов</b>"
                 f" (~{articles_est} статей)\n\n"
                 "Что хотите сделать?"
             )
@@ -162,17 +161,17 @@ class DashboardService:
         lines: list[str] = []
 
         # Balance
-        lines.append(f"{E.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b> (~{articles_est} статей)")
+        lines.append(f"\U0001f4b0 <b>Баланс: {_format_balance(balance)} токенов</b> (~{articles_est} статей)")
         lines.append("")
 
         if data.project_count > 0:
             # Stats
             lines.append(
-                f"{E.FOLDER} Проектов: {data.project_count}  \u00b7  "
-                f"{E.SCHEDULE} Расписаний: {data.schedule_count}"
+                f"\U0001f4c1 Проектов: {data.project_count}  \u00b7  "
+                f"\U0001f4c5 Расписаний: {data.schedule_count}"
             )
             if data.total_publications > 0:
-                lines.append(f"{E.ANALYTICS} Публикаций: {data.total_publications}")
+                lines.append(f"\U0001f4ca Публикаций: {data.total_publications}")
 
             # Last publication
             if data.last_publication and data.last_publication.keyword:
@@ -183,18 +182,18 @@ class DashboardService:
                     lp.keyword[:40] + "\u2026" if len(lp.keyword) > 40 else lp.keyword,
                 )
                 suffix = f" \u2014 {date_str}" if date_str else ""
-                lines.append(f"{E.DOC} {label}: \u00ab{kw_short}\u00bb{suffix}")
+                lines.append(f"\U0001f4c4 {label}: \u00ab{kw_short}\u00bb{suffix}")
 
             # Forecast
             if data.tokens_per_week > 0:
                 lines.append("")
                 lines.append(
-                    f"{E.CHART} Расход: ~{_format_balance(data.tokens_per_week)}/нед"
+                    f"\U0001f4c8 Расход: ~{_format_balance(data.tokens_per_week)}/нед"
                     f"  \u00b7  ~{_format_balance(data.tokens_per_month)}/мес"
                 )
         else:
             lines.append("У вас пока нет проектов.")
-            lines.append(f"{E.ROCKET} Создайте первый \u2014 это займёт 30 секунд.")
+            lines.append("\U0001f680 Создайте первый \u2014 это займёт 30 секунд.")
 
         return "\n".join(lines)
 

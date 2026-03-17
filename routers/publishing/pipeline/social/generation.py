@@ -91,7 +91,7 @@ _SOCIAL_STEPS = [
 
 def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
     """Build cumulative progress text for social post generation."""
-    lines = [f"{E.t.PEN} Генерация поста", ""]
+    lines = [f"{E.PEN} Генерация поста", ""]
     for i, (active_label, done_label) in enumerate(steps):
         if i < current:
             lines.append(f"{EMOJI_DONE} {done_label}")
@@ -103,7 +103,7 @@ def _social_progress_text(steps: list[tuple[str, str]], current: int) -> str:
 def _social_publish_progress(platform: str, current: int) -> str:
     """Build cumulative progress text for social post publishing."""
     name = _PLATFORM_NAMES.get(platform, platform.title())
-    lines = [f"{E.t.UPLOAD} Публикация поста", ""]
+    lines = [f"{E.UPLOAD} Публикация поста", ""]
     for i, (active_tpl, done_tpl) in enumerate(_SOCIAL_PUBLISH_STEPS):
         active_label = active_tpl.format(platform=name)
         done_label = done_tpl.format(platform=name)
@@ -204,7 +204,7 @@ def _build_social_confirm_text(
         cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE -- бесплатно)"
 
     return (
-        f"{E.t.MEGAPHONE} Пост (5/5) -- Подтверждение\n\n"
+        f"{E.MEGAPHONE} Пост (5/5) -- Подтверждение\n\n"
         f"{project_name} -> {platform_label} ({identifier})\n"
         f"Тема: {category_name}\n"
         f"Ключевики: {report.keyword_count} фраз\n\n"

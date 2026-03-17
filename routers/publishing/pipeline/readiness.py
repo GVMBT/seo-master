@@ -68,38 +68,38 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     category_name = html.escape(fsm_data.get("category_name", ""))
 
     lines: list[str] = [
-        f"{E.t.DOC} Статья (4/5) — Подготовка\n",
+        f"{E.DOC} Статья (4/5) — Подготовка\n",
         f"Проект: {project_name}",
         f"Тема: {category_name}\n",
     ]
 
     # Description status (first — keywords are generated from it)
     if report.has_description:
-        lines.append(f"{E.t.CHECK} Описание")
+        lines.append(f"{E.CHECK} Описание")
     elif "description" in report.missing_items:
-        lines.append(f"{E.t.CLOSE} Описание")
+        lines.append(f"{E.CLOSE} Описание")
 
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"{E.t.CHECK} Ключевые фразы \u2014 {kw_info}")
+        lines.append(f"{E.CHECK} Ключевые фразы \u2014 {kw_info}")
     else:
-        lines.append(f"{E.t.CLOSE} Ключевые фразы (обязательно)")
+        lines.append(f"{E.CLOSE} Ключевые фразы (обязательно)")
 
     # Prices status (progressive: shown for 2+ pubs)
     if "prices" in report.missing_items:
-        lines.append(f"{E.t.CLOSE} Цены")
+        lines.append(f"{E.CLOSE} Цены")
     elif report.has_prices:
-        lines.append(f"{E.t.CHECK} Цены")
+        lines.append(f"{E.CHECK} Цены")
 
     # Images (generated WITH the article, not separately)
     if report.image_count > 0:
         img_cost = report.image_count * COST_PER_IMAGE
-        lines.append(f"{E.t.CHECK} Медиа \u2014 {report.image_count} шт. ({img_cost} ток.)")
+        lines.append(f"{E.CHECK} Медиа \u2014 {report.image_count} шт. ({img_cost} ток.)")
     else:
-        lines.append(f"{E.t.CLOSE} Медиа")
+        lines.append(f"{E.CLOSE} Медиа")
 
     # Cost estimate
     lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")

@@ -59,8 +59,8 @@ router = Router()
 _TOTAL_STEPS = 5
 
 # Step header prefixes for social pipeline screens
-_LH = f"{E.t.LINK} "   # Connection step (step 2)
-_SH = f"{E.t.MEGAPHONE} "  # Project step (step 1, back nav)
+_LH = f"{E.LINK} "   # Connection step (step 2)
+_SH = f"{E.MEGAPHONE} "  # Project step (step 1, back nav)
 
 
 # ---------------------------------------------------------------------------
