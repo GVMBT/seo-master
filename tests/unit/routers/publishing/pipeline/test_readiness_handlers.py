@@ -228,7 +228,7 @@ class TestBuildChecklistText:
             missing_items=["keywords"],
         )
         text = _build_checklist_text(report, _make_state_data())
-        assert "\u274c" in text and "Ключевые фразы (обязательно)" in text
+        assert "\u274c" in text and "Ключевики (обязательно)" in text
 
     async def test_description_missing(self) -> None:
         report = _make_report(has_description=False, missing_items=["description"])

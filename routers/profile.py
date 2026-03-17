@@ -89,12 +89,7 @@ async def show_notifications(
         await callback.answer()
         return
 
-    text = (
-        f"{E.BELL} <b>УВЕДОМЛЕНИЯ</b>\n\n"
-        "Управляйте уведомлениями бота:\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Нажмите для переключения</i>"
-    )
+    text = _build_notifications_text()
 
     await safe_edit_text(
         msg,
@@ -106,6 +101,19 @@ async def show_notifications(
         ),
     )
     await callback.answer()
+
+
+def _build_notifications_text() -> str:
+    """Build notification screen text."""
+    return (
+        f"{E.BELL} <b>УВЕДОМЛЕНИЯ</b>\n\n"
+        "<i>Выберите типы уведомлений:</i>\n\n"
+        "\u2713 Публикации \u2014 статус автопубликаций\n"
+        "\u2713 Баланс \u2014 пополнения и низкий баланс\n"
+        "\u2717 Новости \u2014 обновления бота\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Нажмите для переключения</i>"
+    )
 
 
 @router.callback_query(F.data.regexp(r"^profile:notify:(publications|balance|news)$"))
@@ -132,15 +140,10 @@ async def toggle_notification(
     updated_user = await users_svc.toggle_notification(user.id, field, current_value, redis)
 
     if updated_user is None:
-        await callback.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", show_alert=True)
+        await callback.answer("Ошибка обновления. Попробуйте позже.", show_alert=True)
         return
 
-    text = (
-        f"{E.BELL} <b>УВЕДОМЛЕНИЯ</b>\n\n"
-        "Управляйте уведомлениями бота:\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Нажмите для переключения</i>"
-    )
+    text = _build_notifications_text()
 
     await safe_edit_text(
         msg,

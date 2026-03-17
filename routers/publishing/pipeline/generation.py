@@ -182,12 +182,13 @@ def _build_confirm_text(fsm_data: dict[str, Any], report: Any, user: User) -> st
         cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE — бесплатно)"
 
     return (
-        f"{E.DOC} Статья (5/5) — Подтверждение\n\n"
-        f"{project_name}"
-        f"{' → ' + wp_display if wp_display else ''}\n"
-        f"Тема: {category_name}\n"
-        f"Ключевики: {report.keyword_count} фраз | Изображения: {report.image_count} шт.\n\n"
-        f"{cost_line}\n"
+        f"{E.DOC} <b>СТАТЬЯ (5/5) \u2014 ПОДТВЕРЖДЕНИЕ</b>\n\n"
+        f"{E.FOLDER} Проект: {project_name}"
+        f"{' \u2192 ' + wp_display if wp_display else ''}\n"
+        f"{E.HASHTAG} Тема: {category_name}\n"
+        f"Ключевики: {report.keyword_count} фраз | Изображения: {report.image_count} шт.\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.WALLET} {cost_line}\n"
         f"Баланс: {report.user_balance} ток."
     )
 
@@ -452,8 +453,11 @@ async def _run_generation(
         progress.cancel()
         log.exception("pipeline.generation_failed", user_id=user.id, error=str(exc))
         await try_refund(db, user, tokens_charged, "Ошибка генерации")
-        await safe_edit_text(message, 
-            "Ошибка генерации. Токены возвращены.\n\nПопробуйте ещё раз.",
+        await safe_edit_text(message,
+            f"{E.WARNING} <b>ОШИБКА ГЕНЕРАЦИИ</b>\n\n"
+            "Токены возвращены на баланс.\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.LIGHTBULB} <i>Попробуйте ещё раз или выберите другую тему</i>",
             reply_markup=pipeline_generation_error_kb(),
         )
         await state.set_state(ArticlePipelineFSM.confirm_cost)
@@ -580,11 +584,12 @@ def _build_preview_text(
 ) -> str:
     """Build preview display text."""
     lines = [
-        "Статья готова!\n",
+        f"{E.CHECK} <b>СТАТЬЯ ГОТОВА</b>\n",
         f"<b>{html.escape(content.title)}</b>\n",
-        f"Ключевая фраза: {html.escape(keyword)}",
-        f"Объём: ~{content.word_count} слов | Изображения: {content.images_count}",
-        f"Списано: {tokens_charged} ток.",
+        f"{E.HASHTAG} Ключевая фраза: {html.escape(keyword)}",
+        f"{E.DOC} Объём: ~{content.word_count} слов | Изображения: {content.images_count}",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+        f"{E.WALLET} Списано: {tokens_charged} ток.",
     ]
     if content.content_warnings:
         warnings_text = "\n".join(f"  - {html.escape(w)}" for w in content.content_warnings[:5])
@@ -760,9 +765,14 @@ async def publish_article(
         balance = await TokenService(db=db, admin_ids=get_settings().admin_ids).get_balance(user.id)
 
         result_text = (
-            "Статья опубликована!\n\n"
-            f"<b>{html.escape(preview.title or '')}</b>\n"
-            f"Списано: {preview.tokens_charged or 0} ток. | Баланс: {balance} ток."
+            f"{E.CHECK} <b>СТАТЬЯ ОПУБЛИКОВАНА</b>\n\n"
+            f"<b>{html.escape(preview.title or '')}</b>\n\n"
+            f"{E.HASHTAG} Ключевая фраза: {html.escape(preview.keyword or '')}\n"
+            f"{E.DOC} Объём: ~{preview.word_count or 0} слов | "
+            f"Изображения: {preview.images_count or 0}\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.WALLET} Списано: {preview.tokens_charged or 0} ток. | "
+            f"Баланс: {balance} ток."
         )
         await safe_edit_text(msg, 
             result_text,

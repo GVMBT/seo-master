@@ -61,7 +61,10 @@ async def _show_list(
         await edit_screen(
             msg,
             "empty_projects.png",
-            f"{E.FOLDER} У вас пока нет проектов.\n\nСоздайте первый \u2014 это займёт 30 секунд.",
+            f"{E.FOLDER} <b>ПРОЕКТЫ</b>\n\n"
+            "У вас пока нет проектов.\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.LIGHTBULB} <i>Создайте первый проект \u2014 это займёт 30 секунд</i>",
             reply_markup=project_list_empty_kb(),
         )
     else:
@@ -69,7 +72,7 @@ async def _show_list(
         await edit_screen(
             msg,
             "project_card.png",
-            f"{E.FOLDER} Проекты ({len(projects)}):",
+            f"{E.FOLDER} <b>ПРОЕКТЫ</b> ({len(projects)}):",
             reply_markup=kb,
         )
     await callback.answer()

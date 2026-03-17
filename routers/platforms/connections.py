@@ -336,8 +336,11 @@ async def confirm_connection_delete(
         msg,
         f"{E.WARNING} <b>УДАЛЕНИЕ ПОДКЛЮЧЕНИЯ</b>\n\n"
         f"{icon} {conn.platform_type.capitalize()} ({safe_id})\n\n"
-        "Связанные расписания будут отменены.\n"
-        "Это действие нельзя отменить.",
+        "Будут удалены:\n"
+        "\u2022 Связанные расписания\n"
+        "\u2022 Настройки кросс-постинга\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Это действие нельзя отменить</i>",
         reply_markup=connection_delete_confirm_kb(conn_id, conn.project_id),
     )
     await callback.answer()
@@ -983,9 +986,10 @@ async def start_pinterest_connect(
     )
 
     await msg.answer(
-        "Подключение Pinterest\n\n"
-        "Нажмите кнопку ниже, чтобы авторизоваться в Pinterest.\n"
-        "После авторизации вы будете перенаправлены обратно в бот.",
+        f"{E.PINTEREST} <b>Подключение Pinterest</b>\n\n"
+        "Нажмите кнопку ниже, чтобы авторизоваться\n"
+        "в Pinterest и предоставить доступ.\n\n"
+        f"{E.LOCK} Токен хранится в зашифрованном виде",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Авторизоваться в Pinterest", url=oauth_url)],

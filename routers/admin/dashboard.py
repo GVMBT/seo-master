@@ -66,7 +66,7 @@ def _is_admin(user: User) -> bool:
 
 _BACK_TO_PANEL_KB = InlineKeyboardMarkup(
     inline_keyboard=[
-        [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
+        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
     ]
 )
 
@@ -372,7 +372,7 @@ async def user_balance_input(
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="К карточке", callback_data=f"admin:user:{target_id}:card")],
-                [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
+                [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
             ]
         ),
     )
@@ -476,7 +476,7 @@ async def user_activity(
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="К карточке", callback_data=f"admin:user:{target_id}:card")],
-                [InlineKeyboardButton(text="\u2b05\ufe0f К панели", callback_data="admin:panel")],
+                [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
             ]
         ),
     )

@@ -81,7 +81,7 @@ def pipeline_no_wp_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="\u2b05\ufe0f Назад",
+                    text="Назад",
                     callback_data="pipeline:article:back_project",
                 ),
             ],
@@ -118,7 +118,7 @@ def pipeline_categories_kb(
         else "pipeline:social:back_connection"
     )
     kb.inline_keyboard.append(
-        [InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data=back_cb)]
+        [InlineKeyboardButton(text="Назад", callback_data=back_cb)]
     )
     return kb
 
@@ -528,7 +528,7 @@ def pipeline_keywords_options_kb(prefix: str = "pipeline:readiness") -> InlineKe
             ],
             [
                 InlineKeyboardButton(
-                    text="\u2b05\ufe0f Назад к чеклисту",
+                    text="К чеклисту",
                     callback_data=f"{prefix}:back",
                 ),
             ],
@@ -561,7 +561,7 @@ def pipeline_keywords_city_kb(prefix: str = "pipeline:readiness") -> InlineKeybo
             ],
             [
                 InlineKeyboardButton(
-                    text="\u2b05\ufe0f Назад к чеклисту",
+                    text="К чеклисту",
                     callback_data=f"{prefix}:keywords:cancel",
                 ),
             ],
@@ -592,7 +592,7 @@ def pipeline_description_options_kb(prefix: str = "pipeline:readiness") -> Inlin
             ],
             [
                 InlineKeyboardButton(
-                    text="\u2b05\ufe0f Назад к чеклисту",
+                    text="К чеклисту",
                     callback_data=f"{prefix}:back",
                 ),
             ],
@@ -623,7 +623,7 @@ def pipeline_prices_options_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="\u2b05\ufe0f Назад к чеклисту",
+                    text="К чеклисту",
                     callback_data="pipeline:readiness:back",
                 ),
             ],
@@ -659,7 +659,7 @@ def pipeline_images_options_kb(current_count: int = 4) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="\u2b05\ufe0f Назад к чеклисту",
+                text="К чеклисту",
                 callback_data="pipeline:readiness:back",
             ),
         ]
@@ -674,7 +674,7 @@ def pipeline_back_to_checklist_kb(prefix: str = "pipeline:readiness") -> InlineK
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="\u2b05\ufe0f Назад к чеклисту",
+                    text="К чеклисту",
                     callback_data=f"{prefix}:back",
                 ),
             ],
@@ -721,7 +721,7 @@ def social_connections_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="\u2b05\ufe0f Назад",
+                text="Назад",
                 callback_data="pipeline:social:back_project",
             ),
         ]
@@ -766,7 +766,7 @@ def social_no_connections_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="\u2b05\ufe0f Назад",
+                text="Назад",
                 callback_data="pipeline:social:back_project",
             ),
         ]

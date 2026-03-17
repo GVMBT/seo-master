@@ -129,7 +129,10 @@ async def start_create(
     await state.update_data(last_update_time=time.time())
 
     await msg.answer(
-        "Как назовём проект?\nЭто внутреннее имя для вашего удобства.\n\n<i>Пример: Мебель Комфорт</i>",
+        f"{E.FOLDER} <b>НОВЫЙ ПРОЕКТ</b>\n\n"
+        "Как назовём проект?\nЭто внутреннее имя для вашего удобства.\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Пример: Мебель Комфорт</i>",
         reply_markup=cancel_kb("project:create:cancel"),
     )
     await callback.answer()
@@ -212,20 +215,22 @@ def _build_edit_text(project: Project) -> str:
         ("Название", project.name),
         ("Компания", project.company_name),
         ("Специализация", project.specialization),
-        ("Сайт", project.website_url or "—"),
-        ("Описание", _truncate(project.description, 100) if project.description else "—"),
-        ("Преимущества", _truncate(project.advantages, 100) if project.advantages else "—"),
-        ("Опыт", _truncate(project.experience, 100) if project.experience else "—"),
-        ("Город", project.company_city or "—"),
-        ("Адрес", project.company_address or "—"),
-        ("Телефон", project.company_phone or "—"),
-        ("Email", project.company_email or "—"),
+        ("Сайт", project.website_url or "\u2014"),
+        ("Описание", _truncate(project.description, 100) if project.description else "\u2014"),
+        ("Преимущества", _truncate(project.advantages, 100) if project.advantages else "\u2014"),
+        ("Опыт", _truncate(project.experience, 100) if project.experience else "\u2014"),
+        ("Город", project.company_city or "\u2014"),
+        ("Адрес", project.company_address or "\u2014"),
+        ("Телефон", project.company_phone or "\u2014"),
+        ("Email", project.company_email or "\u2014"),
     ]
 
     safe_name = html.escape(project.name)
-    lines = [f"{safe_name} — Редактирование\n"]
+    lines = [f"{E.PEN} <b>{safe_name} \u2014 РЕДАКТИРОВАНИЕ</b>\n"]
     for label, value in fields:
         lines.append(f"{label}: {html.escape(str(value))}")
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"{E.LIGHTBULB} <i>Нажмите на поле для редактирования</i>")
     return "\n".join(lines)
 
 

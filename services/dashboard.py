@@ -150,11 +150,13 @@ class DashboardService:
         if is_new_user and data.project_count == 0:
             articles_est = balance // _AVG_ARTICLE_COST
             return (
+                f"{E.ROCKET} <b>ДОБРО ПОЖАЛОВАТЬ</b>\n\n"
                 f"Привет{', ' + name if name else ''}! "
                 "Я помогу создать и опубликовать SEO-контент.\n\n"
                 f"{E.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b>"
-                f" (~{articles_est} статей)\n\n"
-                "Что хотите сделать?"
+                f" (~{articles_est} статей)\n"
+                "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+                f"{E.LIGHTBULB} <i>Создайте первый проект \u2014 это займёт 30 секунд</i>"
             )
 
         articles_est = balance // _AVG_ARTICLE_COST
@@ -186,7 +188,7 @@ class DashboardService:
 
             # Forecast
             if data.tokens_per_week > 0:
-                lines.append("")
+                lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
                 lines.append(
                     f"{E.CHART} Расход: ~{_format_balance(data.tokens_per_week)}/нед"
                     f"  \u00b7  ~{_format_balance(data.tokens_per_month)}/мес"

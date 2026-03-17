@@ -110,10 +110,11 @@ async def confirm_delete(
         f"{E.WARNING} <b>УДАЛЕНИЕ ПРОЕКТА</b>\n\n"
         f"Удалить проект \u00ab{safe_name}\u00bb?\n\n"
         "Будут удалены:\n"
-        "  \u2022 Все категории\n"
-        "  \u2022 Все подключения\n"
-        "  \u2022 Все расписания\n\n"
-        "Это действие нельзя отменить.",
+        "\u2022 Все категории и ключевики\n"
+        "\u2022 Подключения к платформам\n"
+        "\u2022 Расписания автопубликации\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Это действие нельзя отменить</i>",
         reply_markup=project_delete_confirm_kb(project_id),
     )
     await callback.answer()
@@ -149,7 +150,7 @@ async def execute_delete(
         )
     else:
         await safe_edit_text(msg, 
-            "\u26a0\ufe0f Не удалось удалить проект. Попробуйте позже.",
+            f"{E.WARNING} Не удалось удалить проект. Попробуйте позже.",
             reply_markup=project_deleted_kb(),
         )
 

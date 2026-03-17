@@ -68,29 +68,29 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     category_name = html.escape(fsm_data.get("category_name", ""))
 
     lines: list[str] = [
-        f"{E.DOC} Статья (4/5) — Подготовка\n",
-        f"Проект: {project_name}",
-        f"Тема: {category_name}\n",
+        f"{E.DOC} <b>СТАТЬЯ (4/5) \u2014 ПОДГОТОВКА</b>\n",
+        f"{E.FOLDER} Проект: {project_name}",
+        f"{E.HASHTAG} Тема: {category_name}\n",
     ]
 
-    # Description status (first — keywords are generated from it)
+    # Description status (first -- keywords are generated from it)
     if report.has_description:
         lines.append(f"{E.CHECK} Описание")
     elif "description" in report.missing_items:
-        lines.append(f"{E.CLOSE} Описание")
+        lines.append(f"{E.CLOSE} Описание \u2014 не задано")
 
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"{E.CHECK} Ключевые фразы \u2014 {kw_info}")
+        lines.append(f"{E.CHECK} Ключевики \u2014 {kw_info}")
     else:
-        lines.append(f"{E.CLOSE} Ключевые фразы (обязательно)")
+        lines.append(f"{E.CLOSE} Ключевики (обязательно)")
 
     # Prices status (progressive: shown for 2+ pubs)
     if "prices" in report.missing_items:
-        lines.append(f"{E.CLOSE} Цены")
+        lines.append(f"{E.CLOSE} Цены \u2014 не заданы")
     elif report.has_prices:
         lines.append(f"{E.CHECK} Цены")
 
@@ -102,7 +102,8 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
         lines.append(f"{E.CLOSE} Медиа")
 
     # Cost estimate
-    lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"{E.WALLET} Стоимость: ~{report.estimated_cost} ток.")
 
     return "\n".join(lines)
 

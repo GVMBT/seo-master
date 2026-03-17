@@ -376,7 +376,7 @@ async def _show_wp_step(
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="Продолжить", callback_data="pipeline:article:wp_continue")],
-                    [InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data="pipeline:article:back_project")],
+                    [InlineKeyboardButton(text="Назад", callback_data="pipeline:article:back_project")],
                 ]
             ),
         )
@@ -1068,11 +1068,12 @@ async def _return_to_preview(
     )
 
     lines = [
-        "Статья готова!\n",
+        f"{E.CHECK} <b>СТАТЬЯ ГОТОВА</b>\n",
         f"<b>{html.escape(preview.title or '')}</b>\n",
-        f"Ключевая фраза: {html.escape(preview.keyword or '')}",
-        f"Объём: ~{preview.word_count or 0} слов | Изображения: {preview.images_count or 0}",
-        f"Списано: {preview.tokens_charged or 0} ток.",
+        f"{E.HASHTAG} Ключевая фраза: {html.escape(preview.keyword or '')}",
+        f"{E.DOC} Объём: ~{preview.word_count or 0} слов | Изображения: {preview.images_count or 0}",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+        f"{E.WALLET} Списано: {preview.tokens_charged or 0} ток.",
     ]
     await message.answer("\n".join(lines), reply_markup=kb)
     await save_checkpoint(
