@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery
 from bot.assets import edit_screen
 from bot.helpers import safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import project_list_empty_kb, project_list_kb
@@ -60,7 +61,7 @@ async def _show_list(
         await edit_screen(
             msg,
             "empty_projects.png",
-            "\U0001f4c1 У вас пока нет проектов.\n\nСоздайте первый — это займёт 30 секунд.",
+            f"{E.FOLDER} У вас пока нет проектов.\n\nСоздайте первый \u2014 это займёт 30 секунд.",
             reply_markup=project_list_empty_kb(),
         )
     else:
@@ -68,7 +69,7 @@ async def _show_list(
         await edit_screen(
             msg,
             "project_card.png",
-            f"\U0001f4c1 Проекты ({len(projects)}):",
+            f"{E.FOLDER} Проекты ({len(projects)}):",
             reply_markup=kb,
         )
     await callback.answer()
