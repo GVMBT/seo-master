@@ -422,7 +422,7 @@ class TestSchedulerPreset:
 
         scheduler_service.apply_schedule.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "Расписание установлено" in text
+        assert "РАСПИСАНИЕ УСТАНОВЛЕНО" in text
 
     async def test_preset_ownership_fail(
         self,
@@ -679,7 +679,7 @@ class TestScheduleTimesDone:
         scheduler_service.apply_schedule.assert_awaited_once()
         mock_state.clear.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "Расписание установлено" in text
+        assert "РАСПИСАНИЕ УСТАНОВЛЕНО" in text
 
     async def test_apply_failure_clears_state(
         self,

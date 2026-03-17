@@ -245,8 +245,17 @@ async def scheduler_connection(
     if existing and existing.enabled:
         days_str = ", ".join(_DAY_LABELS.get(d, d) for d in existing.schedule_days)
         times_str = ", ".join(existing.schedule_times)
-        text += f"Текущее расписание:\nДни: {days_str}\nВремя: {times_str}\nПостов/день: {existing.posts_per_day}\n\n"
-    text += "Выберите вариант:"
+        text += (
+            "Текущее расписание:\n"
+            f"  Дни: {days_str}\n"
+            f"  Время: {times_str}\n"
+            f"  Постов/день: {existing.posts_per_day}\n\n"
+        )
+    text += (
+        "Выберите вариант:\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Настройте частоту автопубликации</i>"
+    )
 
     await safe_edit_text(msg, 
         text,
@@ -321,7 +330,7 @@ async def scheduler_preset(
         )
 
     await safe_edit_text(msg,
-        f"Расписание установлено!\n\n"
+        f"{E.CHECK} <b>РАСПИСАНИЕ УСТАНОВЛЕНО</b>\n\n"
         f"Подключение: {display}\n"
         f"Режим: {preset[0]}\n"
         f"Ориент. расход: ~{result.weekly_cost} токенов/нед",
@@ -611,11 +620,11 @@ async def schedule_times_done(
         )
 
     await safe_edit_text(msg,
-        f"Расписание установлено!\n\n"
-        f"Дни: {days_str}\n"
-        f"Время: {times_str}\n"
-        f"Постов/день: {required}\n"
-        f"Ориент. расход: ~{result.weekly_cost} токенов/нед",
+        f"{E.CHECK} <b>РАСПИСАНИЕ УСТАНОВЛЕНО</b>\n\n"
+        f"  Дни: {days_str}\n"
+        f"  Время: {times_str}\n"
+        f"  Постов/день: {required}\n"
+        f"  Ориент. расход: ~{result.weekly_cost} токенов/нед",
         reply_markup=reply_markup,
     )
     await callback.answer()
@@ -723,11 +732,20 @@ async def scheduler_social_connection(
     if existing and existing.enabled:
         days_str = ", ".join(_DAY_LABELS.get(d, d) for d in existing.schedule_days)
         times_str = ", ".join(existing.schedule_times)
-        text += f"Текущее расписание:\nДни: {days_str}\nВремя: {times_str}\nПостов/день: {existing.posts_per_day}\n"
+        text += (
+            "Текущее расписание:\n"
+            f"  Дни: {days_str}\n"
+            f"  Время: {times_str}\n"
+            f"  Постов/день: {existing.posts_per_day}\n"
+        )
         if existing.cross_post_connection_ids:
-            text += f"Кросс-постинг: {len(existing.cross_post_connection_ids)} платформ\n"
+            text += f"  Кросс-постинг: {len(existing.cross_post_connection_ids)} платформ\n"
         text += "\n"
-    text += "Выберите вариант:"
+    text += (
+        "Выберите вариант:\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Настройте частоту автопостинга</i>"
+    )
 
     await safe_edit_text(msg, 
         text,

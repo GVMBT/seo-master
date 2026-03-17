@@ -104,11 +104,18 @@ async def _show_prices_screen(
     if prices:
         lines = [ln for ln in prices.splitlines() if ln.strip()]
         count = len(lines)
-        text = f"<b>{E.PRICE} Цены \u2014 {safe_name}</b>\n\n{E.UPLOAD} Файл загружен ({count} позиций)"
+        text = (
+            f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
+            f"{E.CHECK} Прайс загружен ({count} позиций)\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.LIGHTBULB} <i>В статьях будут реальные цены ваших товаров</i>"
+        )
     else:
         text = (
-            f"<b>{E.PRICE} Цены \u2014 {safe_name}</b>\n\n"
-            "Прайс-лист не загружен. Добавьте \u2014 в статьях будут реальные цены."
+            f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
+            "Прайс не загружен.\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.LIGHTBULB} <i>В статьях будут реальные цены ваших товаров</i>"
         )
 
     await safe_edit_text(message, text, reply_markup=prices_kb(category_id, has_prices=bool(prices)))
@@ -236,7 +243,10 @@ async def process_text(
     if count > 10:
         preview += f"\n  ... ещё {count - 10}"
 
-    result_text = f"<b>Цены \u2014 {safe_name}</b>\n\nПрайс сохранён ({count} позиций):\n{preview}"
+    result_text = (
+        f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
+        f"{E.CHECK} Прайс сохранён ({count} позиций):\n{preview}"
+    )
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 
 
@@ -430,7 +440,10 @@ async def process_excel(
     safe_name = html.escape(updated.name)
     count = len(lines)
 
-    result_text = f"<b>Цены \u2014 {safe_name}</b>\n\nФайл загружен ({count} позиций)"
+    result_text = (
+        f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
+        f"{E.CHECK} Файл загружен ({count} позиций)"
+    )
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 
 

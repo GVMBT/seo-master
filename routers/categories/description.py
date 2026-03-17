@@ -16,6 +16,7 @@ from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import (
@@ -67,12 +68,20 @@ async def _show_description_screen(
 
     if has_description:
         safe_desc = html.escape(category.description or "")
-        text = f"<b>Описание</b> — {safe_name}\n\nТекущее описание:\n<i>{safe_desc}</i>"
+        text = (
+            f"{E.DOC} <b>ОПИСАНИЕ</b> \u2014 {safe_name}\n\n"
+            f"<i>{safe_desc}</i>\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.LIGHTBULB} <i>Описание помогает AI писать точнее</i>"
+        )
     else:
         text = (
-            f"<b>Описание</b> — {safe_name}\n\n"
+            f"{E.DOC} <b>ОПИСАНИЕ</b> \u2014 {safe_name}\n\n"
+            "Описание не задано.\n\n"
             "Опишите своими словами, чем занимается ваш бизнес в этой категории. "
-            "Можно тезисно, через запятую. После ввода можно улучшить текст с помощью ИИ."
+            "Можно тезисно, через запятую.\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.LIGHTBULB} <i>Описание помогает AI писать точнее</i>"
         )
 
     await safe_edit_text(msg, 
@@ -181,7 +190,7 @@ async def start_generate(
 
     safe_text = html.escape(generated_text)
     await safe_edit_text(msg,
-        f"Описание сгенерировано:\n\n<i>{safe_text}</i>",
+        f"{E.AI_BRAIN} <b>ОПИСАНИЕ СГЕНЕРИРОВАНО</b>\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, 0),
     )
     log.info(
@@ -281,7 +290,7 @@ async def review_regenerate(
 
     safe_text = html.escape(generated_text)
     await safe_edit_text(msg,
-        f"Описание перегенерировано:\n\n<i>{safe_text}</i>",
+        f"{E.AI_BRAIN} <b>ОПИСАНИЕ СГЕНЕРИРОВАНО</b>\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, regen_count),
     )
     await callback.answer()
@@ -408,7 +417,10 @@ async def process_manual(
     safe_name = html.escape(result.name)
     safe_desc = html.escape(text)
     await message.answer(
-        f"<b>Описание</b> — {safe_name}\n\nТекущее описание:\n<i>{safe_desc}</i>",
+        f"{E.DOC} <b>ОПИСАНИЕ</b> \u2014 {safe_name}\n\n"
+        f"<i>{safe_desc}</i>\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Описание помогает AI писать точнее</i>",
         reply_markup=description_kb(cat_id, has_description=True),
     )
 

@@ -53,7 +53,7 @@ class TestCmdDeleteAccount:
 
         mock_message.answer.assert_awaited_once()
         text = mock_message.answer.call_args[0][0]
-        assert "Удаление аккаунта" in text
+        assert "УДАЛЕНИЕ АККАУНТА" in text
         assert "необратимо" in text
         mock_kb.assert_called_once()
 

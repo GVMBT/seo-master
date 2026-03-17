@@ -378,25 +378,36 @@ class StarsPaymentService:
                 lines.append(f"  {pkg.total_tokens} токенов")
             lines.append(f"  {pkg.price_rub}\u20bd\n")
 
-        lines.append(f"\n{E.DOC} <b>СТОИМОСТЬ ГЕНЕРАЦИИ</b>\n")
+        lines.append(f"{E.DOC} <b>СТОИМОСТЬ ГЕНЕРАЦИИ</b>\n")
         lines.append("  Текст (100 слов) \u2014 10 токенов")
         lines.append("  Изображение \u2014 30 токенов\n")
+        lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
         lines.append(f"{E.WALLET} Ваш баланс: <b>{balance}</b> токенов")
         return "\n".join(lines)
 
     def format_package_text(self, package_name: str) -> str:
         """Format package info for payment method selection."""
+        from bot.texts.emoji import E
+
         pkg = get_package(package_name) or PACKAGES["mini"]
         if pkg.bonus > 0:
-            tokens_line = f"Токенов: {pkg.tokens} + {pkg.bonus} бонус = {pkg.total_tokens}"
+            tokens_line = f"  {pkg.tokens} + {pkg.bonus} бонус = {pkg.total_tokens} токенов"
         else:
-            tokens_line = f"Токенов: {pkg.total_tokens}"
-        return f"<b>{pkg.label}</b>\n\n{tokens_line}\nЦена: {pkg.price_rub} руб.\n\nВыберите способ оплаты:"
+            tokens_line = f"  {pkg.total_tokens} токенов"
+        return (
+            f"{E.CART_ADD} <b>{pkg.label}</b>\n\n"
+            f"{tokens_line}\n"
+            f"  Цена: {pkg.price_rub} руб.\n\n"
+            "Выберите способ оплаты:"
+        )
 
     def format_payment_link_text(self, package_name: str) -> str:
         """Format text for YooKassa payment link screen."""
+        from bot.texts.emoji import E
+
         pkg = get_package(package_name) or PACKAGES["mini"]
         return (
-            f"Оплата пакета <b>{pkg.label}</b> — {pkg.price_rub} руб.\n\n"
-            f"Нажмите кнопку для перехода на страницу оплаты."
+            f"{E.CREDIT_CARD} <b>ОПЛАТА</b>\n\n"
+            f"Пакет: <b>{pkg.label}</b> \u2014 {pkg.price_rub} руб.\n\n"
+            "Нажмите кнопку для перехода на страницу оплаты."
         )

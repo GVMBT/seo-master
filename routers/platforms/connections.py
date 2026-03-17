@@ -4,6 +4,7 @@ import asyncio
 import html
 import secrets
 import time
+from collections.abc import Sequence
 
 import httpx
 import structlog
@@ -33,6 +34,7 @@ from bot.texts.connections import (
     WP_STEP2_LOGIN,
     WP_STEP3_CREDENTIALS,
 )
+from bot.texts.emoji import E
 from bot.validators import TG_CHANNEL_RE, URL_RE
 from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
@@ -57,6 +59,74 @@ router = Router()
 
 # Strong reference set for fire-and-forget background tasks (prevents GC mid-execution)
 _background_tasks: set[asyncio.Task[None]] = set()
+
+# Platform icon map (E.* for message text only)
+_PLAT_EMOJI: dict[str, str] = {
+    "wordpress": E.WORDPRESS,
+    "telegram": E.TELEGRAM,
+    "vk": E.VK,
+    "pinterest": E.PINTEREST,
+}
+
+# Platform display names
+_PLAT_LABEL: dict[str, str] = {
+    "wordpress": "Сайты",
+    "telegram": "Telegram",
+    "vk": "ВКонтакте",
+    "pinterest": "Pinterest",
+}
+
+
+def _build_connections_text(
+    project_name: str,
+    connections: Sequence[object],
+) -> str:
+    """Build unified connections screen text grouped by platform."""
+    safe_name = html.escape(project_name)
+
+    if not connections:
+        return (
+            f"{E.GEAR} <b>МОИ ПОДКЛЮЧЕНИЯ</b>\n\n"
+            f"Проект: {safe_name}\n\n"
+            "Подключений пока нет.\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.LIGHTBULB} <i>Подключите площадки для автопостинга контента</i>"
+        )
+
+    # Group connections by platform_type
+    grouped: dict[str, list[str]] = {}
+    for conn in connections:
+        pt = getattr(conn, "platform_type", "unknown")
+        identifier = html.escape(getattr(conn, "identifier", ""))
+        grouped.setdefault(pt, []).append(identifier)
+
+    lines: list[str] = [
+        f"{E.GEAR} <b>МОИ ПОДКЛЮЧЕНИЯ</b>\n",
+        f"Проект: {safe_name}\n",
+    ]
+
+    platform_order = ["wordpress", "telegram", "vk", "pinterest"]
+    for pt in platform_order:
+        items = grouped.pop(pt, None)
+        if not items:
+            continue
+        icon = _PLAT_EMOJI.get(pt, "")
+        label = _PLAT_LABEL.get(pt, pt.capitalize())
+        lines.append(f"{icon} {label} ({len(items)}):")
+        for i, ident in enumerate(items, 1):
+            lines.append(f"  {i}. {ident}")
+        lines.append("")
+
+    # Remaining unknown platforms (if any)
+    for pt, items in grouped.items():
+        lines.append(f"{pt.capitalize()} ({len(items)}):")
+        for i, ident in enumerate(items, 1):
+            lines.append(f"  {i}. {ident}")
+        lines.append("")
+
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"{E.LIGHTBULB} <i>Подключите площадки для автопостинга контента</i>")
+    return "\n".join(lines)
 
 async def _run_site_analysis(
     db: SupabaseClient,
@@ -138,10 +208,7 @@ async def show_connections(
     conn_svc = ConnectionService(db, http_client)
     connections = await conn_svc.get_by_project(project_id)
 
-    safe_name = html.escape(project.name)
-    text = f"<b>{safe_name}</b> — Подключения"
-    if not connections:
-        text += "\n\nПодключений пока нет. Добавьте платформу для публикации."
+    text = _build_connections_text(project.name, connections)
 
     await edit_screen(
         msg,
@@ -176,10 +243,7 @@ async def connections_list_back(
     conn_svc = ConnectionService(db, http_client)
     connections = await conn_svc.get_by_project(project_id)
 
-    safe_name = html.escape(project.name)
-    text = f"<b>{safe_name}</b> — Подключения"
-    if not connections:
-        text += "\n\nПодключений пока нет. Добавьте платформу для публикации."
+    text = _build_connections_text(project.name, connections)
 
     await edit_screen(
         msg,
@@ -221,9 +285,17 @@ async def manage_connection(
         await callback.answer("Подключение не найдено.", show_alert=True)
         return
 
+    icon = _PLAT_EMOJI.get(conn.platform_type, "")
+    status_icon = E.CHECK if conn.status == "active" else E.WARNING
     status_text = "Активно" if conn.status == "active" else "Ошибка"
     safe_id = html.escape(conn.identifier)
-    text = f"<b>{conn.platform_type.capitalize()}</b>\n\nИдентификатор: {safe_id}\nСтатус: {status_text}\n"
+    text = (
+        f"{icon} <b>{conn.platform_type.upper()}</b>\n\n"
+        f"Идентификатор: {safe_id}\n"
+        f"Статус: {status_icon} {status_text}\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Управление подключением</i>"
+    )
     await safe_edit_text(
         msg,
         text,
@@ -259,9 +331,11 @@ async def confirm_connection_delete(
         return
 
     safe_id = html.escape(conn.identifier)
+    icon = _PLAT_EMOJI.get(conn.platform_type, "")
     await safe_edit_text(
         msg,
-        f"Удалить подключение {conn.platform_type.capitalize()} ({safe_id})?\n\n"
+        f"{E.WARNING} <b>УДАЛЕНИЕ ПОДКЛЮЧЕНИЯ</b>\n\n"
+        f"{icon} {conn.platform_type.capitalize()} ({safe_id})\n\n"
         "Связанные расписания будут отменены.\n"
         "Это действие нельзя отменить.",
         reply_markup=connection_delete_confirm_kb(conn_id, conn.project_id),
@@ -309,14 +383,14 @@ async def execute_connection_delete(
         safe_id = html.escape(conn.identifier)
         # Reload connection list
         connections = await conn_svc.get_by_project(project_id)
-        safe_name = html.escape(project.name)
-        await safe_edit_text(msg, 
-            f"Подключение {conn.platform_type.capitalize()} ({safe_id}) удалено.\n\n<b>{safe_name}</b> — Подключения",
+        text = _build_connections_text(project.name, connections)
+        await safe_edit_text(msg,
+            f"{E.CHECK} Подключение {conn.platform_type.capitalize()} ({safe_id}) удалено.\n\n{text}",
             reply_markup=connection_list_kb(connections, project_id),
         )
         log.info("connection_deleted", conn_id=conn_id, user_id=user.id)
     else:
-        await safe_edit_text(msg, "Ошибка удаления подключения.", reply_markup=menu_kb())
+        await safe_edit_text(msg, f"{E.WARNING} Ошибка удаления подключения.", reply_markup=menu_kb())
 
     await callback.answer()
 
@@ -968,11 +1042,11 @@ async def _cancel_connection_wizard(
         if project:
             conn_svc = ConnectionService(db, http_client)
             connections = await conn_svc.get_by_project(project_id)
-            safe_name = html.escape(project.name)
+            text = _build_connections_text(project.name, connections)
             await edit_screen(
                 msg,
                 "empty_connections.png",
-                f"<b>{safe_name}</b> — Подключения",
+                text,
                 reply_markup=connection_list_kb(connections, project_id),
             )
             await callback.answer()

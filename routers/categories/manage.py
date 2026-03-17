@@ -257,39 +257,44 @@ async def show_category_card(
 
     # Build card text
     safe_name = html.escape(category.name)
-    lines = [f"<b>{safe_name}</b>\n"]
+    lines = [f"{E.FOLDER} <b>{safe_name}</b>\n"]
 
     # Keyword clusters
     keyword_count = len(category.keywords)
     if keyword_count > 0:
         cluster_count = sum(1 for k in category.keywords if k.get("cluster_name"))
+        total_phrases = sum(len(k.get("phrases", [])) for k in category.keywords)
         if cluster_count > 0:
-            lines.append(f"{E.HASHTAG} Ключевые фразы: {E.CHECK} {cluster_count} кластеров")
+            lines.append(f"{E.CHECK} Ключевики \u2014 {cluster_count} кластеров ({total_phrases} фраз)")
         else:
-            lines.append(f"{E.HASHTAG} Ключевые фразы: {E.CHECK} {keyword_count} фраз")
+            lines.append(f"{E.CHECK} Ключевики \u2014 {keyword_count} фраз")
     else:
-        lines.append(f"{E.HASHTAG} Ключевые фразы: {E.CLOSE} не заданы")
+        lines.append(f"{E.CLOSE} Ключевики \u2014 не заданы")
 
     # Description
     if category.description:
-        lines.append(f"{E.PEN} Описание: {E.CHECK} есть")
+        lines.append(f"{E.CHECK} Описание \u2014 есть")
     else:
-        lines.append(f"{E.PEN} Описание: {E.CLOSE} не задано")
+        lines.append(f"{E.CLOSE} Описание \u2014 не задано")
 
     # Prices
     if category.prices:
-        lines.append(f"{E.PRICE} Цены: {E.CHECK} есть")
+        price_lines = [ln for ln in category.prices.splitlines() if ln.strip()]
+        lines.append(f"{E.CHECK} Цены \u2014 {len(price_lines)} позиций")
     else:
-        lines.append(f"{E.PRICE} Цены: {E.CLOSE} не заданы")
+        lines.append(f"{E.CLOSE} Цены \u2014 не заданы")
 
-    # Image settings (project fallback → category)
+    # Image settings (project fallback -> category)
     proj = await ProjectsRepository(db).get_by_id(category.project_id)
     eff_image_settings = (proj.image_settings if proj else None) or category.image_settings or {}
     img_count = eff_image_settings.get("count")
     if img_count is not None:
-        lines.append(f"{E.IMAGE} Медиа: {E.CHECK} {img_count} файлов")
+        lines.append(f"{E.CHECK} Медиа \u2014 {img_count} изобр.")
     else:
-        lines.append(f"{E.IMAGE} Медиа: {E.CLOSE} нет файлов")
+        lines.append(f"{E.CLOSE} Медиа \u2014 нет файлов")
+
+    # Publication count
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
 
     text = "\n".join(lines)
     await safe_edit_text(msg, text, reply_markup=category_card_kb(category_id, category.project_id))

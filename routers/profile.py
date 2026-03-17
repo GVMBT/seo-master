@@ -49,21 +49,25 @@ async def nav_profile(
     token_service = TokenService(db=db, admin_ids=settings.admin_ids)
     stats = await token_service.get_profile_stats(user)
 
-    text = (
-        f"<b>{E.USER} Профиль</b>\n\n"
-        f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов\n\n"
-        f"{E.FOLDER} Проектов: {stats['project_count']}\n"
-        f"{E.HASHTAG} Категорий: {stats['category_count']}\n"
-        f"{E.SCHEDULE} Расписаний: {stats['schedule_count']}\n"
-        f"{E.TRANSFER} Рефералов: {stats['referral_count']}\n\n"
-    )
+    lines = [
+        f"{E.USER} <b>ПРОФИЛЬ</b>\n",
+        f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов\n",
+        f"{E.FOLDER} Проектов: {stats['project_count']}",
+        f"{E.HASHTAG} Категорий: {stats['category_count']}",
+        f"{E.SCHEDULE} Расписаний: {stats['schedule_count']}",
+        f"{E.TRANSFER} Рефералов: {stats['referral_count']}",
+    ]
 
     if stats["posts_per_week"] > 0:
-        text += (
-            f"{E.CHART} Прогноз расхода:\n"
-            f"~{stats['tokens_per_week']} токенов/неделю\n"
-            f"~{stats['tokens_per_month']} токенов/месяц"
-        )
+        lines.append("")
+        lines.append(f"{E.CHART} Прогноз расхода:")
+        lines.append(f"  ~{stats['tokens_per_week']} токенов/неделю")
+        lines.append(f"  ~{stats['tokens_per_month']} токенов/месяц")
+
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"{E.LIGHTBULB} <i>Управляйте подписками и уведомлениями</i>")
+
+    text = "\n".join(lines)
 
     await edit_screen(msg, "profile.png", text, reply_markup=profile_kb())
     await callback.answer()
@@ -85,7 +89,12 @@ async def show_notifications(
         await callback.answer()
         return
 
-    text = f"<b>{E.BELL} УВЕДОМЛЕНИЯ</b>\n\n<i>Нажмите для переключения:</i>"
+    text = (
+        f"{E.BELL} <b>УВЕДОМЛЕНИЯ</b>\n\n"
+        "Управляйте уведомлениями бота:\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Нажмите для переключения</i>"
+    )
 
     await safe_edit_text(
         msg,
@@ -126,7 +135,12 @@ async def toggle_notification(
         await callback.answer("\u26a0\ufe0f Ошибка обновления. Попробуйте позже.", show_alert=True)
         return
 
-    text = f"<b>{E.BELL} УВЕДОМЛЕНИЯ</b>\n\n<i>Нажмите для переключения:</i>"
+    text = (
+        f"{E.BELL} <b>УВЕДОМЛЕНИЯ</b>\n\n"
+        "Управляйте уведомлениями бота:\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Нажмите для переключения</i>"
+    )
 
     await safe_edit_text(
         msg,
@@ -167,11 +181,13 @@ async def show_referral(
     link = f"https://t.me/{bot_info.username}?start=referrer_{user.id}"
 
     text = (
-        f"<b>Реферальная программа</b>\n\n"
+        f"{E.TRANSFER} <b>РЕФЕРАЛЬНАЯ ПРОГРАММА</b>\n\n"
         f"Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!\n\n"
         f"Ваша ссылка:\n<code>{link}</code>\n\n"
-        f"Рефералов: <b>{referral_count}</b>\n"
-        f"Заработано: <b>{referral_earned}</b> токенов"
+        f"{E.USER} Рефералов: <b>{referral_count}</b>\n"
+        f"{E.WALLET} Заработано: <b>{referral_earned}</b> токенов\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Скопируйте ссылку и отправьте друзьям</i>"
     )
 
     await edit_screen(msg, "referral.png", text, reply_markup=referral_kb())
@@ -213,12 +229,12 @@ async def cmd_delete_account(
 ) -> None:
     """Show account deletion warning with confirmation buttons."""
     text = (
-        "<b>\u26a0\ufe0f Удаление аккаунта</b>\n\n"
+        f"{E.WARNING} <b>УДАЛЕНИЕ АККАУНТА</b>\n\n"
         "Будут безвозвратно удалены:\n"
-        "- Все проекты и категории\n"
-        "- Все подключения к платформам\n"
-        "- Все расписания автопубликации\n"
-        "- Активные превью статей\n\n"
+        "  \u2022 Все проекты и категории\n"
+        "  \u2022 Все подключения к платформам\n"
+        "  \u2022 Все расписания автопубликации\n"
+        "  \u2022 Активные превью статей\n\n"
         "Токены и история платежей будут анонимизированы.\n\n"
         "<b>Это действие необратимо.</b>"
     )

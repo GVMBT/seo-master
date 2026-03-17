@@ -56,10 +56,12 @@ async def show_project_card(
         platforms_str = "не подключены"
 
     text = (
-        f"<b>{safe_name}</b>\n"
-        f"\n{E.LINK} Платформы: {platforms_str}"
-        f"\n{E.FOLDER} Категорий: {len(card_data.categories)}"
-        f"\n{E.ANALYTICS} Публикаций: {card_data.pub_count}"
+        f"{E.ROCKET} <b>{safe_name}</b>\n\n"
+        f"{E.LINK} Платформы: {platforms_str}\n"
+        f"{E.FOLDER} Категорий: {len(card_data.categories)}\n"
+        f"{E.ANALYTICS} Публикаций: {card_data.pub_count}\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Управляйте проектом и контентом</i>"
     )
     has_keywords = any(cat.keywords for cat in card_data.categories)
     kb = project_card_kb(project_id, has_keywords=has_keywords)
@@ -105,8 +107,12 @@ async def confirm_delete(
     safe_name = html.escape(project.name)
     await safe_edit_text(
         msg,
-        f"Удалить проект «{safe_name}»?\n\n"
-        "Будут удалены все категории, подключения и расписания.\n"
+        f"{E.WARNING} <b>УДАЛЕНИЕ ПРОЕКТА</b>\n\n"
+        f"Удалить проект \u00ab{safe_name}\u00bb?\n\n"
+        "Будут удалены:\n"
+        "  \u2022 Все категории\n"
+        "  \u2022 Все подключения\n"
+        "  \u2022 Все расписания\n\n"
         "Это действие нельзя отменить.",
         reply_markup=project_delete_confirm_kb(project_id),
     )

@@ -27,6 +27,7 @@ from aiogram.types import (
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts.emoji import E
 from db.client import SupabaseClient
 from db.models import Category, User
 from db.repositories.categories import CategoriesRepository
@@ -117,18 +118,25 @@ def _build_keywords_summary(category: Any) -> str:
     safe_name = html.escape(category.name)
 
     if not clusters:
-        return f"<b>Ключевые фразы</b> — {safe_name}\n\nФразы не добавлены. Начните подбор или загрузите свои."
+        return (
+            f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n\n"
+            "Фразы не добавлены.\n"
+            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+            f"{E.LIGHTBULB} <i>Ключевики \u2014 основа для качественных статей</i>"
+        )
 
     total_phrases = sum(len(c.get("phrases", [])) for c in clusters)
     total_volume = sum(c.get("total_volume", 0) for c in clusters)
     cluster_count = len(clusters)
 
-    volume_line = f"\nОбщий объём: {total_volume:,}/мес" if total_volume > 0 else ""
+    volume_line = f"\nОбъём: {total_volume:,}/мес" if total_volume > 0 else ""
     return (
-        f"<b>Ключевые фразы</b> — {safe_name}\n\n"
+        f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n\n"
         f"Кластеров: {cluster_count}\n"
         f"Фраз: {total_phrases}"
-        f"{volume_line}"
+        f"{volume_line}\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Ключевики \u2014 основа для качественных статей</i>"
     )
 
 
@@ -414,9 +422,11 @@ async def show_cluster_list(
         await callback.answer("Нет кластеров.", show_alert=True)
         return
 
+    safe_name = html.escape(category.name)
     await safe_edit_text(
         msg,
-        f"Кластеры ({len(clusters)}):",
+        f"{E.HASHTAG} <b>КЛАСТЕРЫ</b> \u2014 {safe_name}\n\n"
+        f"Всего кластеров: {len(clusters)}",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=1),
     )
     await callback.answer()
@@ -444,9 +454,11 @@ async def paginate_clusters(
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
+    safe_name = html.escape(category.name)
     await safe_edit_text(
         msg,
-        f"Кластеры ({len(clusters)}):",
+        f"{E.HASHTAG} <b>КЛАСТЕРЫ</b> \u2014 {safe_name}\n\n"
+        f"Всего кластеров: {len(clusters)}",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=page),
     )
     await callback.answer()
@@ -733,7 +745,9 @@ async def delete_all_ask(
 
     await safe_edit_text(
         msg,
-        f"Удалить все ключевые фразы ({total} фраз, {len(clusters)} кластеров)?\nЭто действие необратимо.",
+        f"{E.WARNING} <b>УДАЛЕНИЕ КЛЮЧЕВЫХ ФРАЗ</b>\n\n"
+        f"Удалить все фразы ({total} фраз, {len(clusters)} кластеров)?\n"
+        "Это действие необратимо.",
         reply_markup=keywords_delete_all_confirm_kb(cat_id),
     )
     await callback.answer()
@@ -765,7 +779,10 @@ async def delete_all_confirm(
     safe_name = html.escape(category.name)
     await safe_edit_text(
         msg,
-        f"<b>Ключевые фразы</b> — {safe_name}\n\nВсе фразы удалены.",
+        f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n\n"
+        f"{E.CHECK} Все фразы удалены.\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Ключевики \u2014 основа для качественных статей</i>",
         reply_markup=keywords_empty_kb(cat_id),
     )
     await callback.answer()
