@@ -737,7 +737,7 @@ def description_kb(cat_id: int, has_description: bool) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Написать вручную", callback_data=f"desc:{cat_id}:manual")],
         [
             InlineKeyboardButton(
-                text="✨ Улучшить с ИИ",
+                text="Улучшить с ИИ",
                 callback_data=f"desc:{cat_id}:generate",
             ),
         ],
@@ -1205,14 +1205,14 @@ def notifications_kb(
     """Notification toggle keyboard."""
 
     def _toggle(label: str, enabled: bool, key: str) -> InlineKeyboardButton:
-        mark = "\u2705" if enabled else "\u274c"
+        mark = "\u2713" if enabled else "\u2717"
         return InlineKeyboardButton(text=f"{mark} {label}", callback_data=f"profile:notify:{key}")
 
     rows = [
-        [_toggle("Публикации \u2014 статус автопубликаций", notify_publications, "publications")],
-        [_toggle("Баланс \u2014 при низком балансе и пополнениях", notify_balance, "balance")],
+        [_toggle("Публикации", notify_publications, "publications")],
+        [_toggle("Баланс", notify_balance, "balance")],
         [_toggle("Новости", notify_news, "news")],
-        [InlineKeyboardButton(text="\u2b05\ufe0f К профилю", callback_data="nav:profile")],
+        [InlineKeyboardButton(text="К профилю", callback_data="nav:profile")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1220,7 +1220,7 @@ def notifications_kb(
 def referral_kb() -> InlineKeyboardMarkup:
     """Referral program keyboard (link shown inline in message text)."""
     rows = [
-        [InlineKeyboardButton(text="\u2b05\ufe0f К профилю", callback_data="nav:profile")],
+        [InlineKeyboardButton(text="К профилю", callback_data="nav:profile")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1243,7 +1243,7 @@ def delete_account_confirm_kb() -> InlineKeyboardMarkup:
 def delete_account_cancelled_kb() -> InlineKeyboardMarkup:
     """Keyboard shown after account deletion is cancelled."""
     rows = [
-        [InlineKeyboardButton(text="\u2b05\ufe0f К профилю", callback_data="nav:profile")],
+        [InlineKeyboardButton(text="К профилю", callback_data="nav:profile")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1276,7 +1276,7 @@ def payment_method_kb(package_name: str) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="Telegram Stars", callback_data=f"tariff:{package_name}:stars")],
         [InlineKeyboardButton(text="ЮKassa (карта)", callback_data=f"tariff:{package_name}:yookassa")],
-        [InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data="nav:tokens")],
+        [InlineKeyboardButton(text="Назад", callback_data="nav:tokens")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1285,7 +1285,7 @@ def yookassa_link_kb(url: str, package_name: str) -> InlineKeyboardMarkup:
     """YooKassa payment link + back button."""
     rows = [
         [InlineKeyboardButton(text="Перейти к оплате", url=url)],
-        [InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data=f"tariff:{package_name}:buy")],
+        [InlineKeyboardButton(text="Назад", callback_data=f"tariff:{package_name}:buy")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1407,7 +1407,7 @@ def scheduler_conn_list_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="\u2b05\ufe0f Назад",
+                text="Назад",
                 callback_data=f"project:{project_id}:sched_articles",
             )
         ]
@@ -1470,7 +1470,7 @@ def scheduler_config_kb(
                 )
             ]
         )
-    rows.append([InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data=f"scheduler:{cat_id}:conn_list")])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=f"scheduler:{cat_id}:conn_list")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -1536,7 +1536,7 @@ def scheduler_social_conn_list_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="\u2b05\ufe0f Назад",
+                text="Назад",
                 callback_data=f"project:{project_id}:sched_social",
             )
         ]
@@ -1646,7 +1646,7 @@ def scheduler_social_config_kb(
                 )
             ]
         )
-    rows.append([InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data=f"scheduler:{cat_id}:social_conn_list")])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data=f"scheduler:{cat_id}:social_conn_list")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

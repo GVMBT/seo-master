@@ -365,24 +365,23 @@ class StarsPaymentService:
 
     def format_tariffs_text(self, balance: int) -> str:
         """Format main tariffs screen text with package details."""
-        lines = [
-            "💎 <b>ПАКЕТЫ ТОКЕНОВ</b>\n",
-            "🎁 При первом входе: 1500 токенов в подарок!\n",
-        ]
-        emoji_map = {"mini": "🟢", "start": "🔵", "profi": "⭐", "business": "🟣", "maximum": "🔶"}
-        for name, pkg in PACKAGES.items():
-            emoji = emoji_map.get(name, "▪️")
-            lines.append(f"{emoji} <b>{pkg.label}</b>")
-            lines.append(f"  Цена: {pkg.price_rub}₽")
-            if pkg.bonus > 0:
-                lines.append(f"  Токенов: {pkg.tokens} + {pkg.bonus} бонус")
-            lines.append(f"  Итого: {pkg.total_tokens} токенов\n")
+        from bot.texts.emoji import E
 
-        lines.append("📋 ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ:\n")
-        lines.append("📝 Генерация текста (100 слов) — 10 🪙")
-        lines.append("🖼 Генерация изображения — 30 🪙\n")
-        lines.append(f"💰 Ваш баланс: <b>{balance}</b> токенов\n")
-        lines.append("<b>Важно:</b> базовый курс 1 токен = 1 рубль, пакеты могут содержать бонусные токены")
+        lines = [
+            f"{E.WALLET} <b>ПАКЕТЫ ТОКЕНОВ</b>\n",
+        ]
+        for _name, pkg in PACKAGES.items():
+            lines.append(f"  <b>{pkg.label}</b>")
+            if pkg.bonus > 0:
+                lines.append(f"  {pkg.tokens} + {pkg.bonus} бонус = {pkg.total_tokens} токенов")
+            else:
+                lines.append(f"  {pkg.total_tokens} токенов")
+            lines.append(f"  {pkg.price_rub}\u20bd\n")
+
+        lines.append(f"\n{E.DOC} <b>СТОИМОСТЬ ГЕНЕРАЦИИ</b>\n")
+        lines.append("  Текст (100 слов) \u2014 10 токенов")
+        lines.append("  Изображение \u2014 30 токенов\n")
+        lines.append(f"{E.WALLET} Ваш баланс: <b>{balance}</b> токенов")
         return "\n".join(lines)
 
     def format_package_text(self, package_name: str) -> str:
