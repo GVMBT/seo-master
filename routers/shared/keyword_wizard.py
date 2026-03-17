@@ -21,7 +21,9 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.state import State
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
+from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts.emoji import E
 from db.models import User
 from keyboards.inline import cancel_kb, menu_kb
 from services.categories import CategoryService
@@ -149,6 +151,38 @@ def _keyword_error_message(exc: Exception) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Progress display (cumulative loader, matches article/social style)
+# ---------------------------------------------------------------------------
+
+# Steps: (active_label, done_label)
+_KW_STEPS = [
+    ("Получение фраз из DataForSEO", "Фразы получены"),
+    ("Группировка по интенту", "Группировка завершена"),
+    ("Обогащение данными", "Данные обогащены"),
+]
+
+# Upload pipeline steps
+_KW_UPLOAD_STEPS = [
+    ("Группировка по интенту", "Группировка завершена"),
+    ("Обогащение данными", "Данные обогащены"),
+]
+
+
+def _kw_progress_text(steps: list[tuple[str, str]], current: int, extra: str = "") -> str:
+    """Build cumulative progress text for keyword generation."""
+    lines = [f"{E.HASHTAG} <b>Подбор ключевиков</b>", ""]
+    for i, (active_label, done_label) in enumerate(steps):
+        if i < current:
+            label = done_label
+            if i == current - 1 and extra:
+                label = f"{done_label} ({extra})"
+            lines.append(f"{EMOJI_DONE} {label}")
+        elif i == current:
+            lines.append(f"{EMOJI_PROGRESS} {active_label}...")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Core generation pipeline
 # ---------------------------------------------------------------------------
 
@@ -194,6 +228,7 @@ async def run_keyword_generation(
         )
 
         # Step 1: Fetch raw phrases from DataForSEO (~1-3s)
+        await _safe_edit(_kw_progress_text(_KW_STEPS, 0))
         raw_phrases = await kw_service.fetch_raw_phrases(
             products=products,
             geography=geography,
@@ -203,7 +238,9 @@ async def run_keyword_generation(
 
         if raw_phrases:
             # Step 2a: DataForSEO had data -> AI clustering (~60-90s)
-            await _safe_edit(f"Получено {len(raw_phrases)} фраз. Группирую по интенту (до 1.5 мин)...")
+            await _safe_edit(
+                _kw_progress_text(_KW_STEPS, 1, f"{len(raw_phrases)} фраз")
+            )
             clusters = await kw_service.cluster_phrases(
                 raw_phrases=raw_phrases,
                 products=products,
@@ -213,7 +250,9 @@ async def run_keyword_generation(
             )
         else:
             # Step 2b: DataForSEO empty -> AI generates clusters directly
-            await _safe_edit("Генерирую ключевые фразы (до 1.5 мин)...")
+            await _safe_edit(
+                _kw_progress_text(_KW_STEPS, 1)
+            )
             clusters = await kw_service.generate_clusters_direct(
                 products=products,
                 geography=geography,
@@ -222,7 +261,9 @@ async def run_keyword_generation(
             )
 
         # Step 3: Enrich with metrics (~3s)
-        await _safe_edit(f"Создано {len(clusters)} кластеров. Обогащаю данными...")
+        await _safe_edit(
+            _kw_progress_text(_KW_STEPS, 2, f"{len(clusters)} кластеров")
+        )
         enriched = await kw_service.enrich_clusters(clusters)
 
         # Filter AI-invented zero-volume junk
@@ -290,15 +331,15 @@ async def run_keyword_generation(
     if not bot:
         return
     with contextlib.suppress(Exception):
-        await bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"Готово! Добавлено:\n"
-                f"Кластеров: {len(enriched)}\n"
-                f"Фраз: {total_phrases}"
-                f"{volume_line}"
-            ),
+        done_text = (
+            f"{E.HASHTAG} <b>Подбор ключевиков</b>\n\n"
+            f"{EMOJI_DONE} Фразы получены\n"
+            f"{EMOJI_DONE} Группировка завершена\n"
+            f"{EMOJI_DONE} Данные обогащены\n\n"
+            f"{E.CHECK} Добавлено: {len(enriched)} кластеров, {total_phrases} фраз"
+            f"{volume_line}"
         )
+        await bot.send_message(chat_id=chat_id, text=done_text)
     await asyncio.sleep(1)
     with contextlib.suppress(Exception):
         await cfg.on_done_msg(progress_msg, state, user, db, redis)
@@ -333,7 +374,9 @@ async def _run_upload_enrich_pipeline(
         )
 
         # Step 1: Cluster
-        progress_msg = await msg.answer(f"Загружено {len(raw_phrases)} фраз. Группирую по интенту...")
+        progress_msg = await msg.answer(
+            _kw_progress_text(_KW_UPLOAD_STEPS, 0, f"{len(raw_phrases)} фраз загружено")
+        )
 
         clusters = await kw_service.cluster_phrases(
             raw_phrases=raw_phrases,
@@ -344,7 +387,10 @@ async def _run_upload_enrich_pipeline(
         )
 
         # Step 2: Enrich
-        await safe_edit_text(progress_msg, f"Создано {len(clusters)} кластеров. Обогащаю данными...")
+        await safe_edit_text(
+            progress_msg,
+            _kw_progress_text(_KW_UPLOAD_STEPS, 1, f"{len(clusters)} кластеров"),
+        )
 
         enriched = await kw_service.enrich_clusters(clusters)
 
@@ -361,10 +407,14 @@ async def _run_upload_enrich_pipeline(
         total_volume = sum(c.get("total_volume", 0) for c in enriched)
 
         volume_line = f"\nОбщий объём: {total_volume:,}/мес" if total_volume > 0 else ""
-        await safe_edit_text(
-            progress_msg,
-            f"Готово! Загружено:\nКластеров: {len(enriched)}\nФраз: {total_phrases}{volume_line}",
+        done_text = (
+            f"{E.HASHTAG} <b>Подбор ключевиков</b>\n\n"
+            f"{EMOJI_DONE} Группировка завершена\n"
+            f"{EMOJI_DONE} Данные обогащены\n\n"
+            f"{E.CHECK} Загружено: {len(enriched)} кластеров, {total_phrases} фраз"
+            f"{volume_line}"
         )
+        await safe_edit_text(progress_msg, done_text)
         await state.clear()
 
         log.info(
@@ -649,7 +699,9 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
             await state.clear()
             return
 
-        progress_msg = await message.answer("Получаю реальные фразы из DataForSEO...")
+        progress_msg = await message.answer(
+            _kw_progress_text(_KW_STEPS, 0),
+        )
 
         await run_keyword_generation(
             progress_msg=progress_msg,
@@ -718,7 +770,7 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
             await state.set_state(cfg.state_generating)
             await state.update_data(kw_geography=city)
 
-            await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
+            await safe_edit_text(msg, _kw_progress_text(_KW_STEPS, 0))
             await callback.answer()
 
             await run_keyword_generation(

@@ -3,6 +3,7 @@
 import math
 from typing import Any
 
+from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 PAGE_SIZE = 8
@@ -25,6 +26,7 @@ def paginate(
     cb_prefix: str,
     item_text: str = "name",
     item_cb: str = "{id}",
+    item_style: ButtonStyle | None = None,
 ) -> tuple[InlineKeyboardMarkup, int]:
     """Build paginated InlineKeyboardMarkup.
 
@@ -34,6 +36,7 @@ def paginate(
         cb_prefix: callback prefix for page navigation (e.g. "projects").
         item_text: attribute name for button text.
         item_cb: callback template — ``{id}`` replaced with item.id.
+        item_style: optional ButtonStyle for item buttons (e.g. PRIMARY).
 
     Returns:
         (keyboard, total_pages)
@@ -51,7 +54,10 @@ def paginate(
     for item in page_items:
         text = getattr(item, item_text, str(item))
         cb = _safe_cb(item_cb.replace("{id}", str(item.id)))
-        rows.append([InlineKeyboardButton(text=str(text), callback_data=cb)])
+        btn_kwargs: dict[str, Any] = {"text": str(text), "callback_data": cb}
+        if item_style is not None:
+            btn_kwargs["style"] = item_style
+        rows.append([InlineKeyboardButton(**btn_kwargs)])
 
     # Pagination row (only if >1 page)
     if total_pages > 1:

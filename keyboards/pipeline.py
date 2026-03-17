@@ -33,6 +33,7 @@ def pipeline_projects_kb(
         cb_prefix=f"pipeline_{pipeline_type}_projects",
         item_text="name",
         item_cb=f"pipeline:{pipeline_type}:{{id}}:select",
+        item_style=ButtonStyle.PRIMARY,
     )[0]
 
 
@@ -110,6 +111,7 @@ def pipeline_categories_kb(
         cb_prefix=f"pipeline_{pipeline_type}_categories",
         item_text="name",
         item_cb=f"pipeline:{pipeline_type}:{project_id}:cat:{{id}}",
+        item_style=ButtonStyle.PRIMARY,
     )
     # Add back button to return to previous step
     back_cb = (

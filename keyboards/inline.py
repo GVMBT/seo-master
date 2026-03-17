@@ -129,6 +129,7 @@ def project_list_kb(projects: list[Project], page: int = 1) -> InlineKeyboardMar
         cb_prefix="projects",
         item_text="name",
         item_cb="project:{id}:card",
+        item_style=ButtonStyle.PRIMARY,
     )
     # Append create + dashboard buttons
     kb.inline_keyboard.append(
@@ -352,6 +353,7 @@ def category_list_kb(categories: list[Category], project_id: int, page: int = 1)
         cb_prefix=f"categories:{project_id}",
         item_text="name",
         item_cb="category:{id}:card",
+        item_style=ButtonStyle.PRIMARY,
     )
     kb.inline_keyboard.append(
         [

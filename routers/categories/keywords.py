@@ -312,7 +312,14 @@ async def start_generation(
             kw_products=products,
             kw_geography=geography,
         )
-        await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
+        from bot.custom_emoji import EMOJI_PROGRESS
+        from bot.texts.emoji import E as _E
+
+        await safe_edit_text(
+            msg,
+            f"{_E.HASHTAG} <b>Подбор ключевиков</b>\n\n"
+            f"{EMOJI_PROGRESS} Получение фраз из DataForSEO...",
+        )
         await callback.answer()
 
         await run_keyword_generation(

@@ -83,20 +83,30 @@ def _settings_text(ts: dict[str, Any], is_: dict[str, Any]) -> str:
     """Build settings display text from ts/is dicts."""
     na = "не выбран"
     df = "по умолчанию"
-    lines: list[str] = []
-    lines.append(f"{E.PEN} <b>Текст:</b>")
-    lines.append(f"  Стиль: {_fmt(ts.get('styles', []))}")
-    lines.append(f"  HTML: {ts.get('html_style') or na}")
+
     wc = ts.get("word_count")
-    lines.append(f"  Длина: {wc} слов" if wc else f"  Длина: {df}")
-    lines.append(f"\n{E.IMAGE} <b>Изображения:</b>")
-    lines.append(f"  Превью: {is_.get('preview_format') or na}")
-    af = _fmt(is_.get("article_formats", []), "не выбраны")
-    lines.append(f"  Форматы: {af}")
-    lines.append(f"  Стиль: {_fmt(is_.get('styles', []))}")
+    wc_line = f"{wc} слов" if wc else df
+    styles_line = _fmt(ts.get("styles", []))
+    html_line = ts.get("html_style") or na
+
+    pf_line = is_.get("preview_format") or na
+    af_line = _fmt(is_.get("article_formats", []), "не выбраны")
+    is_line = _fmt(is_.get("styles", []))
     cnt = is_.get("count")
-    lines.append(f"  Количество: {cnt}" if cnt else f"  Количество: {df}")
-    return "\n".join(lines)
+    cnt_line = str(cnt) if cnt else df
+
+    return (
+        f"{E.PEN} <b>Текст</b>\n"
+        f"  Стиль: {styles_line}\n"
+        f"  HTML: {html_line}\n"
+        f"  Длина: {wc_line}\n"
+        "\n"
+        f"{E.IMAGE} <b>Изображения</b>\n"
+        f"  Превью: {pf_line}\n"
+        f"  Форматы: {af_line}\n"
+        f"  Стиль: {is_line}\n"
+        f"  Количество: {cnt_line}"
+    )
 
 
 def _main_screen_text() -> str:
@@ -114,18 +124,22 @@ def _platform_card_text(
     name = _PLAT_NAMES.get(pt, pt.upper())
     body = _settings_text(ts, is_)
     return (
-        f"{icon} <b>{name}</b>\n\n{body}\n\n"
-        'Настройки наследуют "По умолчанию".\n'
-        "Измените чтобы переопределить."
+        f"{icon} <b>{name}</b>\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        f"{body}\n\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f'{E.LIGHTBULB} <i>Наследует "По умолчанию". Измените, чтобы переопределить.</i>'
     )
 
 
 def _default_card_text(ts: dict[str, Any], is_: dict[str, Any]) -> str:
     body = _settings_text(ts, is_)
     return (
-        f"{E.SLIDERS} <b>ПО УМОЛЧАНИЮ</b>\n\n{body}\n\n"
-        "Эти настройки применяются ко всем площадкам,\n"
-        "если не переопределены для конкретной."
+        f"{E.SLIDERS} <b>ПО УМОЛЧАНИЮ</b>\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        f"{body}\n\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        f"{E.LIGHTBULB} <i>Применяется ко всем площадкам, если не переопределено.</i>"
     )
 
 
