@@ -623,7 +623,7 @@ async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None
     if count is not None:
         try:
             return int(count)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return None
     return None
 
