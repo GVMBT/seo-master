@@ -23,6 +23,7 @@ from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import AdminServiceFactory
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -100,13 +101,14 @@ async def admin_panel(
     stats = await admin_svc.get_panel_stats()
 
     text = (
-        f"<b>{E.CROWN} АДМИН-ПАНЕЛЬ</b>\n\n"
-        f"{E.ANALYTICS} \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"Пользователей: {stats.total_users}\n"
-        f"Оплативших: {stats.paid_users}\n"
-        f"Проектов: {stats.total_projects}\n"
-        f"Публикаций (7д): {stats.publications_7d}\n"
-        f"Затраты API (30д): ${stats.revenue_30d:.2f}\n"
+        Screen(E.CROWN, "АДМИН-ПАНЕЛЬ")
+        .blank()
+        .line(f"Пользователей: {stats.total_users}")
+        .line(f"Оплативших: {stats.paid_users}")
+        .line(f"Проектов: {stats.total_projects}")
+        .line(f"Публикаций (7д): {stats.publications_7d}")
+        .line(f"Затраты API (30д): ${stats.revenue_30d:.2f}")
+        .build()
     )
 
     await edit_screen(msg, "admin.png", text, reply_markup=admin_panel_kb())
@@ -154,15 +156,16 @@ async def admin_api_status(
     credits_str = f"${status.openrouter_credits:.2f}" if status.openrouter_credits is not None else "\u2014"
 
     text = (
-        f"{E.PULSE} <b>МОНИТОРИНГ</b>\n\n"
-        f"{E.AI_BRAIN} <b>AI</b>\n"
-        f"{or_icon} OpenRouter (кредиты: {credits_str})\n"
-        f"{qs_icon} QStash\n\n"
-        f"{E.DATABASE} <b>Инфраструктура</b>\n"
-        f"{db_icon} База данных ({status.db_latency_ms}ms)\n"
-        f"{redis_icon} Redis ({status.redis_latency_ms}ms)\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.SCHEDULE} Активных расписаний: {status.active_schedules}"
+        Screen(E.PULSE, "МОНИТОРИНГ")
+        .section(E.AI_BRAIN, "AI")
+        .line(f"{or_icon} OpenRouter (кредиты: {credits_str})")
+        .line(f"{qs_icon} QStash")
+        .section(E.DATABASE, "Инфраструктура")
+        .line(f"{db_icon} База данных ({status.db_latency_ms}ms)")
+        .line(f"{redis_icon} Redis ({status.redis_latency_ms}ms)")
+        .separator()
+        .field(E.SCHEDULE, "Активных расписаний", status.active_schedules)
+        .build()
     )
 
     await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
@@ -216,15 +219,18 @@ def _format_user_card(card: UserCard) -> str:
     activity = card.last_activity[:10] if card.last_activity else "\u2014"
 
     return (
-        f"{E.USER} <b>ПОЛЬЗОВАТЕЛЬ #{card.user_id}</b>\n\n"
-        f"Имя: {name}\n"
-        f"Username: {uname}\n\n"
-        f"{E.WALLET} Баланс: {card.balance} токенов\n"
-        f"Роль: {html.escape(card.role)}\n\n"
-        f"{E.ANALYTICS} Статистика:\n"
-        f"  Проектов: {card.projects_count}\n"
-        f"  Публикаций: {card.publications_count}\n"
-        f"  Активность: {activity}"
+        Screen(E.USER, f"ПОЛЬЗОВАТЕЛЬ #{card.user_id}")
+        .blank()
+        .line(f"Имя: {name}")
+        .line(f"Username: {uname}")
+        .blank()
+        .field(E.WALLET, "Баланс", f"{card.balance} токенов")
+        .line(f"Роль: {html.escape(card.role)}")
+        .section(E.ANALYTICS, "Статистика")
+        .line(f"  Проектов: {card.projects_count}")
+        .line(f"  Публикаций: {card.publications_count}")
+        .line(f"  Активность: {activity}")
+        .build()
     )
 
 

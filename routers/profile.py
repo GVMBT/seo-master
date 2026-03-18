@@ -10,6 +10,7 @@ from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
 from bot.texts.emoji import E
 from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
+from bot.texts.screens import Screen
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -59,33 +60,31 @@ async def nav_profile(
     last_payments = await pay_repo.get_by_user(user.id, limit=1)
     last_completed = next((p for p in last_payments if p.status == "completed"), None)
 
-    lines = [
-        f"{E.USER} <b>ПРОФИЛЬ</b>",
-        "",
-        f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов",
-        "",
-        f"{E.FOLDER} Проектов: {stats['project_count']}",
-        f"{E.HASHTAG} Категорий: {stats['category_count']}",
-        f"{E.SCHEDULE} Расписаний: {stats['schedule_count']}",
-        f"{E.TRANSFER} Рефералов: {stats['referral_count']}",
-    ]
+    s = Screen(E.USER, "ПРОФИЛЬ")
+    s.blank()
+    s.line(f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов")
+    s.blank()
+    s.field(E.FOLDER, "Проектов", stats["project_count"])
+    s.field(E.HASHTAG, "Категорий", stats["category_count"])
+    s.field(E.SCHEDULE, "Расписаний", stats["schedule_count"])
+    s.field(E.TRANSFER, "Рефералов", stats["referral_count"])
 
     if stats["posts_per_week"] > 0:
-        lines.append("")
-        lines.append(
+        s.blank()
+        s.line(
             f"{E.CHART} ~{stats['tokens_per_week']} ток/нед"
             f"  \u00b7  ~{stats['tokens_per_month']} ток/мес"
         )
 
     # Footer with registration and payment info
-    lines.append("\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-    lines.append(f"Регистрация: {reg_str}")
+    s.separator()
+    s.line(f"Регистрация: {reg_str}")
     if last_completed and last_completed.created_at:
         pay_date = last_completed.created_at.strftime("%d.%m.%Y")
         pay_amount = int(last_completed.amount_rub) if last_completed.amount_rub else last_completed.tokens_amount
-        lines.append(f"Последняя оплата: {pay_date} ({pay_amount} руб.)")
+        s.line(f"Последняя оплата: {pay_date} ({pay_amount} руб.)")
 
-    text = "\n".join(lines)
+    text = s.build()
 
     await edit_screen(msg, "profile.png", text, reply_markup=profile_kb())
     await callback.answer()
@@ -124,13 +123,15 @@ async def show_notifications(
 def _build_notifications_text() -> str:
     """Build notification screen text."""
     return (
-        f"{E.BELL} <b>УВЕДОМЛЕНИЯ</b>\n\n"
-        "<i>Выберите типы уведомлений:</i>\n\n"
-        "\u2713 Публикации \u2014 статус автопубликаций\n"
-        "\u2713 Баланс \u2014 пополнения и низкий баланс\n"
-        "\u2717 Новости \u2014 обновления бота\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Нажмите для переключения</i>"
+        Screen(E.BELL, "УВЕДОМЛЕНИЯ")
+        .blank()
+        .line("<i>Выберите типы уведомлений:</i>")
+        .blank()
+        .line("\u2713 Публикации \u2014 статус автопубликаций")
+        .line("\u2713 Баланс \u2014 пополнения и низкий баланс")
+        .line("\u2717 Новости \u2014 обновления бота")
+        .hint("Нажмите для переключения")
+        .build()
     )
 
 
@@ -203,31 +204,30 @@ async def show_referral(
     bot_info = await callback.bot.me()  # type: ignore[union-attr]
     link = f"https://t.me/{bot_info.username}?start=referrer_{user.id}"
 
-    lines = [
-        f"{E.TRANSFER} <b>РЕФЕРАЛЬНАЯ ПРОГРАММА</b>\n",
-        "Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!\n",
-        f"Ваша ссылка:\n<code>{link}</code>\n",
-        f"{E.USER} Рефералов: <b>{referral_count}</b>",
-        f"{E.WALLET} Заработано: <b>{referral_earned}</b> токенов",
-    ]
+    s = Screen(E.TRANSFER, "РЕФЕРАЛЬНАЯ ПРОГРАММА")
+    s.blank()
+    s.line("Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!")
+    s.blank()
+    s.line(f"Ваша ссылка:\n<code>{link}</code>")
+    s.blank()
+    s.line(f"{E.USER} Рефералов: <b>{referral_count}</b>")
+    s.line(f"{E.WALLET} Заработано: <b>{referral_earned}</b> токенов")
 
     # Show referral list (up to 10)
     _DISPLAY_LIMIT = 10
     referrals = await users_repo.get_referrals(user.id, limit=_DISPLAY_LIMIT)
     if referrals:
-        lines.append("")
-        lines.append("<b>Ваши рефералы:</b>")
+        s.blank()
+        s.line("<b>Ваши рефералы:</b>")
         for idx, ref in enumerate(referrals, 1):
             ref_name = html_mod.escape(ref.first_name or "Пользователь")
             ref_date = ref.created_at.strftime("%d.%m.%Y") if ref.created_at else "---"
-            lines.append(f"  {idx}. {ref_name} \u2014 {ref_date}")
+            s.line(f"  {idx}. {ref_name} \u2014 {ref_date}")
         if referral_count > _DISPLAY_LIMIT:
-            lines.append(f"  ...и ещё {referral_count - _DISPLAY_LIMIT}")
+            s.line(f"  ...и ещё {referral_count - _DISPLAY_LIMIT}")
 
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-    lines.append(f"{E.LIGHTBULB} <i>Скопируйте ссылку и отправьте друзьям</i>")
-
-    text = "\n".join(lines)
+    s.hint("Скопируйте ссылку и отправьте друзьям")
+    text = s.build()
 
     await edit_screen(msg, "referral.png", text, reply_markup=referral_kb())
     await callback.answer()
@@ -268,14 +268,18 @@ async def cmd_delete_account(
 ) -> None:
     """Show account deletion warning with confirmation buttons."""
     text = (
-        f"{E.WARNING} <b>УДАЛЕНИЕ АККАУНТА</b>\n\n"
-        "Будут безвозвратно удалены:\n"
-        "  \u2022 Все проекты и категории\n"
-        "  \u2022 Все подключения к платформам\n"
-        "  \u2022 Все расписания автопубликации\n"
-        "  \u2022 Активные превью статей\n\n"
-        "Токены и история платежей будут анонимизированы.\n\n"
-        "<b>Это действие необратимо.</b>"
+        Screen(E.WARNING, "УДАЛЕНИЕ АККАУНТА")
+        .blank()
+        .line("Будут безвозвратно удалены:")
+        .line("  \u2022 Все проекты и категории")
+        .line("  \u2022 Все подключения к платформам")
+        .line("  \u2022 Все расписания автопубликации")
+        .line("  \u2022 Активные превью статей")
+        .blank()
+        .line("Токены и история платежей будут анонимизированы.")
+        .blank()
+        .line("<b>Это действие необратимо.</b>")
+        .build()
     )
     await message.answer(text, reply_markup=delete_account_confirm_kb())
 

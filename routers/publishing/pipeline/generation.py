@@ -34,6 +34,7 @@ from bot.exceptions import RateLimitError
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
@@ -179,20 +180,22 @@ def _build_confirm_text(fsm_data: dict[str, Any], report: Any, user: User) -> st
     wp_display = html.escape(str(wp_id)) if wp_id else ("только превью" if preview_only else "")
     cost_line = f"Стоимость: ~{report.estimated_cost} ток."
     if is_god:
-        cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE — бесплатно)"
+        cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE \u2014 бесплатно)"
 
-    wp_line = f"\n{E.WORDPRESS} \u2192 {wp_display}" if wp_display else ""
+    s = Screen(E.DOC, "СТАТЬЯ (5/5) \u2014 ПОДТВЕРЖДЕНИЕ")
+    s.blank()
+    s.line(f"{E.FOLDER} Проект: {project_name}")
+    if wp_display:
+        s.line(f"{E.WORDPRESS} \u2192 {wp_display}")
+    s.line(f"{E.HASHTAG} Тема: {category_name}")
+    s.blank()
+    s.line(f"{E.HASHTAG} Ключевики: {report.keyword_count} фраз")
+    s.line(f"{E.IMAGE} Изображения: {report.image_count} шт.")
+    s.separator()
+    s.line(f"{E.WALLET} {cost_line}")
+    s.line(f"Баланс: {report.user_balance} ток.")
 
-    return (
-        f"{E.DOC} <b>СТАТЬЯ (5/5) \u2014 ПОДТВЕРЖДЕНИЕ</b>\n\n"
-        f"{E.FOLDER} Проект: {project_name}{wp_line}\n"
-        f"{E.HASHTAG} Тема: {category_name}\n\n"
-        f"{E.HASHTAG} Ключевики: {report.keyword_count} фраз\n"
-        f"{E.IMAGE} Изображения: {report.image_count} шт.\n\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.WALLET} {cost_line}\n"
-        f"Баланс: {report.user_balance} ток."
-    )
+    return s.build()
 
 
 def _get_confirm_kb(report: Any, user: User) -> Any:
@@ -455,13 +458,14 @@ async def _run_generation(
         progress.cancel()
         log.exception("pipeline.generation_failed", user_id=user.id, error=str(exc))
         await try_refund(db, user, tokens_charged, "Ошибка генерации")
-        await safe_edit_text(message,
-            f"{E.WARNING} <b>ОШИБКА ГЕНЕРАЦИИ</b>\n\n"
-            "Токены возвращены на баланс.\n"
-            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-            f"{E.LIGHTBULB} <i>Попробуйте ещё раз или выберите другую тему</i>",
-            reply_markup=pipeline_generation_error_kb(),
+        error_text = (
+            Screen(E.WARNING, "ОШИБКА ГЕНЕРАЦИИ")
+            .blank()
+            .line("Токены возвращены на баланс.")
+            .hint("Попробуйте ещё раз или выберите другую тему")
+            .build()
         )
+        await safe_edit_text(message, error_text, reply_markup=pipeline_generation_error_kb())
         await state.set_state(ArticlePipelineFSM.confirm_cost)
         return
     finally:
@@ -585,23 +589,27 @@ def _build_preview_text(
     telegraph_url: str | None,
 ) -> str:
     """Build preview display text."""
-    lines = [
-        f"{E.CHECK} <b>СТАТЬЯ ГОТОВА</b>\n",
-        f"<b>{html.escape(content.title)}</b>\n",
-        f"{E.HASHTAG} Ключевая фраза: {html.escape(keyword)}",
-        f"{E.DOC} Объём: ~{content.word_count} слов | Изображения: {content.images_count}",
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-        f"{E.WALLET} Списано: {tokens_charged} ток.",
-    ]
+    s = Screen(E.CHECK, "СТАТЬЯ ГОТОВА")
+    s.blank()
+    s.line(f"<b>{html.escape(content.title)}</b>")
+    s.blank()
+    s.line(f"{E.HASHTAG} Ключевая фраза: {html.escape(keyword)}")
+    s.line(f"{E.DOC} Объём: ~{content.word_count} слов | Изображения: {content.images_count}")
+    s.separator()
+    s.line(f"{E.WALLET} Списано: {tokens_charged} ток.")
+
     if content.content_warnings:
         warnings_text = "\n".join(f"  - {html.escape(w)}" for w in content.content_warnings[:5])
-        lines.append(f"\nПредупреждения:\n{warnings_text}")
+        s.blank()
+        s.line(f"Предупреждения:\n{warnings_text}")
     if not telegraph_url:
         # E05: Telegraph down — show inline snippet (strip HTML tags, Telegram rejects <h1> etc.)
         raw = re.sub(r"<[^>]+>", "", content.content_html or "")
         snippet = html.escape(raw[:500])
-        lines.append(f"\n<i>(Превью недоступно, фрагмент ниже)</i>\n{snippet}...")
-    text = "\n".join(lines)
+        s.blank()
+        s.line(f"<i>(Превью недоступно, фрагмент ниже)</i>\n{snippet}...")
+
+    text = s.build()
     # Telegram message limit: 4096 chars
     if len(text) > 4000:
         text = text[:3997] + "..."
@@ -767,14 +775,21 @@ async def publish_article(
         balance = await TokenService(db=db, admin_ids=get_settings().admin_ids).get_balance(user.id)
 
         result_text = (
-            f"{E.CHECK} <b>СТАТЬЯ ОПУБЛИКОВАНА</b>\n\n"
-            f"<b>{html.escape(preview.title or '')}</b>\n\n"
-            f"{E.HASHTAG} Ключевая фраза: {html.escape(preview.keyword or '')}\n"
-            f"{E.DOC} Объём: ~{preview.word_count or 0} слов | "
-            f"Изображения: {preview.images_count or 0}\n"
-            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-            f"{E.WALLET} Списано: {preview.tokens_charged or 0} ток. | "
-            f"Баланс: {balance} ток."
+            Screen(E.CHECK, "СТАТЬЯ ОПУБЛИКОВАНА")
+            .blank()
+            .line(f"<b>{html.escape(preview.title or '')}</b>")
+            .blank()
+            .line(f"{E.HASHTAG} Ключевая фраза: {html.escape(preview.keyword or '')}")
+            .line(
+                f"{E.DOC} Объём: ~{preview.word_count or 0} слов | "
+                f"Изображения: {preview.images_count or 0}"
+            )
+            .separator()
+            .line(
+                f"{E.WALLET} Списано: {preview.tokens_charged or 0} ток. | "
+                f"Баланс: {balance} ток."
+            )
+            .build()
         )
         await safe_edit_text(msg, 
             result_text,

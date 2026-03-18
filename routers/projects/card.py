@@ -10,6 +10,7 @@ from bot.assets import edit_screen
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory, TokenServiceFactory
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import project_card_kb, project_delete_confirm_kb, project_deleted_kb
@@ -66,24 +67,23 @@ async def show_project_card(
 
     project = card_data.project
 
-    # Build compact card text
+    # Build compact card text via Screen builder
     safe_name = html.escape(project.name)
-
-    header = f"{E.ROCKET} <b>{safe_name}</b>"
+    s = Screen(E.ROCKET, safe_name)
     if project.website_url:
-        header += f"\n{E.WORDPRESS} {html.escape(project.website_url)}"
+        s.line(f"{E.WORDPRESS} {html.escape(project.website_url)}")
+    s.blank()
 
     # Platform list: vertical with per-platform emoji
     platform_lines = _build_platform_lines(card_data.platform_types)
+    for pl in platform_lines:
+        s.line(pl)
+    s.blank()
 
-    lines = [header, ""]
-    lines.extend(platform_lines)
-    lines.append("")
-    lines.append(f"{E.FOLDER} Категорий: {len(card_data.categories)}")
-    lines.append(f"{E.ANALYTICS} Публикаций: {card_data.pub_count}")
-    lines.append("\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-    lines.append(f"{E.LIGHTBULB} <i>Управляйте проектом и контентом</i>")
-    text = "\n".join(lines)
+    s.field(E.FOLDER, "Категорий", len(card_data.categories))
+    s.field(E.ANALYTICS, "Публикаций", card_data.pub_count)
+    s.hint("Управляйте проектом и контентом")
+    text = s.build()
     has_keywords = any(cat.keywords for cat in card_data.categories)
     kb = project_card_kb(project_id, has_keywords=has_keywords)
     await edit_screen(msg, "project_card.png", text, reply_markup=kb)
@@ -126,16 +126,21 @@ async def confirm_delete(
         return
 
     safe_name = html.escape(project.name)
+    text = (
+        Screen(E.WARNING, "УДАЛЕНИЕ ПРОЕКТА")
+        .blank()
+        .line(f"Удалить проект \u00ab{safe_name}\u00bb?")
+        .blank()
+        .line("Будут удалены:")
+        .line("\u2022 Все категории и ключевики")
+        .line("\u2022 Подключения к платформам")
+        .line("\u2022 Расписания автопубликации")
+        .hint("Это действие нельзя отменить")
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{E.WARNING} <b>УДАЛЕНИЕ ПРОЕКТА</b>\n\n"
-        f"Удалить проект \u00ab{safe_name}\u00bb?\n\n"
-        "Будут удалены:\n"
-        "\u2022 Все категории и ключевики\n"
-        "\u2022 Подключения к платформам\n"
-        "\u2022 Расписания автопубликации\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Это действие нельзя отменить</i>",
+        text,
         reply_markup=project_delete_confirm_kb(project_id),
     )
     await callback.answer()

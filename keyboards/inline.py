@@ -194,12 +194,12 @@ def project_card_kb(project_id: int, *, has_keywords: bool) -> InlineKeyboardMar
         ])
 
     rows.append([
-        InlineKeyboardButton(text="Настройки", callback_data=f"project:{pid}:edit"),
+        InlineKeyboardButton(text="О компании", callback_data=f"project:{pid}:edit"),
         InlineKeyboardButton(text="Категории", callback_data=f"project:{pid}:categories"),
     ])
 
     rows.append([
-        InlineKeyboardButton(text="Контент", callback_data=f"project:{pid}:content_settings"),
+        InlineKeyboardButton(text="Стиль статей", callback_data=f"project:{pid}:content_settings"),
     ])
 
     if has_keywords:

@@ -17,6 +17,7 @@ from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import (
@@ -66,23 +67,20 @@ async def _show_description_screen(
     safe_name = html.escape(category.name)
     has_description = bool(category.description)
 
+    s = Screen(E.DOC, f"ОПИСАНИЕ \u2014 {safe_name}")
+    s.blank()
     if has_description:
         safe_desc = html.escape(category.description or "")
-        text = (
-            f"{E.DOC} <b>ОПИСАНИЕ</b> \u2014 {safe_name}\n\n"
-            f"<i>{safe_desc}</i>\n"
-            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-            f"{E.LIGHTBULB} <i>Описание помогает AI писать точнее</i>"
-        )
+        s.line(f"<i>{safe_desc}</i>")
     else:
-        text = (
-            f"{E.DOC} <b>ОПИСАНИЕ</b> \u2014 {safe_name}\n\n"
-            "Описание не задано.\n\n"
+        s.line("Описание не задано.")
+        s.blank()
+        s.line(
             "Опишите своими словами, чем занимается ваш бизнес в этой категории. "
-            "Можно тезисно, через запятую.\n"
-            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-            f"{E.LIGHTBULB} <i>Описание помогает AI писать точнее</i>"
+            "Можно тезисно, через запятую."
         )
+    s.hint("Описание помогает AI писать точнее")
+    text = s.build()
 
     await safe_edit_text(msg, 
         text,

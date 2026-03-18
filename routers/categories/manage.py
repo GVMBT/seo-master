@@ -14,6 +14,7 @@ from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import get_owned_project, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories.projects import ProjectsRepository
@@ -70,13 +71,21 @@ async def show_category_list(
 
     if not categories:
         safe_name = html.escape(project.name)
+        empty_text = (
+            Screen(E.FOLDER, f"{safe_name} \u2014 Категории")
+            .blank()
+            .line("Категорий пока нет.")
+            .blank()
+            .line(
+                "Категория = тема контента "
+                "(например: \u00abSEO-оптимизация\u00bb или \u00abКулинарные рецепты\u00bb)."
+            )
+            .build()
+        )
         await edit_screen(
             msg,
             "empty_categories.png",
-            f"<b>{safe_name}</b> \u2014 Категории\n\n"
-            f"{E.FOLDER} Категорий пока нет.\n\n"
-            "Категория = тема контента "
-            "(например: \u00abSEO-оптимизация\u00bb или \u00abКулинарные рецепты\u00bb).",
+            empty_text,
             reply_markup=category_list_empty_kb(project_id),
         )
     else:
@@ -256,9 +265,10 @@ async def show_category_card(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    # Build card text
+    # Build card text via Screen builder with checklist
     safe_name = html.escape(category.name)
-    lines = [f"{E.FOLDER} <b>{safe_name}</b>\n"]
+    s = Screen(E.FOLDER, safe_name)
+    s.blank()
 
     # Keyword clusters
     keyword_count = len(category.keywords)
@@ -266,42 +276,38 @@ async def show_category_card(
         cluster_count = sum(1 for k in category.keywords if k.get("cluster_name"))
         total_phrases = sum(len(k.get("phrases", [])) for k in category.keywords)
         if cluster_count > 0:
-            lines.append(f"{E.CHECK} Ключевики \u2014 {cluster_count} кластеров ({total_phrases} фраз)")
+            s.check("Ключевики", ok=True, detail=f"{cluster_count} кластеров ({total_phrases} фраз)")
         else:
-            lines.append(f"{E.CHECK} Ключевики \u2014 {keyword_count} фраз")
+            s.check("Ключевики", ok=True, detail=f"{keyword_count} фраз")
     else:
-        lines.append(f"{E.CLOSE} Ключевики \u2014 не заданы")
+        s.check("Ключевики", ok=False, detail="не заданы")
 
     # Description
-    if category.description:
-        lines.append(f"{E.CHECK} Описание \u2014 есть")
-    else:
-        lines.append(f"{E.CLOSE} Описание \u2014 не задано")
+    s.check("Описание", ok=bool(category.description), detail="" if category.description else "не задано")
 
     # Prices
     if category.prices:
         price_lines = [ln for ln in category.prices.splitlines() if ln.strip()]
-        lines.append(f"{E.CHECK} Цены \u2014 {len(price_lines)} позиций")
+        s.check("Цены", ok=True, detail=f"{len(price_lines)} позиций")
     else:
-        lines.append(f"{E.CLOSE} Цены \u2014 не заданы")
+        s.check("Цены", ok=False, detail="не заданы")
 
     # Image settings (project fallback -> category)
     proj = await ProjectsRepository(db).get_by_id(category.project_id)
     eff_image_settings = (proj.image_settings if proj else None) or category.image_settings or {}
     img_count = eff_image_settings.get("count")
     if img_count is not None:
-        lines.append(f"{E.CHECK} Медиа \u2014 {img_count} изобр.")
+        s.check("Медиа", ok=True, detail=f"{img_count} изобр.")
     else:
-        lines.append(f"{E.CLOSE} Медиа \u2014 нет файлов")
+        s.check("Медиа", ok=False, detail="нет файлов")
 
     # Publication count
     pub_repo = PublicationsRepository(db)
     pub_count = await pub_repo.get_count_by_category(category_id)
-    lines.append(f"{E.ANALYTICS} Публикаций: {pub_count}")
+    s.field(E.ANALYTICS, "Публикаций", pub_count)
+    s.separator()
 
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-
-    text = "\n".join(lines)
+    text = s.build()
     await safe_edit_text(msg, text, reply_markup=category_card_kb(category_id, category.project_id))
     await callback.answer()
 

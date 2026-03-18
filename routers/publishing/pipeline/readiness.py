@@ -23,6 +23,7 @@ from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -67,48 +68,45 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     project_name = html.escape(fsm_data.get("project_name", ""))
     category_name = html.escape(fsm_data.get("category_name", ""))
 
-    lines: list[str] = [
-        f"{E.DOC} <b>СТАТЬЯ (4/5) \u2014 ПОДГОТОВКА</b>",
-        "",
-        f"{E.FOLDER} Проект: {project_name}",
-        f"{E.HASHTAG} Тема: {category_name}",
-        "",
-    ]
+    s = Screen(E.DOC, "СТАТЬЯ (4/5) \u2014 ПОДГОТОВКА")
+    s.blank()
+    s.line(f"{E.FOLDER} Проект: {project_name}")
+    s.line(f"{E.HASHTAG} Тема: {category_name}")
+    s.blank()
 
     # Description status (first -- keywords are generated from it)
     if report.has_description:
-        lines.append(f"{E.CHECK} Описание")
+        s.check("Описание", ok=True)
     elif "description" in report.missing_items:
-        lines.append(f"{E.CLOSE} Описание \u2014 не задано")
+        s.check("Описание", ok=False, detail="не задано")
 
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
-        lines.append(f"{E.CHECK} Ключевики \u2014 {kw_info}")
+        s.check("Ключевики", ok=True, detail=kw_info)
     else:
-        lines.append(f"{E.CLOSE} Ключевики (обязательно)")
+        s.check("Ключевики (обязательно)", ok=False)
 
     # Prices status (progressive: shown for 2+ pubs)
     if "prices" in report.missing_items:
-        lines.append(f"{E.CLOSE} Цены \u2014 не заданы")
+        s.check("Цены", ok=False, detail="не заданы")
     elif report.has_prices:
-        lines.append(f"{E.CHECK} Цены")
+        s.check("Цены", ok=True)
 
     # Images (generated WITH the article, not separately)
     if report.image_count > 0:
         img_cost = report.image_count * COST_PER_IMAGE
-        lines.append(f"{E.CHECK} Медиа \u2014 {report.image_count} шт. ({img_cost} ток.)")
+        s.check("Медиа", ok=True, detail=f"{report.image_count} шт. ({img_cost} ток.)")
     else:
-        lines.append(f"{E.CLOSE} Медиа")
+        s.check("Медиа", ok=False)
 
     # Cost estimate
-    lines.append("")
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-    lines.append(f"{E.WALLET} Стоимость: ~{report.estimated_cost} ток.")
+    s.separator()
+    s.line(f"{E.WALLET} Стоимость: ~{report.estimated_cost} ток.")
 
-    return "\n".join(lines)
+    return s.build()
 
 
 async def show_readiness_check(

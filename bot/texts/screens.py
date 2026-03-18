@@ -1,4 +1,4 @@
-"""Consistent screen text builder for all bot messages.
+"""Unified screen text builder for consistent UI across all bot screens.
 
 Usage:
     text = (
@@ -17,29 +17,25 @@ from __future__ import annotations
 
 from bot.texts.emoji import E
 
-# Separator line constant
+# Separator line used between sections
 SEPARATOR = "\u2500" * 10
 
 
 class Screen:
-    """Fluent builder for structured bot screen text."""
+    """Fluent builder for bot screen text (parse_mode=HTML)."""
 
     def __init__(self, icon: str, title: str) -> None:
-        """Create screen with header: {icon} <b>{title}</b>"""
         self._lines: list[str] = [f"{icon} <b>{title}</b>"]
 
     def blank(self) -> Screen:
-        """Add empty line (section separator)."""
         self._lines.append("")
         return self
 
     def line(self, text: str) -> Screen:
-        """Add arbitrary text line."""
         self._lines.append(text)
         return self
 
     def field(self, icon: str, label: str, value: str | int) -> Screen:
-        """Add field: {icon} {label}: {value}"""
         self._lines.append(f"{icon} {label}: {value}")
         return self
 
@@ -51,30 +47,27 @@ class Screen:
         self._lines.append(f"{icon} {label}: {display}")
         return self
 
-    def check(self, label: str, ok: bool, detail: str = "") -> Screen:
-        """Add checklist item: {CHECK/CLOSE} {label} -- {detail}"""
+    def check(self, label: str, *, ok: bool, detail: str = "") -> Screen:
         icon = E.CHECK if ok else E.CLOSE
         suffix = f" \u2014 {detail}" if detail else ""
         self._lines.append(f"{icon} {label}{suffix}")
         return self
 
     def section(self, icon: str, title: str) -> Screen:
-        """Add section header with blank line before it."""
         self._lines.append("")
         self._lines.append(f"{icon} <b>{title}</b>")
         return self
 
-    def separator(self) -> Screen:
-        """Add separator line."""
-        self._lines.append(SEPARATOR)
-        return self
-
     def hint(self, text: str) -> Screen:
-        """Add separator + hint line: ────────── {LIGHTBULB} <i>{text}</i>"""
+        self._lines.append("")
         self._lines.append(SEPARATOR)
         self._lines.append(f"{E.LIGHTBULB} <i>{text}</i>")
         return self
 
+    def separator(self) -> Screen:
+        self._lines.append("")
+        self._lines.append(SEPARATOR)
+        return self
+
     def build(self) -> str:
-        """Join all lines with newline."""
         return "\n".join(self._lines)

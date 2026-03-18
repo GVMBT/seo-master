@@ -35,6 +35,7 @@ from bot.texts.connections import (
     WP_STEP3_CREDENTIALS,
 )
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from bot.validators import TG_CHANNEL_RE, URL_RE
 from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
@@ -85,14 +86,15 @@ def _build_connections_text(
     """Build unified connections screen text grouped by platform."""
     safe_name = html.escape(project_name)
 
+    s = Screen(E.GEAR, "МОИ ПОДКЛЮЧЕНИЯ")
+    s.blank()
+    s.line(f"Проект: {safe_name}")
+    s.blank()
+
     if not connections:
-        return (
-            f"{E.GEAR} <b>МОИ ПОДКЛЮЧЕНИЯ</b>\n\n"
-            f"Проект: {safe_name}\n\n"
-            "Подключений пока нет.\n"
-            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-            f"{E.LIGHTBULB} <i>Подключите площадки для автопостинга контента</i>"
-        )
+        s.line("Подключений пока нет.")
+        s.hint("Подключите площадки для автопостинга контента")
+        return s.build()
 
     # Group connections by platform_type
     grouped: dict[str, list[str]] = {}
@@ -101,11 +103,6 @@ def _build_connections_text(
         identifier = html.escape(getattr(conn, "identifier", ""))
         grouped.setdefault(pt, []).append(identifier)
 
-    lines: list[str] = [
-        f"{E.GEAR} <b>МОИ ПОДКЛЮЧЕНИЯ</b>\n",
-        f"Проект: {safe_name}\n",
-    ]
-
     platform_order = ["wordpress", "telegram", "vk", "pinterest"]
     for pt in platform_order:
         items = grouped.pop(pt, None)
@@ -113,21 +110,20 @@ def _build_connections_text(
             continue
         icon = _PLAT_EMOJI.get(pt, "")
         label = _PLAT_LABEL.get(pt, pt.capitalize())
-        lines.append(f"{icon} {label} ({len(items)}):")
+        s.line(f"{icon} {label} ({len(items)}):")
         for i, ident in enumerate(items, 1):
-            lines.append(f"  {i}. {ident}")
-        lines.append("")
+            s.line(f"  {i}. {ident}")
+        s.blank()
 
     # Remaining unknown platforms (if any)
     for pt, items in grouped.items():
-        lines.append(f"{pt.capitalize()} ({len(items)}):")
+        s.line(f"{pt.capitalize()} ({len(items)}):")
         for i, ident in enumerate(items, 1):
-            lines.append(f"  {i}. {ident}")
-        lines.append("")
+            s.line(f"  {i}. {ident}")
+        s.blank()
 
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-    lines.append(f"{E.LIGHTBULB} <i>Подключите площадки для автопостинга контента</i>")
-    return "\n".join(lines)
+    s.hint("Подключите площадки для автопостинга контента")
+    return s.build()
 
 async def _run_site_analysis(
     db: SupabaseClient,
@@ -297,14 +293,16 @@ async def manage_connection(
     pub_count = await pub_repo.get_count_by_connection(conn_id)
 
     text = (
-        f"{icon} <b>ПОДКЛЮЧЕНИЕ</b>\n\n"
-        f"Платформа: {plat_label}\n"
-        f"Идентификатор: {safe_id}\n\n"
-        f"Статус: {status_icon} {status_text}\n"
-        f"Подключено: {created_str}\n"
-        f"{E.ANALYTICS} Публикаций: {pub_count}\n\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Управляйте подключением</i>"
+        Screen(icon, "ПОДКЛЮЧЕНИЕ")
+        .blank()
+        .line(f"Платформа: {plat_label}")
+        .line(f"Идентификатор: {safe_id}")
+        .blank()
+        .line(f"Статус: {status_icon} {status_text}")
+        .line(f"Подключено: {created_str}")
+        .field(E.ANALYTICS, "Публикаций", pub_count)
+        .hint("Управляйте подключением")
+        .build()
     )
     await safe_edit_text(
         msg,
@@ -342,15 +340,20 @@ async def confirm_connection_delete(
 
     safe_id = html.escape(conn.identifier)
     icon = _PLAT_EMOJI.get(conn.platform_type, "")
+    text = (
+        Screen(E.WARNING, "УДАЛЕНИЕ ПОДКЛЮЧЕНИЯ")
+        .blank()
+        .line(f"{icon} {conn.platform_type.capitalize()} ({safe_id})")
+        .blank()
+        .line("Будут удалены:")
+        .line("\u2022 Связанные расписания")
+        .line("\u2022 Настройки кросс-постинга")
+        .hint("Это действие нельзя отменить")
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{E.WARNING} <b>УДАЛЕНИЕ ПОДКЛЮЧЕНИЯ</b>\n\n"
-        f"{icon} {conn.platform_type.capitalize()} ({safe_id})\n\n"
-        "Будут удалены:\n"
-        "\u2022 Связанные расписания\n"
-        "\u2022 Настройки кросс-постинга\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Это действие нельзя отменить</i>",
+        text,
         reply_markup=connection_delete_confirm_kb(conn_id, conn.project_id),
     )
     await callback.answer()

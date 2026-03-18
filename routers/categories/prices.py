@@ -16,6 +16,7 @@ from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import cancel_kb, category_card_kb, menu_kb, prices_kb
@@ -100,23 +101,16 @@ async def _show_prices_screen(
 ) -> None:
     """Render the prices screen (section 11 filled / 11.3 empty)."""
     safe_name = html.escape(category_name)
+    s = Screen(E.PRICE, f"ЦЕНЫ \u2014 {safe_name}")
+    s.blank()
 
     if prices:
-        lines = [ln for ln in prices.splitlines() if ln.strip()]
-        count = len(lines)
-        text = (
-            f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
-            f"{E.CHECK} Прайс загружен ({count} позиций)\n"
-            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-            f"{E.LIGHTBULB} <i>В статьях будут реальные цены ваших товаров</i>"
-        )
+        lines_count = len([ln for ln in prices.splitlines() if ln.strip()])
+        s.check("Прайс загружен", ok=True, detail=f"{lines_count} позиций")
     else:
-        text = (
-            f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
-            "Прайс не загружен.\n"
-            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-            f"{E.LIGHTBULB} <i>В статьях будут реальные цены ваших товаров</i>"
-        )
+        s.line("Прайс не загружен.")
+    s.hint("В статьях будут реальные цены ваших товаров")
+    text = s.build()
 
     await safe_edit_text(message, text, reply_markup=prices_kb(category_id, has_prices=bool(prices)))
 
