@@ -85,6 +85,8 @@ class PublishOutcome:
     tokens_spent: int = 0
     user_id: int = 0
     notify: bool = False
+    category_name: str = ""
+    project_name: str = ""
     cross_post_results: list[CrossPostResult] = dataclasses_field(default_factory=list)
 
 
@@ -158,6 +160,10 @@ class PublishService:
         # 2b. Load project (needed for settings fallback: project → category)
         project = await self._projects.get_by_id(payload.project_id)
 
+        # Context for user-facing notifications
+        cat_name = category.name
+        proj_name = project.name if project else ""
+
         # 3. Check keywords (E17: no keywords configured)
         if not category.keywords:
             log.warning("publish_no_keywords", category_id=payload.category_id, user_id=user_id)
@@ -166,6 +172,8 @@ class PublishService:
                 reason="no_keywords",
                 user_id=user_id,
                 notify=user.notify_publications,
+                category_name=cat_name,
+                project_name=proj_name,
             )
 
         # 4. Load connection
@@ -179,6 +187,8 @@ class PublishService:
                 reason="connection_inactive",
                 user_id=user_id,
                 notify=user.notify_publications,
+                category_name=cat_name,
+                project_name=proj_name,
             )
 
         # 5. Rotate keyword (E22/E23: low pool warning)
@@ -193,6 +203,8 @@ class PublishService:
                 reason="no_available_keyword",
                 user_id=user_id,
                 notify=user.notify_publications,
+                category_name=cat_name,
+                project_name=proj_name,
             )
 
         if low_pool:

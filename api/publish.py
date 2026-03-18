@@ -37,6 +37,10 @@ _REASON_TEMPLATES: dict[str, str] = {
     "ai_service_unavailable": (
         f"{E.WARNING} Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."
     ),
+    "no_available_keyword": (
+        f"{E.WARNING} Автопубликация пропущена: все ключевые фразы уже использованы.\n"
+        "Добавьте новые фразы в категорию."
+    ),
 }
 
 
@@ -67,8 +71,21 @@ def _build_notification_text(result: PublishOutcome) -> str:
                 error_safe = html_mod.escape(xp.error or "unknown error")
                 text += f"\n\u2717 {label}: {error_safe}"
         return text
-    reason_safe = html_mod.escape(result.reason or "unknown")
-    return _REASON_TEMPLATES.get(result.reason, f"Ошибка автопубликации: {reason_safe}")
+    template = _REASON_TEMPLATES.get(result.reason)
+    if not template:
+        reason_safe = html_mod.escape(result.reason or "unknown")
+        template = f"{E.WARNING} Ошибка автопубликации: {reason_safe}"
+
+    # Append project/category context if available
+    context_parts: list[str] = []
+    if result.project_name:
+        context_parts.append(f"Проект: {html_mod.escape(result.project_name)}")
+    if result.category_name:
+        context_parts.append(f"Категория: {html_mod.escape(result.category_name)}")
+    if context_parts:
+        template += "\n\n" + " \u00b7 ".join(context_parts)
+
+    return template
 
 
 @require_qstash_signature
