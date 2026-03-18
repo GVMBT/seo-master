@@ -197,6 +197,20 @@ class PublishService:
             payload.category_id, category.keywords, content_type
         )
         if not keyword:
+            # Try expanding keyword pool before giving up
+            log.warning("publish_no_available_keyword_attempting_expand", category_id=payload.category_id)
+            try:
+                await self._try_expand_keywords(payload, category, user_id)
+                # Reload category after expansion
+                category = await self._categories.get_by_id(payload.category_id)
+                if category and category.keywords:
+                    keyword, low_pool = await self._publications.get_rotation_keyword(
+                        payload.category_id, category.keywords, content_type
+                    )
+            except Exception:
+                log.exception("publish_keyword_expand_failed", category_id=payload.category_id)
+
+        if not keyword:
             log.warning("publish_no_available_keyword", category_id=payload.category_id)
             return PublishOutcome(
                 status="error",
