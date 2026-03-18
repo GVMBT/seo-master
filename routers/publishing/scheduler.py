@@ -11,6 +11,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from db.models import User
 from keyboards.inline import (
     _DAY_LABELS,
@@ -241,23 +242,21 @@ async def scheduler_connection(
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
     existing = schedules_map.get(conn_id)
 
-    text = f"{E.SCHEDULE} <b>РАСПИСАНИЕ</b>\n\n"
+    s = Screen(E.SCHEDULE, "РАСПИСАНИЕ")
+    s.blank()
     if existing and existing.enabled:
         days_str = ", ".join(_DAY_LABELS.get(d, d) for d in existing.schedule_days)
         times_str = ", ".join(existing.schedule_times)
-        text += (
-            "Текущее расписание:\n"
-            f"  Дни: {days_str}\n"
-            f"  Время: {times_str}\n"
-            f"  Постов/день: {existing.posts_per_day}\n\n"
-        )
-    text += (
-        "Выберите вариант:\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Настройте частоту автопубликации</i>"
-    )
+        s.line("Текущее расписание:")
+        s.line(f"  Дни: {days_str}")
+        s.line(f"  Время: {times_str}")
+        s.line(f"  Постов/день: {existing.posts_per_day}")
+        s.blank()
+    s.line("Выберите вариант:")
+    s.hint("Настройте частоту автопубликации")
+    text = s.build()
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(msg,
         text,
         reply_markup=scheduler_config_kb(
             cat_id,
@@ -728,24 +727,21 @@ async def scheduler_social_connection(
     social_conns = await scheduler_service.get_social_connections(ctx.project.id, user.id)
     has_other_social = len(social_conns or []) > 1
 
-    text = f"{E.SCHEDULE} <b>РАСПИСАНИЕ (соцсети)</b>\n\n"
+    s = Screen(E.SCHEDULE, "РАСПИСАНИЕ (соцсети)")
+    s.blank()
     if existing and existing.enabled:
         days_str = ", ".join(_DAY_LABELS.get(d, d) for d in existing.schedule_days)
         times_str = ", ".join(existing.schedule_times)
-        text += (
-            "Текущее расписание:\n"
-            f"  Дни: {days_str}\n"
-            f"  Время: {times_str}\n"
-            f"  Постов/день: {existing.posts_per_day}\n"
-        )
+        s.line("Текущее расписание:")
+        s.line(f"  Дни: {days_str}")
+        s.line(f"  Время: {times_str}")
+        s.line(f"  Постов/день: {existing.posts_per_day}")
         if existing.cross_post_connection_ids:
-            text += f"  Кросс-постинг: {len(existing.cross_post_connection_ids)} платформ\n"
-        text += "\n"
-    text += (
-        "Выберите вариант:\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Настройте частоту автопостинга</i>"
-    )
+            s.line(f"  Кросс-постинг: {len(existing.cross_post_connection_ids)} платформ")
+        s.blank()
+    s.line("Выберите вариант:")
+    s.hint("Настройте частоту автопостинга")
+    text = s.build()
 
     await safe_edit_text(msg, 
         text,

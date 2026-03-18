@@ -142,48 +142,58 @@ class DashboardService:
         data: DashboardData,
     ) -> str:
         """Build Dashboard text based on user state (UX_PIPELINE.md section 2.1-2.3, 2.7)."""
+        from bot.texts.screens import Screen
+
         name = html.escape(first_name or "")
 
         # Balance warning overrides (section 2.7)
         if balance < 0:
             return (
-                f"{E.WARNING} <b>Баланс: {balance} токенов</b>\n\n"
-                f"Долг {abs(balance)} токенов будет списан при следующей покупке.\n"
-                "Для генерации контента пополните баланс."
+                Screen(E.WARNING, f"Баланс: {balance} токенов")
+                .blank()
+                .line(f"Долг {abs(balance)} токенов будет списан при следующей покупке.")
+                .line("Для генерации контента пополните баланс.")
+                .build()
             )
         if balance == 0:
-            return f"{E.WALLET} <b>Баланс: 0 токенов</b>\n\nДля генерации контента нужно пополнить баланс."
+            return (
+                Screen(E.WALLET, "Баланс: 0 токенов")
+                .blank()
+                .line("Для генерации контента нужно пополнить баланс.")
+                .build()
+            )
 
         if is_new_user and data.project_count == 0:
             articles_est = balance // _AVG_ARTICLE_COST
             return (
-                f"{E.ROCKET} <b>ДОБРО ПОЖАЛОВАТЬ</b>\n\n"
-                f"Привет{', ' + name if name else ''}! "
-                "Я помогу создать и опубликовать SEO-контент.\n\n"
-                f"{E.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b>"
-                f" (~{articles_est} статей)\n"
-                "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-                f"{E.LIGHTBULB} <i>Создайте первый проект \u2014 это займёт 30 секунд</i>"
+                Screen(E.ROCKET, "ДОБРО ПОЖАЛОВАТЬ")
+                .blank()
+                .line(
+                    f"Привет{', ' + name if name else ''}! "
+                    "Я помогу создать и опубликовать SEO-контент."
+                )
+                .blank()
+                .line(
+                    f"{E.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b>"
+                )
+                .line(f"Хватит на ~{articles_est} статей")
+                .hint("Создайте первый проект \u2014 это займёт 30 секунд")
+                .build()
             )
 
         articles_est = balance // _AVG_ARTICLE_COST
         posts_est = balance // _AVG_SOCIAL_COST
-        lines: list[str] = []
 
-        # Balance
-        lines.append(
-            f"{E.WALLET} Баланс: {_format_balance(balance)} токенов"
-            f" (~{articles_est} статей / ~{posts_est} постов)"
-        )
-        lines.append("")
+        s = Screen(E.WALLET, f"Баланс: {_format_balance(balance)} токенов")
+        s.line(f"Хватит на ~{articles_est} статей или ~{posts_est} постов")
+        s.blank()
 
         if data.project_count > 0:
-            # Stats — each on its own line
-            lines.append(f"{E.FOLDER} Проектов: {data.project_count}")
-            lines.append(f"{E.HASHTAG} Категорий: {data.category_count}")
-            lines.append(f"{E.SCHEDULE} Расписаний: {data.schedule_count}")
+            s.field(E.FOLDER, "Проектов", data.project_count)
+            s.field(E.HASHTAG, "Категорий", data.category_count)
+            s.field(E.SCHEDULE, "Расписаний", data.schedule_count)
             if data.total_publications > 0:
-                lines.append(f"{E.ANALYTICS} Публикаций: {data.total_publications}")
+                s.field(E.ANALYTICS, "Публикаций", data.total_publications)
 
             # Last publication
             if data.last_publication and data.last_publication.keyword:
@@ -193,20 +203,21 @@ class DashboardService:
                     lp.keyword[:30] + "\u2026" if len(lp.keyword) > 30 else lp.keyword,
                 )
                 suffix = f" {date_str}" if date_str else ""
-                lines.append(f"\n{E.DOC} Последняя: \u00ab{kw_short}\u00bb{suffix}")
+                s.blank()
+                s.line(f"{E.DOC} Последняя: \u00ab{kw_short}\u00bb{suffix}")
 
             # Forecast
             if data.tokens_per_week > 0:
-                lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-                lines.append(
+                s.separator()
+                s.line(
                     f"{E.CHART} ~{_format_balance(data.tokens_per_week)} ток/нед"
                     f"  \u00b7  ~{_format_balance(data.tokens_per_month)} ток/мес"
                 )
         else:
-            lines.append("У вас пока нет проектов.")
-            lines.append(f"{E.ROCKET} Создайте первый \u2014 это займёт 30 секунд.")
+            s.line("У вас пока нет проектов.")
+            s.line(f"{E.ROCKET} Создайте первый \u2014 это займёт 30 секунд.")
 
-        return "\n".join(lines)
+        return s.build()
 
 
 def _format_balance(balance: int) -> str:

@@ -14,6 +14,7 @@ from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from bot.validators import URL_RE
 from db.client import SupabaseClient
 from db.models import Project, ProjectCreate, ProjectUpdate, User
@@ -111,26 +112,18 @@ _FIELD_DISPLAY: dict[str, str] = {
 def _build_field_edit_prompt(field: str, current_value: str) -> str:
     """Build structured edit prompt with header, current value, and hint."""
     display_label = _FIELD_DISPLAY.get(field, field)
-
+    s = Screen(E.PEN, "РЕДАКТИРОВАНИЕ")
+    s.blank()
+    s.line(f"Поле: <b>{display_label}</b>")
+    s.blank()
     if current_value:
         display_value = html.escape(_truncate(current_value, 100))
-        current_block = (
-            "Текущее значение:\n"
-            f"<i>{display_value}</i>"
-        )
+        s.line("Текущее значение:")
+        s.line(f"<i>{display_value}</i>")
     else:
-        current_block = (
-            "Текущее значение: "
-            "<i>не заполнено</i>"
-        )
-
-    return (
-        f"{E.PEN} <b>РЕДАКТИРОВАНИЕ</b>\n\n"
-        f"Поле: <b>{display_label}</b>\n\n"
-        f"{current_block}\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Введите новое значение</i>"
-    )
+        s.line("Текущее значение: <i>не заполнено</i>")
+    s.hint("Введите новое значение")
+    return s.build()
 
 
 # ---------------------------------------------------------------------------
@@ -169,13 +162,15 @@ async def start_create(
     await state.set_state(ProjectCreateFSM.name)
     await state.update_data(last_update_time=time.time())
 
-    await msg.answer(
-        f"{E.FOLDER} <b>НОВЫЙ ПРОЕКТ</b>\n\n"
-        "Как назовём проект?\nЭто внутреннее имя для вашего удобства.\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Пример: Мебель Комфорт</i>",
-        reply_markup=cancel_kb("project:create:cancel"),
+    text = (
+        Screen(E.FOLDER, "НОВЫЙ ПРОЕКТ")
+        .blank()
+        .line("Как назовём проект?")
+        .line("Это внутреннее имя для вашего удобства.")
+        .hint("Пример: Мебель Комфорт")
+        .build()
     )
+    await msg.answer(text, reply_markup=cancel_kb("project:create:cancel"))
     await callback.answer()
 
 
@@ -258,7 +253,7 @@ def _build_edit_text(project: Project) -> str:
     Sections with all empty fields are hidden entirely.
     """
     safe_name = html.escape(project.name)
-    lines: list[str] = [f"{E.PEN} <b>{safe_name} \u2014 РЕДАКТИРОВАНИЕ</b>"]
+    s = Screen(E.PEN, f"{safe_name} \u2014 РЕДАКТИРОВАНИЕ")
 
     # Section 1: Basic info
     basic_fields = [
@@ -268,8 +263,9 @@ def _build_edit_text(project: Project) -> str:
     ]
     basic_lines = _render_section_fields(basic_fields)
     if basic_lines:
-        lines.append(f"\n{E.FOLDER} <b>Основное</b>")
-        lines.extend(basic_lines)
+        s.section(E.FOLDER, "Основное")
+        for ln in basic_lines:
+            s.line(ln)
 
     # Section 2: About company
     about_fields = [
@@ -279,8 +275,9 @@ def _build_edit_text(project: Project) -> str:
     ]
     about_lines = _render_section_fields(about_fields)
     if about_lines:
-        lines.append(f"\n{E.DOC} <b>О компании</b>")
-        lines.extend(about_lines)
+        s.section(E.DOC, "О компании")
+        for ln in about_lines:
+            s.line(ln)
 
     # Section 3: Contacts
     contact_fields = [
@@ -292,12 +289,12 @@ def _build_edit_text(project: Project) -> str:
     ]
     contact_lines = _render_section_fields(contact_fields)
     if contact_lines:
-        lines.append(f"\n{E.LINK} <b>Контакты</b>")
-        lines.extend(contact_lines)
+        s.section(E.LINK, "Контакты")
+        for ln in contact_lines:
+            s.line(ln)
 
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-    lines.append(f"{E.LIGHTBULB} <i>Нажмите на поле для редактирования</i>")
-    return "\n".join(lines)
+    s.hint("Нажмите на поле для редактирования")
+    return s.build()
 
 
 def _render_section_fields(fields: Sequence[tuple[str, str | None]]) -> list[str]:

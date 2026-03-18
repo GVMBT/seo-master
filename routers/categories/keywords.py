@@ -28,6 +28,7 @@ from aiogram.types import (
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from db.client import SupabaseClient
 from db.models import Category, User
 from db.repositories.categories import CategoriesRepository
@@ -117,28 +118,24 @@ def _build_keywords_summary(category: Any) -> str:
     clusters: list[dict[str, Any]] = category.keywords or []
     safe_name = html.escape(category.name)
 
+    s = Screen(E.HASHTAG, f"КЛЮЧЕВЫЕ ФРАЗЫ \u2014 {safe_name}")
+    s.blank()
+
     if not clusters:
-        return (
-            f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n\n"
-            "Фразы не добавлены.\n"
-            "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-            f"{E.LIGHTBULB} <i>Ключевики \u2014 основа для качественных статей</i>"
-        )
+        s.line("Фразы не добавлены.")
+        s.hint("Ключевики \u2014 основа для качественных статей")
+        return s.build()
 
     total_phrases = sum(len(c.get("phrases", [])) for c in clusters)
     total_volume = sum(c.get("total_volume", 0) for c in clusters)
     cluster_count = len(clusters)
 
-    lines = [
-        f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n",
-        f"Кластеров: {cluster_count}",
-        f"Фраз: {total_phrases}",
-    ]
+    s.line(f"Кластеров: {cluster_count}")
+    s.line(f"Фраз: {total_phrases}")
     if total_volume > 0:
-        lines.append(f"Объём: {total_volume:,}/мес")
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-    lines.append(f"{E.LIGHTBULB} <i>Ключевики \u2014 основа для качественных статей</i>")
-    return "\n".join(lines)
+        s.line(f"Объём: {total_volume:,}/мес")
+    s.hint("Ключевики \u2014 основа для качественных статей")
+    return s.build()
 
 
 # ---------------------------------------------------------------------------

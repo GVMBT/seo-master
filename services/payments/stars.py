@@ -366,48 +366,59 @@ class StarsPaymentService:
     def format_tariffs_text(self, balance: int) -> str:
         """Format main tariffs screen text with package details."""
         from bot.texts.emoji import E
+        from bot.texts.screens import Screen
 
-        lines = [
-            f"{E.WALLET} <b>ПАКЕТЫ ТОКЕНОВ</b>\n",
-        ]
+        # Estimate how many articles/posts the balance covers
+        articles_est = balance // 320
+        posts_est = balance // 40
+
+        s = Screen(E.WALLET, "ПАКЕТЫ ТОКЕНОВ")
+        s.blank()
         for _name, pkg in PACKAGES.items():
-            lines.append(f"  <b>{pkg.label}</b>")
+            s.line(f"  <b>{pkg.label}</b>")
             if pkg.bonus > 0:
-                lines.append(f"  {pkg.tokens} + {pkg.bonus} бонус = {pkg.total_tokens} токенов")
+                s.line(f"  {pkg.tokens} + {pkg.bonus} бонус = {pkg.total_tokens} токенов")
             else:
-                lines.append(f"  {pkg.total_tokens} токенов")
-            lines.append(f"  {pkg.price_rub}\u20bd\n")
+                s.line(f"  {pkg.total_tokens} токенов")
+            s.line(f"  {pkg.price_rub}\u20bd")
+            s.blank()
 
-        lines.append(f"{E.DOC} <b>СТОИМОСТЬ ГЕНЕРАЦИИ</b>\n")
-        lines.append("  Текст (100 слов) \u2014 10 токенов")
-        lines.append("  Изображение \u2014 30 токенов\n")
-        lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-        lines.append(f"{E.WALLET} Ваш баланс: <b>{balance}</b> токенов")
-        return "\n".join(lines)
+        s.section(E.DOC, "СТОИМОСТЬ ГЕНЕРАЦИИ")
+        s.line("  Текст (100 слов) \u2014 10 токенов")
+        s.line("  Изображение \u2014 30 токенов")
+        s.separator()
+        s.line(f"{E.WALLET} Ваш баланс: <b>{balance}</b> токенов")
+        s.line(f"Хватит на ~{articles_est} статей или ~{posts_est} постов")
+        return s.build()
 
     def format_package_text(self, package_name: str) -> str:
         """Format package info for payment method selection."""
         from bot.texts.emoji import E
+        from bot.texts.screens import Screen
 
         pkg = get_package(package_name) or PACKAGES["mini"]
+        s = Screen(E.CART_ADD, pkg.label)
+        s.blank()
         if pkg.bonus > 0:
-            tokens_line = f"  {pkg.tokens} + {pkg.bonus} бонус = {pkg.total_tokens} токенов"
+            s.line(f"  {pkg.tokens} + {pkg.bonus} бонус = {pkg.total_tokens} токенов")
         else:
-            tokens_line = f"  {pkg.total_tokens} токенов"
-        return (
-            f"{E.CART_ADD} <b>{pkg.label}</b>\n\n"
-            f"{tokens_line}\n"
-            f"  Цена: {pkg.price_rub} руб.\n\n"
-            "Выберите способ оплаты:"
-        )
+            s.line(f"  {pkg.total_tokens} токенов")
+        s.line(f"  Цена: {pkg.price_rub} руб.")
+        s.blank()
+        s.line("Выберите способ оплаты:")
+        return s.build()
 
     def format_payment_link_text(self, package_name: str) -> str:
         """Format text for YooKassa payment link screen."""
         from bot.texts.emoji import E
+        from bot.texts.screens import Screen
 
         pkg = get_package(package_name) or PACKAGES["mini"]
         return (
-            f"{E.CREDIT_CARD} <b>ОПЛАТА</b>\n\n"
-            f"Пакет: <b>{pkg.label}</b> \u2014 {pkg.price_rub} руб.\n\n"
-            "Нажмите кнопку для перехода на страницу оплаты."
+            Screen(E.CREDIT_CARD, "ОПЛАТА")
+            .blank()
+            .line(f"Пакет: <b>{pkg.label}</b> \u2014 {pkg.price_rub} руб.")
+            .blank()
+            .line("Нажмите кнопку для перехода на страницу оплаты.")
+            .build()
         )
