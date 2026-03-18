@@ -183,7 +183,8 @@ class VKPublisher(BasePublisher):
         attachments: list[str] = []
 
         # 1. Upload photo (3-step: get server -> upload -> save)
-        if request.images:
+        images_to_upload = list(request.images) if request.images else []
+        if images_to_upload:
             # Step 1: get upload URL
             resp = await self._client.post(
                 f"{VK_API_URL}/photos.getWallUploadServer",
@@ -195,13 +196,20 @@ class VKPublisher(BasePublisher):
                 timeout=15,
             )
             server_data = resp.json()
-            self._check_vk_response(server_data, "getWallUploadServer")
-            upload_url = server_data["response"]["upload_url"]
+            if "error" in server_data and server_data["error"].get("error_code") == 27:
+                # Community token doesn't support photo upload (VK API change Aug 2025)
+                # Graceful degradation: publish text without images
+                log.warning("vk_photo_upload_unavailable", group_id=group_id)
+                images_to_upload = []
+            else:
+                self._check_vk_response(server_data, "getWallUploadServer")
+                upload_url = server_data["response"]["upload_url"]
 
+        if images_to_upload:
             # Step 2: upload file
             upload_resp = await self._client.post(
                 upload_url,
-                files={"photo": ("image.png", request.images[0], "image/png")},
+                files={"photo": ("image.png", images_to_upload[0], "image/png")},
                 timeout=30,
             )
             upload_data = upload_resp.json()
