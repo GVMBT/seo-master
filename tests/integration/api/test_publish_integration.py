@@ -256,6 +256,7 @@ async def test_publish_reason_templates():
     expected_keys = {
         "insufficient_balance",
         "no_keywords",
+        "no_available_keyword",
         "connection_inactive",
         "content_validation_failed",
         "ai_service_unavailable",
