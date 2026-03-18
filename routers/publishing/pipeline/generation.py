@@ -181,13 +181,14 @@ def _build_confirm_text(fsm_data: dict[str, Any], report: Any, user: User) -> st
     if is_god:
         cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE — бесплатно)"
 
+    wp_line = f"\n{E.WORDPRESS} \u2192 {wp_display}" if wp_display else ""
+
     return (
         f"{E.DOC} <b>СТАТЬЯ (5/5) \u2014 ПОДТВЕРЖДЕНИЕ</b>\n\n"
-        f"{E.FOLDER} Проект: {project_name}"
-        f"{' \u2192 ' + wp_display if wp_display else ''}\n"
-        f"{E.HASHTAG} Тема: {category_name}\n"
+        f"{E.FOLDER} Проект: {project_name}{wp_line}\n"
+        f"{E.HASHTAG} Тема: {category_name}\n\n"
         f"{E.HASHTAG} Ключевики: {report.keyword_count} фраз\n"
-        f"{E.IMAGE} Изображения: {report.image_count} шт.\n"
+        f"{E.IMAGE} Изображения: {report.image_count} шт.\n\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
         f"{E.WALLET} {cost_line}\n"
         f"Баланс: {report.user_balance} ток."

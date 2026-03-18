@@ -60,8 +60,10 @@ async def nav_profile(
     last_completed = next((p for p in last_payments if p.status == "completed"), None)
 
     lines = [
-        f"{E.USER} <b>ПРОФИЛЬ</b>\n",
-        f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов\n",
+        f"{E.USER} <b>ПРОФИЛЬ</b>",
+        "",
+        f"{E.WALLET} Баланс: <b>{user.balance}</b> токенов",
+        "",
         f"{E.FOLDER} Проектов: {stats['project_count']}",
         f"{E.HASHTAG} Категорий: {stats['category_count']}",
         f"{E.SCHEDULE} Расписаний: {stats['schedule_count']}",
@@ -69,14 +71,14 @@ async def nav_profile(
     ]
 
     if stats["posts_per_week"] > 0:
-        lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+        lines.append("")
         lines.append(
             f"{E.CHART} ~{stats['tokens_per_week']} ток/нед"
             f"  \u00b7  ~{stats['tokens_per_month']} ток/мес"
         )
 
     # Footer with registration and payment info
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append("\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
     lines.append(f"Регистрация: {reg_str}")
     if last_completed and last_completed.created_at:
         pay_date = last_completed.created_at.strftime("%d.%m.%Y")

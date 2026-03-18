@@ -78,9 +78,10 @@ async def show_project_card(
 
     lines = [header, ""]
     lines.extend(platform_lines)
+    lines.append("")
     lines.append(f"{E.FOLDER} Категорий: {len(card_data.categories)}")
     lines.append(f"{E.ANALYTICS} Публикаций: {card_data.pub_count}")
-    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append("\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
     lines.append(f"{E.LIGHTBULB} <i>Управляйте проектом и контентом</i>")
     text = "\n".join(lines)
     has_keywords = any(cat.keywords for cat in card_data.categories)

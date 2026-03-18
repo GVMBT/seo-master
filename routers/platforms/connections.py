@@ -299,10 +299,10 @@ async def manage_connection(
     text = (
         f"{icon} <b>ПОДКЛЮЧЕНИЕ</b>\n\n"
         f"Платформа: {plat_label}\n"
-        f"Идентификатор: {safe_id}\n"
+        f"Идентификатор: {safe_id}\n\n"
         f"Статус: {status_icon} {status_text}\n"
         f"Подключено: {created_str}\n"
-        f"{E.ANALYTICS} Публикаций: {pub_count}\n"
+        f"{E.ANALYTICS} Публикаций: {pub_count}\n\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
         f"{E.LIGHTBULB} <i>Управляйте подключением</i>"
     )

@@ -68,9 +68,11 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     category_name = html.escape(fsm_data.get("category_name", ""))
 
     lines: list[str] = [
-        f"{E.DOC} <b>СТАТЬЯ (4/5) \u2014 ПОДГОТОВКА</b>\n",
-        f"{E.FOLDER} Проект: {project_name}\n",
-        f"{E.HASHTAG} Тема: {category_name}\n",
+        f"{E.DOC} <b>СТАТЬЯ (4/5) \u2014 ПОДГОТОВКА</b>",
+        "",
+        f"{E.FOLDER} Проект: {project_name}",
+        f"{E.HASHTAG} Тема: {category_name}",
+        "",
     ]
 
     # Description status (first -- keywords are generated from it)
@@ -102,6 +104,7 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
         lines.append(f"{E.CLOSE} Медиа")
 
     # Cost estimate
+    lines.append("")
     lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
     lines.append(f"{E.WALLET} Стоимость: ~{report.estimated_cost} ток.")
 
