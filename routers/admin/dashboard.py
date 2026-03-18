@@ -22,6 +22,7 @@ from bot.exceptions import AppError
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import AdminServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from cache.client import RedisClient
@@ -87,7 +88,7 @@ async def admin_panel(
 ) -> None:
     """Show admin panel with aggregated stats."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -101,7 +102,7 @@ async def admin_panel(
     stats = await admin_svc.get_panel_stats()
 
     text = (
-        Screen(E.CROWN, "АДМИН-ПАНЕЛЬ")
+        Screen(E.CROWN, S.ADMIN_TITLE)
         .blank()
         .line(f"Пользователей: {stats.total_users}")
         .line(f"Оплативших: {stats.paid_users}")
@@ -131,7 +132,7 @@ async def admin_api_status(
 ) -> None:
     """Show all external service statuses with latency and credits."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -156,7 +157,7 @@ async def admin_api_status(
     credits_str = f"${status.openrouter_credits:.2f}" if status.openrouter_credits is not None else "\u2014"
 
     text = (
-        Screen(E.PULSE, "МОНИТОРИНГ")
+        Screen(E.PULSE, S.MONITORING_TITLE)
         .section(E.AI_BRAIN, "AI")
         .line(f"{or_icon} OpenRouter (кредиты: {credits_str})")
         .line(f"{qs_icon} QStash")
@@ -183,7 +184,7 @@ async def admin_api_costs(
 ) -> None:
     """Show API cost summary for 7/30/90 days."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -198,7 +199,7 @@ async def admin_api_costs(
     )
 
     text = (
-        f"{E.WALLET} <b>ЗАТРАТЫ API</b>\n\n"
+        f"{E.WALLET} <b>{S.API_COSTS_TITLE}</b>\n\n"
         f"7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
     )
 
@@ -238,7 +239,7 @@ def _format_user_card(card: UserCard) -> str:
 async def user_lookup_start(callback: CallbackQuery, user: User, state: FSMContext) -> None:
     """Start user lookup flow: ask for user_id or @username."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -252,7 +253,7 @@ async def user_lookup_start(callback: CallbackQuery, user: User, state: FSMConte
     await state.set_state(UserLookupFSM.waiting_input)
     await safe_edit_text(
         msg,
-        "<b>Просмотр пользователя</b>\n\nОтправьте ID (число) или @username:",
+        f"<b>Просмотр пользователя</b>\n\n{S.ADMIN_USER_LOOKUP_PROMPT}",
         reply_markup=_BACK_TO_PANEL_KB,
     )
     await callback.answer()
@@ -285,7 +286,7 @@ async def user_lookup_input(
     await state.clear()
 
     if card is None:
-        await message.answer("Пользователь не найден.", reply_markup=_BACK_TO_PANEL_KB)
+        await message.answer(S.ADMIN_USER_NOT_FOUND, reply_markup=_BACK_TO_PANEL_KB)
         return
 
     text = _format_user_card(card)
@@ -301,7 +302,7 @@ async def user_lookup_input(
 async def user_balance_start(callback: CallbackQuery, user: User, state: FSMContext) -> None:
     """Start balance adjustment FSM: ask for amount."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -319,10 +320,10 @@ async def user_balance_start(callback: CallbackQuery, user: User, state: FSMCont
     await state.set_state(BalanceAdjustFSM.waiting_amount)
     await state.update_data(balance_target_id=target_id, balance_action=action)
 
-    label = "начисления" if action == "credit" else "списания"
+    label = S.ADMIN_BALANCE_CREDIT_LABEL if action == "credit" else S.ADMIN_BALANCE_DEBIT_LABEL
     await safe_edit_text(
         msg,
-        f"Введите сумму для {label} (целое число):",
+        S.ADMIN_BALANCE_INPUT.format(action=label),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Отмена", callback_data=f"admin:user:{target_id}:card")],
@@ -346,7 +347,7 @@ async def user_balance_input(
         return
     raw = (message.text or "").strip()
     if not raw.isdigit() or int(raw) <= 0:
-        await message.answer("Введите положительное целое число.")
+        await message.answer(S.ADMIN_BALANCE_INPUT_ERROR)
         return
 
     amount = int(raw)
@@ -376,7 +377,7 @@ async def user_balance_input(
 
     verb = "Начислено" if action == "credit" else "Списано"
     await message.answer(
-        f"{verb}: {amount} токенов\nНовый баланс: {result.new_balance}",
+        S.ADMIN_BALANCE_DONE.format(verb=verb, amount=amount, balance=result.new_balance),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="К карточке", callback_data=f"admin:user:{target_id}:card")],
@@ -401,7 +402,7 @@ async def user_block_toggle(
 ) -> None:
     """Block or unblock a user."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -414,7 +415,7 @@ async def user_block_toggle(
 
     # Self-block protection
     if target_id == user.id:
-        await callback.answer("Нельзя заблокировать себя", show_alert=True)
+        await callback.answer(S.ADMIN_BLOCK_SELF, show_alert=True)
         return
 
     settings = get_settings()
@@ -457,7 +458,7 @@ async def user_activity(
 ) -> None:
     """Show recent publications for a user."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -469,7 +470,7 @@ async def user_activity(
     pubs = await admin_svc.get_recent_publications(target_id, limit=5)
 
     if not pubs:
-        text = f"<b>Активность #{target_id}</b>\n\nПубликаций нет."
+        text = f"<b>Активность #{target_id}</b>\n\n{S.ADMIN_NO_PUBLICATIONS}"
     else:
         lines = [f"<b>Активность #{target_id}</b>\n"]
         for p in pubs:
@@ -506,7 +507,7 @@ async def user_card_reload(
 ) -> None:
     """Reload and show user card (also serves as cancel target for FSMs)."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -519,7 +520,7 @@ async def user_card_reload(
     card = await admin_svc.lookup_user(user_id=target_id)
 
     if card is None:
-        await safe_edit_text(msg, "Пользователь не найден.", reply_markup=_BACK_TO_PANEL_KB)
+        await safe_edit_text(msg, S.ADMIN_USER_NOT_FOUND, reply_markup=_BACK_TO_PANEL_KB)
         await callback.answer()
         return
 
@@ -537,7 +538,7 @@ async def user_card_reload(
 async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext) -> None:
     """Start broadcast FSM."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -551,18 +552,13 @@ async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext
     await state.set_state(BroadcastFSM.audience)
     await safe_edit_text(
         msg,
-        f"{E.MEGAPHONE} <b>РАССЫЛКА</b>\n\n<i>Выберите аудиторию:</i>",
+        f"{E.MEGAPHONE} <b>{S.BROADCAST_TITLE}</b>\n\n<i>{S.BROADCAST_AUDIENCE_PROMPT}</i>",
         reply_markup=broadcast_audience_kb(),
     )
     await callback.answer()
 
 
-_AUDIENCE_LABELS: dict[str, str] = {
-    "all": "Все пользователи",
-    "active_7d": "Активные 7 дней",
-    "active_30d": "Активные 30 дней",
-    "paid": "Оплатившие",
-}
+_AUDIENCE_LABELS: dict[str, str] = S.AUDIENCE_LABELS
 
 
 @router.callback_query(
@@ -578,7 +574,7 @@ async def broadcast_audience(
 ) -> None:
     """Select audience, show count, ask for text."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:
@@ -600,7 +596,7 @@ async def broadcast_audience(
         f"<b>Рассылка</b>\n\n"
         f"Аудитория: {_AUDIENCE_LABELS.get(audience_key, audience_key)}\n"
         f"Получателей: ~{count}\n\n"
-        f"Отправьте текст сообщения:",
+        f"{S.BROADCAST_TEXT_PROMPT}",
         reply_markup=_BACK_TO_PANEL_KB,
     )
     await callback.answer()
@@ -639,7 +635,7 @@ async def broadcast_confirm(
 ) -> None:
     """Execute broadcast with rate limiting and progress updates."""
     if not _is_admin(user):
-        await callback.answer("Доступ запрещён", show_alert=True)
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
     msg = safe_message(callback)
     if not msg:

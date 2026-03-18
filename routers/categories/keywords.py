@@ -27,6 +27,7 @@ from aiogram.types import (
 
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from db.client import SupabaseClient
@@ -122,8 +123,8 @@ def _build_keywords_summary(category: Any) -> str:
     s.blank()
 
     if not clusters:
-        s.line("Фразы не добавлены.")
-        s.hint("Ключевики \u2014 основа для качественных статей")
+        s.line(S.KEYWORDS_EMPTY)
+        s.hint(S.KEYWORDS_HINT)
         return s.build()
 
     total_phrases = sum(len(c.get("phrases", [])) for c in clusters)
@@ -134,7 +135,7 @@ def _build_keywords_summary(category: Any) -> str:
     s.line(f"Фраз: {total_phrases}")
     if total_volume > 0:
         s.line(f"Объём: {total_volume:,}/мес")
-    s.hint("Ключевики \u2014 основа для качественных статей")
+    s.hint(S.KEYWORDS_HINT)
     return s.build()
 
 
@@ -158,7 +159,7 @@ async def _return_to_keywords(
     cats_repo = CategoriesRepository(db)
     category = await cats_repo.get_by_id(cat_id)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     text = _build_keywords_summary(category)
@@ -249,7 +250,7 @@ async def show_keywords(
     _, category, _ = await _check_category_ownership(category_id, user, db)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     text = _build_keywords_summary(category)
@@ -286,7 +287,7 @@ async def start_generation(
     _, category, project_id = await _check_category_ownership(cat_id, user, db)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
@@ -345,8 +346,7 @@ async def start_generation(
         )
         await safe_edit_text(
             msg,
-            "Укажите географию продвижения:\n"
-            "<i>Например: Москва, Россия, СНГ</i>\n\nОт 2 до 200 символов.",
+            S.KEYWORDS_GEO_PROMPT,
             reply_markup=cancel_kb(f"kw:{cat_id}:gen_cancel"),
         )
         await callback.answer()
@@ -374,7 +374,7 @@ async def start_upload(
     _, category, project_id = await _check_category_ownership(cat_id, user, db)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
@@ -390,9 +390,10 @@ async def start_upload(
 
     await safe_edit_text(
         msg,
-        "Загрузите текстовый файл (.txt) с ключевыми фразами.\n"
-        "Каждая фраза на отдельной строке.\n\n"
-        f"Максимум: {_MAX_PHRASES} фраз, {_MAX_FILE_SIZE // (1024 * 1024)} МБ.",
+        S.KEYWORDS_UPLOAD_PROMPT.format(
+            max_phrases=_MAX_PHRASES,
+            max_size_mb=_MAX_FILE_SIZE // (1024 * 1024),
+        ),
         reply_markup=cancel_kb(f"kw:{cat_id}:upl_cancel"),
     )
     await callback.answer()
@@ -419,7 +420,7 @@ async def show_cluster_list(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
@@ -455,7 +456,7 @@ async def paginate_clusters(
 
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
@@ -492,7 +493,7 @@ async def show_cluster_detail(
 
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
@@ -563,7 +564,7 @@ async def download_csv(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
@@ -627,7 +628,7 @@ async def show_delete_cluster_list(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
@@ -637,7 +638,7 @@ async def show_delete_cluster_list(
 
     await safe_edit_text(
         msg,
-        "Выберите кластер для удаления:",
+        S.KEYWORDS_SELECT_DELETE,
         reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=1),
     )
     await callback.answer()
@@ -661,13 +662,13 @@ async def paginate_delete_clusters(
 
     _, category, _ = await _check_category_ownership(cat_id, user, db)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
     await safe_edit_text(
         msg,
-        "Выберите кластер для удаления:",
+        S.KEYWORDS_SELECT_DELETE,
         reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=page),
     )
     await callback.answer()
@@ -691,7 +692,7 @@ async def delete_single_cluster(
 
     cats_repo, category, _ = await _check_category_ownership(cat_id, user, db)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     clusters: list[dict[str, Any]] = list(category.keywords or [])
@@ -708,13 +709,14 @@ async def delete_single_cluster(
     if clusters:
         await safe_edit_text(
             msg,
-            f"Кластер «{html.escape(removed_name)}» удалён.\n\nВыберите кластер для удаления:",
+            S.KEYWORDS_CLUSTER_DELETED.format(name=html.escape(removed_name))
+            + "\n\n" + S.KEYWORDS_SELECT_DELETE,
             reply_markup=keywords_cluster_delete_list_kb(clusters, cat_id, page=1),
         )
     else:
         await safe_edit_text(
             msg,
-            f"Кластер «{html.escape(removed_name)}» удалён. Фразы закончились.",
+            S.KEYWORDS_CLUSTER_DELETED_EMPTY.format(name=html.escape(removed_name)),
             reply_markup=keywords_empty_kb(cat_id),
         )
 
@@ -742,7 +744,7 @@ async def delete_all_ask(
     _, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     clusters: list[dict[str, Any]] = category.keywords or []
@@ -750,9 +752,9 @@ async def delete_all_ask(
 
     await safe_edit_text(
         msg,
-        f"{E.WARNING} <b>УДАЛЕНИЕ КЛЮЧЕВЫХ ФРАЗ</b>\n\n"
-        f"Удалить все фразы ({total} фраз, {len(clusters)} кластеров)?\n"
-        "Это действие необратимо.",
+        f"{E.WARNING} <b>{S.KEYWORDS_DELETE_ALL_TITLE}</b>\n\n"
+        + S.KEYWORDS_DELETE_ALL_QUESTION.format(total=total, clusters=len(clusters))
+        + "\n" + S.KEYWORDS_DELETE_ALL_WARNING,
         reply_markup=keywords_delete_all_confirm_kb(cat_id),
     )
     await callback.answer()
@@ -774,7 +776,7 @@ async def delete_all_confirm(
     cats_repo, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     await cats_repo.update_keywords(cat_id, [])
@@ -785,9 +787,9 @@ async def delete_all_confirm(
     await safe_edit_text(
         msg,
         f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n\n"
-        f"{E.CHECK} Все фразы удалены.\n"
+        f"{E.CHECK} {S.KEYWORDS_DELETED_ALL}\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Ключевики \u2014 основа для качественных статей</i>",
+        f"{E.LIGHTBULB} <i>{S.KEYWORDS_HINT}</i>",
         reply_markup=keywords_empty_kb(cat_id),
     )
     await callback.answer()
@@ -825,7 +827,7 @@ async def cancel_generation_inline(
         await callback.answer()
         return
 
-    await safe_edit_text(msg, "Подбор фраз отменён.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.KEYWORDS_GENERATION_CANCELLED, reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -856,5 +858,5 @@ async def cancel_upload_inline(
         await callback.answer()
         return
 
-    await safe_edit_text(msg, "Загрузка отменена.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.KEYWORDS_UPLOAD_CANCELLED, reply_markup=menu_kb())
     await callback.answer()

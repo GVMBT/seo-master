@@ -13,6 +13,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from bot.validators import URL_RE
@@ -65,19 +66,7 @@ def _truncate(text: str, max_len: int) -> str:
     return text[:max_len] + "…" if len(text) > max_len else text
 
 
-_FIELD_LABELS: dict[str, str] = {
-    "name": "название проекта",
-    "company_name": "название компании",
-    "specialization": "специализацию",
-    "website_url": "URL сайта",
-    "description": "описание компании",
-    "advantages": "преимущества",
-    "experience": "опыт работы",
-    "company_city": "город",
-    "company_address": "адрес",
-    "company_phone": "телефон",
-    "company_email": "email",
-}
+_FIELD_LABELS: dict[str, str] = S.FIELD_LABELS
 
 _FIELD_LIMITS: dict[str, tuple[int, int]] = {
     "name": (2, 100),
@@ -94,35 +83,23 @@ _FIELD_LIMITS: dict[str, tuple[int, int]] = {
 }
 
 # Display label capitalized for edit prompt header
-_FIELD_DISPLAY: dict[str, str] = {
-    "name": "Название проекта",
-    "company_name": "Название компании",
-    "specialization": "Специализация",
-    "website_url": "URL сайта",
-    "description": "Описание компании",
-    "advantages": "Преимущества",
-    "experience": "Опыт работы",
-    "company_city": "Город",
-    "company_address": "Адрес",
-    "company_phone": "Телефон",
-    "company_email": "Email",
-}
+_FIELD_DISPLAY: dict[str, str] = S.FIELD_DISPLAY
 
 
 def _build_field_edit_prompt(field: str, current_value: str) -> str:
     """Build structured edit prompt with header, current value, and hint."""
     display_label = _FIELD_DISPLAY.get(field, field)
-    s = Screen(E.PEN, "РЕДАКТИРОВАНИЕ")
+    s = Screen(E.PEN, S.PROJECT_EDIT_TITLE)
     s.blank()
     s.line(f"Поле: <b>{display_label}</b>")
     s.blank()
     if current_value:
         display_value = html.escape(_truncate(current_value, 100))
-        s.line("Текущее значение:")
+        s.line(f"{S.PROJECT_EDIT_CURRENT}")
         s.line(f"<i>{display_value}</i>")
     else:
-        s.line("Текущее значение: <i>не заполнено</i>")
-    s.hint("Введите новое значение")
+        s.line(f"{S.PROJECT_EDIT_CURRENT} <i>{S.PROJECT_EDIT_EMPTY}</i>")
+    s.hint(S.PROJECT_EDIT_PROMPT)
     return s.build()
 
 
@@ -150,7 +127,7 @@ async def start_create(
     under_limit = await proj_svc.check_project_limit(user.id)
     if not under_limit:
         await callback.answer(
-            f"Достигнут лимит проектов ({MAX_PROJECTS_PER_USER}).",
+            S.PROJECT_LIMIT_REACHED.format(limit=MAX_PROJECTS_PER_USER),
             show_alert=True,
         )
         return
@@ -163,11 +140,11 @@ async def start_create(
     await state.update_data(last_update_time=time.time())
 
     text = (
-        Screen(E.FOLDER, "НОВЫЙ ПРОЕКТ")
+        Screen(E.FOLDER, S.PROJECT_CREATE_TITLE)
         .blank()
-        .line("Как назовём проект?")
-        .line("Это внутреннее имя для вашего удобства.")
-        .hint("Пример: Мебель Комфорт")
+        .line(S.PROJECT_CREATE_QUESTION)
+        .line(S.PROJECT_CREATE_INTERNAL)
+        .hint(S.PROJECT_CREATE_HINT)
         .build()
     )
     await msg.answer(text, reply_markup=cancel_kb("project:create:cancel"))
@@ -187,11 +164,11 @@ async def process_name(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание проекта отменено.", reply_markup=menu_kb())
+        await message.answer(S.PROJECT_CREATE_CANCELLED, reply_markup=menu_kb())
         return
 
     if len(text) < 2 or len(text) > 100:
-        await message.answer("Название должно быть от 2 до 100 символов. Попробуйте ещё раз.")
+        await message.answer(S.VALIDATION_NAME_LENGTH)
         return
 
     await state.clear()
@@ -202,12 +179,12 @@ async def process_name(
     )
 
     if not project:
-        await message.answer("Достигнут лимит проектов.", reply_markup=menu_kb())
+        await message.answer(S.PROJECT_LIMIT_REACHED.format(limit=MAX_PROJECTS_PER_USER), reply_markup=menu_kb())
         return
 
     safe_name = html.escape(project.name)
     await message.answer(
-        f"Проект «{safe_name}» создан!",
+        S.PROJECT_CREATED.format(name=safe_name),
         reply_markup=project_created_kb(project.id),
     )
 
@@ -237,7 +214,7 @@ async def show_edit_screen(
     proj_svc = project_service_factory(db)
     project = await proj_svc.get_owned_project(project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     text = _build_edit_text(project)
@@ -263,7 +240,7 @@ def _build_edit_text(project: Project) -> str:
     ]
     basic_lines = _render_section_fields(basic_fields)
     if basic_lines:
-        s.section(E.FOLDER, "Основное")
+        s.section(E.FOLDER, S.SECTION_BASIC)
         for ln in basic_lines:
             s.line(ln)
 
@@ -275,7 +252,7 @@ def _build_edit_text(project: Project) -> str:
     ]
     about_lines = _render_section_fields(about_fields)
     if about_lines:
-        s.section(E.DOC, "О компании")
+        s.section(E.DOC, S.SECTION_ABOUT)
         for ln in about_lines:
             s.line(ln)
 
@@ -289,11 +266,11 @@ def _build_edit_text(project: Project) -> str:
     ]
     contact_lines = _render_section_fields(contact_fields)
     if contact_lines:
-        s.section(E.LINK, "Контакты")
+        s.section(E.LINK, S.SECTION_CONTACTS)
         for ln in contact_lines:
             s.line(ln)
 
-    s.hint("Нажмите на поле для редактирования")
+    s.hint(S.PROJECT_EDIT_HINT)
     return s.build()
 
 
@@ -327,13 +304,13 @@ async def start_field_edit(
     field = parts[3]
 
     if field not in _FIELD_LABELS:
-        await callback.answer("Неизвестное поле.", show_alert=True)
+        await callback.answer(S.UNKNOWN_FIELD, show_alert=True)
         return
 
     proj_svc = project_service_factory(db)
     project = await proj_svc.get_owned_project(project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
@@ -381,7 +358,7 @@ async def process_field_value(
                     reply_markup=project_edit_kb(int(project_id), _project_completed(project)),
                 )
                 return
-        await message.answer("Редактирование отменено.", reply_markup=menu_kb())
+        await message.answer(S.PROJECT_EDIT_CANCELLED, reply_markup=menu_kb())
         return
 
     data = await state.get_data()
@@ -396,16 +373,16 @@ async def process_field_value(
         if text.lower() in ("нет", "-", ""):
             text = ""
         elif not URL_RE.match(text):
-            await message.answer("Некорректный URL. Попробуйте ещё раз.")
+            await message.answer(S.VALIDATION_URL_INVALID)
             return
         else:
             if not text.startswith("http"):
                 text = f"https://{text}"
             if len(text) > max_len:
-                await message.answer(f"URL слишком длинный (макс. {max_len} символов).")
+                await message.answer(S.VALIDATION_URL_TOO_LONG.format(max=max_len))
                 return
     elif len(text) < min_len or len(text) > max_len:
-        await message.answer(f"Значение: от {min_len} до {max_len} символов.")
+        await message.answer(S.VALIDATION_FIELD_LENGTH.format(min=min_len, max=max_len))
         return
 
     await state.clear()
@@ -416,10 +393,10 @@ async def process_field_value(
 
     if project:
         label = _FIELD_LABELS.get(field, field)
-        edit_text = f"Поле «{label}» обновлено.\n\n" + _build_edit_text(project)
+        edit_text = S.PROJECT_EDIT_UPDATED.format(label=label) + "\n\n" + _build_edit_text(project)
         await message.answer(edit_text, reply_markup=project_edit_kb(project_id, _project_completed(project)))
     else:
-        await message.answer(f"{E.WARNING} Ошибка обновления. Попробуйте позже.", reply_markup=menu_kb())
+        await message.answer(f"{E.WARNING} " + S.ERROR_UPDATE, reply_markup=menu_kb())
 
     log.info("project_field_updated", project_id=project_id, field=field, user_id=user.id)
 
@@ -441,7 +418,7 @@ async def cancel_create(
         return
 
     await state.clear()
-    await safe_edit_text(msg, "Создание проекта отменено.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.PROJECT_CREATE_CANCELLED, reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -476,5 +453,5 @@ async def cancel_edit(
             await callback.answer()
             return
 
-    await safe_edit_text(msg, "Редактирование отменено.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.PROJECT_EDIT_CANCELLED, reply_markup=menu_kb())
     await callback.answer()

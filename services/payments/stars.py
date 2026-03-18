@@ -169,9 +169,11 @@ class StarsPaymentService:
 
         Returns (ok, error_message). error_message is empty when ok=True.
         """
+        from bot.texts import strings as S
+
         parts = payload.split(":")
         if len(parts) != 3:
-            return False, "Некорректный формат платежа."
+            return False, S.PAYMENT_PRE_CHECKOUT_ERROR
 
         action, name, user_part = parts
 
@@ -179,13 +181,13 @@ class StarsPaymentService:
         expected_user = f"user_{user_id}"
         if user_part != expected_user:
             log.warning("pre_checkout_user_mismatch", payload=payload, user_id=user_id)
-            return False, "Ошибка идентификации пользователя."
+            return False, S.PAYMENT_USER_MISMATCH
 
         if action == "purchase":
             if get_package(name) is None:
-                return False, "Пакет не найден."
+                return False, S.PAYMENT_PACKAGE_NOT_FOUND
         else:
-            return False, "Неизвестный тип платежа."
+            return False, S.PAYMENT_UNKNOWN_TYPE
 
         return True, ""
 
@@ -365,6 +367,7 @@ class StarsPaymentService:
 
     def format_tariffs_text(self, balance: int) -> str:
         """Format main tariffs screen text with package details."""
+        from bot.texts import strings as S
         from bot.texts.emoji import E
         from bot.texts.screens import Screen
 
@@ -372,7 +375,7 @@ class StarsPaymentService:
         articles_est = balance // 320
         posts_est = balance // 40
 
-        s = Screen(E.WALLET, "ПАКЕТЫ ТОКЕНОВ")
+        s = Screen(E.WALLET, S.TARIFFS_TITLE)
         s.blank()
         for _name, pkg in PACKAGES.items():
             s.line(f"  <b>{pkg.label}</b>")
@@ -383,16 +386,17 @@ class StarsPaymentService:
             s.line(f"  {pkg.price_rub}\u20bd")
             s.blank()
 
-        s.section(E.DOC, "СТОИМОСТЬ ГЕНЕРАЦИИ")
-        s.line("  Текст (100 слов) \u2014 10 токенов")
-        s.line("  Изображение \u2014 30 токенов")
+        s.section(E.DOC, S.TARIFF_COST_HEADER)
+        s.line(f"  {S.TARIFF_COST_TEXT}")
+        s.line(f"  {S.TARIFF_COST_IMAGE}")
         s.separator()
-        s.line(f"{E.WALLET} Ваш баланс: <b>{balance}</b> токенов")
-        s.line(f"Хватит на ~{articles_est} статей или ~{posts_est} постов")
+        s.line(f"{E.WALLET} " + S.TARIFF_BALANCE_LINE.format(balance=balance))
+        s.line(S.TARIFF_ESTIMATE.format(articles=articles_est, posts=posts_est))
         return s.build()
 
     def format_package_text(self, package_name: str) -> str:
         """Format package info for payment method selection."""
+        from bot.texts import strings as S
         from bot.texts.emoji import E
         from bot.texts.screens import Screen
 
@@ -405,11 +409,12 @@ class StarsPaymentService:
             s.line(f"  {pkg.total_tokens} токенов")
         s.line(f"  Цена: {pkg.price_rub} руб.")
         s.blank()
-        s.line("Выберите способ оплаты:")
+        s.line(S.PAYMENT_PACKAGE_SELECT)
         return s.build()
 
     def format_payment_link_text(self, package_name: str) -> str:
         """Format text for YooKassa payment link screen."""
+        from bot.texts import strings as S
         from bot.texts.emoji import E
         from bot.texts.screens import Screen
 
@@ -419,6 +424,6 @@ class StarsPaymentService:
             .blank()
             .line(f"Пакет: <b>{pkg.label}</b> \u2014 {pkg.price_rub} руб.")
             .blank()
-            .line("Нажмите кнопку для перехода на страницу оплаты.")
+            .line(S.PAYMENT_LINK_TEXT)
             .build()
         )

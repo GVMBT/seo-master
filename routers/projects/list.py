@@ -8,6 +8,7 @@ from bot.helpers import safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
+from bot.texts.strings import NO_PROJECTS, PROJECTS_TITLE, WELCOME_HINT
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import project_list_empty_kb, project_list_kb
@@ -60,10 +61,10 @@ async def _show_list(
 
     if not projects:
         empty_text = (
-            Screen(E.FOLDER, "ПРОЕКТЫ")
+            Screen(E.FOLDER, PROJECTS_TITLE)
             .blank()
-            .line("У вас пока нет проектов.")
-            .hint("Создайте первый проект \u2014 это займёт 30 секунд")
+            .line(NO_PROJECTS)
+            .hint(WELCOME_HINT)
             .build()
         )
         await edit_screen(
@@ -77,7 +78,7 @@ async def _show_list(
         await edit_screen(
             msg,
             "project_card.png",
-            f"{E.FOLDER} <b>ПРОЕКТЫ</b> ({len(projects)}):",
+            f"{E.FOLDER} <b>{PROJECTS_TITLE}</b> ({len(projects)}):",
             reply_markup=kb,
         )
     await callback.answer()

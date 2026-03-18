@@ -15,6 +15,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from db.client import SupabaseClient
@@ -106,10 +107,10 @@ async def _show_prices_screen(
 
     if prices:
         lines_count = len([ln for ln in prices.splitlines() if ln.strip()])
-        s.check("Прайс загружен", ok=True, detail=f"{lines_count} позиций")
+        s.check(S.PRICES_LOADED, ok=True, detail=f"{lines_count} позиций")
     else:
-        s.line("Прайс не загружен.")
-    s.hint("В статьях будут реальные цены ваших товаров")
+        s.line(S.PRICES_EMPTY)
+    s.hint(S.PRICES_HINT)
     text = s.build()
 
     await safe_edit_text(message, text, reply_markup=prices_kb(category_id, has_prices=bool(prices)))
@@ -138,7 +139,7 @@ async def show_prices(
     category = await cat_svc.get_owned_category(category_id, user.id)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     await _show_prices_screen(msg, category.id, category.name, category.prices)
@@ -168,7 +169,7 @@ async def start_text(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
@@ -179,11 +180,7 @@ async def start_text(
     await state.update_data(last_update_time=time.time(), prices_cat_id=cat_id)
 
     await msg.answer(
-        "Введите прайс-лист. Формат: Название \u2014 Цена\n"
-        "Каждый товар с новой строки.\n\n"
-        "<i>Пример:\n"
-        "Кухня угловая \u00abМодена\u00bb \u2014 89 900 руб\n"
-        "Стол обеденный \u00abЛофт\u00bb \u2014 24 500 руб</i>",
+        S.PRICES_TEXT_PROMPT,
         reply_markup=cancel_kb(f"price:{cat_id}:cancel"),
     )
     await callback.answer()
@@ -202,19 +199,17 @@ async def process_text(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Ввод цен отменён.", reply_markup=menu_kb())
+        await message.answer(S.PRICES_CANCELLED, reply_markup=menu_kb())
         return
 
     # Validate: at least 1 non-empty line
     lines = [ln for ln in text.splitlines() if ln.strip()]
     if not lines:
-        await message.answer(
-            "Не найдено ни одной строки. Введите прайс в формате:\nНазвание \u2014 Цена\nКаждый товар с новой строки."
-        )
+        await message.answer(S.PRICES_TEXT_EMPTY)
         return
 
     if len(lines) > _MAX_ROWS:
-        await message.answer(f"Максимум {_MAX_ROWS} строк. Сейчас: {len(lines)}.")
+        await message.answer(S.PRICES_TEXT_MAX_ROWS.format(max=_MAX_ROWS, count=len(lines)))
         return
 
     data = await state.get_data()
@@ -239,7 +234,7 @@ async def process_text(
 
     result_text = (
         f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
-        f"{E.CHECK} Прайс сохранён ({count} позиций):\n{preview}"
+        f"{E.CHECK} {S.PRICES_SAVED.format(count=count)}:\n{preview}"
     )
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 
@@ -267,7 +262,7 @@ async def start_excel(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
@@ -278,8 +273,7 @@ async def start_excel(
     await state.update_data(last_update_time=time.time(), prices_cat_id=cat_id)
 
     await msg.answer(
-        "Загрузите Excel-файл (.xlsx) с прайсом.\n"
-        "Будут использованы все столбцы. Заголовки распознаются автоматически.",
+        S.PRICES_EXCEL_PROMPT,
         reply_markup=cancel_kb(f"price:{cat_id}:cancel"),
     )
     await callback.answer()
@@ -297,7 +291,7 @@ async def handle_text_in_excel_state(
         await message.answer("Загрузка отменена.", reply_markup=menu_kb())
         return
 
-    await message.answer("Ожидается файл Excel (.xlsx). Для отмены напишите \u00abОтмена\u00bb.")
+    await message.answer(S.PRICES_EXCEL_EXPECT)
 
 
 def parse_excel_rows(file_bytes: bytes) -> list[str] | str:
@@ -369,27 +363,27 @@ async def process_excel(
     """Process uploaded Excel file (E09: max 1000 rows, 5 MB)."""
     doc = message.document
     if not doc:
-        await message.answer("Файл не найден. Загрузите .xlsx файл.")
+        await message.answer(S.FILE_NOT_FOUND)
         return
 
     filename = doc.file_name or ""
     if not filename.lower().endswith(".xlsx"):
-        await message.answer("Неверный формат. Загрузите файл с расширением .xlsx.")
+        await message.answer(S.PRICES_EXCEL_WRONG_FORMAT)
         return
 
     if doc.file_size and doc.file_size > _MAX_FILE_SIZE:
         size_mb = doc.file_size / (1024 * 1024)
-        await message.answer(f"Файл слишком большой ({size_mb:.1f} МБ). Максимум 5 МБ.")
+        await message.answer(S.PRICES_EXCEL_TOO_BIG.format(size_mb=size_mb))
         return
 
     bot = message.bot
     if not bot:
-        await message.answer("Внутренняя ошибка. Попробуйте позже.")
+        await message.answer(S.ERROR_INTERNAL)
         return
 
     file_bytes_io = await bot.download(doc)
     if not file_bytes_io:
-        await message.answer("Не удалось скачать файл. Попробуйте ещё раз.")
+        await message.answer(S.FILE_DOWNLOAD_ERROR)
         return
 
     try:
@@ -397,12 +391,12 @@ async def process_excel(
     except Exception:
         log.exception("excel_parse_error")
         await state.clear()
-        await message.answer("Не удалось прочитать файл. Убедитесь, что это корректный .xlsx.", reply_markup=menu_kb())
+        await message.answer(S.PRICES_EXCEL_READ_ERROR, reply_markup=menu_kb())
         return
 
     if result == "empty":
         await state.clear()
-        await message.answer("Файл пуст. Загрузите файл с данными.", reply_markup=menu_kb())
+        await message.answer(S.PRICES_EXCEL_EMPTY, reply_markup=menu_kb())
         return
 
     if result == "too_many_rows":
@@ -413,9 +407,7 @@ async def process_excel(
     lines = result
     if not lines:
         await state.clear()
-        await message.answer(
-            "В файле не найдено данных. Загрузите файл с заполненными строками.", reply_markup=menu_kb()
-        )
+        await message.answer(S.PRICES_EXCEL_NO_DATA, reply_markup=menu_kb())
         return
 
     data = await state.get_data()
@@ -436,7 +428,7 @@ async def process_excel(
 
     result_text = (
         f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
-        f"{E.CHECK} Файл загружен ({count} позиций)"
+        f"{E.CHECK} {S.PRICES_EXCEL_UPLOADED.format(count=count)}"
     )
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 
@@ -464,7 +456,7 @@ async def delete_prices(
     category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     await cat_svc.clear_prices(cat_id, user.id)
@@ -472,7 +464,7 @@ async def delete_prices(
     log.info("prices_deleted", category_id=cat_id, user_id=user.id)
 
     await _show_prices_screen(msg, category.id, category.name, None)
-    await callback.answer("Прайс удалён.")
+    await callback.answer(S.PRICES_DELETED)
 
 
 # ---------------------------------------------------------------------------
@@ -507,5 +499,5 @@ async def cancel_prices_inline(
         await callback.answer()
         return
 
-    await safe_edit_text(msg, "Ввод цен отменён.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.PRICES_CANCELLED, reply_markup=menu_kb())
     await callback.answer()

@@ -13,6 +13,7 @@ from bot.assets import edit_screen
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import get_owned_project, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from db.client import SupabaseClient
@@ -63,7 +64,7 @@ async def show_category_list(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await get_owned_project(db, project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     cat_svc = category_service_factory(db)
@@ -74,12 +75,9 @@ async def show_category_list(
         empty_text = (
             Screen(E.FOLDER, f"{safe_name} \u2014 Категории")
             .blank()
-            .line("Категорий пока нет.")
+            .line(S.CATEGORY_EMPTY)
             .blank()
-            .line(
-                "Категория = тема контента "
-                "(например: \u00abSEO-оптимизация\u00bb или \u00abКулинарные рецепты\u00bb)."
-            )
+            .line(S.CATEGORY_EMPTY_HINT)
             .build()
         )
         await edit_screen(
@@ -118,13 +116,13 @@ async def paginate_categories(
 
     project = await get_owned_project(db, project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     cat_svc = category_service_factory(db)
     categories = await cat_svc.list_by_project(project_id, user.id)
     if categories is None:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     safe_name = html.escape(project.name)
@@ -159,14 +157,14 @@ async def start_category_create(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await get_owned_project(db, project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     # U14: block category creation if project website_url is not set
     if not project.website_url:
         await safe_edit_text(
             msg,
-            "Сначала заполните информацию о проекте (укажите сайт).",
+            S.CATEGORY_NEEDS_WEBSITE,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="К проекту", callback_data=f"project:{project_id}:edit")],
@@ -183,7 +181,7 @@ async def start_category_create(
         from services.categories import MAX_CATEGORIES_PER_PROJECT
 
         await callback.answer(
-            f"Достигнут лимит категорий ({MAX_CATEGORIES_PER_PROJECT}) в проекте.",
+            S.CATEGORY_LIMIT_REACHED.format(limit=MAX_CATEGORIES_PER_PROJECT),
             show_alert=True,
         )
         return
@@ -196,7 +194,7 @@ async def start_category_create(
     await state.update_data(last_update_time=time.time(), create_project_id=project_id)
 
     await msg.answer(
-        "Введите название категории.\n\n<i>Пример: Кухни на заказ</i>",
+        f"{S.CATEGORY_CREATE_PROMPT}\n\n<i>{S.CATEGORY_CREATE_EXAMPLE}</i>",
     )
     await callback.answer()
 
@@ -214,11 +212,11 @@ async def process_category_name(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Создание категории отменено.", reply_markup=menu_kb())
+        await message.answer(S.CATEGORY_CREATE_CANCELLED, reply_markup=menu_kb())
         return
 
     if len(text) < 2 or len(text) > 100:
-        await message.answer("Название: от 2 до 100 символов.")
+        await message.answer(S.CATEGORY_NAME_LENGTH)
         return
 
     data = await state.get_data()
@@ -229,12 +227,12 @@ async def process_category_name(
     category = await cat_svc.create_category(project_id, user.id, text)
 
     if not category:
-        await message.answer("Проект не найден.", reply_markup=menu_kb())
+        await message.answer(S.PROJECT_NOT_FOUND, reply_markup=menu_kb())
         return
 
     safe_name = html.escape(category.name)
     await message.answer(
-        f"Категория «{safe_name}» создана!",
+        S.CATEGORY_CREATED.format(name=safe_name),
         reply_markup=category_created_kb(category.id),
     )
     log.info("category_created", category_id=category.id, project_id=project_id, user_id=user.id)
@@ -262,7 +260,7 @@ async def show_category_card(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(category_id, user.id)
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     # Build card text via Screen builder with checklist
@@ -334,16 +332,16 @@ async def confirm_category_delete(
     cat_svc = category_service_factory(db)
     result = await cat_svc.get_delete_impact(category_id, user.id)
     if not result:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     category, active_count = result
 
     safe_name = html.escape(category.name)
-    impact_lines = [f"Удалить категорию «{safe_name}»?\n"]
+    impact_lines = [S.CATEGORY_DELETE_QUESTION.format(name=safe_name) + "\n"]
     if active_count > 0:
-        impact_lines.append(f"Будет отменено расписаний: {active_count}")
-    impact_lines.append("Это действие нельзя отменить.")
+        impact_lines.append(S.CATEGORY_DELETE_SCHEDULES.format(count=active_count))
+    impact_lines.append(S.CATEGORY_DELETE_WARNING)
 
     await safe_edit_text(
         msg,
@@ -381,13 +379,13 @@ async def execute_category_delete(
             if remaining
             else category_list_empty_kb(category.project_id)
         )
-        await safe_edit_text(msg, 
-            f"Категория «{safe_name}» удалена.",
+        await safe_edit_text(msg,
+            S.CATEGORY_DELETED.format(name=safe_name),
             reply_markup=kb,
         )
     else:
         await safe_edit_text(
-            msg, f"{E.WARNING} Не удалось удалить категорию. Попробуйте позже.", reply_markup=menu_kb(),
+            msg, f"{E.WARNING} " + S.CATEGORY_DELETE_ERROR, reply_markup=menu_kb(),
         )
 
     await callback.answer()

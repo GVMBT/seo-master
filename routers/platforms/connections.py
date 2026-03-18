@@ -25,6 +25,7 @@ from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts import strings as S
 from bot.texts.connections import (
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
@@ -86,14 +87,14 @@ def _build_connections_text(
     """Build unified connections screen text grouped by platform."""
     safe_name = html.escape(project_name)
 
-    s = Screen(E.GEAR, "МОИ ПОДКЛЮЧЕНИЯ")
+    s = Screen(E.GEAR, S.CONNECTIONS_TITLE)
     s.blank()
     s.line(f"Проект: {safe_name}")
     s.blank()
 
     if not connections:
-        s.line("Подключений пока нет.")
-        s.hint("Подключите площадки для автопостинга контента")
+        s.line(S.CONNECTIONS_EMPTY)
+        s.hint(S.CONNECTIONS_HINT)
         return s.build()
 
     # Group connections by platform_type
@@ -122,7 +123,7 @@ def _build_connections_text(
             s.line(f"  {i}. {ident}")
         s.blank()
 
-    s.hint("Подключите площадки для автопостинга контента")
+    s.hint(S.CONNECTIONS_HINT)
     return s.build()
 
 async def _run_site_analysis(
@@ -199,7 +200,7 @@ async def show_connections(
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
 
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     conn_svc = ConnectionService(db, http_client)
@@ -234,7 +235,7 @@ async def connections_list_back(
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
 
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     conn_svc = ConnectionService(db, http_client)
@@ -274,18 +275,18 @@ async def manage_connection(
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.get_by_id(conn_id)
     if not conn:
-        await callback.answer("Подключение не найдено.", show_alert=True)
+        await callback.answer(S.CONNECTIONS_NOT_FOUND, show_alert=True)
         return
 
     project = await project_service_factory(db).get_owned_project(conn.project_id, user.id)
     if not project:
-        await callback.answer("Подключение не найдено.", show_alert=True)
+        await callback.answer(S.CONNECTIONS_NOT_FOUND, show_alert=True)
         return
 
     icon = _PLAT_EMOJI.get(conn.platform_type, "")
     plat_label = _PLAT_LABEL.get(conn.platform_type, conn.platform_type.capitalize())
     status_icon = E.CHECK if conn.status == "active" else E.WARNING
-    status_text = "Активно" if conn.status == "active" else "Ошибка"
+    status_text = S.CONNECTIONS_STATUS_ACTIVE if conn.status == "active" else S.CONNECTIONS_STATUS_ERROR
     safe_id = html.escape(conn.identifier)
     created_str = conn.created_at.strftime("%d.%m.%Y") if conn.created_at else "---"
 
@@ -301,7 +302,7 @@ async def manage_connection(
         .line(f"Статус: {status_icon} {status_text}")
         .line(f"Подключено: {created_str}")
         .field(E.ANALYTICS, "Публикаций", pub_count)
-        .hint("Управляйте подключением")
+        .hint(S.CONNECTIONS_MANAGE_HINT)
         .build()
     )
     await safe_edit_text(
@@ -330,25 +331,25 @@ async def confirm_connection_delete(
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.get_by_id(conn_id)
     if not conn:
-        await callback.answer("Подключение не найдено.", show_alert=True)
+        await callback.answer(S.CONNECTIONS_NOT_FOUND, show_alert=True)
         return
 
     project = await project_service_factory(db).get_owned_project(conn.project_id, user.id)
     if not project:
-        await callback.answer("Подключение не найдено.", show_alert=True)
+        await callback.answer(S.CONNECTIONS_NOT_FOUND, show_alert=True)
         return
 
     safe_id = html.escape(conn.identifier)
     icon = _PLAT_EMOJI.get(conn.platform_type, "")
     text = (
-        Screen(E.WARNING, "УДАЛЕНИЕ ПОДКЛЮЧЕНИЯ")
+        Screen(E.WARNING, S.CONNECTIONS_DELETE_TITLE)
         .blank()
         .line(f"{icon} {conn.platform_type.capitalize()} ({safe_id})")
         .blank()
-        .line("Будут удалены:")
-        .line("\u2022 Связанные расписания")
-        .line("\u2022 Настройки кросс-постинга")
-        .hint("Это действие нельзя отменить")
+        .line(f"{S.CONNECTIONS_DELETE_LIST_HEADER}")
+        .line(f"\u2022 {S.CONNECTIONS_DELETE_ITEMS[0]}")
+        .line(f"\u2022 {S.CONNECTIONS_DELETE_ITEMS[1]}")
+        .hint(S.CONNECTIONS_DELETE_WARNING)
         .build()
     )
     await safe_edit_text(
@@ -378,12 +379,12 @@ async def execute_connection_delete(
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.get_by_id(conn_id)
     if not conn:
-        await callback.answer("Подключение не найдено.", show_alert=True)
+        await callback.answer(S.CONNECTIONS_NOT_FOUND, show_alert=True)
         return
 
     project = await project_service_factory(db).get_owned_project(conn.project_id, user.id)
     if not project:
-        await callback.answer("Подключение не найдено.", show_alert=True)
+        await callback.answer(S.CONNECTIONS_NOT_FOUND, show_alert=True)
         return
 
     project_id = conn.project_id
@@ -434,7 +435,7 @@ async def start_wp_connect(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     # Rule: 1 project = max 1 WordPress connection
@@ -442,7 +443,7 @@ async def start_wp_connect(
     existing_wp = await conn_svc.get_by_project_and_platform(project_id, "wordpress")
     if existing_wp:
         await callback.answer(
-            "К проекту уже подключён WordPress-сайт. Для другого сайта создайте новый проект.",
+            S.CONNECTIONS_WP_ALREADY,
             show_alert=True,
         )
         return
@@ -467,11 +468,11 @@ async def wp_process_url(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.", reply_markup=menu_kb())
+        await message.answer(S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
         return
 
     if not URL_RE.match(text):
-        await message.answer("Некорректный URL. Попробуйте ещё раз.")
+        await message.answer(S.VALIDATION_URL_INVALID)
         return
 
     url = text if text.startswith("http") else f"https://{text}"
@@ -490,11 +491,11 @@ async def wp_process_login(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.", reply_markup=menu_kb())
+        await message.answer(S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
         return
 
     if len(text) < 1 or len(text) > 100:
-        await message.answer("Логин: от 1 до 100 символов.")
+        await message.answer(S.VALIDATION_LOGIN_LENGTH)
         return
 
     data = await state.update_data(wp_login=text)
@@ -522,7 +523,7 @@ async def wp_process_password(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.", reply_markup=menu_kb())
+        await message.answer(S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
         return
 
     # Delete message with password for security (after cancel check)
@@ -532,7 +533,7 @@ async def wp_process_password(
         log.warning("failed_to_delete_password_message", reason=str(exc))
 
     if len(text) < 10:
-        await message.answer("Application Password слишком короткий. Попробуйте ещё раз.")
+        await message.answer(S.VALIDATION_PASSWORD_SHORT)
         return
 
     data = await state.get_data()
@@ -620,7 +621,7 @@ async def start_tg_connect(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     # Rule: 1 project = max 1 Telegram connection
@@ -628,7 +629,7 @@ async def start_tg_connect(
     existing_tg = await conn_svc.get_by_project_and_platform(project_id, "telegram")
     if existing_tg:
         await callback.answer(
-            "К проекту уже подключён Telegram-канал. Для другого канала создайте новый проект.",
+            S.CONNECTIONS_TG_ALREADY,
             show_alert=True,
         )
         return
@@ -654,11 +655,11 @@ async def tg_process_channel(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.", reply_markup=menu_kb())
+        await message.answer(S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
         return
 
     if not TG_CHANNEL_RE.match(text):
-        await message.answer("Некорректный формат. Введите @channel или t.me/channel.")
+        await message.answer(S.VALIDATION_CHANNEL_INVALID)
         return
 
     # Normalize to consistent format
@@ -690,7 +691,7 @@ async def tg_process_token(
 
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.", reply_markup=menu_kb())
+        await message.answer(S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
         return
 
     # Delete message with token for security (after cancel check)
@@ -701,7 +702,7 @@ async def tg_process_token(
 
     # Validate bot token format (roughly: digits:alphanumeric)
     if ":" not in text or len(text) < 30:
-        await message.answer("Некорректный формат токена. Попробуйте ещё раз.")
+        await message.answer(S.VALIDATION_TOKEN_INVALID)
         return
 
     data = await state.get_data()
@@ -814,7 +815,7 @@ async def start_vk_connect(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     # Rule: 1 project = max 1 VK connection
@@ -822,7 +823,7 @@ async def start_vk_connect(
     existing_vk = await conn_svc.get_by_project_and_platform(project_id, "vk")
     if existing_vk:
         await callback.answer(
-            "К проекту уже подключена VK-группа. Для другой группы создайте новый проект.",
+            S.CONNECTIONS_VK_ALREADY,
             show_alert=True,
         )
         return
@@ -863,7 +864,7 @@ async def vk_process_group_url(
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Подключение отменено.", reply_markup=menu_kb())
+        await message.answer(S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
         return
 
     group_id, screen_name = parse_vk_group_input(text)
@@ -891,7 +892,7 @@ async def vk_process_group_url(
     settings = get_settings()
     base_url = (settings.railway_public_url or "").rstrip("/")
     if not base_url:
-        await message.answer("Ошибка конфигурации сервера. Попробуйте позже.")
+        await message.answer(S.ERROR_SERVER_CONFIG)
         return
 
     vk_svc = VKOAuthService(
@@ -962,7 +963,7 @@ async def start_pinterest_connect(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     # Rule: 1 project = max 1 Pinterest connection
@@ -970,7 +971,7 @@ async def start_pinterest_connect(
     existing_pinterest = await conn_svc.get_by_project_and_platform(project_id, "pinterest")
     if existing_pinterest:
         await callback.answer(
-            "К проекту уже подключён Pinterest. Для другой доски создайте новый проект.",
+            S.CONNECTIONS_PINTEREST_ALREADY,
             show_alert=True,
         )
         return
@@ -1069,7 +1070,7 @@ async def _cancel_connection_wizard(
             await callback.answer()
             return
 
-    await safe_edit_text(msg, "Подключение отменено.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
     await callback.answer()
 
 

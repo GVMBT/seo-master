@@ -11,6 +11,16 @@ from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory, TokenServiceFactory
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
+from bot.texts.strings import (
+    PLATFORMS_NOT_CONNECTED,
+    PROJECT_CARD_HINT,
+    PROJECT_DELETE_ERROR,
+    PROJECT_DELETE_ITEMS,
+    PROJECT_DELETE_TITLE,
+    PROJECT_DELETE_WARNING,
+    PROJECT_DELETED,
+    PROJECT_NOT_FOUND,
+)
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import project_card_kb, project_delete_confirm_kb, project_deleted_kb
@@ -31,7 +41,7 @@ _PLATFORM_E: dict[str, tuple[str, str]] = {
 def _build_platform_lines(platform_types: list[str]) -> list[str]:
     """Build vertical platform list with per-platform emoji."""
     if not platform_types:
-        return [f"{E.LINK} Платформы: не подключены"]
+        return [f"{E.LINK} " + PLATFORMS_NOT_CONNECTED]
     lines: list[str] = []
     for pt in platform_types:
         emoji, name = _PLATFORM_E.get(pt, (E.LINK, pt.capitalize()))
@@ -62,7 +72,7 @@ async def show_project_card(
     proj_svc = project_service_factory(db)
     card_data = await proj_svc.build_card_data(project_id, user.id)
     if not card_data:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(PROJECT_NOT_FOUND, show_alert=True)
         return
 
     project = card_data.project
@@ -82,7 +92,7 @@ async def show_project_card(
 
     s.field(E.FOLDER, "Категорий", len(card_data.categories))
     s.field(E.ANALYTICS, "Публикаций", card_data.pub_count)
-    s.hint("Управляйте проектом и контентом")
+    s.hint(PROJECT_CARD_HINT)
     text = s.build()
     has_keywords = any(cat.keywords for cat in card_data.categories)
     kb = project_card_kb(project_id, has_keywords=has_keywords)
@@ -122,22 +132,20 @@ async def confirm_delete(
     proj_svc = project_service_factory(db)
     project = await proj_svc.get_owned_project(project_id, user.id)
     if not project:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(PROJECT_NOT_FOUND, show_alert=True)
         return
 
     safe_name = html.escape(project.name)
-    text = (
-        Screen(E.WARNING, "УДАЛЕНИЕ ПРОЕКТА")
+    s = (
+        Screen(E.WARNING, PROJECT_DELETE_TITLE)
         .blank()
         .line(f"Удалить проект \u00ab{safe_name}\u00bb?")
         .blank()
         .line("Будут удалены:")
-        .line("\u2022 Все категории и ключевики")
-        .line("\u2022 Подключения к платформам")
-        .line("\u2022 Расписания автопубликации")
-        .hint("Это действие нельзя отменить")
-        .build()
     )
+    for item in PROJECT_DELETE_ITEMS:
+        s.line(f"\u2022 {item}")
+    text = s.hint(PROJECT_DELETE_WARNING).build()
     await safe_edit_text(
         msg,
         text,
@@ -170,13 +178,13 @@ async def execute_delete(
 
     if deleted and project:
         safe_name = html.escape(project.name)
-        await safe_edit_text(msg, 
-            f"Проект «{safe_name}» удалён.",
+        await safe_edit_text(msg,
+            PROJECT_DELETED.format(name=safe_name),
             reply_markup=project_deleted_kb(),
         )
     else:
-        await safe_edit_text(msg, 
-            f"{E.WARNING} Не удалось удалить проект. Попробуйте позже.",
+        await safe_edit_text(msg,
+            f"{E.WARNING} " + PROJECT_DELETE_ERROR,
             reply_markup=project_deleted_kb(),
         )
 

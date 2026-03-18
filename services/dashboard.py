@@ -12,6 +12,19 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from bot.texts.emoji import E
+from bot.texts.strings import (
+    BALANCE_ESTIMATE,
+    BALANCE_ESTIMATE_FULL,
+    BALANCE_NEGATIVE,
+    BALANCE_ZERO,
+    FORECAST,
+    LAST_PUB,
+    NO_PROJECTS,
+    NO_PROJECTS_HINT,
+    WELCOME_HINT,
+    WELCOME_TEXT,
+    WELCOME_TITLE,
+)
 from db.client import SupabaseClient
 from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
@@ -151,33 +164,30 @@ class DashboardService:
             return (
                 Screen(E.WARNING, f"Баланс: {balance} токенов")
                 .blank()
-                .line(f"Долг {abs(balance)} токенов будет списан при следующей покупке.")
-                .line("Для генерации контента пополните баланс.")
+                .line(BALANCE_NEGATIVE.format(debt=abs(balance)))
                 .build()
             )
         if balance == 0:
             return (
                 Screen(E.WALLET, "Баланс: 0 токенов")
                 .blank()
-                .line("Для генерации контента нужно пополнить баланс.")
+                .line(BALANCE_ZERO)
                 .build()
             )
 
         if is_new_user and data.project_count == 0:
             articles_est = balance // _AVG_ARTICLE_COST
+            name_part = ", " + name if name else ""
             return (
-                Screen(E.ROCKET, "ДОБРО ПОЖАЛОВАТЬ")
+                Screen(E.ROCKET, WELCOME_TITLE)
                 .blank()
-                .line(
-                    f"Привет{', ' + name if name else ''}! "
-                    "Я помогу создать и опубликовать SEO-контент."
-                )
+                .line(WELCOME_TEXT.format(name_part=name_part))
                 .blank()
                 .line(
                     f"{E.WALLET} <b>Баланс: {_format_balance(balance)} токенов</b>"
                 )
-                .line(f"Хватит на ~{articles_est} статей")
-                .hint("Создайте первый проект \u2014 это займёт 30 секунд")
+                .line(BALANCE_ESTIMATE.format(articles=articles_est))
+                .hint(WELCOME_HINT)
                 .build()
             )
 
@@ -185,7 +195,7 @@ class DashboardService:
         posts_est = balance // _AVG_SOCIAL_COST
 
         s = Screen(E.WALLET, f"Баланс: {_format_balance(balance)} токенов")
-        s.line(f"Хватит на ~{articles_est} статей или ~{posts_est} постов")
+        s.line(BALANCE_ESTIMATE_FULL.format(articles=articles_est, posts=posts_est))
         s.blank()
 
         if data.project_count > 0:
@@ -204,18 +214,21 @@ class DashboardService:
                 )
                 suffix = f" {date_str}" if date_str else ""
                 s.blank()
-                s.line(f"{E.DOC} Последняя: \u00ab{kw_short}\u00bb{suffix}")
+                s.line(f"{E.DOC} " + LAST_PUB.format(keyword=kw_short, suffix=suffix))
 
             # Forecast
             if data.tokens_per_week > 0:
                 s.separator()
                 s.line(
-                    f"{E.CHART} ~{_format_balance(data.tokens_per_week)} ток/нед"
-                    f"  \u00b7  ~{_format_balance(data.tokens_per_month)} ток/мес"
+                    f"{E.CHART} "
+                    + FORECAST.format(
+                        weekly=_format_balance(data.tokens_per_week),
+                        monthly=_format_balance(data.tokens_per_month),
+                    )
                 )
         else:
-            s.line("У вас пока нет проектов.")
-            s.line(f"{E.ROCKET} Создайте первый \u2014 это займёт 30 секунд.")
+            s.line(NO_PROJECTS)
+            s.line(f"{E.ROCKET} " + NO_PROJECTS_HINT)
 
         return s.build()
 
