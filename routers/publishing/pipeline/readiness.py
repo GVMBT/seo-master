@@ -85,7 +85,7 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
-            kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
+            kw_info = f"{report.cluster_count} групп ({report.keyword_count} фраз)"
         s.check("Ключевики", ok=True, detail=kw_info)
     else:
         s.check("Ключевики (обязательно)", ok=False)

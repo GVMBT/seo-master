@@ -16,6 +16,7 @@ from bot.texts.strings import (
     PROJECT_CARD_HINT,
     PROJECT_DELETE_ERROR,
     PROJECT_DELETE_ITEMS,
+    PROJECT_DELETE_NOTE,
     PROJECT_DELETE_TITLE,
     PROJECT_DELETE_WARNING,
     PROJECT_DELETED,
@@ -145,6 +146,8 @@ async def confirm_delete(
     )
     for item in PROJECT_DELETE_ITEMS:
         s.line(f"\u2022 {item}")
+    s.blank()
+    s.line(PROJECT_DELETE_NOTE)
     text = s.hint(PROJECT_DELETE_WARNING).build()
     await safe_edit_text(
         msg,

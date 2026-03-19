@@ -22,6 +22,7 @@ from bot.middlewares import (
     LoggingMiddleware,
     ThrottlingMiddleware,
 )
+from bot.texts.strings import ERROR_GENERIC
 from cache.client import RedisClient
 from cache.fsm_storage import UpstashFSMStorage
 from db.client import SupabaseClient
@@ -104,7 +105,7 @@ async def _global_error_handler(event: ErrorEvent) -> bool:
         exc_info=event.exception,
     )
 
-    user_message = "Произошла ошибка. Попробуйте позже."
+    user_message = ERROR_GENERIC
     if isinstance(event.exception, AppError):
         user_message = event.exception.user_message
 

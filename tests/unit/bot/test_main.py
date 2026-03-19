@@ -124,7 +124,7 @@ class TestGlobalErrorHandler:
             result = await _global_error_handler(event)
 
         assert result is True
-        update.message.answer.assert_called_once_with("Произошла ошибка. Попробуйте позже.")
+        update.message.answer.assert_called_once_with("Что-то пошло не так. Попробуйте через пару минут.")
 
     async def test_handles_app_error_with_custom_message(self) -> None:
         from bot.exceptions import InsufficientBalanceError

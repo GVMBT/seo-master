@@ -425,14 +425,14 @@ async def show_cluster_list(
 
     clusters: list[dict[str, Any]] = category.keywords or []
     if not clusters:
-        await callback.answer("Нет кластеров.", show_alert=True)
+        await callback.answer("Нет групп фраз.", show_alert=True)
         return
 
     safe_name = html.escape(category.name)
     await safe_edit_text(
         msg,
-        f"{E.HASHTAG} <b>КЛАСТЕРЫ</b> \u2014 {safe_name}\n\n"
-        f"Всего кластеров: {len(clusters)}",
+        f"{E.HASHTAG} <b>ГРУППЫ ФРАЗ</b> \u2014 {safe_name}\n\n"
+        f"Всего групп: {len(clusters)}",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=1),
     )
     await callback.answer()
@@ -463,8 +463,8 @@ async def paginate_clusters(
     safe_name = html.escape(category.name)
     await safe_edit_text(
         msg,
-        f"{E.HASHTAG} <b>КЛАСТЕРЫ</b> \u2014 {safe_name}\n\n"
-        f"Всего кластеров: {len(clusters)}",
+        f"{E.HASHTAG} <b>ГРУППЫ ФРАЗ</b> \u2014 {safe_name}\n\n"
+        f"Всего групп: {len(clusters)}",
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=page),
     )
     await callback.answer()
@@ -529,7 +529,7 @@ async def show_cluster_detail(
 
     back_kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="К кластерам", callback_data=f"kw:{cat_id}:clusters")],
+            [InlineKeyboardButton(text="К группам фраз", callback_data=f"kw:{cat_id}:clusters")],
             [InlineKeyboardButton(text="К ключевым фразам", callback_data=f"category:{cat_id}:keywords")],
         ]
     )
@@ -633,7 +633,7 @@ async def show_delete_cluster_list(
 
     clusters: list[dict[str, Any]] = category.keywords or []
     if not clusters:
-        await callback.answer("Нет кластеров для удаления.", show_alert=True)
+        await callback.answer("Нет групп фраз для удаления.", show_alert=True)
         return
 
     await safe_edit_text(
