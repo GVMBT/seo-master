@@ -18,6 +18,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from cache.client import RedisClient
 from db.models import User
@@ -59,7 +60,7 @@ _SOCIAL_PROTECTED = StateFilter(
 async def exit_protection_reply_article(message: Message) -> None:
     """Intercept reply keyboard 'Отмена' on protected article steps."""
     await message.answer(
-        f"{E.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.WARNING} {S.EXIT_CONFIRM_TITLE}\n\n{S.EXIT_CONFIRM_TEXT}",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
@@ -71,7 +72,7 @@ async def exit_protection_reply_article(message: Message) -> None:
 async def exit_protection_reply_social(message: Message) -> None:
     """Intercept reply keyboard 'Отмена' on protected social steps."""
     await message.answer(
-        f"{E.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.WARNING} {S.EXIT_CONFIRM_TITLE}\n\n{S.EXIT_CONFIRM_TEXT}",
         reply_markup=social_exit_confirm_kb(),
     )
 
@@ -83,7 +84,7 @@ async def exit_protection_reply_social(message: Message) -> None:
 async def exit_protection_cancel_cmd_article(message: Message) -> None:
     """Intercept /cancel command on protected article steps."""
     await message.answer(
-        f"{E.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.WARNING} {S.EXIT_CONFIRM_TITLE}\n\n{S.EXIT_CONFIRM_TEXT}",
         reply_markup=pipeline_exit_confirm_kb(),
     )
 
@@ -95,7 +96,7 @@ async def exit_protection_cancel_cmd_article(message: Message) -> None:
 async def exit_protection_cancel_cmd_social(message: Message) -> None:
     """Intercept /cancel command on protected social steps."""
     await message.answer(
-        f"{E.WARNING} Прервать публикацию?\n\nПрогресс сохранится на 24 часа.",
+        f"{E.WARNING} {S.EXIT_CONFIRM_TITLE}\n\n{S.EXIT_CONFIRM_TEXT}",
         reply_markup=social_exit_confirm_kb(),
     )
 
@@ -112,7 +113,7 @@ async def exit_confirm(
     # Checkpoint survives in Redis — user can resume from Dashboard
     msg = safe_message(callback)
     if msg:
-        await safe_edit_text(msg, "Публикация приостановлена. Продолжить можно из /start.")
+        await safe_edit_text(msg, S.EXIT_CONFIRMED)
     await callback.answer()
     log.info("pipeline.exit_confirmed", user_id=user.id)
 

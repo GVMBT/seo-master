@@ -401,13 +401,16 @@ async def execute_connection_delete(
         # Reload connection list
         connections = await conn_svc.get_by_project(project_id)
         text = _build_connections_text(project.name, connections)
+        del_msg = S.CONN_DELETE_SUCCESS.format(
+            platform=conn.platform_type.capitalize(), identifier=safe_id,
+        )
         await safe_edit_text(msg,
-            f"{E.CHECK} Подключение {conn.platform_type.capitalize()} ({safe_id}) удалено.\n\n{text}",
+            f"{E.CHECK} {del_msg}\n\n{text}",
             reply_markup=connection_list_kb(connections, project_id),
         )
         log.info("connection_deleted", conn_id=conn_id, user_id=user.id)
     else:
-        await safe_edit_text(msg, f"{E.WARNING} Ошибка удаления подключения.", reply_markup=menu_kb())
+        await safe_edit_text(msg, f"{E.WARNING} {S.CONN_DELETE_ERROR}", reply_markup=menu_kb())
 
     await callback.answer()
 
@@ -450,7 +453,7 @@ async def start_wp_connect(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(S.FSM_INTERRUPTED.format(name=interrupted))
 
     await state.set_state(ConnectWordPressFSM.url)
     await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
@@ -555,16 +558,14 @@ async def wp_process_password(
     # Rule: 1 project = max 1 WordPress connection
     existing_wp = await conn_svc.get_by_project_and_platform(project_id, "wordpress")
     if existing_wp:
-        await message.answer(
-            "К проекту уже подключён WordPress-сайт.\nДля другого сайта создайте новый проект.",
-        )
+        await message.answer(S.CONN_WP_ALREADY_SHORT)
         return
 
     # Re-validate ownership before creating connection (I7)
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
         await state.clear()
-        await message.answer("Проект не найден.", reply_markup=menu_kb())
+        await message.answer(S.PROJECT_NOT_FOUND, reply_markup=menu_kb())
         return
 
     await state.clear()
@@ -591,9 +592,15 @@ async def wp_process_password(
 
     # Reload list (project already validated above)
     connections = await conn_svc.get_by_project(project_id)
-    safe_name = html.escape(project.name)
+    conn_text = (
+        Screen(E.CHECK, S.CONN_CONNECTED_TITLE)
+        .blank()
+        .line(S.CONN_WP_SUCCESS.format(identifier=html.escape(identifier)))
+        .hint(S.CONN_WP_HINT)
+        .build()
+    )
     await message.answer(
-        f"WordPress ({html.escape(identifier)}) подключён!\n\n<b>{safe_name}</b> — Подключения",
+        conn_text,
         reply_markup=connection_list_kb(connections, project_id),
     )
 
@@ -636,7 +643,7 @@ async def start_tg_connect(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(S.FSM_INTERRUPTED.format(name=interrupted))
 
     await state.set_state(ConnectTelegramFSM.channel)
     await state.update_data(last_update_time=time.time(), connect_project_id=project_id)
@@ -716,7 +723,7 @@ async def tg_process_token(
             bot_info = await temp_bot.get_me()
         except Exception as exc:
             log.warning("tg_connect_invalid_token", error=str(exc))
-            await message.answer("Недействительный токен. Проверьте и попробуйте ещё раз.")
+            await message.answer(S.CONN_TG_INVALID_TOKEN)
             return
 
         # Check bot is admin of the channel
@@ -724,24 +731,17 @@ async def tg_process_token(
             admins = await temp_bot.get_chat_administrators(channel_id)
         except TelegramBadRequest as exc:
             log.warning("tg_connect_channel_error", channel=channel_id, error=str(exc))
-            await message.answer(
-                f"Не удалось проверить канал {channel_id}.\n"
-                "Убедитесь, что канал существует и бот добавлен как администратор."
-            )
+            await message.answer(S.CONN_TG_VERIFY_ERROR.format(channel=channel_id))
             return
         except Exception as exc:
             log.warning("tg_connect_admin_check_failed", channel=channel_id, error=str(exc))
-            await message.answer(
-                f"Не удалось проверить канал {channel_id}.\n"
-                "Убедитесь, что канал существует и бот добавлен как администратор."
-            )
+            await message.answer(S.CONN_TG_VERIFY_ERROR.format(channel=channel_id))
             return
 
         bot_is_admin = any(a.user.id == bot_info.id for a in admins)
         if not bot_is_admin:
             await message.answer(
-                f"Бот @{bot_info.username} не является администратором канала {channel_id}.\n"
-                "Добавьте бота в канал и назначьте администратором."
+                S.CONN_VK_NOT_ADMIN.format(username=bot_info.username or "", channel=channel_id),
             )
             return
     finally:
@@ -752,18 +752,13 @@ async def tg_process_token(
     # Rule: 1 project = max 1 Telegram connection
     existing_tg = await conn_svc.get_by_project_and_platform(project_id, "telegram")
     if existing_tg:
-        await message.answer(
-            "К проекту уже подключён Telegram-канал.\nДля другого канала создайте новый проект.",
-        )
+        await message.answer(S.CONN_TG_ALREADY_SHORT)
         return
 
     # E41: Telegram requires GLOBAL uniqueness — channel must not be connected by ANY user
     existing = await conn_svc.get_by_identifier_global(channel_id, "telegram")
     if existing:
-        await message.answer(
-            f"Канал {channel_id} уже подключён другим пользователем.\n"
-            "Один канал может быть привязан только к одному проекту.",
-        )
+        await message.answer(S.CONN_TG_GLOBAL_DUP.format(channel=channel_id))
         log.warning("tg_global_duplicate_blocked", channel=channel_id, existing_conn=existing.id)
         return
 
@@ -782,10 +777,15 @@ async def tg_process_token(
     log.info("telegram_connected", conn_id=conn.id, project_id=project_id, channel=channel_id)
 
     connections = await conn_svc.get_by_project(project_id)
-    project = await project_service_factory(db).get_owned_project(project_id, user.id)
-    safe_name = html.escape(project.name) if project else ""
+    conn_text = (
+        Screen(E.CHECK, S.CONN_CONNECTED_TITLE)
+        .blank()
+        .line(S.CONN_TG_SUCCESS.format(channel=channel_id))
+        .hint(S.CONN_TG_HINT)
+        .build()
+    )
     await message.answer(
-        f"Telegram-канал {channel_id} подключён!\n\n<b>{safe_name}</b> — Подключения",
+        conn_text,
         reply_markup=connection_list_kb(connections, project_id),
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
@@ -830,7 +830,7 @@ async def start_vk_connect(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(S.FSM_INTERRUPTED.format(name=interrupted))
 
     await state.set_state(ConnectVKFSM.enter_group_url)
     await state.update_data(
@@ -870,11 +870,7 @@ async def vk_process_group_url(
     group_id, screen_name = parse_vk_group_input(text)
     if group_id is None and screen_name is None:
         await message.answer(
-            "Не удалось распознать группу.\n\n"
-            "Примеры:\n"
-            "• https://vk.com/club123456\n"
-            "• https://vk.com/mygroup\n"
-            "• 123456",
+            S.POST_CONNECTION_VK_PARSE_ERROR,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
         return
@@ -886,7 +882,7 @@ async def vk_process_group_url(
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
         await state.clear()
-        await message.answer("Проект не найден.", reply_markup=menu_kb())
+        await message.answer(S.PROJECT_NOT_FOUND, reply_markup=menu_kb())
         return
 
     settings = get_settings()
@@ -978,14 +974,14 @@ async def start_pinterest_connect(
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
-        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
+        await msg.answer(S.FSM_INTERRUPTED.format(name=interrupted))
 
     # Generate nonce for OAuth
     nonce = secrets.token_urlsafe(16)
     settings = get_settings()
     base_url = (settings.railway_public_url or "").rstrip("/")
     if not base_url:
-        await msg.answer("Ошибка конфигурации сервера. Попробуйте позже.")
+        await msg.answer(S.ERROR_SERVER_CONFIG)
         return
     oauth_url = f"{base_url}/api/auth/pinterest?user_id={user.id}&nonce={nonce}"
 

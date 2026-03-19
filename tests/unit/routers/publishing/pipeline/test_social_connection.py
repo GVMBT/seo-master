@@ -230,7 +230,7 @@ class TestSelectConnection:
             _mock_http_client(),
         )
         mock_callback.answer.assert_awaited()
-        assert "не совпадает" in mock_callback.answer.call_args[0][0]
+        assert "устарели" in mock_callback.answer.call_args[0][0]
 
     async def test_connection_not_found(
         self,
@@ -570,7 +570,7 @@ class TestVKOAuthConnect:
         mock_state.get_data = AsyncMock(return_value={})
         await pipeline_start_connect_vk(mock_callback, mock_state)
         mock_callback.answer.assert_awaited()
-        assert "не выбран" in mock_callback.answer.call_args[0][0]
+        assert "устарели" in mock_callback.answer.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------

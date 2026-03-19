@@ -29,7 +29,9 @@ from bot.config import get_settings
 from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts import strings as S
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import PublicationLogCreate, User
@@ -199,17 +201,21 @@ def _build_social_confirm_text(
     settings = get_settings()
     is_god = user.id in settings.admin_ids
 
-    cost_line = f"Стоимость: ~{report.estimated_cost} ток."
     if is_god:
-        cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE -- бесплатно)"
+        cost_line = S.PIPELINE_COST_GOD.format(cost=report.estimated_cost)
+    else:
+        cost_line = S.PIPELINE_COST_NORMAL.format(cost=report.estimated_cost)
 
     return (
-        f"{E.MEGAPHONE} Пост (5/5) -- Подтверждение\n\n"
-        f"{project_name} -> {platform_label} ({identifier})\n"
-        f"Тема: {category_name}\n"
-        f"Ключевики: {report.keyword_count} фраз\n\n"
-        f"{cost_line}\n"
-        f"Баланс: {report.user_balance} ток."
+        Screen(E.MEGAPHONE, S.POST_CONFIRM_TITLE.format(total=5))
+        .blank()
+        .line(f"{project_name} -> {platform_label} ({identifier})")
+        .line(f"Тема: {category_name}")
+        .line(f"Ключевики: {report.keyword_count} фраз")
+        .blank()
+        .line(cost_line)
+        .line(f"Баланс: {report.user_balance} ток.")
+        .build()
     )
 
 
@@ -250,7 +256,7 @@ async def confirm_social_generate(
     category_id = data.get("category_id")
     project_id = data.get("project_id")
     if not category_id or not project_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     settings = get_settings()
@@ -346,7 +352,7 @@ async def _run_social_generation(
     platform_type = fsm_data.get("platform_type", "")
 
     if not category_id or not project_id or not connection_id:
-        await safe_edit_text(message, "Данные сессии устарели. Начните заново.", reply_markup=menu_kb())
+        await safe_edit_text(message, S.PIPELINE_SESSION_EXPIRED, reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -355,8 +361,8 @@ async def _run_social_generation(
     keyword = await select_keyword(db, category_id, content_type="social")
     if not keyword:
         await try_refund(db, user, cost, "Нет ключевых фраз")
-        await safe_edit_text(message, 
-            "Нет доступных ключевых фраз. Добавьте их в категорию.",
+        await safe_edit_text(message,
+            S.PIPELINE_NO_KEYWORDS,
             reply_markup=menu_kb(),
         )
         await state.set_state(SocialPipelineFSM.confirm_cost)
@@ -469,8 +475,14 @@ async def _run_social_generation(
     except Exception as exc:
         log.exception("pipeline.social.generation_failed", user_id=user.id, error=str(exc))
         await try_refund(db, user, cost, "Ошибка генерации поста")
-        await safe_edit_text(message, 
-            "Ошибка генерации поста. Токены возвращены.\n\nПопробуйте ещё раз.",
+        await safe_edit_text(message,
+            (
+                Screen(E.WARNING, S.POST_ERROR_TITLE)
+                .blank()
+                .line(S.POST_ERROR_REFUND)
+                .hint(S.POST_ERROR_HINT)
+                .build()
+            ),
             reply_markup=menu_kb(),
         )
         await state.set_state(SocialPipelineFSM.confirm_cost)
@@ -528,7 +540,7 @@ def _build_review_text(
       We unescape then re-escape to normalize for Telegram's parse_mode=HTML display.
     """
     lines = [
-        "Пост готов!\n",
+        f"{E.MEGAPHONE} <b>{S.POST_READY_TITLE}</b>\n",
         f"Ключевая фраза: {html.escape(keyword)}",
         f"Списано: {tokens_charged} ток.\n",
         "---",
@@ -582,14 +594,14 @@ async def publish_social_post(
     category_id = data.get("category_id")
 
     if not connection_id or not generated_text:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     # E07: Redis NX lock to prevent double-click
     lock_key = f"social_publish:{user.id}:{connection_id}"
     acquired = await redis.set(lock_key, "1", ex=_PUBLISH_LOCK_TTL, nx=True)
     if not acquired:
-        await callback.answer("Публикация уже выполняется...", show_alert=True)
+        await callback.answer(S.PIPELINE_PUBLISH_LOCKED, show_alert=True)
         return
 
     await state.set_state(SocialPipelineFSM.publishing)
@@ -602,7 +614,7 @@ async def publish_social_post(
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
             await safe_edit_text(msg,
-                "Подключение не найдено. Проверьте настройки.",
+                S.POST_PUBLISH_NOT_FOUND,
                 reply_markup=menu_kb(),
             )
             await callback.answer()
@@ -616,7 +628,7 @@ async def publish_social_post(
                 connection_project_id=connection.project_id,
                 expected_project_id=project_id,
             )
-            await safe_edit_text(msg, "Доступ запрещён.", reply_markup=menu_kb())
+            await safe_edit_text(msg, S.POST_PUBLISH_ACCESS_DENIED, reply_markup=menu_kb())
             await callback.answer()
             return
 
@@ -652,8 +664,7 @@ async def publish_social_post(
         if platform_type == "pinterest" and not publish_images:
             await safe_edit_text(
                 msg,
-                "Для Pinterest требуется изображение, но оно не было сгенерировано.\n"
-                "Попробуйте перегенерировать пост.",
+                S.POST_PINTEREST_NO_IMAGE,
                 reply_markup=social_review_kb(
                     regen_count=data.get("regen_count", 0),
                     regen_cost=tokens_charged,
@@ -679,8 +690,8 @@ async def publish_social_post(
             )
         except Exception as exc:
             log.exception("pipeline.social.publish_failed", error=str(exc))
-            await safe_edit_text(msg, 
-                "Ошибка публикации. Попробуйте снова.",
+            await safe_edit_text(msg,
+                S.POST_PUBLISH_ERROR,
                 reply_markup=social_review_kb(
                     regen_count=data.get("regen_count", 0),
                     regen_cost=tokens_charged,
@@ -739,9 +750,11 @@ async def publish_social_post(
         balance = await TokenService(db=db, admin_ids=get_settings().admin_ids).get_balance(user.id)
 
         result_text = (
-            "Пост опубликован!\n\n"
-            f"Ключевая фраза: {html.escape(keyword)}\n"
-            f"Списано: {tokens_charged} ток. | Баланс: {balance} ток."
+            Screen(E.CHECK, S.POST_PUBLISHED_TITLE)
+            .blank()
+            .line(f"Ключевая фраза: {html.escape(keyword)}")
+            .line(f"Списано: {tokens_charged} ток. | Баланс: {balance} ток.")
+            .build()
         )
         await safe_edit_text(msg,
             result_text,
@@ -761,7 +774,7 @@ async def publish_social_post(
         # Ensure user is never stuck: reset to review with error message
         with contextlib.suppress(Exception):
             await msg.answer(
-                "Ошибка публикации. Попробуйте снова.",
+                S.POST_PUBLISH_ERROR,
                 reply_markup=social_review_kb(
                     regen_count=data.get("regen_count", 0),
                     regen_cost=tokens_charged,
@@ -895,7 +908,7 @@ async def cancel_refund_social(
 
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    await safe_edit_text(msg, "Пост отменён. Токены возвращены.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.POST_CANCELLED, reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -965,7 +978,7 @@ async def crosspost_start(
     keyword = data.get("generated_keyword", "")
 
     if not project_id or not connection_id or not generated_text:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     conn_svc = ConnectionService(db, http_client)
@@ -976,7 +989,7 @@ async def crosspost_start(
     ]
 
     if not targets:
-        await callback.answer("Нет других подключений для кросс-поста.", show_alert=True)
+        await callback.answer(S.POST_CROSSPOST_NO_TARGETS, show_alert=True)
         return
 
     # Store targets and all selected by default
@@ -997,8 +1010,8 @@ async def crosspost_start(
 
     await safe_edit_text(
         msg,
-        f"Кросс-пост: {html.escape(keyword)}\n\n"
-        "На какие платформы адаптировать?",
+        S.POST_CROSSPOST_TITLE.format(keyword=html.escape(keyword)) + "\n\n"
+        + S.POST_CROSSPOST_QUESTION,
         reply_markup=crosspost_select_kb(targets, target_ids),
     )
     await state.set_state(SocialPipelineFSM.cross_post_select)
@@ -1077,7 +1090,7 @@ async def crosspost_go(
     data = await state.get_data()
     selected = data.get("crosspost_selected_ids", [])
     if not selected:
-        await callback.answer("Выберите хотя бы одну платформу.", show_alert=True)
+        await callback.answer(S.POST_CROSSPOST_MIN_ONE, show_alert=True)
         return
 
     await state.set_state(SocialPipelineFSM.cross_post_running)
@@ -1096,7 +1109,7 @@ async def crosspost_cancel(
         return
 
     await state.clear()
-    await safe_edit_text(msg, "Кросс-постинг отменён.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.POST_CROSSPOST_CANCELLED, reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -1126,7 +1139,7 @@ async def _execute_crosspost(
     lock_key = f"crosspost:{user.id}:{project_id}"
     acquired = await redis.set(lock_key, "1", ex=_PUBLISH_LOCK_TTL, nx=True)
     if not acquired:
-        await safe_edit_text(msg, "Кросс-постинг уже выполняется...")
+        await safe_edit_text(msg, S.PIPELINE_PUBLISH_LOCKED)
         await callback.answer()
         return
 
@@ -1136,7 +1149,7 @@ async def _execute_crosspost(
     conn_svc = ConnectionService(db, http_client)
 
     # Progress message
-    await safe_edit_text(msg, "Адаптирую посты...")
+    await safe_edit_text(msg, S.POST_CROSSPOST_RUNNING)
 
     results: list[str] = []
     total_cost = 0

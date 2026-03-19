@@ -33,7 +33,9 @@ from aiogram.types import (
 
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from bot.validators import TG_CHANNEL_RE
 from cache.client import RedisClient
 from cache.keys import PINTEREST_AUTH_TTL, CacheKeys
@@ -98,9 +100,15 @@ async def _show_connection_step(
     social_conns = await conn_svc.get_social_connections(project_id)
 
     if len(social_conns) == 0:
+        text = (
+            Screen(E.LINK, S.POST_CONNECTION_TITLE.format(total=_TOTAL_STEPS))
+            .blank()
+            .line(S.POST_CONNECTION_EMPTY)
+            .build()
+        )
         await safe_edit_text(
             msg,
-            f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nПодключите соцсеть для публикации.",
+            text,
             reply_markup=social_no_connections_kb(),
         )
         await state.set_state(SocialPipelineFSM.select_connection)
@@ -131,9 +139,15 @@ async def _show_connection_step(
         )
         return
 
+    text = (
+        Screen(E.LINK, S.POST_CONNECTION_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CONNECTION_QUESTION)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nКуда публикуем?",
+        text,
         reply_markup=social_connections_kb(social_conns, project_id),
     )
     await state.set_state(SocialPipelineFSM.select_connection)
@@ -165,8 +179,14 @@ async def _show_connection_step_msg(
     social_conns = await conn_svc.get_social_connections(project_id)
 
     if len(social_conns) == 0:
+        text = (
+            Screen(E.LINK, S.POST_CONNECTION_TITLE.format(total=_TOTAL_STEPS))
+            .blank()
+            .line(S.POST_CONNECTION_EMPTY)
+            .build()
+        )
         await message.answer(
-            f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nПодключите соцсеть для публикации.",
+            text,
             reply_markup=social_no_connections_kb(),
         )
         await state.set_state(SocialPipelineFSM.select_connection)
@@ -197,8 +217,14 @@ async def _show_connection_step_msg(
         )
         return
 
+    text = (
+        Screen(E.LINK, S.POST_CONNECTION_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CONNECTION_QUESTION)
+        .build()
+    )
     await message.answer(
-        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nКуда публикуем?",
+        text,
         reply_markup=social_connections_kb(social_conns, project_id),
     )
     await state.set_state(SocialPipelineFSM.select_connection)
@@ -239,15 +265,27 @@ async def pipeline_back_to_project(
     projects = await proj_svc.list_by_user(user.id)
 
     if not projects:
+        text = (
+            Screen(E.MEGAPHONE, S.POST_PROJECT_TITLE.format(total=_TOTAL_STEPS))
+            .blank()
+            .line(S.POST_PROJECT_CREATE_HINT)
+            .build()
+        )
         await safe_edit_text(
             msg,
-            f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+            text,
             reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
         )
     else:
+        text = (
+            Screen(E.MEGAPHONE, S.POST_PROJECT_TITLE.format(total=_TOTAL_STEPS))
+            .blank()
+            .line(S.POST_PROJECT_QUESTION)
+            .build()
+        )
         await safe_edit_text(
             msg,
-            f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
+            text,
             reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
         )
 
@@ -291,13 +329,13 @@ async def pipeline_select_connection(
     data = await state.get_data()
     fsm_project_id = data.get("project_id")
     if fsm_project_id and fsm_project_id != project_id:
-        await callback.answer("Проект не совпадает.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.get_by_id(conn_id)
     if conn is None or conn.project_id != project_id:
-        await callback.answer("Подключение не найдено.", show_alert=True)
+        await callback.answer(S.CONNECTIONS_NOT_FOUND, show_alert=True)
         return
 
     project_name = data.get("project_name", "")
@@ -354,7 +392,7 @@ async def pipeline_add_connection(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await callback.answer("Проект не выбран.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     conn_svc = ConnectionService(db, http_client)
@@ -363,11 +401,17 @@ async def pipeline_add_connection(
     already_connected = connected_types & social_types
 
     if already_connected == social_types:
-        await callback.answer("Все платформы уже подключены.", show_alert=True)
+        await callback.answer(S.POST_CONNECTION_ALL_CONNECTED, show_alert=True)
         return
 
-    await safe_edit_text(msg, 
-        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение\n\nВыберите платформу:",
+    text = (
+        Screen(E.LINK, S.POST_CONNECTION_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CONNECTION_PLATFORM_PICK)
+        .build()
+    )
+    await safe_edit_text(msg,
+        text,
         reply_markup=social_no_connections_kb(exclude_types=already_connected),
     )
     await callback.answer()
@@ -393,12 +437,13 @@ async def pipeline_start_connect_tg(
         return
 
     await state.set_state(SocialPipelineFSM.connect_tg_channel)
-    await safe_edit_text(msg, 
-        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение Телеграм\n\n"
-        "Введите ID или ссылку на канал.\n"
-        "<i>Примеры: @mychannel, t.me/mychannel, -1001234567890</i>",
-        reply_markup=cancel_kb("pipeline:social:cancel"),
+    text = (
+        Screen(E.LINK, S.POST_CONNECTION_TG_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CONNECTION_TG_PROMPT)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=cancel_kb("pipeline:social:cancel"))
     await callback.answer()
 
 
@@ -415,7 +460,7 @@ async def pipeline_connect_tg_channel(
 
     if not TG_CHANNEL_RE.match(text):
         await message.answer(
-            "Неверный формат. Используйте @channel, t.me/channel или -100XXXX.",
+            S.POST_CONNECTION_TG_FORMAT_ERROR,
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         return
@@ -426,7 +471,7 @@ async def pipeline_connect_tg_channel(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await message.answer("Проект не выбран. Начните заново.", reply_markup=menu_kb())
+        await message.answer(S.PIPELINE_SESSION_EXPIRED, reply_markup=menu_kb())
         return
 
     conn_svc = ConnectionService(db, http_client)
@@ -435,7 +480,7 @@ async def pipeline_connect_tg_channel(
     existing = await conn_svc.get_by_project_and_platform(project_id, "telegram")
     if existing:
         await message.answer(
-            "У этого проекта уже есть Телеграм-канал. Удалите текущий, чтобы подключить другой.",
+            S.POST_CONNECTION_TG_DUPLICATE,
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         return
@@ -444,7 +489,7 @@ async def pipeline_connect_tg_channel(
     global_dup = await conn_svc.get_by_identifier_global(normalized, "telegram")
     if global_dup:
         await message.answer(
-            f"Канал {html.escape(normalized)} уже подключён другим пользователем.",
+            S.POST_CONNECTION_TG_GLOBAL_DUP.format(channel=html.escape(normalized)),
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         return
@@ -452,9 +497,7 @@ async def pipeline_connect_tg_channel(
     await state.update_data(tg_channel=normalized)
     await state.set_state(SocialPipelineFSM.connect_tg_token)
     await message.answer(
-        f"Канал: {html.escape(normalized)}\n\n"
-        "Теперь создайте бота через @BotFather и пришлите токен.\n"
-        "<i>Формат: 123456789:AAABBB...</i>",
+        f"Канал: {html.escape(normalized)}\n\n{S.POST_CONNECTION_TG_TOKEN_PROMPT}",
         reply_markup=cancel_kb("pipeline:social:cancel"),
     )
 
@@ -475,7 +518,7 @@ async def pipeline_connect_tg_token(
 
     if ":" not in text or len(text) < 30:
         await message.answer(
-            "Неверный формат токена. Токен содержит «:» и длиннее 30 символов.\nПришлите корректный токен.",
+            S.POST_CONNECTION_TG_TOKEN_FORMAT,
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         return
@@ -486,9 +529,8 @@ async def pipeline_connect_tg_token(
     await state.update_data(tg_token=text)
     await state.set_state(SocialPipelineFSM.connect_tg_verify)
     await message.answer(
-        f"Токен принят.\n\n"
-        f"Теперь добавьте бота админом в канал {html.escape(channel)} "
-        "с правом «Публикация сообщений» и нажмите «Проверить».",
+        f"{S.POST_CONNECTION_TG_TOKEN_OK}\n\n"
+        + S.POST_CONNECTION_TG_VERIFY_HINT.format(channel=html.escape(channel)),
         reply_markup=_tg_verify_kb(),
     )
 
@@ -518,7 +560,7 @@ async def pipeline_connect_tg_verify(
     project_name = data.get("project_name", "")
 
     if not token or not channel or not project_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     # Validate bot token and check admin status (in handler — Bot is Aiogram dep)
@@ -530,8 +572,8 @@ async def pipeline_connect_tg_verify(
         try:
             admins = await temp_bot.get_chat_administrators(channel)
         except Exception:
-            await safe_edit_text(msg, 
-                "Не удалось получить список админов канала.\nПроверьте, что бот добавлен в канал.",
+            await safe_edit_text(msg,
+                S.POST_CONNECTION_TG_ADMIN_ERROR,
                 reply_markup=_tg_verify_retry_kb(),
             )
             await callback.answer()
@@ -540,10 +582,8 @@ async def pipeline_connect_tg_verify(
         is_admin = any(admin.user.id == bot_info.id and getattr(admin, "can_post_messages", False) for admin in admins)
 
         if not is_admin:
-            await safe_edit_text(msg, 
-                "Бот не является администратором канала "
-                "или не имеет права «Публикация сообщений».\n"
-                "Добавьте бота и нажмите «Проверить снова».",
+            await safe_edit_text(msg,
+                S.POST_CONNECTION_TG_NOT_ADMIN,
                 reply_markup=_tg_verify_retry_kb(),
             )
             await callback.answer()
@@ -551,8 +591,8 @@ async def pipeline_connect_tg_verify(
 
     except Exception as exc:
         log.warning("pipeline.tg_bot_validation_failed", error=str(exc))
-        await safe_edit_text(msg, 
-            "Не удалось подключиться к боту. Проверьте токен.",
+        await safe_edit_text(msg,
+            S.POST_CONNECTION_TG_BOT_ERROR,
             reply_markup=_tg_verify_retry_kb(),
         )
         await callback.answer()
@@ -584,8 +624,8 @@ async def pipeline_connect_tg_verify(
         connection_id=conn.id, platform_type="telegram",
         connection_identifier=channel,
     )
-    await safe_edit_text(msg, 
-        f"Телеграм-канал {html.escape(channel)} подключён!",
+    await safe_edit_text(msg,
+        S.POST_CONNECTION_TG_CONNECTED.format(channel=html.escape(channel)),
     )
 
     from routers.publishing.pipeline.social.social import _show_category_step_msg
@@ -625,20 +665,17 @@ async def pipeline_start_connect_vk(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await callback.answer("Проект не выбран.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     await state.set_state(SocialPipelineFSM.connect_vk_group_url)
-    await safe_edit_text(
-        msg,
-        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение ВКонтакте\n\n"
-        "Отправьте ссылку на группу VK:\n\n"
-        "Примеры:\n"
-        "• https://vk.com/club123456\n"
-        "• https://vk.com/mygroup\n"
-        "• 123456 (ID группы)",
-        reply_markup=cancel_kb("pipeline:social:cancel"),
+    text = (
+        Screen(E.LINK, S.POST_CONNECTION_VK_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CONNECTION_VK_PROMPT)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=cancel_kb("pipeline:social:cancel"))
     await callback.answer()
 
 
@@ -656,8 +693,7 @@ async def pipeline_connect_vk_group_url(
     group_id, screen_name = parse_vk_group_input(text)
     if group_id is None and screen_name is None:
         await message.answer(
-            "Не удалось распознать группу.\n\n"
-            "Примеры: https://vk.com/club123456, https://vk.com/mygroup, 123456",
+            S.POST_CONNECTION_VK_PARSE_ERROR,
             reply_markup=cancel_kb("pipeline:social:cancel"),
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
@@ -666,7 +702,7 @@ async def pipeline_connect_vk_group_url(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await message.answer("Проект не выбран. Начните заново.", reply_markup=menu_kb())
+        await message.answer(S.PIPELINE_SESSION_EXPIRED, reply_markup=menu_kb())
         return
 
     from bot.config import get_settings
@@ -675,7 +711,7 @@ async def pipeline_connect_vk_group_url(
     base_url = (settings.railway_public_url or "").rstrip("/")
     if not base_url:
         log.error("vk_oauth_base_url_missing")
-        await message.answer("Ошибка конфигурации сервера. Попробуйте позже.")
+        await message.answer(S.ERROR_SERVER_CONFIG)
         return
 
     vk_svc = VKOAuthService(
@@ -719,9 +755,8 @@ async def pipeline_connect_vk_group_url(
     await state.set_state(SocialPipelineFSM.connect_vk_oauth)
     await state.update_data(vk_nonce=nonce)
     await message.answer(
-        f"Группа найдена: <b>{safe_name}</b>\n\n"
-        "Нажмите кнопку ниже, чтобы предоставить доступ на публикацию.\n"
-        "Ссылка действительна 30 минут.",
+        S.POST_CONNECTION_VK_FOUND.format(name=safe_name) + "\n\n"
+        + S.POST_CONNECTION_VK_OAUTH_HINT,
         reply_markup=kb,
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
@@ -754,7 +789,7 @@ async def pipeline_start_connect_pinterest(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await callback.answer("Проект не выбран.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     nonce = secrets.token_urlsafe(16)
@@ -787,12 +822,13 @@ async def pipeline_start_connect_pinterest(
     )
 
     await state.set_state(SocialPipelineFSM.connect_pinterest_oauth)
-    await safe_edit_text(msg, 
-        f"{_LH}Пост (2/{_TOTAL_STEPS}) — Подключение Pinterest\n\n"
-        "Нажмите кнопку ниже для авторизации.\n"
-        f"Ссылка действительна {PINTEREST_AUTH_TTL // 60} минут.",
-        reply_markup=kb,
+    text = (
+        Screen(E.LINK, S.POST_CONNECTION_PINTEREST_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CONNECTION_PINTEREST_HINT.format(minutes=PINTEREST_AUTH_TTL // 60))
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=kb)
     await callback.answer()
 
 

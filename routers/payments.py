@@ -6,7 +6,9 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, P
 
 from bot.assets import asset_photo, cache_file_id
 from bot.config import get_settings
+from bot.texts import strings as S
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import menu_kb
@@ -88,13 +90,13 @@ async def refunded_payment_handler(
                 [InlineKeyboardButton(text="Пополнить", callback_data="nav:tokens")],
             ]
         )
-        await message.answer(
-            f"{E.WARNING} Возврат Stars обработан.\n\n"
-            f"{E.WALLET} Списано: <b>{tokens_debited}</b> токенов\n"
-            f"Ваш баланс отрицателен ({new_balance} токенов) из-за возврата средств.\n"
-            f"Пополните баланс для продолжения работы.",
-            reply_markup=kb,
+        refund_text = (
+            Screen(E.WARNING, S.PAYMENT_REFUND_TITLE)
+            .blank()
+            .line(S.PAYMENT_REFUND_TEXT.format(tokens=tokens_debited, balance=new_balance))
+            .build()
         )
+        await message.answer(refund_text, reply_markup=kb)
 
 
 @router.message(F.successful_payment)
@@ -125,7 +127,7 @@ async def successful_payment_handler(
 
     if result.get("error"):
         log.error("payment_processing_error", error=result["error"])
-        await message.answer(f"{E.WARNING} Ошибка обработки платежа. Попробуйте позже.", reply_markup=menu_kb())
+        await message.answer(f"{E.WARNING} {S.PAYMENT_ERROR}", reply_markup=menu_kb())
         return
 
     tokens = result["tokens_credited"]
@@ -140,13 +142,15 @@ async def successful_payment_handler(
             ],
         ]
     )
+    success_text = (
+        Screen(E.ROCKET, S.PAYMENT_SUCCESS_TITLE)
+        .blank()
+        .line(f"{E.WALLET} {S.PAYMENT_SUCCESS_TEXT.format(tokens=tokens, balance=new_balance)}")
+        .build()
+    )
     photo_msg = await message.answer_photo(
         asset_photo("payment_success.png"),
-        caption=(
-            f"{E.ROCKET} Оплата прошла успешно!\n\n"
-            f"{E.WALLET} Начислено: <b>{tokens}</b> токенов\n"
-            f"{E.WALLET} Баланс: <b>{new_balance}</b> токенов"
-        ),
+        caption=success_text,
         reply_markup=kb,
     )
     if photo_msg.photo:
