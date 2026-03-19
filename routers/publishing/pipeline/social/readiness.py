@@ -24,7 +24,9 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts import strings as S
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
@@ -70,32 +72,30 @@ def _build_social_checklist_text(report: ReadinessReport, fsm_data: dict[str, An
     }
     platform_label = platform_labels.get(platform_type, platform_type)
 
-    lines: list[str] = [
-        f"{E.MEGAPHONE} Пост (4/{_TOTAL_STEPS}) -- Подготовка\n",
-        f"Проект: {project_name}",
-        f"Платформа: {platform_label} ({identifier})",
-        f"Тема: {category_name}\n",
-    ]
+    s = Screen(E.MEGAPHONE, S.POST_READINESS_TITLE.format(total=_TOTAL_STEPS))
+    s.blank()
+    s.line(f"Проект: {project_name}")
+    s.line(f"Платформа: {platform_label} ({identifier})")
+    s.line(f"Тема: {category_name}")
+    s.blank()
 
-    # Description status (first — keywords are generated from it)
-    if report.has_description:
-        lines.append(f"{E.CHECK} Описание")
-    else:
-        lines.append(f"{E.CLOSE} Описание")
+    # Description status (first -- keywords are generated from it)
+    s.check("Описание", ok=report.has_description)
 
     # Keywords status
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
             kw_info = f"{report.cluster_count} групп ({report.keyword_count} фраз)"
-        lines.append(f"{E.CHECK} Ключевые фразы \u2014 {kw_info}")
+        s.check("Ключевые фразы", ok=True, detail=kw_info)
     else:
-        lines.append(f"{E.CLOSE} Ключевые фразы (обязательно)")
+        s.check("Ключевые фразы (обязательно)", ok=False)
 
     # Cost estimate
-    lines.append(f"\nОриентировочная стоимость: ~{report.estimated_cost} ток.")
+    s.blank()
+    s.line(S.PIPELINE_COST_NORMAL.format(cost=report.estimated_cost))
 
-    return "\n".join(lines)
+    return s.build()
 
 
 async def show_social_readiness_check(
@@ -123,9 +123,10 @@ async def show_social_readiness_check(
     project_name = data.get("project_name", "")
     connection_id = data.get("connection_id")
     if not category_id:
-        await safe_edit_text(msg, "Категория не выбрана. Начните заново.")
+        await safe_edit_text(msg, S.PIPELINE_CATEGORY_NOT_SET)
         await state.clear()
         await clear_checkpoint(redis, user.id)
+        await callback.answer()
         return
 
     settings = get_settings()
@@ -172,7 +173,7 @@ async def show_social_readiness_check_msg(
     project_name = data.get("project_name", "")
     connection_id = data.get("connection_id")
     if not category_id:
-        await message.answer("Категория не выбрана. Начните заново.")
+        await message.answer(S.PIPELINE_CATEGORY_NOT_SET)
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -249,7 +250,7 @@ async def social_readiness_done(
     data = await state.get_data()
     category_id = data.get("category_id")
     if not category_id:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     settings = get_settings()

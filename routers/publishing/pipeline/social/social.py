@@ -23,7 +23,9 @@ from aiogram.types import CallbackQuery, Message
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import ProjectCreate, User
@@ -94,9 +96,15 @@ async def pipeline_social_start(
     projects = await proj_svc.list_by_user(user.id)
 
     if not projects:
+        text = (
+            Screen(E.MEGAPHONE, S.POST_PROJECT_TITLE.format(total=_TOTAL_STEPS))
+            .blank()
+            .line(S.POST_PROJECT_CREATE_HINT)
+            .build()
+        )
         await safe_edit_text(
             msg,
-            f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля начала создадим проект — это 30 секунд.",
+            text,
             reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
         )
         await state.set_state(SocialPipelineFSM.select_project)
@@ -124,9 +132,15 @@ async def pipeline_social_start(
         await callback.answer()
         return
 
+    text = (
+        Screen(E.MEGAPHONE, S.POST_PROJECT_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_PROJECT_QUESTION)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
+        text,
         reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
     )
     await state.set_state(SocialPipelineFSM.select_project)
@@ -162,7 +176,7 @@ async def pipeline_select_project(
     project = await proj_svc.get_owned_project(project_id, user.id)
 
     if project is None:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     await state.update_data(
@@ -203,9 +217,15 @@ async def pipeline_projects_page(
     proj_svc = project_service_factory(db)
     projects = await proj_svc.list_by_user(user.id)
 
+    text = (
+        Screen(E.MEGAPHONE, S.POST_PROJECT_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_PROJECT_QUESTION)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{_SH}Пост (1/{_TOTAL_STEPS}) — Проект\n\nДля какого проекта?",
+        text,
         reply_markup=pipeline_projects_kb(projects, page=page, pipeline_type="social"),
     )
     await callback.answer()
@@ -244,7 +264,7 @@ async def pipeline_social_from_project(
     proj_svc = project_service_factory(db)
     project = await proj_svc.get_owned_project(project_id, user.id)
     if project is None:
-        await callback.answer("Проект не найден.", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
     await state.update_data(
@@ -286,10 +306,14 @@ async def pipeline_start_create_project(
 
     await state.set_state(SocialPipelineFSM.create_project_name)
     await state.update_data(last_update_time=time.time())
-    await safe_edit_text(
-        msg,
-        f"{_SH}Пост (1/{_TOTAL_STEPS}) — Создание проекта\n\nКак назовём проект?\n<i>Пример: Мебель Комфорт</i>",
+    text = (
+        Screen(E.MEGAPHONE, S.POST_PROJECT_CREATE_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_PROJECT_CREATE_QUESTION)
+        .line(f"<i>{S.POST_PROJECT_CREATE_EXAMPLE}</i>")
+        .build()
     )
+    await safe_edit_text(msg, text)
     await callback.answer()
 
 
@@ -307,7 +331,7 @@ async def pipeline_create_project_name(
     text = (message.text or "").strip()
     if len(text) < 2 or len(text) > 100:
         await message.answer(
-            "Название должно быть от 2 до 100 символов.",
+            S.VALIDATION_NAME_LENGTH,
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         return
@@ -320,7 +344,7 @@ async def pipeline_create_project_name(
     if not project:
         await state.clear()
         await clear_checkpoint(redis, user.id)
-        await message.answer("Достигнут лимит проектов.")
+        await message.answer(S.POST_PROJECT_LIMIT)
         return
 
     log.info("pipeline.social.project_created", project_id=project.id, user_id=user.id)
@@ -330,7 +354,7 @@ async def pipeline_create_project_name(
         project_name=project.name,
         company_name=project.company_name,
     )
-    await message.answer(f"Проект «{html.escape(project.name)}» создан!")
+    await message.answer(S.POST_PROJECT_CREATED.format(name=html.escape(project.name)))
 
     # Proceed to step 2 (connection selection)
     await _show_connection_step_msg(
@@ -382,9 +406,15 @@ async def _show_category_step(
     categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     if not categories:
+        text = (
+            Screen(E.MEGAPHONE, S.POST_CATEGORY_TITLE.format(total=_TOTAL_STEPS))
+            .blank()
+            .line(S.POST_CATEGORY_CREATE_PROMPT)
+            .build()
+        )
         await safe_edit_text(
             msg,
-            f"{_SH}Пост (3/{_TOTAL_STEPS}) — Тема\n\nО чём будет пост? Назовите тему.",
+            text,
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         await state.set_state(SocialPipelineFSM.create_category_name)
@@ -404,9 +434,15 @@ async def _show_category_step(
         await show_social_readiness_check(callback, state, user, db, redis)
         return
 
+    text = (
+        Screen(E.MEGAPHONE, S.POST_CATEGORY_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CATEGORY_QUESTION)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{_SH}Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
+        text,
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
     await state.set_state(SocialPipelineFSM.select_category)
@@ -434,8 +470,14 @@ async def _show_category_step_msg(
     categories = await cat_svc.list_by_project(project_id, user.id) or []
 
     if not categories:
+        text = (
+            Screen(E.MEGAPHONE, S.POST_CATEGORY_TITLE.format(total=_TOTAL_STEPS))
+            .blank()
+            .line(S.POST_CATEGORY_CREATE_PROMPT)
+            .build()
+        )
         await message.answer(
-            f"{_SH}Пост (3/{_TOTAL_STEPS}) -- Тема\n\nО чём будет пост? Назовите тему.",
+            text,
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         await state.set_state(SocialPipelineFSM.create_category_name)
@@ -455,8 +497,14 @@ async def _show_category_step_msg(
         await show_social_readiness_check_msg(message, state, user, db, redis)
         return
 
+    text = (
+        Screen(E.MEGAPHONE, S.POST_CATEGORY_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CATEGORY_QUESTION)
+        .build()
+    )
     await message.answer(
-        f"{_SH}Пост (3/{_TOTAL_STEPS}) -- Тема\n\nКакая тема?",
+        text,
         reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
     )
     await state.set_state(SocialPipelineFSM.select_category)
@@ -493,7 +541,7 @@ async def pipeline_back_to_connection(
     project_name = data.get("project_name", "")
 
     if not project_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -537,7 +585,7 @@ async def pipeline_select_category(
     category = await cat_svc.get_owned_category(category_id, user.id)
 
     if category is None:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     await state.update_data(category_id=category.id, category_name=category.name)
@@ -573,9 +621,15 @@ async def pipeline_categories_page(
     cat_svc = category_service_factory(db)
     categories = await cat_svc.list_by_project(project_id, user.id) or []
 
+    text = (
+        Screen(E.MEGAPHONE, S.POST_CATEGORY_TITLE.format(total=_TOTAL_STEPS))
+        .blank()
+        .line(S.POST_CATEGORY_QUESTION)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{_SH}Пост (3/{_TOTAL_STEPS}) — Тема\n\nКакая тема?",
+        text,
         reply_markup=pipeline_categories_kb(categories, project_id, page=page, pipeline_type="social"),
     )
     await callback.answer()
@@ -594,7 +648,7 @@ async def pipeline_create_category_name(
     name = (message.text or "").strip()
     if not name or len(name) < 2 or len(name) > 100:
         await message.answer(
-            "Введите название темы (от 2 до 100 символов).",
+            S.POST_CATEGORY_NAME_ERROR,
             reply_markup=cancel_kb("pipeline:social:cancel"),
         )
         return
@@ -602,17 +656,19 @@ async def pipeline_create_category_name(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
-        await message.answer("Проект не выбран. Начните создание поста заново.", reply_markup=menu_kb())
+        await state.clear()
+        await clear_checkpoint(redis, user.id)
+        await message.answer(S.PIPELINE_SESSION_EXPIRED, reply_markup=menu_kb())
         return
 
     cat_svc = category_service_factory(db)
     category = await cat_svc.create_category(project_id, user.id, name)
     if category is None:
-        await message.answer("Не удалось создать категорию. Попробуйте снова.", reply_markup=menu_kb())
+        await message.answer(S.POST_CATEGORY_CREATE_ERROR, reply_markup=menu_kb())
         return
 
     await state.update_data(category_id=category.id, category_name=category.name)
-    await message.answer(f"Тема «{html.escape(category.name)}» создана.")
+    await message.answer(S.POST_CATEGORY_CREATED.format(name=html.escape(category.name)))
 
     await show_social_readiness_check_msg(message, state, user, db, redis)
 
@@ -644,5 +700,5 @@ async def pipeline_social_cancel(
     await clear_checkpoint(redis, user.id)
     msg = safe_message(callback)
     if msg:
-        await safe_edit_text(msg, "Публикация отменена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, S.POST_PIPELINE_CANCELLED, reply_markup=menu_kb())
     await callback.answer()
