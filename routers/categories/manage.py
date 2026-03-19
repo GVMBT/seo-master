@@ -274,7 +274,7 @@ async def show_category_card(
         cluster_count = sum(1 for k in category.keywords if k.get("cluster_name"))
         total_phrases = sum(len(k.get("phrases", [])) for k in category.keywords)
         if cluster_count > 0:
-            s.check("Ключевики", ok=True, detail=f"{cluster_count} кластеров ({total_phrases} фраз)")
+            s.check("Ключевики", ok=True, detail=f"{cluster_count} групп ({total_phrases} фраз)")
         else:
             s.check("Ключевики", ok=True, detail=f"{keyword_count} фраз")
     else:

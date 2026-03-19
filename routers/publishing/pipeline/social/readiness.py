@@ -87,7 +87,7 @@ def _build_social_checklist_text(report: ReadinessReport, fsm_data: dict[str, An
     if report.has_keywords:
         kw_info = f"{report.keyword_count} фраз"
         if report.cluster_count:
-            kw_info = f"{report.cluster_count} кластеров ({report.keyword_count} фраз)"
+            kw_info = f"{report.cluster_count} групп ({report.keyword_count} фраз)"
         lines.append(f"{E.CHECK} Ключевые фразы \u2014 {kw_info}")
     else:
         lines.append(f"{E.CLOSE} Ключевые фразы (обязательно)")

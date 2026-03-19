@@ -143,7 +143,6 @@ async def start_create(
         Screen(E.FOLDER, S.PROJECT_CREATE_TITLE)
         .blank()
         .line(S.PROJECT_CREATE_QUESTION)
-        .line(S.PROJECT_CREATE_INTERNAL)
         .hint(S.PROJECT_CREATE_HINT)
         .build()
     )

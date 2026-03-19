@@ -262,7 +262,7 @@ async def run_keyword_generation(
 
         # Step 3: Enrich with metrics (~3s)
         await _safe_edit(
-            _kw_progress_text(_KW_STEPS, 2, f"{len(clusters)} кластеров")
+            _kw_progress_text(_KW_STEPS, 2, f"{len(clusters)} групп")
         )
         enriched = await kw_service.enrich_clusters(clusters)
 
@@ -336,7 +336,7 @@ async def run_keyword_generation(
             f"{EMOJI_DONE} Фразы получены\n"
             f"{EMOJI_DONE} Группировка завершена\n"
             f"{EMOJI_DONE} Данные обогащены\n\n"
-            f"{E.CHECK} Добавлено: {len(enriched)} кластеров, {total_phrases} фраз"
+            f"{E.CHECK} Добавлено: {len(enriched)} групп, {total_phrases} фраз"
             f"{volume_line}"
         )
         await bot.send_message(chat_id=chat_id, text=done_text)
@@ -389,7 +389,7 @@ async def _run_upload_enrich_pipeline(
         # Step 2: Enrich
         await safe_edit_text(
             progress_msg,
-            _kw_progress_text(_KW_UPLOAD_STEPS, 1, f"{len(clusters)} кластеров"),
+            _kw_progress_text(_KW_UPLOAD_STEPS, 1, f"{len(clusters)} групп"),
         )
 
         enriched = await kw_service.enrich_clusters(clusters)
@@ -411,7 +411,7 @@ async def _run_upload_enrich_pipeline(
             f"{E.HASHTAG} <b>Подбор ключевиков</b>\n\n"
             f"{EMOJI_DONE} Группировка завершена\n"
             f"{EMOJI_DONE} Данные обогащены\n\n"
-            f"{E.CHECK} Загружено: {len(enriched)} кластеров, {total_phrases} фраз"
+            f"{E.CHECK} Загружено: {len(enriched)} групп, {total_phrases} фраз"
             f"{volume_line}"
         )
         await safe_edit_text(progress_msg, done_text)
