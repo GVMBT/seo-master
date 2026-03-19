@@ -656,6 +656,8 @@ async def pipeline_create_category_name(
     data = await state.get_data()
     project_id = data.get("project_id")
     if not project_id:
+        await state.clear()
+        await clear_checkpoint(redis, user.id)
         await message.answer(S.PIPELINE_SESSION_EXPIRED, reply_markup=menu_kb())
         return
 

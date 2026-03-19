@@ -126,6 +126,7 @@ async def show_social_readiness_check(
         await safe_edit_text(msg, S.PIPELINE_CATEGORY_NOT_SET)
         await state.clear()
         await clear_checkpoint(redis, user.id)
+        await callback.answer()
         return
 
     settings = get_settings()

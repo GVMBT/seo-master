@@ -9,7 +9,7 @@ from collections.abc import Sequence
 import httpx
 import structlog
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound, TelegramUnauthorizedError
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -402,7 +402,8 @@ async def execute_connection_delete(
         connections = await conn_svc.get_by_project(project_id)
         text = _build_connections_text(project.name, connections)
         del_msg = S.CONN_DELETE_SUCCESS.format(
-            platform=conn.platform_type.capitalize(), identifier=safe_id,
+            platform=_PLAT_LABEL.get(conn.platform_type, conn.platform_type.capitalize()),
+            identifier=safe_id,
         )
         await safe_edit_text(msg,
             f"{E.CHECK} {del_msg}\n\n{text}",
@@ -721,8 +722,11 @@ async def tg_process_token(
     try:
         try:
             bot_info = await temp_bot.get_me()
+        except TelegramUnauthorizedError:
+            await message.answer(S.CONN_TG_INVALID_TOKEN)
+            return
         except Exception as exc:
-            log.warning("tg_connect_invalid_token", error=str(exc))
+            log.warning("tg_connect_bot_check_failed", error=str(exc))
             await message.answer(S.CONN_TG_INVALID_TOKEN)
             return
 
