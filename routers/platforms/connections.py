@@ -1,6 +1,7 @@
 """Connection list, manage, delete + 4 connection wizard FSMs."""
 
 import asyncio
+import contextlib
 import html
 import secrets
 import time
@@ -30,7 +31,7 @@ from bot.texts.connections import (
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
     VK_STEP1_GROUP_URL,
-    VK_STEP2_OAUTH,
+    VK_STEP2_API_KEY,
     WP_STEP1_URL,
     WP_STEP2_LOGIN,
     WP_STEP3_CREDENTIALS,
@@ -168,8 +169,7 @@ class ConnectTelegramFSM(StatesGroup):
 
 class ConnectVKFSM(StatesGroup):
     enter_group_url = State()  # User enters VK group URL/ID
-    oauth_callback = State()
-    select_group = State()  # Handled by deep-link callback in routers/start.py
+    enter_token = State()  # User pastes community API token
 
 
 class ConnectPinterestFSM(StatesGroup):
@@ -840,6 +840,7 @@ async def start_vk_connect(
     await state.update_data(
         last_update_time=time.time(),
         connect_project_id=project_id,
+        project_name=project.name,
     )
 
     await msg.answer(
@@ -890,10 +891,6 @@ async def vk_process_group_url(
         return
 
     settings = get_settings()
-    base_url = (settings.railway_public_url or "").rstrip("/")
-    if not base_url:
-        await message.answer(S.ERROR_SERVER_CONFIG)
-        return
 
     vk_svc = VKOAuthService(
         http_client=http_client,
@@ -901,7 +898,7 @@ async def vk_process_group_url(
         encryption_key=settings.encryption_key.get_secret_value(),
         vk_app_id=settings.vk_app_id,
         vk_app_secret=settings.vk_secure_key.get_secret_value(),
-        redirect_uri=f"{base_url}/api/auth/vk/callback",
+        redirect_uri="",
         vk_service_key=settings.vk_service_key.get_secret_value(),
     )
 
@@ -913,28 +910,117 @@ async def vk_process_group_url(
         await message.answer(exc.user_message)
         return
 
-    # Generate nonce, store auth session for step 2
-    nonce = vk_svc.generate_nonce()
-    await vk_svc.store_meta(nonce, project_id, extra={"user_id": user.id})
-    await vk_svc.store_auth(
-        nonce, user.id, step="community", group_id=resolved_id, group_name=group_name,
+    await state.set_state(ConnectVKFSM.enter_token)
+    await state.update_data(
+        vk_group_id=resolved_id,
+        vk_group_name=group_name or f"Группа {resolved_id}",
     )
-
-    # Build OAuth URL with group_ids
-    oauth_url = vk_svc.build_oauth_url(user.id, nonce, group_ids=resolved_id)
-
-    await state.set_state(ConnectVKFSM.oauth_callback)
-    await state.update_data(vk_nonce=nonce)
 
     safe_name = html.escape(group_name or f"Группа {resolved_id}")
     await message.answer(
-        VK_STEP2_OAUTH.format(group_name=safe_name),
+        VK_STEP2_API_KEY.format(group_name=safe_name, group_id=resolved_id),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Подтвердить доступ к группе", url=oauth_url)],
                 [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
             ]
         ),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+
+
+# ---------------------------------------------------------------------------
+# VK: process pasted community token
+# ---------------------------------------------------------------------------
+
+
+@router.message(ConnectVKFSM.enter_token, F.text)
+async def vk_process_token(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """VK: validate pasted community API token and create connection."""
+    text = (message.text or "").strip()
+    if text in ("\u041e\u0442\u043c\u0435\u043d\u0430", "/cancel"):
+        await state.clear()
+        await message.answer(S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
+        return
+
+    # Token should be a long alphanumeric string
+    token = text
+    if len(token) < 20:
+        await message.answer(
+            "Непохоже на ключ API.\n"
+            "Скопируйте ключ из настроек группы\n"
+            "(Работа с API \u2192 Ключи доступа).",
+        )
+        return
+
+    data = await state.get_data()
+    project_id = int(data["connect_project_id"])
+    group_id = data.get("vk_group_id")
+    group_name = data.get("vk_group_name", "")
+
+    # Validate token by calling groups.getById
+    try:
+        resp = await http_client.post(
+            "https://api.vk.ru/method/groups.getById",
+            data={
+                "access_token": token,
+                "group_id": str(group_id),
+                "v": "5.199",
+            },
+            timeout=10,
+        )
+        result = resp.json()
+        if "error" in result:
+            err = result["error"].get("error_msg", "")
+            await message.answer(
+                f"Ошибка проверки ключа: {err}\n\n"
+                "Проверьте что ключ создан для этой\n"
+                "группы и имеет права на стену и фото.",
+            )
+            return
+    except httpx.HTTPError:
+        await message.answer(
+            "Не удалось связаться с VK.\n"
+            "Попробуйте позже.",
+        )
+        return
+
+    # Delete message with token for security
+    with contextlib.suppress(Exception):
+        await message.delete()
+
+    # Create connection
+    conn_svc = ConnectionService(db, http_client)
+    identifier = f"club{group_id}"
+    conn = await conn_svc.create(
+        PlatformConnectionCreate(
+            project_id=project_id,
+            platform_type="vk",
+            identifier=identifier,
+            metadata={"group_name": group_name},
+        ),
+        raw_credentials={
+            "access_token": token,
+            "group_id": str(group_id),
+            "expires_at": "",
+        },
+    )
+
+    await state.clear()
+    log.info("vk_connected_via_token", conn_id=conn.id, project_id=project_id, group_id=group_id)
+
+    connections = await conn_svc.get_by_project(project_id)
+    safe_name = html.escape(group_name)
+    proj_name = html.escape(data.get("project_name", ""))
+    await message.answer(
+        f"\u2705 VK-группа \u00ab{safe_name}\u00bb подключена!\n\n"
+        f"<b>{proj_name}</b> \u2014 Подключения",
+        reply_markup=connection_list_kb(connections, project_id),
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
