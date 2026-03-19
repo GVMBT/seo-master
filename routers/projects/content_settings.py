@@ -13,6 +13,7 @@ from aiogram.types import CallbackQuery
 
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts import strings as S
 from bot.texts.content_options import (
     ANGLES,
     ASPECT_RATIOS,
@@ -26,6 +27,7 @@ from bot.texts.content_options import (
     WORD_COUNTS,
 )
 from bot.texts.emoji import E
+from bot.texts.screens import Screen
 from db.client import SupabaseClient
 from db.credential_manager import CredentialManager
 from db.models import Project, User
@@ -111,9 +113,11 @@ def _settings_text(ts: dict[str, Any], is_: dict[str, Any]) -> str:
 
 def _main_screen_text() -> str:
     return (
-        f"{E.SLIDERS} <b>НАСТРОЙКИ КОНТЕНТА</b>\n\n"
-        "Настройки по умолчанию для всех площадок.\n"
-        "Для отдельной площадки \u2014 выберите ниже."
+        Screen(E.SLIDERS, S.CONTENT_SETTINGS_TITLE)
+        .blank()
+        .line(S.CONTENT_SETTINGS_DESC)
+        .hint(S.CONTENT_SETTINGS_HINT)
+        .build()
     )
 
 
@@ -124,22 +128,22 @@ def _platform_card_text(
     name = _PLAT_NAMES.get(pt, pt.upper())
     body = _settings_text(ts, is_)
     return (
-        f"{icon} <b>{name}</b>\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
-        f"{body}\n\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f'{E.LIGHTBULB} <i>Наследует "По умолчанию". Измените, чтобы переопределить.</i>'
+        Screen(icon, name)
+        .blank()
+        .line(body)
+        .hint(S.CONTENT_PLATFORM_HINT)
+        .build()
     )
 
 
 def _default_card_text(ts: dict[str, Any], is_: dict[str, Any]) -> str:
     body = _settings_text(ts, is_)
     return (
-        f"{E.SLIDERS} <b>ПО УМОЛЧАНИЮ</b>\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
-        f"{body}\n\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Применяется ко всем площадкам, если не переопределено.</i>"
+        Screen(E.SLIDERS, S.CONTENT_DEFAULT_TITLE)
+        .blank()
+        .line(body)
+        .hint(S.CONTENT_DEFAULT_HINT)
+        .build()
     )
 
 
@@ -339,7 +343,7 @@ async def reset_platform(
         msg, _platform_card_text(target, ts, is_),
         reply_markup=project_platform_card_kb(pid, target),
     )
-    await callback.answer("Настройки сброшены")
+    await callback.answer(S.CONTENT_RESET_DONE)
 
 
 # ---------------------------------------------------------------------------
@@ -363,8 +367,14 @@ async def show_text_menu(
     )
     if not project:
         return
+    text = (
+        Screen(E.PEN, S.CONTENT_TEXT_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_PROMPT)
+        .build()
+    )
     await safe_edit_text(
-        msg, f"{E.PEN} <b>Настройки текста</b>",
+        msg, text,
         reply_markup=project_text_menu_kb(pid, target),
     )
     await callback.answer()
@@ -392,8 +402,15 @@ async def show_word_count(
     if not project:
         return
     ts = await _load_ts(db, project, target, project_service_factory)
+    text = (
+        Screen(E.PEN, S.CONTENT_WORD_COUNT_TITLE)
+        .blank()
+        .line(S.CONTENT_WORD_COUNT_PROMPT)
+        .hint(S.CONTENT_WORD_COUNT_HINT)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите длину статьи (в словах):",
+        msg, text,
         reply_markup=project_word_count_kb(pid, ts.get("word_count"), target),
     )
     await callback.answer()
@@ -423,7 +440,7 @@ async def select_word_count(
     await _save_ts(db, pid, user.id, target, ts, project_service_factory)
     log.info("word_count_updated", project_id=pid, target=target, wc=wc)
     await safe_edit_text(
-        msg, f"Длина статьи: <b>{wc} слов</b>",
+        msg, f"{E.CHECK} Длина статьи: <b>{wc} слов</b>",
         reply_markup=project_word_count_kb(pid, wc, target),
     )
     await callback.answer()
@@ -451,8 +468,15 @@ async def show_html_style(
     if not project:
         return
     ts = await _load_ts(db, project, target, project_service_factory)
+    text = (
+        Screen(E.DOC, S.CONTENT_HTML_TITLE)
+        .blank()
+        .line(S.CONTENT_HTML_DESC)
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите стиль HTML-верстки:",
+        msg, text,
         reply_markup=project_html_style_kb(pid, ts.get("html_style"), target),
     )
     await callback.answer()
@@ -483,7 +507,7 @@ async def select_html_style(
     await _save_ts(db, pid, user.id, target, ts, project_service_factory)
     log.info("html_style_updated", project_id=pid, target=target, style=style)
     await safe_edit_text(
-        msg, f"HTML-верстка: <b>{style}</b>",
+        msg, f"{E.CHECK} HTML-верстка: <b>{style}</b>",
         reply_markup=project_html_style_kb(pid, style, target),
     )
     await callback.answer()
@@ -512,8 +536,15 @@ async def show_text_styles(
         return
     ts = await _load_ts(db, project, target, project_service_factory)
     selected = set(ts.get("styles", []))
+    text = (
+        Screen(E.PEN, S.CONTENT_TEXT_STYLE_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_STYLE_DESC)
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите стили текста (можно несколько):",
+        msg, text,
         reply_markup=project_text_style_kb(pid, selected, target),
     )
     await callback.answer()
@@ -547,8 +578,15 @@ async def toggle_text_style(
         styles.append(style)
     ts["styles"] = styles
     await _save_ts(db, pid, user.id, target, ts, project_service_factory)
+    text = (
+        Screen(E.PEN, S.CONTENT_TEXT_STYLE_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_STYLE_DESC)
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите стили текста (можно несколько):",
+        msg, text,
         reply_markup=project_text_style_kb(pid, set(styles), target),
     )
     await callback.answer()
@@ -575,8 +613,14 @@ async def show_image_menu(
     )
     if not project:
         return
+    text = (
+        Screen(E.IMAGE, S.CONTENT_IMAGE_TITLE)
+        .blank()
+        .line(S.CONTENT_IMAGE_PROMPT)
+        .build()
+    )
     await safe_edit_text(
-        msg, f"{E.IMAGE} <b>Настройки изображений</b>",
+        msg, text,
         reply_markup=project_image_menu_kb(pid, target),
     )
     await callback.answer()
@@ -604,8 +648,14 @@ async def show_preview_format(
     if not project:
         return
     is_ = await _load_is(db, project, target, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_PREVIEW_TITLE)
+        .blank()
+        .line(S.CONTENT_PREVIEW_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите формат превью-изображения:",
+        msg, text,
         reply_markup=project_preview_format_kb(
             pid, is_.get("preview_format"), target,
         ),
@@ -638,7 +688,7 @@ async def select_preview_format(
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
     log.info("preview_format_updated", project_id=pid, target=target, fmt=fmt)
     await safe_edit_text(
-        msg, f"Формат превью: <b>{fmt}</b>",
+        msg, f"{E.CHECK} Формат превью: <b>{fmt}</b>",
         reply_markup=project_preview_format_kb(pid, fmt, target),
     )
     await callback.answer()
@@ -662,8 +712,15 @@ async def show_article_formats(
         return
     is_ = await _load_is(db, project, target, project_service_factory)
     selected = set(is_.get("article_formats", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_ARTICLE_FMT_TITLE)
+        .blank()
+        .line(S.CONTENT_ARTICLE_FMT_DESC)
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Форматы изображений в статье (можно несколько):",
+        msg, text,
         reply_markup=project_article_format_kb(pid, selected, target),
     )
     await callback.answer()
@@ -697,8 +754,15 @@ async def toggle_article_format(
         formats.append(fmt)
     is_["article_formats"] = formats
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_ARTICLE_FMT_TITLE)
+        .blank()
+        .line(S.CONTENT_ARTICLE_FMT_DESC)
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Форматы изображений в статье (можно несколько):",
+        msg, text,
         reply_markup=project_article_format_kb(pid, set(formats), target),
     )
     await callback.answer()
@@ -722,8 +786,14 @@ async def show_image_styles(
         return
     is_ = await _load_is(db, project, target, project_service_factory)
     selected = set(is_.get("styles", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_IMAGE_STYLE_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите стили изображений (можно несколько):",
+        msg, text,
         reply_markup=project_image_style_kb(pid, selected, target),
     )
     await callback.answer()
@@ -757,8 +827,14 @@ async def toggle_image_style(
         styles.append(style)
     is_["styles"] = styles
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_IMAGE_STYLE_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите стили изображений (можно несколько):",
+        msg, text,
         reply_markup=project_image_style_kb(pid, set(styles), target),
     )
     await callback.answer()
@@ -781,8 +857,15 @@ async def show_image_count(
     if not project:
         return
     is_ = await _load_is(db, project, target, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_IMAGE_COUNT_TITLE)
+        .blank()
+        .line(S.CONTENT_IMAGE_COUNT_DESC)
+        .hint(S.CONTENT_IMAGE_COUNT_HINT)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите количество изображений на статью:",
+        msg, text,
         reply_markup=project_image_count_kb(pid, is_.get("count"), target),
     )
     await callback.answer()
@@ -812,7 +895,7 @@ async def select_image_count(
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
     log.info("image_count_updated", project_id=pid, target=target, count=count)
     await safe_edit_text(
-        msg, f"Количество изображений: <b>{count}</b>",
+        msg, f"{E.CHECK} Количество изображений: <b>{count}</b>",
         reply_markup=project_image_count_kb(pid, count, target),
     )
     await callback.answer()
@@ -835,8 +918,14 @@ async def show_text_on_image(
     if not project:
         return
     is_ = await _load_is(db, project, target, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_TEXT_ON_IMAGE_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_ON_IMAGE_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Процент текста на изображении:",
+        msg, text,
         reply_markup=project_text_on_image_kb(
             pid, is_.get("text_on_image"), target,
         ),
@@ -868,7 +957,7 @@ async def select_text_on_image(
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
     log.info("text_on_image_updated", project_id=pid, target=target, pct=pct)
     await safe_edit_text(
-        msg, f"Текст на изображении: <b>{pct}%</b>",
+        msg, f"{E.CHECK} Текст на изображении: <b>{pct}%</b>",
         reply_markup=project_text_on_image_kb(pid, pct, target),
     )
     await callback.answer()
@@ -892,8 +981,14 @@ async def show_cameras(
         return
     is_ = await _load_is(db, project, target, project_service_factory)
     selected = set(is_.get("cameras", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_CAMERA_TITLE)
+        .blank()
+        .line(S.CONTENT_CAMERA_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите камеры (можно несколько):",
+        msg, text,
         reply_markup=project_camera_kb(pid, selected, target),
     )
     await callback.answer()
@@ -927,8 +1022,14 @@ async def toggle_camera(
         cams.append(cam)
     is_["cameras"] = cams
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_CAMERA_TITLE)
+        .blank()
+        .line(S.CONTENT_CAMERA_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите камеры (можно несколько):",
+        msg, text,
         reply_markup=project_camera_kb(pid, set(cams), target),
     )
     await callback.answer()
@@ -952,8 +1053,14 @@ async def show_angles(
         return
     is_ = await _load_is(db, project, target, project_service_factory)
     selected = set(is_.get("angles", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_ANGLE_TITLE)
+        .blank()
+        .line(S.CONTENT_ANGLE_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите ракурсы (можно несколько):",
+        msg, text,
         reply_markup=project_angle_kb(pid, selected, target),
     )
     await callback.answer()
@@ -987,8 +1094,14 @@ async def toggle_angle(
         angles.append(angle)
     is_["angles"] = angles
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_ANGLE_TITLE)
+        .blank()
+        .line(S.CONTENT_ANGLE_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите ракурсы (можно несколько):",
+        msg, text,
         reply_markup=project_angle_kb(pid, set(angles), target),
     )
     await callback.answer()
@@ -1012,8 +1125,14 @@ async def show_quality(
         return
     is_ = await _load_is(db, project, target, project_service_factory)
     selected = set(is_.get("quality", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_QUALITY_TITLE)
+        .blank()
+        .line(S.CONTENT_QUALITY_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите качество изображений (можно несколько):",
+        msg, text,
         reply_markup=project_quality_kb(pid, selected, target),
     )
     await callback.answer()
@@ -1047,8 +1166,14 @@ async def toggle_quality(
         quals.append(q)
     is_["quality"] = quals
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_QUALITY_TITLE)
+        .blank()
+        .line(S.CONTENT_QUALITY_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите качество изображений (можно несколько):",
+        msg, text,
         reply_markup=project_quality_kb(pid, set(quals), target),
     )
     await callback.answer()
@@ -1072,8 +1197,14 @@ async def show_tones(
         return
     is_ = await _load_is(db, project, target, project_service_factory)
     selected = set(is_.get("tones", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_TONE_TITLE)
+        .blank()
+        .line(S.CONTENT_TONE_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите тональность цветов (можно несколько):",
+        msg, text,
         reply_markup=project_tone_kb(pid, selected, target),
     )
     await callback.answer()
@@ -1107,8 +1238,14 @@ async def toggle_tone(
         tones.append(tone)
     is_["tones"] = tones
     await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_TONE_TITLE)
+        .blank()
+        .line(S.CONTENT_TONE_DESC)
+        .build()
+    )
     await safe_edit_text(
-        msg, "Выберите тональность цветов (можно несколько):",
+        msg, text,
         reply_markup=project_tone_kb(pid, set(tones), target),
     )
     await callback.answer()

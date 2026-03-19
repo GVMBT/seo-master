@@ -21,16 +21,16 @@ def test_image_menu_has_all_sections() -> None:
     kb = project_image_menu_kb(pid=10, target="d")
     buttons = [btn for row in kb.inline_keyboard for btn in row]
     texts = [btn.text for btn in buttons]
-    assert "\u041f\u0440\u0435\u0432\u044c\u044e" in texts
-    assert "\u0424\u043e\u0440\u043c\u0430\u0442\u044b" in texts
-    assert "\u0421\u0442\u0438\u043b\u044c" in texts
-    assert any("Кол" in t for t in texts)  # "Кол-во" or "Количество"
+    assert "Стиль" in texts
+    assert "Количество" in texts
+    assert "Превью" in texts
+    assert "Форматы" in texts
+    assert "Камера" in texts
+    assert "Ракурс" in texts
+    assert "Качество" in texts
+    assert "Тональность" in texts
     assert any("Текст" in t and "фото" in t for t in texts)
-    assert "\u041a\u0430\u043c\u0435\u0440\u0430" in texts
-    assert "\u0420\u0430\u043a\u0443\u0440\u0441" in texts
-    assert "\u041a\u0430\u0447\u0435\u0441\u0442\u0432\u043e" in texts
-    assert "\u0422\u043e\u043d\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c" in texts
-    assert "\u041d\u0430\u0437\u0430\u0434" in texts
+    assert "Назад" in texts
 
 
 def test_image_menu_grid_layout() -> None:

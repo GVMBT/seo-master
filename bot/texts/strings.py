@@ -547,6 +547,47 @@ AUDIENCE_LABELS: dict[str, str] = {
 }
 
 # -----------------------------------------------
+# Content Settings
+# -----------------------------------------------
+CONTENT_SETTINGS_TITLE = "СТИЛЬ СТАТЕЙ"
+CONTENT_SETTINGS_DESC = "Настройки по умолчанию для всех площадок.\nДля отдельной площадки \u2014 выберите ниже."
+CONTENT_SETTINGS_HINT = "Настройки влияют на генерацию текста и изображений"
+CONTENT_DEFAULT_TITLE = "ПО УМОЛЧАНИЮ"
+CONTENT_DEFAULT_HINT = "Применяется ко всем площадкам, если не переопределено"
+CONTENT_PLATFORM_HINT = "Переопределяет настройки по умолчанию для этой площадки"
+CONTENT_TEXT_TITLE = "НАСТРОЙКИ ТЕКСТА"
+CONTENT_TEXT_PROMPT = "Выберите параметр для настройки:"
+CONTENT_IMAGE_TITLE = "НАСТРОЙКИ ИЗОБРАЖЕНИЙ"
+CONTENT_IMAGE_PROMPT = "Выберите параметр для настройки:"
+CONTENT_WORD_COUNT_TITLE = "ДЛИНА СТАТЬИ"
+CONTENT_WORD_COUNT_PROMPT = "Выберите количество слов:"
+CONTENT_WORD_COUNT_HINT = "Рекомендуем 1500\u20132000 слов для SEO"
+CONTENT_HTML_TITLE = "HTML-ВЕРСТКА"
+CONTENT_HTML_DESC = "Определяет визуальный стиль статьи на сайте."
+CONTENT_TEXT_STYLE_TITLE = "СТИЛЬ ТЕКСТА"
+CONTENT_TEXT_STYLE_DESC = "Определяет тон и подачу текста."
+CONTENT_TEXT_STYLE_MULTI = "Выберите один или несколько:"
+CONTENT_IMAGE_STYLE_TITLE = "СТИЛЬ ИЗОБРАЖЕНИЙ"
+CONTENT_IMAGE_COUNT_TITLE = "КОЛИЧЕСТВО ИЗОБРАЖЕНИЙ"
+CONTENT_IMAGE_COUNT_DESC = "Сколько AI-изображений добавить в статью:"
+CONTENT_IMAGE_COUNT_HINT = "Каждое изображение стоит 30 токенов"
+CONTENT_PREVIEW_TITLE = "ФОРМАТ ПРЕВЬЮ"
+CONTENT_PREVIEW_DESC = "Соотношение сторон главного изображения:"
+CONTENT_ARTICLE_FMT_TITLE = "ФОРМАТЫ В СТАТЬЕ"
+CONTENT_ARTICLE_FMT_DESC = "Соотношения сторон для внутренних изображений."
+CONTENT_CAMERA_TITLE = "КАМЕРА"
+CONTENT_CAMERA_DESC = "Имитация стиля съёмки для AI-изображений:"
+CONTENT_ANGLE_TITLE = "РАКУРС"
+CONTENT_ANGLE_DESC = "Угол съёмки для AI-изображений:"
+CONTENT_QUALITY_TITLE = "КАЧЕСТВО"
+CONTENT_QUALITY_DESC = "Уровень детализации изображений:"
+CONTENT_TONE_TITLE = "ТОНАЛЬНОСТЬ"
+CONTENT_TONE_DESC = "Цветовая гамма изображений:"
+CONTENT_TEXT_ON_IMAGE_TITLE = "ТЕКСТ НА ИЗОБРАЖЕНИИ"
+CONTENT_TEXT_ON_IMAGE_DESC = "Процент текста поверх изображения:"
+CONTENT_RESET_DONE = "Настройки сброшены"
+
+# -----------------------------------------------
 # Common
 # -----------------------------------------------
 ERROR_GENERIC = "Что-то пошло не так. Попробуйте через пару минут."

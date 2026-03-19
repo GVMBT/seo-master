@@ -956,10 +956,10 @@ def project_text_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 btn(text="Длина", callback_data=f"{p}:words"),
-                btn(text="HTML-стиль", callback_data=f"{p}:html"),
+                btn(text="Стиль", callback_data=f"{p}:tstyle"),
             ],
             [
-                btn(text="Стиль", callback_data=f"{p}:tstyle"),
+                btn(text="HTML-верстка", callback_data=f"{p}:html"),
                 btn(text="Назад", callback_data=f"{p}:card"),
             ],
         ]
@@ -1022,15 +1022,15 @@ def project_image_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:
     btn = InlineKeyboardButton
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [btn(text="Стиль", callback_data=f"{p}:istyle"),
+             btn(text="Количество", callback_data=f"{p}:icount")],
             [btn(text="Превью", callback_data=f"{p}:pfmt"),
              btn(text="Форматы", callback_data=f"{p}:afmts")],
-            [btn(text="Стиль", callback_data=f"{p}:istyle"),
-             btn(text="Кол-во", callback_data=f"{p}:icount")],
+            [btn(text="Камера", callback_data=f"{p}:camera"),
+             btn(text="Ракурс", callback_data=f"{p}:angle")],
+            [btn(text="Качество", callback_data=f"{p}:quality"),
+             btn(text="Тональность", callback_data=f"{p}:tone")],
             [btn(text="Текст/фото", callback_data=f"{p}:tximg"),
-             btn(text="Камера", callback_data=f"{p}:camera")],
-            [btn(text="Ракурс", callback_data=f"{p}:angle"),
-             btn(text="Качество", callback_data=f"{p}:quality")],
-            [btn(text="Тональность", callback_data=f"{p}:tone"),
              btn(text="Назад", callback_data=f"{p}:card")],
         ]
     )
