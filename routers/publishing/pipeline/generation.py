@@ -33,6 +33,7 @@ from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.exceptions import RateLimitError
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from cache.client import RedisClient
@@ -178,11 +179,11 @@ def _build_confirm_text(fsm_data: dict[str, Any], report: Any, user: User) -> st
     is_god = user.id in settings.admin_ids
 
     wp_display = html.escape(str(wp_id)) if wp_id else ("только превью" if preview_only else "")
-    cost_line = f"Стоимость: ~{report.estimated_cost} ток."
+    cost_line = S.PIPELINE_COST_NORMAL.format(cost=report.estimated_cost)
     if is_god:
-        cost_line = f"Стоимость: ~{report.estimated_cost} ток. (GOD_MODE \u2014 бесплатно)"
+        cost_line = S.PIPELINE_COST_GOD.format(cost=report.estimated_cost)
 
-    s = Screen(E.DOC, "СТАТЬЯ (5/5) \u2014 ПОДТВЕРЖДЕНИЕ")
+    s = Screen(E.DOC, S.PIPELINE_CONFIRM_TITLE)
     s.blank()
     s.line(f"{E.FOLDER} Проект: {project_name}")
     if wp_display:
@@ -239,7 +240,7 @@ async def confirm_generate(
     category_id = data.get("category_id")
     project_id = data.get("project_id")
     if not category_id or not project_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     settings = get_settings()
@@ -406,7 +407,7 @@ async def _run_generation(
     preview_only = fsm_data.get("preview_only", False)
 
     if not category_id or not project_id:
-        await safe_edit_text(message, "Данные сессии устарели. Начните заново.", reply_markup=menu_kb())
+        await safe_edit_text(message, f"{S.PIPELINE_SESSION_EXPIRED} Начните заново.", reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -416,7 +417,7 @@ async def _run_generation(
     if not keyword:
         await try_refund(db, user, tokens_charged, "Нет ключевых фраз")
         await safe_edit_text(message, 
-            "Нет доступных ключевых фраз. Добавьте их в категорию.",
+            S.PIPELINE_NO_KEYWORDS,
             reply_markup=pipeline_generation_error_kb(),
         )
         await state.set_state(ArticlePipelineFSM.confirm_cost)
@@ -459,10 +460,10 @@ async def _run_generation(
         log.exception("pipeline.generation_failed", user_id=user.id, error=str(exc))
         await try_refund(db, user, tokens_charged, "Ошибка генерации")
         error_text = (
-            Screen(E.WARNING, "ОШИБКА ГЕНЕРАЦИИ")
+            Screen(E.WARNING, S.ARTICLE_ERROR_TITLE)
             .blank()
-            .line("Токены возвращены на баланс.")
-            .hint("Попробуйте ещё раз или выберите другую тему")
+            .line(S.ARTICLE_ERROR_REFUND)
+            .hint(S.ARTICLE_ERROR_HINT)
             .build()
         )
         await safe_edit_text(message, error_text, reply_markup=pipeline_generation_error_kb())
@@ -589,7 +590,7 @@ def _build_preview_text(
     telegraph_url: str | None,
 ) -> str:
     """Build preview display text."""
-    s = Screen(E.CHECK, "СТАТЬЯ ГОТОВА")
+    s = Screen(E.CHECK, S.ARTICLE_READY_TITLE)
     s.blank()
     s.line(f"<b>{html.escape(content.title)}</b>")
     s.blank()
@@ -607,7 +608,7 @@ def _build_preview_text(
         raw = re.sub(r"<[^>]+>", "", content.content_html or "")
         snippet = html.escape(raw[:500])
         s.blank()
-        s.line(f"<i>(Превью недоступно, фрагмент ниже)</i>\n{snippet}...")
+        s.line(f"<i>{S.ARTICLE_PREVIEW_UNAVAILABLE}</i>\n{snippet}...")
 
     text = s.build()
     # Telegram message limit: 4096 chars
@@ -671,14 +672,14 @@ async def publish_article(
     connection_id = data.get("connection_id")
 
     if not preview_id or not connection_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     # E07: Redis NX lock to prevent double-click
     lock_key = f"publish:{preview_id}"
     acquired = await redis.set(lock_key, "1", ex=_PUBLISH_LOCK_TTL, nx=True)
     if not acquired:
-        await callback.answer("Публикация уже выполняется...", show_alert=True)
+        await callback.answer(S.PIPELINE_PUBLISH_LOCKED, show_alert=True)
         return
 
     # E18 + P0-3: CAS — atomic mark published (prevents race with cleanup)
@@ -686,7 +687,7 @@ async def publish_article(
     preview = await previews_repo.atomic_mark_published(preview_id)
     if not preview:
         await redis.delete(lock_key)
-        await callback.answer("Превью устарело или уже опубликовано.", show_alert=True)
+        await callback.answer(S.PIPELINE_PREVIEW_EXPIRED, show_alert=True)
         return
 
     # Ownership check (defense-in-depth: preview_id from FSM state, not callback_data)
@@ -709,7 +710,7 @@ async def publish_article(
         connection = await conn_svc.get_by_id(connection_id)
         if not connection:
             await safe_edit_text(msg,
-                "WordPress-подключение не найдено. Проверьте настройки.",
+                S.PIPELINE_WP_NOT_FOUND,
                 reply_markup=menu_kb(),
             )
             await callback.answer()
@@ -734,7 +735,7 @@ async def publish_article(
             # Revert to draft on failure
             await previews_repo.update(preview_id, ArticlePreviewUpdate(status="draft"))
             await safe_edit_text(msg, 
-                "Ошибка публикации на WordPress. Попробуйте снова.",
+                S.PIPELINE_WP_PUBLISH_ERROR,
                 reply_markup=pipeline_preview_kb(
                     preview.telegraph_url,
                     can_publish=True,
@@ -775,7 +776,7 @@ async def publish_article(
         balance = await TokenService(db=db, admin_ids=get_settings().admin_ids).get_balance(user.id)
 
         result_text = (
-            Screen(E.CHECK, "СТАТЬЯ ОПУБЛИКОВАНА")
+            Screen(E.CHECK, S.ARTICLE_PUBLISHED_TITLE)
             .blank()
             .line(f"<b>{html.escape(preview.title or '')}</b>")
             .blank()
@@ -837,7 +838,7 @@ async def regenerate_article(
     data = await state.get_data()
     preview_id = data.get("preview_id")
     if not preview_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     previews_repo = PreviewsRepository(db)
@@ -979,7 +980,7 @@ async def cancel_refund(
 
     await state.clear()
     await clear_checkpoint(redis, user.id)
-    await safe_edit_text(msg, "Статья отменена. Токены возвращены.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.ARTICLE_CANCELLED, reply_markup=menu_kb())
     await callback.answer()
 
 
@@ -1051,7 +1052,7 @@ async def copy_html(
     data = await state.get_data()
     preview_id = data.get("preview_id")
     if not preview_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     previews_repo = PreviewsRepository(db)
@@ -1114,7 +1115,7 @@ async def connect_wp_publish(
 
     await state.set_state(ArticlePipelineFSM.connect_wp_url)
     await safe_edit_text(msg, 
-        "Подключение WordPress\n\nВведите адрес вашего сайта.\n<i>Пример: example.com</i>",
+        S.PIPELINE_WP_CONNECT_URL,
     )
     await callback.answer()
 
@@ -1145,7 +1146,7 @@ async def _jump_to_category_selection(
     project_name = data.get("project_name", "")
 
     if not project_id:
-        await callback.answer("Данные сессии устарели.", show_alert=True)
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
     # Clear generation-specific data, keep project + connection

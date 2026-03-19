@@ -16,6 +16,7 @@ from bot.custom_emoji import EMOJI_PROGRESS
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from db.client import SupabaseClient
@@ -73,13 +74,10 @@ async def _show_description_screen(
         safe_desc = html.escape(category.description or "")
         s.line(f"<i>{safe_desc}</i>")
     else:
-        s.line("Описание не задано.")
+        s.line(S.DESCRIPTION_EMPTY)
         s.blank()
-        s.line(
-            "Опишите своими словами, чем занимается ваш бизнес в этой категории. "
-            "Можно тезисно, через запятую."
-        )
-    s.hint("Описание помогает AI писать точнее")
+        s.line(S.DESCRIPTION_EMPTY_DETAIL)
+    s.hint(S.DESCRIPTION_HINT)
     text = s.build()
 
     await safe_edit_text(msg, 
@@ -111,7 +109,7 @@ async def show_description(
     category = await cat_svc.get_owned_category(category_id, user.id)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     await _show_description_screen(msg, category_id, db, category_service_factory, user.id)
@@ -143,7 +141,7 @@ async def start_generate(
     category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
@@ -159,7 +157,7 @@ async def start_generate(
     )
 
     # Show progress indicator before AI call
-    await safe_edit_text(msg, f"{EMOJI_PROGRESS} Генерирую описание...")
+    await safe_edit_text(msg, f"{EMOJI_PROGRESS} {S.DESCRIPTION_GENERATING}")
     await callback.answer()
 
     # Generate description via AI
@@ -176,7 +174,7 @@ async def start_generate(
         await state.clear()
         from bot.texts.emoji import E
 
-        await safe_edit_text(msg, f"{E.WARNING} Ошибка генерации. Попробуйте ещё раз.", reply_markup=menu_kb())
+        await safe_edit_text(msg, f"{E.WARNING} {S.DESCRIPTION_GENERATION_ERROR}", reply_markup=menu_kb())
         return
 
     # Move to review state
@@ -188,7 +186,7 @@ async def start_generate(
 
     safe_text = html.escape(generated_text)
     await safe_edit_text(msg,
-        f"{E.AI_BRAIN} <b>ОПИСАНИЕ СГЕНЕРИРОВАНО</b>\n\n<i>{safe_text}</i>",
+        f"{E.AI_BRAIN} <b>{S.DESCRIPTION_GENERATED_TITLE}</b>\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, 0),
     )
     log.info(
@@ -260,7 +258,7 @@ async def review_regenerate(
 
     # Show progress indicator before AI call
     await state.set_state(DescriptionGenerateFSM.generating)
-    await safe_edit_text(msg, f"{EMOJI_PROGRESS} Генерирую описание...")
+    await safe_edit_text(msg, f"{EMOJI_PROGRESS} {S.DESCRIPTION_GENERATING}")
     await callback.answer()
 
     # Regenerate via AI
@@ -275,7 +273,7 @@ async def review_regenerate(
     except Exception:
         await state.set_state(DescriptionGenerateFSM.review)
         log.exception("description_regen_failed", cat_id=cat_id, user_id=user.id)
-        await callback.answer("Ошибка генерации. Попробуйте ещё раз.", show_alert=True)
+        await callback.answer(S.DESCRIPTION_GENERATION_ERROR, show_alert=True)
         return
 
     await state.set_state(DescriptionGenerateFSM.review)
@@ -288,7 +286,7 @@ async def review_regenerate(
 
     safe_text = html.escape(generated_text)
     await safe_edit_text(msg,
-        f"{E.AI_BRAIN} <b>ОПИСАНИЕ СГЕНЕРИРОВАНО</b>\n\n<i>{safe_text}</i>",
+        f"{E.AI_BRAIN} <b>{S.DESCRIPTION_GENERATED_TITLE}</b>\n\n<i>{safe_text}</i>",
         reply_markup=description_review_kb(cat_id, regen_count),
     )
     await callback.answer()
@@ -362,7 +360,7 @@ async def start_manual(
     category = await cat_svc.get_owned_category(cat_id, user.id)
 
     if not category:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
@@ -373,7 +371,7 @@ async def start_manual(
     await state.update_data(last_update_time=time.time(), cat_id=cat_id)
 
     await safe_edit_text(msg, 
-        "Введите описание категории (10\u20132000 символов):",
+        S.DESCRIPTION_MANUAL_PROMPT,
         reply_markup=cancel_kb(f"desc:{cat_id}:cancel"),
     )
     await callback.answer()
@@ -396,7 +394,7 @@ async def process_manual(
     text = (message.text or "").strip()
 
     if len(text) < 10 or len(text) > 2000:
-        await message.answer("Описание: от 10 до 2000 символов.")
+        await message.answer(S.DESCRIPTION_MANUAL_LENGTH)
         return
 
     data = await state.get_data()
@@ -418,7 +416,7 @@ async def process_manual(
         f"{E.DOC} <b>ОПИСАНИЕ</b> \u2014 {safe_name}\n\n"
         f"<i>{safe_desc}</i>\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>Описание помогает AI писать точнее</i>",
+        f"{E.LIGHTBULB} <i>{S.DESCRIPTION_HINT}</i>",
         reply_markup=description_kb(cat_id, has_description=True),
     )
 
@@ -446,7 +444,7 @@ async def delete_description(
     cleared = await cat_svc.clear_description(cat_id, user.id)
 
     if not cleared:
-        await callback.answer("Категория не найдена.", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     log.info("description_deleted", cat_id=cat_id, user_id=user.id)
@@ -487,5 +485,5 @@ async def cancel_manual_inline(
         await callback.answer()
         return
 
-    await safe_edit_text(msg, "Ввод описания отменён.", reply_markup=menu_kb())
+    await safe_edit_text(msg, S.DESCRIPTION_MANUAL_CANCELLED, reply_markup=menu_kb())
     await callback.answer()

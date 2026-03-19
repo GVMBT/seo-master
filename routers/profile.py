@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
 from bot.assets import edit_screen
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
 from bot.texts.screens import Screen
@@ -123,14 +124,14 @@ async def show_notifications(
 def _build_notifications_text() -> str:
     """Build notification screen text."""
     return (
-        Screen(E.BELL, "УВЕДОМЛЕНИЯ")
+        Screen(E.BELL, S.NOTIFICATIONS_TITLE)
         .blank()
-        .line("<i>Выберите типы уведомлений:</i>")
+        .line(f"<i>{S.NOTIFICATIONS_PROMPT}</i>")
         .blank()
-        .line("\u2713 Публикации \u2014 статус автопубликаций")
-        .line("\u2713 Баланс \u2014 пополнения и низкий баланс")
-        .line("\u2717 Новости \u2014 обновления бота")
-        .hint("Нажмите для переключения")
+        .line(f"\u2713 {S.NOTIFICATIONS_PUBLICATIONS}")
+        .line(f"\u2713 {S.NOTIFICATIONS_BALANCE}")
+        .line(f"\u2717 {S.NOTIFICATIONS_NEWS}")
+        .hint(S.NOTIFICATIONS_HINT)
         .build()
     )
 
@@ -159,7 +160,7 @@ async def toggle_notification(
     updated_user = await users_svc.toggle_notification(user.id, field, current_value, redis)
 
     if updated_user is None:
-        await callback.answer("Ошибка обновления. Попробуйте позже.", show_alert=True)
+        await callback.answer(S.NOTIFICATIONS_UPDATE_ERROR, show_alert=True)
         return
 
     text = _build_notifications_text()
@@ -204,9 +205,9 @@ async def show_referral(
     bot_info = await callback.bot.me()  # type: ignore[union-attr]
     link = f"https://t.me/{bot_info.username}?start=referrer_{user.id}"
 
-    s = Screen(E.TRANSFER, "РЕФЕРАЛЬНАЯ ПРОГРАММА")
+    s = Screen(E.TRANSFER, S.REFERRAL_TITLE)
     s.blank()
-    s.line("Приглашайте друзей и получайте <b>10%</b> от каждой их покупки!")
+    s.line(S.REFERRAL_DESC)
     s.blank()
     s.line(f"Ваша ссылка:\n<code>{link}</code>")
     s.blank()
@@ -226,7 +227,7 @@ async def show_referral(
         if referral_count > _DISPLAY_LIMIT:
             s.line(f"  ...и ещё {referral_count - _DISPLAY_LIMIT}")
 
-    s.hint("Скопируйте ссылку и отправьте друзьям")
+    s.hint(S.REFERRAL_HINT)
     text = s.build()
 
     await edit_screen(msg, "referral.png", text, reply_markup=referral_kb())
@@ -267,18 +268,18 @@ async def cmd_delete_account(
     user: User,
 ) -> None:
     """Show account deletion warning with confirmation buttons."""
+    s = (
+        Screen(E.WARNING, S.DELETE_ACCOUNT_TITLE)
+        .blank()
+        .line(f"{S.DELETE_ACCOUNT_LIST_HEADER}")
+    )
+    for item in S.DELETE_ACCOUNT_ITEMS:
+        s.line(f"  \u2022 {item}")
     text = (
-        Screen(E.WARNING, "УДАЛЕНИЕ АККАУНТА")
+        s.blank()
+        .line(S.DELETE_ACCOUNT_ANON)
         .blank()
-        .line("Будут безвозвратно удалены:")
-        .line("  \u2022 Все проекты и категории")
-        .line("  \u2022 Все подключения к платформам")
-        .line("  \u2022 Все расписания автопубликации")
-        .line("  \u2022 Активные превью статей")
-        .blank()
-        .line("Токены и история платежей будут анонимизированы.")
-        .blank()
-        .line("<b>Это действие необратимо.</b>")
+        .line(f"<b>{S.DELETE_ACCOUNT_WARNING}</b>")
         .build()
     )
     await message.answer(text, reply_markup=delete_account_confirm_kb())
@@ -311,11 +312,11 @@ async def confirm_delete_account(
     )
 
     if result.success:
-        await safe_edit_text(msg, "Ваш аккаунт и все данные удалены.\n\nВы можете начать заново с /start")
+        await safe_edit_text(msg, S.DELETE_ACCOUNT_SUCCESS)
         log.info("delete_account_success", user_id=user.id)
     else:
         await safe_edit_text(msg, 
-            "Произошла ошибка при удалении аккаунта. Обратитесь в поддержку.",
+            S.DELETE_ACCOUNT_ERROR,
             reply_markup=delete_account_cancelled_kb(),
         )
         log.error(
@@ -338,7 +339,7 @@ async def cancel_delete_account(
         return
 
     await safe_edit_text(msg, 
-        "Удаление отменено.",
+        S.DELETE_ACCOUNT_CANCELLED,
         reply_markup=delete_account_cancelled_kb(),
     )
     await callback.answer()

@@ -22,6 +22,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import get_settings
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from cache.client import RedisClient
@@ -68,7 +69,7 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     project_name = html.escape(fsm_data.get("project_name", ""))
     category_name = html.escape(fsm_data.get("category_name", ""))
 
-    s = Screen(E.DOC, "СТАТЬЯ (4/5) \u2014 ПОДГОТОВКА")
+    s = Screen(E.DOC, S.PIPELINE_READINESS_TITLE)
     s.blank()
     s.line(f"{E.FOLDER} Проект: {project_name}")
     s.line(f"{E.HASHTAG} Тема: {category_name}")
@@ -104,7 +105,7 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
 
     # Cost estimate
     s.separator()
-    s.line(f"{E.WALLET} Стоимость: ~{report.estimated_cost} ток.")
+    s.line(f"{E.WALLET} " + S.PIPELINE_COST_NORMAL.format(cost=report.estimated_cost))
 
     return s.build()
 
@@ -132,7 +133,7 @@ async def show_readiness_check(
     project_id = data.get("project_id")
     project_name = data.get("project_name", "")
     if not category_id:
-        await safe_edit_text(msg, "Категория не выбрана. Начните заново.", reply_markup=menu_kb())
+        await safe_edit_text(msg, S.PIPELINE_CATEGORY_NOT_SET, reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -181,7 +182,7 @@ async def show_readiness_check_msg(
     project_id = data.get("project_id")
     project_name = data.get("project_name", "")
     if not category_id:
-        await message.answer("Категория не выбрана. Начните заново.", reply_markup=menu_kb())
+        await message.answer(S.PIPELINE_CATEGORY_NOT_SET, reply_markup=menu_kb())
         await state.clear()
         await clear_checkpoint(redis, user.id)
         return
@@ -279,7 +280,7 @@ async def readiness_prices_menu(callback: CallbackQuery) -> None:
         return
 
     await safe_edit_text(msg, 
-        "Добавить прайс-лист?\n\nВ статье будут реальные цены ваших товаров.",
+        S.PIPELINE_PRICES_QUESTION,
         reply_markup=pipeline_prices_options_kb(),
     )
     await callback.answer()
@@ -300,9 +301,7 @@ async def readiness_prices_text_start(
         return
 
     await safe_edit_text(msg, 
-        "Введите прайс-лист текстом.\n"
-        "Формат: Товар — Цена (каждый с новой строки).\n\n"
-        "<i>Пример:\nКухня Прага — от 120 000 руб.\nШкаф-купе — от 45 000 руб.</i>",
+        S.PIPELINE_PRICES_TEXT_PROMPT,
         reply_markup=pipeline_prices_options_kb(),
     )
     await state.set_state(ArticlePipelineFSM.readiness_prices)
@@ -363,7 +362,7 @@ async def readiness_prices_text_input(
         lines_count=len(lines),
     )
 
-    await message.answer(f"Сохранено {len(lines)} позиций.")
+    await message.answer(S.PIPELINE_PRICES_SAVED.format(count=len(lines)))
     await show_readiness_check_msg(message, state, user, db, redis)
 
 
@@ -382,9 +381,7 @@ async def readiness_prices_excel_start(
         return
 
     await safe_edit_text(msg, 
-        "Загрузите Excel-файл (.xlsx) с прайсом.\n"
-        "Колонки: A — Название, B — Цена, C — Описание (опц.).\n"
-        "Максимум 1000 строк, 5 МБ.",
+        S.PIPELINE_PRICES_EXCEL_PROMPT,
         reply_markup=pipeline_prices_options_kb(),
     )
     await state.set_state(ArticlePipelineFSM.readiness_prices)
@@ -472,7 +469,7 @@ async def readiness_prices_excel_file(
         lines_count=len(result),
     )
 
-    await message.answer(f"Загружено {len(result)} позиций из Excel.")
+    await message.answer(S.PIPELINE_PRICES_EXCEL_UPLOADED.format(count=len(result)))
     await show_readiness_check_msg(message, state, user, db, redis)
 
 
@@ -496,7 +493,7 @@ async def readiness_images_menu(callback: CallbackQuery, state: FSMContext) -> N
     current_count = data.get("image_count", 4)
 
     await safe_edit_text(msg, 
-        f"Изображения — сейчас: {current_count} AI\n\nВыберите количество:",
+        S.PIPELINE_IMAGES_CURRENT.format(count=current_count),
         reply_markup=pipeline_images_options_kb(current_count),
     )
     await callback.answer()
