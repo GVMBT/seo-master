@@ -785,12 +785,13 @@ class PublishService:
         # Social post content is a dict {text, hashtags, pin_title} — extract text
         content = result.content.get("text", "") if isinstance(result.content, dict) else result.content
 
-        # Append hashtags for all social platforms (Pinterest includes in description)
+        # Append hashtags for all social platforms (skip if AI already embedded them in text)
         if isinstance(result.content, dict) and connection.platform_type in ("vk", "telegram", "pinterest"):
             hashtags = result.content.get("hashtags", [])
             if hashtags:
                 tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
-                content = f"{content}\n\n{tags_str}"
+                if tags_str not in content:
+                    content = f"{content}\n\n{tags_str}"
 
         # Validate content before publishing (placeholder detection + platform limits)
         from services.ai.content_validator import ContentValidator
@@ -921,12 +922,13 @@ class PublishService:
                 if isinstance(adapted.content, dict):
                     adapted_text = adapted.content.get("text", "")
 
-                # Append hashtags for all social platforms
+                # Append hashtags for all social platforms (skip if AI already embedded them)
                 if isinstance(adapted.content, dict) and conn.platform_type in ("vk", "telegram", "pinterest"):
                     hashtags = adapted.content.get("hashtags", [])
                     if hashtags:
                         tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
-                        adapted_text = f"{adapted_text}\n\n{tags_str}"
+                        if tags_str not in adapted_text:
+                            adapted_text = f"{adapted_text}\n\n{tags_str}"
 
                 publisher = self._get_publisher(conn.platform_type, conn.id)
                 from services.ai.content_validator import ContentValidator

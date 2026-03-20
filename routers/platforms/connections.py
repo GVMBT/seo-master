@@ -28,10 +28,11 @@ from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts import strings as S
 from bot.texts.connections import (
+    _VK_AUTH_URL,
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
     VK_STEP1_GROUP_URL,
-    VK_STEP2_API_KEY,
+    VK_STEP2_AUTH,
     WP_STEP1_URL,
     WP_STEP2_LOGIN,
     WP_STEP3_CREDENTIALS,
@@ -918,9 +919,10 @@ async def vk_process_group_url(
 
     safe_name = html.escape(group_name or f"Группа {resolved_id}")
     await message.answer(
-        VK_STEP2_API_KEY.format(group_name=safe_name, group_id=resolved_id),
+        VK_STEP2_AUTH.format(group_name=safe_name),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
+                [InlineKeyboardButton(text="Авторизоваться", url=_VK_AUTH_URL)],
                 [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
             ]
         ),
@@ -929,8 +931,30 @@ async def vk_process_group_url(
 
 
 # ---------------------------------------------------------------------------
-# VK: process pasted community token
+# VK: extract token from OAuth redirect URL
 # ---------------------------------------------------------------------------
+
+
+def _extract_vk_token(text: str) -> str | None:
+    """Extract access_token from VK OAuth redirect URL or raw token string.
+
+    Accepts:
+    - Full URL: https://oauth.vk.com/blank.html#access_token=abc123&expires_in=0&user_id=456
+    - Raw token: abc123def456...
+    """
+    import re
+
+    # Try to extract from URL fragment
+    match = re.search(r"access_token=([a-zA-Z0-9._-]+)", text)
+    if match:
+        return match.group(1)
+
+    # Fallback: raw token (long alphanumeric string)
+    cleaned = text.strip()
+    if len(cleaned) >= 20 and re.fullmatch(r"[a-zA-Z0-9._-]+", cleaned):
+        return cleaned
+
+    return None
 
 
 @router.message(ConnectVKFSM.enter_token, F.text)
@@ -941,20 +965,22 @@ async def vk_process_token(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
 ) -> None:
-    """VK: validate pasted community API token and create connection."""
+    """VK: parse OAuth redirect URL or raw token and create connection."""
     text = (message.text or "").strip()
     if text in ("\u041e\u0442\u043c\u0435\u043d\u0430", "/cancel"):
         await state.clear()
         await message.answer(S.CONNECTIONS_CANCELLED, reply_markup=menu_kb())
         return
 
-    # Token should be a long alphanumeric string
-    token = text
-    if len(token) < 20:
+    # Extract access_token from OAuth redirect URL or raw token
+    token = _extract_vk_token(text)
+    if not token:
         await message.answer(
-            "Непохоже на ключ API.\n"
-            "Скопируйте ключ из настроек группы\n"
-            "(Работа с API \u2192 Ключи доступа).",
+            "Не удалось извлечь токен.\n\n"
+            "Скопируйте <b>всю ссылку</b> из адресной строки\n"
+            "после нажатия «Разрешить».\n\n"
+            "<i>Она начинается с:\n"
+            "https://oauth.vk.com/blank.html#access_token=...</i>",
         )
         return
 
@@ -978,9 +1004,9 @@ async def vk_process_token(
         if "error" in result:
             err = result["error"].get("error_msg", "")
             await message.answer(
-                f"Ошибка проверки ключа: {err}\n\n"
-                "Проверьте что ключ создан для этой\n"
-                "группы и имеет права на стену и фото.",
+                f"Ошибка проверки токена: {err}\n\n"
+                "Попробуйте авторизоваться заново\n"
+                "и скопировать ссылку целиком.",
             )
             return
     except httpx.HTTPError:

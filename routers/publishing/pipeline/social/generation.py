@@ -642,11 +642,12 @@ async def publish_social_post(
         publisher = _get_publisher(platform_type, http_client, _settings, on_token_refresh=_on_refresh)
         content_type = _get_content_type(platform_type)
 
-        # Append hashtags for all social platforms (Pinterest uses description field)
+        # Append hashtags for all social platforms (skip if AI already embedded them in text)
         publish_text = generated_text
         if generated_hashtags:
             tags_str = " ".join(f"#{h.lstrip('#')}" for h in generated_hashtags)
-            publish_text = f"{generated_text}\n\n{tags_str}"
+            if tags_str not in publish_text:
+                publish_text = f"{generated_text}\n\n{tags_str}"
 
         # Pinterest metadata: use AI-generated pin_title, fallback to keyword
         pub_metadata: dict[str, Any] = {}
@@ -1184,7 +1185,8 @@ async def _execute_crosspost(
                     hashtags = adapted.content.get("hashtags", [])
                     if hashtags:
                         tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
-                        adapted_text = f"{adapted_text}\n\n{tags_str}"
+                        if tags_str not in adapted_text:
+                            adapted_text = f"{adapted_text}\n\n{tags_str}"
                 else:
                     adapted_text = str(adapted.content) if adapted.content else generated_text
 
