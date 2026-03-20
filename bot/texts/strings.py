@@ -303,13 +303,13 @@ POST_CONNECTION_TG_PROMPT = (
 POST_CONNECTION_TG_FORMAT_ERROR = "Неверный формат. Используйте @channel, t.me/channel или -100XXXX."
 POST_CONNECTION_TG_DUPLICATE = "У этого проекта уже есть Телеграм-канал. Удалите текущий, чтобы подключить другой."
 POST_CONNECTION_TG_GLOBAL_DUP = "Канал {channel} уже подключ\u0451н другим пользователем."
-POST_CONNECTION_TG_TOKEN_PROMPT = (  # noqa: S105
+POST_CONNECTION_TG_TOKEN_PROMPT = (
     "Теперь создайте бота через @BotFather и пришлите токен.\n"  # noqa: S105
-    "<i>Формат: 123456789:AAABBB...</i>"  # noqa: S105
+    "<i>Формат: 123456789:AAABBB...</i>"
 )
-POST_CONNECTION_TG_TOKEN_FORMAT = (  # noqa: S105
+POST_CONNECTION_TG_TOKEN_FORMAT = (
     "Неверный формат токена. Токен содержит \u00ab:\u00bb и длиннее 30 символов.\n"  # noqa: S105
-    "Пришлите корректный токен."  # noqa: S105
+    "Пришлите корректный токен."
 )
 POST_CONNECTION_TG_TOKEN_OK = "Токен принят."  # noqa: S105
 POST_CONNECTION_TG_VERIFY_HINT = (
