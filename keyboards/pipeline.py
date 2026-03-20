@@ -906,14 +906,24 @@ def social_insufficient_balance_kb() -> InlineKeyboardMarkup:
     )
 
 
-def social_review_kb(regen_count: int = 0, regen_cost: int = 40) -> InlineKeyboardMarkup:
+def social_review_kb(
+    regen_count: int = 0,
+    regen_cost: int = 40,
+    telegraph_url: str | None = None,
+) -> InlineKeyboardMarkup:
     """Review keyboard for social post after generation (step 6).
 
     Args:
         regen_count: How many times regenerated so far (0-based).
         regen_cost: Token cost for paid regeneration.
+        telegraph_url: Telegraph preview page URL (shown as button if present).
     """
     rows: list[list[InlineKeyboardButton]] = []
+
+    if telegraph_url:
+        rows.append(
+            [InlineKeyboardButton(text="Превью", url=telegraph_url)]
+        )
 
     rows.append(
         [

@@ -605,14 +605,12 @@ class TestBuildReviewText:
         # Snippet is html.escaped — tags shown as text, not rendered
         assert "&lt;b&gt;bold&lt;/b&gt;" in result
 
-    def test_telegraph_url_shown_instead_of_snippet(self) -> None:
-        """When telegraph_url is provided, show link instead of inline text."""
+    def test_snippet_always_shown(self) -> None:
+        """Snippet is always shown inline (telegraph link is a keyboard button)."""
         result = _build_review_text(
             "Full post text", [], "news", 30, "telegram",
-            telegraph_url="https://telegra.ph/test-page",
         )
-        assert "telegra.ph/test-page" in result
-        assert "Full post text" not in result
+        assert "Full post" in result
 
     def test_hashtags_not_in_inline_snippet(self) -> None:
         """Hashtags are NOT shown in inline snippet (they go to Telegraph preview)."""
