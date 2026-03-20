@@ -557,7 +557,6 @@ async def pipeline_connect_tg_verify(
     token = data.get("tg_token", "")
     channel = data.get("tg_channel", "")
     project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
 
     if not token or not channel or not project_id:
         await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
@@ -589,6 +588,13 @@ async def pipeline_connect_tg_verify(
             await callback.answer()
             return
 
+        # Detect forum (supergroup with topics enabled)
+        try:
+            chat_obj = await temp_bot.get_chat(channel)
+            is_forum = getattr(chat_obj, "is_forum", False) or False
+        except Exception:
+            is_forum = False
+
     except Exception as exc:
         log.warning("pipeline.tg_bot_validation_failed", error=str(exc))
         await safe_edit_text(msg,
@@ -601,16 +607,90 @@ async def pipeline_connect_tg_verify(
         if temp_bot:
             await temp_bot.session.close()
 
-    # Create connection
+    # Save bot info for later (topic step or direct creation)
+    await state.update_data(
+        tg_bot_username=bot_info.username or "",
+        tg_is_forum=is_forum,
+    )
+
+    if is_forum:
+        # Forum detected — ask which topic to publish to
+        await state.set_state(SocialPipelineFSM.connect_tg_topic)
+        await safe_edit_text(
+            msg,
+            _build_topic_text(),
+            reply_markup=_pipeline_topic_selector_kb(),
+        )
+        await callback.answer()
+        return
+
+    # Regular channel — create connection immediately
+    await _pipeline_finalize_tg(msg, state, user, db, redis, http_client)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Inline TG topic helpers (forum support)
+# ---------------------------------------------------------------------------
+
+
+def _build_topic_text() -> str:
+    """Build topic selection prompt for pipeline."""
+    from bot.texts.connections import TG_STEP3_TOPIC
+    return TG_STEP3_TOPIC
+
+
+def _pipeline_topic_selector_kb() -> InlineKeyboardMarkup:
+    """Keyboard: General topic or Create new."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="Основная тема (General)",
+            callback_data="pipeline:social:tg_topic:general",
+        )],
+        [InlineKeyboardButton(
+            text="Создать тему",
+            callback_data="pipeline:social:tg_topic:create",
+        )],
+        [InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")],
+    ])
+
+
+async def _pipeline_finalize_tg(
+    msg: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    *,
+    topic_name: str | None = None,
+    thread_id: int | None = None,
+) -> None:
+    """Create Telegram connection and proceed to category step."""
+    data = await state.get_data()
+    token: str = data.get("tg_token", "")
+    channel: str = data.get("tg_channel", "")
+    project_id: int = int(data.get("project_id", 0))
+    project_name: str = data.get("project_name", "")
+    bot_username: str = data.get("tg_bot_username", "")
+
+    raw_creds: dict[str, str | int] = {"bot_token": token, "channel_id": channel}
+    if thread_id is not None:
+        raw_creds["message_thread_id"] = thread_id
+
+    metadata: dict[str, str | int] = {"bot_username": bot_username}
+    if topic_name:
+        metadata["topic_name"] = topic_name
+
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.create(
         PlatformConnectionCreate(
             project_id=project_id,
             platform_type="telegram",
             identifier=channel,
-            metadata={"bot_username": bot_info.username or ""},
+            metadata=metadata,
         ),
-        raw_credentials={"bot_token": token, "channel_id": channel},
+        raw_credentials=raw_creds,
     )
 
     log.info(
@@ -618,29 +698,105 @@ async def pipeline_connect_tg_verify(
         connection_id=conn.id,
         channel=channel,
         user_id=user.id,
+        thread_id=thread_id,
     )
 
     await state.update_data(
         connection_id=conn.id, platform_type="telegram",
         connection_identifier=channel,
     )
-    await safe_edit_text(msg,
-        S.POST_CONNECTION_TG_CONNECTED.format(channel=html.escape(channel)),
-    )
+
+    if topic_name:
+        connected_text = S.POST_CONNECTION_TG_CONNECTED_TOPIC.format(
+            channel=html.escape(channel), topic=html.escape(topic_name),
+        )
+    else:
+        connected_text = S.POST_CONNECTION_TG_CONNECTED.format(channel=html.escape(channel))
+
+    await safe_edit_text(msg, connected_text)
 
     from routers.publishing.pipeline.social.social import _show_category_step_msg
 
-    # Use message context (we just edited, next screen sends new message)
     await _show_category_step_msg(
-        msg,
-        state,
-        user,
-        db=db,
-        redis=redis,
+        msg, state, user,
+        db=db, redis=redis,
         project_id=project_id,
         project_name=project_name,
     )
+
+
+@router.callback_query(
+    SocialPipelineFSM.connect_tg_topic,
+    F.data.regexp(r"^pipeline:social:tg_topic:(general|create)$"),
+)
+async def pipeline_tg_topic_choice(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Handle forum topic selection in pipeline."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    choice = callback.data.split(":")[-1]  # type: ignore[union-attr]
+
+    if choice == "general":
+        await _pipeline_finalize_tg(msg, state, user, db, redis, http_client)
+        await callback.answer()
+        return
+
+    # Create new topic — ask for name
+    await state.set_state(SocialPipelineFSM.connect_tg_topic_name)
+    from bot.texts.connections import TG_TOPIC_NAME_PROMPT
+    await safe_edit_text(
+        msg, TG_TOPIC_NAME_PROMPT,
+        reply_markup=cancel_kb("pipeline:social:cancel"),
+    )
     await callback.answer()
+
+
+@router.message(SocialPipelineFSM.connect_tg_topic_name, F.text)
+async def pipeline_tg_topic_name_input(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Create forum topic with user-provided name in pipeline."""
+    name = (message.text or "").strip()
+    if not name or len(name) > 128:
+        await message.answer("Название темы: от 1 до 128 символов.")
+        return
+
+    data = await state.get_data()
+    token = data.get("tg_token", "")
+    channel = data.get("tg_channel", "")
+
+    temp_bot = Bot(token=token)
+    try:
+        try:
+            result = await temp_bot.create_forum_topic(
+                chat_id=channel, name=name,
+            )
+            thread_id = result.message_thread_id
+        except Exception as exc:
+            log.warning("pipeline.tg_create_topic_failed", channel=channel, error=str(exc))
+            await message.answer(S.CONN_TG_TOPIC_CREATE_FAILED)
+            return
+    finally:
+        await temp_bot.session.close()
+
+    await _pipeline_finalize_tg(
+        message, state, user, db, redis, http_client,
+        topic_name=name, thread_id=thread_id,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -81,6 +81,8 @@ class SocialPipelineFSM(StatesGroup):
     connect_tg_channel = State()
     connect_tg_token = State()
     connect_tg_verify = State()
+    connect_tg_topic = State()  # forum topic selection
+    connect_tg_topic_name = State()  # custom topic name input
     connect_vk_type = State()  # group or personal
     connect_vk_group_url = State()
     connect_vk_oauth = State()

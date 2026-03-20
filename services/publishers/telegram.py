@@ -26,6 +26,13 @@ _TEXT_LIMIT = 4096
 _API_BASE = "https://api.telegram.org/bot{token}"
 
 
+def _with_thread(payload: dict[str, Any], thread_id: int | None) -> dict[str, Any]:
+    """Inject message_thread_id into payload when targeting a forum topic."""
+    if thread_id is not None:
+        payload["message_thread_id"] = thread_id
+    return payload
+
+
 class TelegramPublisher(BasePublisher):
     """Publish via a user-owned publisher bot added as admin to a channel."""
 
@@ -84,9 +91,10 @@ class TelegramPublisher(BasePublisher):
         creds = request.connection.credentials
         token = creds["bot_token"]
         channel_id = creds["channel_id"]
+        thread_id = creds.get("message_thread_id")
 
         try:
-            data = await self._do_publish(request, token, channel_id)
+            data = await self._do_publish(request, token, channel_id, thread_id)
             message_id = str(data["result"]["message_id"])
             return PublishResult(
                 success=True,
@@ -105,21 +113,27 @@ class TelegramPublisher(BasePublisher):
         request: PublishRequest,
         token: str,
         channel_id: str,
+        thread_id: int | None = None,
     ) -> dict[str, Any]:
         """Execute the actual TG publish flow (called inside retry_with_backoff)."""
         if request.images:
             text = request.content[:_TEXT_LIMIT]
             if len(request.content) > _CAPTION_LIMIT:
                 # Long post: photo without caption, then separate text message
-                await self._send_photo(token, channel_id, request.images[0])
+                await self._send_photo(
+                    token, channel_id, request.images[0], thread_id=thread_id,
+                )
                 return await self._api_call(
                     token,
                     "sendMessage",
-                    {
-                        "chat_id": channel_id,
-                        "text": text,
-                        "parse_mode": "HTML",
-                    },
+                    _with_thread(
+                        {
+                            "chat_id": channel_id,
+                            "text": text,
+                            "parse_mode": "HTML",
+                        },
+                        thread_id,
+                    ),
                 )
             # Short post: photo with caption
             return await self._send_photo(
@@ -127,20 +141,25 @@ class TelegramPublisher(BasePublisher):
                 channel_id,
                 request.images[0],
                 caption=request.content[:_CAPTION_LIMIT],
+                thread_id=thread_id,
             )
         return await self._api_call(
             token,
             "sendMessage",
-            {
-                "chat_id": channel_id,
-                "text": request.content[:_TEXT_LIMIT],
-                "parse_mode": "HTML",
-            },
+            _with_thread(
+                {
+                    "chat_id": channel_id,
+                    "text": request.content[:_TEXT_LIMIT],
+                    "parse_mode": "HTML",
+                },
+                thread_id,
+            ),
         )
 
     async def delete_post(self, connection: PlatformConnection, post_id: str) -> bool:
         creds = connection.credentials
         try:
+            # message_thread_id not needed for deleteMessage — message_id is sufficient
             await self._api_call(
                 creds["bot_token"],
                 "deleteMessage",
@@ -161,9 +180,12 @@ class TelegramPublisher(BasePublisher):
         image_bytes: bytes,
         *,
         caption: str | None = None,
+        thread_id: int | None = None,
     ) -> dict[str, Any]:
         """Upload a photo via multipart/form-data."""
         data_fields: dict[str, Any] = {"chat_id": chat_id}
+        if thread_id is not None:
+            data_fields["message_thread_id"] = thread_id
         if caption:
             data_fields["caption"] = caption
             data_fields["parse_mode"] = "HTML"

@@ -13,7 +13,7 @@ import httpx
 
 from db.models import PlatformConnection
 from services.publishers.base import PublishRequest
-from services.publishers.telegram import _CAPTION_LIMIT, _TEXT_LIMIT, TelegramPublisher
+from services.publishers.telegram import _CAPTION_LIMIT, _TEXT_LIMIT, _with_thread, TelegramPublisher
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -303,6 +303,129 @@ class TestDeletePost:
         conn = _make_connection()
         result = await pub.delete_post(conn, "42")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Forum topic support (message_thread_id)
+# ---------------------------------------------------------------------------
+
+
+class TestForumTopicSupport:
+    async def test_text_message_with_thread_id(self) -> None:
+        """When credentials contain message_thread_id, it appears in sendMessage payload."""
+        captured_body: list[dict[str, Any]] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "sendMessage" in str(request.url):
+                captured_body.append(json.loads(request.content))
+                return _message_response(700)
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection(
+            credentials={
+                "bot_token": _BOT_TOKEN,
+                "channel_id": _CHANNEL_ID,
+                "message_thread_id": 42,
+            },
+        )
+        req = PublishRequest(connection=conn, content="Hello", content_type="telegram_html")
+        result = await pub.publish(req)
+        assert result.success is True
+        assert captured_body[0]["message_thread_id"] == 42
+
+    async def test_text_message_without_thread_id(self) -> None:
+        """Without message_thread_id, payload has no message_thread_id key."""
+        captured_body: list[dict[str, Any]] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "sendMessage" in str(request.url):
+                captured_body.append(json.loads(request.content))
+                return _message_response(701)
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection()
+        req = PublishRequest(connection=conn, content="Hello", content_type="telegram_html")
+        result = await pub.publish(req)
+        assert result.success is True
+        assert "message_thread_id" not in captured_body[0]
+
+    async def test_photo_with_thread_id(self) -> None:
+        """sendPhoto multipart includes message_thread_id when set."""
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "sendPhoto" in str(request.url):
+                content_str = request.content.decode("utf-8", errors="replace")
+                assert "message_thread_id" in content_str
+                assert "42" in content_str
+                return _message_response(702)
+            return _message_response(703)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection(
+            credentials={
+                "bot_token": _BOT_TOKEN,
+                "channel_id": _CHANNEL_ID,
+                "message_thread_id": 42,
+            },
+        )
+        req = PublishRequest(
+            connection=conn, content="Short", content_type="telegram_html", images=[b"PNG"],
+        )
+        result = await pub.publish(req)
+        assert result.success is True
+
+    async def test_long_text_photo_both_calls_have_thread_id(self) -> None:
+        """Long text + image: both sendPhoto and sendMessage get thread_id."""
+        captured: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "sendPhoto" in url:
+                content_str = request.content.decode("utf-8", errors="replace")
+                if "message_thread_id" in content_str:
+                    captured.append("photo_thread")
+                return _message_response(800)
+            if "sendMessage" in url:
+                body = json.loads(request.content)
+                if body.get("message_thread_id") == 99:
+                    captured.append("msg_thread")
+                return _message_response(801)
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection(
+            credentials={
+                "bot_token": _BOT_TOKEN,
+                "channel_id": _CHANNEL_ID,
+                "message_thread_id": 99,
+            },
+        )
+        req = PublishRequest(
+            connection=conn, content="A" * 2000, content_type="telegram_html", images=[b"PNG"],
+        )
+        result = await pub.publish(req)
+        assert result.success is True
+        assert "photo_thread" in captured
+        assert "msg_thread" in captured
+
+
+class TestWithThread:
+    def test_adds_thread_id(self) -> None:
+        payload: dict[str, Any] = {"chat_id": "123"}
+        result = _with_thread(payload, 42)
+        assert result["message_thread_id"] == 42
+
+    def test_none_thread_id_not_added(self) -> None:
+        payload: dict[str, Any] = {"chat_id": "123"}
+        result = _with_thread(payload, None)
+        assert "message_thread_id" not in result
 
 
 # ---------------------------------------------------------------------------

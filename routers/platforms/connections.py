@@ -31,6 +31,8 @@ from bot.texts.connections import (
     _VK_AUTH_URL,
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
+    TG_STEP3_TOPIC,
+    TG_TOPIC_NAME_PROMPT,
     VK_PERSONAL_AUTH,
     VK_STEP1_GROUP_URL,
     VK_STEP2_AUTH,
@@ -194,6 +196,8 @@ class ConnectWordPressFSM(StatesGroup):
 class ConnectTelegramFSM(StatesGroup):
     channel = State()
     token = State()
+    topic = State()  # forum topic selection (if is_forum)
+    topic_name = State()  # custom topic name input
 
 
 class ConnectVKFSM(StatesGroup):
@@ -787,6 +791,13 @@ async def tg_process_token(
                 S.CONN_VK_NOT_ADMIN.format(username=bot_info.username or "", channel=channel_id),
             )
             return
+
+        # Detect forum (supergroup with topics enabled)
+        try:
+            chat_obj = await temp_bot.get_chat(channel_id)
+            is_forum = getattr(chat_obj, "is_forum", False) or False
+        except Exception:
+            is_forum = False
     finally:
         await temp_bot.session.close()
 
@@ -805,32 +816,181 @@ async def tg_process_token(
         log.warning("tg_global_duplicate_blocked", channel=channel_id, existing_conn=existing.id)
         return
 
+    # Save token for later use (topic step or direct creation)
+    await state.update_data(
+        tg_bot_token=text,
+        tg_bot_username=bot_info.username or "",
+        tg_is_forum=is_forum,
+    )
+
+    if is_forum:
+        # Forum detected — ask which topic to publish to
+        await state.set_state(ConnectTelegramFSM.topic)
+        await message.answer(
+            TG_STEP3_TOPIC,
+            reply_markup=_tg_topic_selector_kb(project_id),
+        )
+        return
+
+    # Regular channel — create connection immediately
+    await _finalize_tg_connection(message, state, user, db, http_client)
+
+
+async def _finalize_tg_connection(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+    *,
+    topic_name: str | None = None,
+    thread_id: int | None = None,
+) -> None:
+    """Create Telegram connection with optional forum topic."""
+    data = await state.get_data()
+    channel_id = data["tg_channel"]
+    project_id = int(data["connect_project_id"])
+    token = data["tg_bot_token"]
+    bot_username = data.get("tg_bot_username", "")
+
     await state.clear()
 
+    raw_creds: dict[str, str | int] = {"bot_token": token, "channel_id": channel_id}
+    if thread_id is not None:
+        raw_creds["message_thread_id"] = thread_id
+
+    metadata: dict[str, str | int] = {"bot_username": bot_username}
+    if topic_name:
+        metadata["topic_name"] = topic_name
+
+    conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.create(
         PlatformConnectionCreate(
             project_id=project_id,
             platform_type="telegram",
             identifier=channel_id,
-            metadata={"bot_username": bot_info.username or ""},
+            metadata=metadata,
         ),
-        raw_credentials={"bot_token": text, "channel_id": channel_id},
+        raw_credentials=raw_creds,
     )
 
-    log.info("telegram_connected", conn_id=conn.id, project_id=project_id, channel=channel_id)
+    log.info(
+        "telegram_connected",
+        conn_id=conn.id, project_id=project_id,
+        channel=channel_id, thread_id=thread_id,
+    )
 
     connections = await conn_svc.get_by_project(project_id)
+
+    if topic_name:
+        success_text = S.CONN_TG_SUCCESS_TOPIC.format(channel=channel_id, topic=topic_name)
+        hint_text = S.CONN_TG_HINT_TOPIC.format(topic=topic_name)
+    else:
+        success_text = S.CONN_TG_SUCCESS.format(channel=channel_id)
+        hint_text = S.CONN_TG_HINT
+
     conn_text = (
         Screen(E.CHECK, S.CONN_CONNECTED_TITLE)
         .blank()
-        .line(S.CONN_TG_SUCCESS.format(channel=channel_id))
-        .hint(S.CONN_TG_HINT)
+        .line(success_text)
+        .hint(hint_text)
         .build()
     )
     await message.answer(
         conn_text,
         reply_markup=connection_list_kb(connections, project_id),
         link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+
+
+def _tg_topic_selector_kb(project_id: int) -> InlineKeyboardMarkup:
+    """Keyboard for forum topic selection: General or Create new."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="Основная тема (General)",
+            callback_data=f"conn:{project_id}:tg_topic:general",
+        )],
+        [InlineKeyboardButton(
+            text="Создать тему",
+            callback_data=f"conn:{project_id}:tg_topic:create",
+        )],
+        [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:tg_cancel")],
+    ])
+
+
+@router.callback_query(
+    ConnectTelegramFSM.topic,
+    F.data.regexp(r"^conn:\d+:tg_topic:(general|create)$"),
+)
+async def tg_topic_choice(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Handle forum topic selection."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    choice = callback.data.split(":")[-1]  # type: ignore[union-attr]
+
+    if choice == "general":
+        # General topic — no message_thread_id needed
+        await _finalize_tg_connection(msg, state, user, db, http_client)
+        await callback.answer()
+        return
+
+    # Create new topic — ask for name
+    await state.set_state(ConnectTelegramFSM.topic_name)
+    data = await state.get_data()
+    pid = data.get("connect_project_id", 0)
+    await msg.edit_text(
+        TG_TOPIC_NAME_PROMPT,
+        reply_markup=cancel_kb(f"conn:{pid}:tg_cancel"),
+    )
+    await callback.answer()
+
+
+@router.message(ConnectTelegramFSM.topic_name, F.text)
+async def tg_topic_name_input(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Create forum topic with user-provided name."""
+    name = (message.text or "").strip()
+    if not name or len(name) > 128:
+        await message.answer("Название темы: от 1 до 128 символов.")
+        return
+
+    data = await state.get_data()
+    token = data.get("tg_bot_token", "")
+    channel_id = data.get("tg_channel", "")
+
+    # Create topic via Bot API
+    temp_bot = Bot(token=token)
+    try:
+        try:
+            result = await temp_bot.create_forum_topic(
+                chat_id=channel_id,
+                name=name,
+            )
+            thread_id = result.message_thread_id
+        except Exception as exc:
+            log.warning("tg_create_topic_failed", channel=channel_id, error=str(exc))
+            await message.answer(S.CONN_TG_TOPIC_CREATE_FAILED)
+            return
+    finally:
+        await temp_bot.session.close()
+
+    await _finalize_tg_connection(
+        message, state, user, db, http_client,
+        topic_name=name, thread_id=thread_id,
     )
 
 
