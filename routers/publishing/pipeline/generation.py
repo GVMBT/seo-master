@@ -617,23 +617,27 @@ def _build_preview_text(
     return text
 
 
-async def _fresh_image_count(db: SupabaseClient, category_id: int) -> int | None:
+async def _fresh_image_count(
+    db: SupabaseClient, category_id: int, platform_type: str = "wordpress"
+) -> int | None:
     """Re-read image_count from project/category settings (C25: stale cost prevention).
 
-    Fallback: project.image_settings -> category.image_settings.
+    Resolves via ProjectService.resolve_effective_settings (platform override → project → empty).
     Returns None if category not found or no image settings.
     """
-    from db.repositories.projects import ProjectsRepository
     from services.categories import CategoryService
+    from services.projects import ProjectService
 
     cat_svc = CategoryService(db=db)
     category = await cat_svc.get_category_raw(category_id)
     if not category:
         return None
-    # Fallback: project → category
-    project = await ProjectsRepository(db).get_by_id(category.project_id)
-    image_settings = (project.image_settings if project else None) or category.image_settings or {}
-    count = image_settings.get("count")
+    # Resolve: platform override → project defaults → empty
+    project_svc = ProjectService(db)
+    _, eff_image_settings = await project_svc.resolve_effective_settings(
+        category.project_id, platform_type,
+    )
+    count = eff_image_settings.get("count")
     if count is not None:
         try:
             return int(count)

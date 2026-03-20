@@ -205,6 +205,28 @@ class TelegraphClient:
             log.exception("telegraph.create_account_error", error=str(exc))
             return None
 
+    async def upload_image(self, image_data: bytes) -> str | None:
+        """Upload an image to Telegraph and return its URL.
+
+        Uses https://telegra.ph/upload endpoint (no auth required).
+        Returns full URL like https://telegra.ph/file/abc123.jpg or None on failure.
+        """
+        try:
+            resp = await self._http.post(
+                "https://telegra.ph/upload",
+                files={"file": ("image.webp", image_data, "image/webp")},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            if isinstance(result, list) and result and "src" in result[0]:
+                return f"https://telegra.ph{result[0]['src']}"
+            log.error("telegraph.upload_unexpected_response", response=result)
+            return None
+        except (httpx.HTTPError, KeyError, IndexError) as exc:
+            log.warning("telegraph.upload_image_error", error=str(exc))
+            return None
+
     async def create_page(
         self,
         title: str,

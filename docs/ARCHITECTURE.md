@@ -294,11 +294,11 @@ def require_qstash_signature(handler):
 ```
 users (1) ──── (N) projects ──── (N) categories ──── (N) platform_schedules
   │                   │               │
-  │                   │               ├── (N) platform_content_overrides
   │                   │               ├── image_settings (JSONB)
   │                   │               ├── text_settings (JSONB)
   │                   │               └── keywords (JSONB)
   │                   │
+  │                   ├── (N) project_platform_settings
   │                   ├── (N) platform_connections
   │                   ├── (1) site_audit  (UNIQUE project_id)
   │                   └── (1) site_branding (UNIQUE project_id)
@@ -416,7 +416,7 @@ CREATE TABLE categories (
     media           JSONB DEFAULT '[]',        -- [{file_id, type, file_size, uploaded_at}]
     prices          TEXT,                      -- Текстовый прайс-лист ("Товар — Цена" per line)
     reviews         JSONB DEFAULT '[]',        -- [{author, date, rating(1-5), text, pros, cons}]
-    -- Настройки контента (наследуются всеми платформами, переопределяются в platform_content_overrides)
+    -- Настройки контента (наследуются всеми платформами, переопределяются в project_platform_settings)
     image_settings  JSONB DEFAULT '{}',        -- {formats, styles, tones, cameras, angles, quality, count, text_on_image, collage}
                                                -- Fallback при пустом {}: см. IMAGE_DEFAULTS ниже
     text_settings   JSONB DEFAULT '{}',        -- {style, html_style, words_min, words_max}
@@ -436,7 +436,7 @@ IMAGE_DEFAULTS = {
     "cameras": [],                # не указано — AI решает
     "angles": [],                 # не указано — AI решает
     "quality": "HD",
-    "count": 1,                   # default; WP override = 4 через platform_content_overrides
+    "count": 1,                   # default; WP override = 4 через project_platform_settings
     "text_on_image": 0,
     "collage": 0,
 }
@@ -451,18 +451,20 @@ TEXT_DEFAULTS = {
 
 > Единственный источник истины для дефолтов. PRD §6 (Правило 2) ссылается сюда. Применяются на уровне `services/ai/` при сборке промпта, если `image_settings = {}`.
 
-#### Таблица: platform_content_overrides
+#### Таблица: project_platform_settings
 
 ```sql
-CREATE TABLE platform_content_overrides (
+CREATE TABLE project_platform_settings (
     id              SERIAL PRIMARY KEY,
-    category_id     INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     platform_type   VARCHAR(20) NOT NULL,      -- wordpress, telegram, vk, pinterest
-    image_settings  JSONB,                     -- NULL = наследовать от категории
-    text_settings   JSONB,                     -- NULL = наследовать от категории
-    UNIQUE(category_id, platform_type)
+    text_settings   JSONB NOT NULL DEFAULT '{}',  -- override project defaults
+    image_settings  JSONB NOT NULL DEFAULT '{}',  -- override project defaults
+    UNIQUE(project_id, platform_type)
 );
 ```
+
+Resolution chain: `project_platform_settings` override -> `projects.text_settings/image_settings` defaults -> empty dict.
 
 #### Таблица: platform_schedules
 
@@ -666,7 +668,7 @@ CREATE TABLE prompt_versions (
 | 2 | `projects` | Проекты (бывш. bots) + данные компании |
 | 3 | `platform_connections` | Подключения платформ (привязаны к проекту) |
 | 4 | `categories` | Категории + ключевые фразы + медиа + настройки контента |
-| 5 | `platform_content_overrides` | Переопределение настроек на уровне платформы |
+| 5 | `project_platform_settings` | Per-platform content settings override at project level |
 | 6 | `platform_schedules` | Расписания автопубликации |
 | 7 | `publication_logs` | Журнал публикаций |
 | 8 | `token_expenses` | История расходов токенов |
@@ -707,19 +709,22 @@ CREATE TABLE prompt_versions (
 |---------|--------------|-------|
 | `platform_connections` | id, project_id (FK), platform_type, credentials, status | Привязка к проекту |
 | `categories` | ..., image_settings (JSONB), text_settings (JSONB) | Настройки контента — поля в таблице categories |
-| `platform_content_overrides` | id, category_id (FK), platform_type, image_settings (JSONB), text_settings (JSONB) | Переопределение (nullable — если null, берётся из категории) |
+| `project_platform_settings` | id, project_id (FK), platform_type, text_settings (JSONB), image_settings (JSONB) | Per-platform override (empty dict = inherit from project) |
 | `platform_schedules` | id, category_id (FK), platform_type, connection_id (FK), days, times, posts_per_day | Расписание |
 
 **Логика наследования настроек (F41):**
 ```python
-def get_content_settings(category_id, platform_type):
-    override = platform_content_overrides.get(category_id, platform_type)
-    if override and override.image_settings is not None:
-        return override
-    return categories.get(category_id)  # дефолт из полей категории (image_settings, text_settings)
+async def resolve_effective_settings(project_id, platform_type):
+    override = await project_platform_settings.get(project_id, platform_type)
+    project = await projects.get(project_id)
+    ts = (override.text_settings if override and override.text_settings else None) \
+         or (project.text_settings if project else None) or {}
+    is_ = (override.image_settings if override and override.image_settings else None) \
+          or (project.image_settings if project else None) or {}
+    return ts, is_
 ```
 
-В UI платформы: если настройки переопределены — показывать "(свои настройки)" рядом с кнопкой. Кнопка "Сбросить к настройкам категории" удаляет override.
+В UI платформы: если настройки переопределены -- показывать "(свои настройки)" рядом с кнопкой. Кнопка "Сбросить" удаляет override.
 
 ---
 

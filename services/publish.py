@@ -32,6 +32,7 @@ from db.repositories.publications import PublicationsRepository
 from db.repositories.schedules import SchedulesRepository
 from db.repositories.users import UsersRepository
 from services.ai.orchestrator import AIOrchestrator
+from services.projects import ProjectService
 from services.publishers.base import PublishRequest, PublishResult
 from services.research_helpers import gather_websearch_data
 from services.storage import ImageStorage
@@ -191,6 +192,12 @@ class PublishService:
                 project_name=proj_name,
             )
 
+        # 4b. Resolve effective settings: platform override → project defaults → empty
+        project_svc = ProjectService(self._db)
+        eff_text_settings, eff_image_settings = await project_svc.resolve_effective_settings(
+            payload.project_id, connection.platform_type,
+        )
+
         # 5. Rotate keyword (E22/E23: low pool warning)
         content_type = "article" if payload.platform_type == "wordpress" else "social_post"
         keyword, low_pool = await self._publications.get_rotation_keyword(
@@ -243,8 +250,7 @@ class PublishService:
         if content_type == "article":
             estimated_cost = estimate_article_cost()
         else:
-            image_settings = (project.image_settings if project else None) or category.image_settings
-            social_image_count = _effective_social_image_count(image_settings, payload.platform_type)
+            social_image_count = _effective_social_image_count(eff_image_settings, payload.platform_type)
             estimated_cost = estimate_social_post_cost(images_count=social_image_count)
 
         # 7. Check balance (E01): pause schedule per EDGE_CASES.md
@@ -271,6 +277,8 @@ class PublishService:
             schedule=schedule,
             cluster=cluster,
             project=project,
+            eff_text_settings=eff_text_settings,
+            eff_image_settings=eff_image_settings,
         )
 
     async def _publish_and_log(
@@ -285,6 +293,8 @@ class PublishService:
         schedule: Any,
         cluster: dict[str, Any] | None = None,
         project: Any = None,
+        eff_text_settings: dict[str, Any] | None = None,
+        eff_image_settings: dict[str, Any] | None = None,
     ) -> PublishOutcome:
         """Generate content, publish, then charge on success (charge-after-result)."""
         user_id = payload.user_id
@@ -301,6 +311,8 @@ class PublishService:
                 category=category,
                 cluster=cluster,
                 project=project,
+                eff_text_settings=eff_text_settings,
+                eff_image_settings=eff_image_settings,
             )
 
             # E34: deduct cost for failed images (30 tokens per image)
@@ -462,6 +474,8 @@ class PublishService:
         category: Any,
         cluster: dict[str, Any] | None = None,
         project: Any = None,
+        eff_text_settings: dict[str, Any] | None = None,
+        eff_image_settings: dict[str, Any] | None = None,
     ) -> tuple[Any, PublishResult, int]:
         """Generate content + images, then publish.
 
@@ -479,6 +493,8 @@ class PublishService:
                 category,
                 cluster=cluster,
                 project=project,
+                eff_text_settings=eff_text_settings,
+                eff_image_settings=eff_image_settings,
             )
 
         return await self._generate_social_post(
@@ -489,6 +505,8 @@ class PublishService:
             connection,
             category,
             project=project,
+            eff_text_settings=eff_text_settings,
+            eff_image_settings=eff_image_settings,
         )
 
     async def _generate_article(
@@ -501,6 +519,8 @@ class PublishService:
         category: Any,
         cluster: dict[str, Any] | None = None,
         project: Any = None,
+        eff_text_settings: dict[str, Any] | None = None,
+        eff_image_settings: dict[str, Any] | None = None,
     ) -> tuple[Any, PublishResult, int]:
         """Sequential article pipeline: websearch → text → Director → images (C1, C2, §7.4.2).
 
@@ -538,14 +558,14 @@ class PublishService:
                         {"wp_categories": {**cached_wp_cats, category.name: wp_category_id}},
                     )
 
-        image_settings = (project.image_settings if project else None) or category.image_settings or {}
-        image_count = image_settings.get("count", 4)
+        resolved_image = eff_image_settings or {}
+        image_count = resolved_image.get("count", 4)
         image_context: dict[str, Any] = {
             "keyword": keyword,
             "content_type": "article",
             "company_name": "",
             "specialization": "",
-            "image_settings": image_settings,
+            "image_settings": resolved_image,
         }
         # Use pre-loaded project for company info (loaded in execute())
         if project:
@@ -597,6 +617,7 @@ class PublishService:
             category_id=category_id,
             keyword=keyword,
             cluster=cluster,
+            overrides=eff_text_settings,
             serper_data=websearch["serper_data"],
             competitor_pages=websearch["competitor_pages"],
             competitor_analysis=websearch["competitor_analysis"],
@@ -660,8 +681,8 @@ class PublishService:
                 image_count=image_count,
                 target_sections=target_sections,
                 brand_colors=branding_colors,
-                image_style=image_settings.get("style", "photorealism, professional"),
-                image_tone=image_settings.get("tone", "professional"),
+                image_style=resolved_image.get("style", "photorealism, professional"),
+                image_tone=resolved_image.get("tone", "professional"),
             )
             director_result = await director_service.plan_images(director_ctx, user_id)
             if director_result:
@@ -765,6 +786,8 @@ class PublishService:
         connection: Any,
         category: Any,
         project: Any = None,
+        eff_text_settings: dict[str, Any] | None = None,
+        eff_image_settings: dict[str, Any] | None = None,
     ) -> tuple[Any, PublishResult, int]:
         """Generate social post with images and publish.
 
@@ -779,6 +802,7 @@ class PublishService:
             category_id=category_id,
             keyword=keyword,
             platform=connection.platform_type,
+            overrides=eff_text_settings,
         )
 
         publisher = self._get_publisher(connection.platform_type, connection.id)
@@ -812,8 +836,8 @@ class PublishService:
             metadata["pin_title"] = result.content.get("pin_title", "")[:100]
 
         # Generate images for social posts
-        eff_image_settings = (project.image_settings if project else None) or category.image_settings
-        image_count = _effective_social_image_count(eff_image_settings, connection.platform_type)
+        resolved_image = eff_image_settings or {}
+        image_count = _effective_social_image_count(resolved_image, connection.platform_type)
 
         images: list[bytes] = []
         failed_images = 0
@@ -822,7 +846,7 @@ class PublishService:
                 from services.ai.images import ImageService
 
                 image_service = ImageService(self._ai_orchestrator)
-                img_settings = dict(eff_image_settings or {})
+                img_settings = dict(resolved_image)
                 # Pinterest: vertical 2:3 aspect ratio
                 if connection.platform_type == "pinterest":
                     img_settings["formats"] = ["2:3"]

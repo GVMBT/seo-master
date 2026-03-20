@@ -598,40 +598,32 @@ class TestBuildReviewText:
         assert "&amp;" in result
         assert "&lt;" in result
 
-    def test_telegram_preserves_tags(self) -> None:
-        """Telegram: nh3-preserved <b> tags are kept as-is (no escaping)."""
+    def test_telegram_escapes_tags_in_snippet(self) -> None:
+        """Inline snippet escapes HTML tags to prevent breaking Telegram markup."""
         post_text = "This is <b>bold</b> and <i>italic</i> text"
         result = _build_review_text(post_text, [], "seo", 40, "telegram")
-        # Telegram path appends post_text directly, preserving HTML tags
-        assert "<b>bold</b>" in result
-        assert "<i>italic</i>" in result
+        # Snippet is html.escaped — tags shown as text, not rendered
+        assert "&lt;b&gt;bold&lt;/b&gt;" in result
 
-    def test_telegram_does_not_escape_tags(self) -> None:
-        """Telegram path does NOT html.escape the tags — they are valid Telegram HTML."""
-        post_text = "<b>Important</b> news"
-        result = _build_review_text(post_text, [], "news", 30, "telegram")
-        # Should NOT contain escaped angle brackets
-        assert "&lt;b&gt;" not in result
-        assert "<b>Important</b>" in result
+    def test_telegraph_url_shown_instead_of_snippet(self) -> None:
+        """When telegraph_url is provided, show link instead of inline text."""
+        result = _build_review_text(
+            "Full post text", [], "news", 30, "telegram",
+            telegraph_url="https://telegra.ph/test-page",
+        )
+        assert "telegra.ph/test-page" in result
+        assert "Full post text" not in result
 
-    def test_hashtags_appended(self) -> None:
-        """Hashtags are appended with # prefix and escaped."""
+    def test_hashtags_not_in_inline_snippet(self) -> None:
+        """Hashtags are NOT shown in inline snippet (they go to Telegraph preview)."""
         result = _build_review_text("Text", ["seo", "marketing"], "kw", 40, "vk")
-        assert "#seo" in result
-        assert "#marketing" in result
+        # Inline snippet shows only post_text, not hashtags
+        assert "Text" in result
 
-    def test_hashtags_with_leading_hash_stripped(self) -> None:
-        """Hashtags already starting with # get lstrip-ed."""
-        result = _build_review_text("Text", ["#seo", "##double"], "kw", 40, "pinterest")
-        assert "##seo" not in result
-        assert "#seo" in result
-        assert "###double" not in result
-        assert "#double" in result
-
-    def test_no_hashtags(self) -> None:
-        """Empty hashtags list does not add a hashtag section."""
+    def test_no_hashtags_still_shows_text(self) -> None:
+        """Empty hashtags list: snippet still shows post text."""
         result = _build_review_text("Text", [], "kw", 40, "telegram")
-        assert "#" not in result.split("---")[-1].strip()  # after last ---
+        assert "Text" in result
 
 
 # ---------------------------------------------------------------------------
@@ -640,84 +632,14 @@ class TestBuildReviewText:
 
 
 class TestShowReview:
-    async def test_show_review_without_image(self) -> None:
-        """Without image, falls back to safe_edit_text."""
+    async def test_show_review_calls_safe_edit_text(self) -> None:
+        """_show_review uses safe_edit_text with Telegraph preview link."""
         message = MagicMock()
-        message.delete = AsyncMock()
-        message.answer_photo = AsyncMock()
         kb = MagicMock()
 
         with patch(f"{_GEN_MODULE}.safe_edit_text", new_callable=AsyncMock) as mock_edit:
-            await _show_review(message, "Review text", kb, image_b64=None)
+            await _show_review(message, "Review text", kb)
             mock_edit.assert_awaited_once_with(message, "Review text", reply_markup=kb)
-
-        message.delete.assert_not_awaited()
-        message.answer_photo.assert_not_awaited()
-
-    async def test_show_review_with_image(self) -> None:
-        """With image_b64: deletes old message, sends photo with caption."""
-        import base64
-
-        message = MagicMock()
-        message.delete = AsyncMock()
-        message.answer_photo = AsyncMock()
-        message.answer = AsyncMock()
-        kb = MagicMock()
-
-        img_data = base64.b64encode(b"\x89PNG_fake_image").decode("ascii")
-        short_review = "Short review"
-
-        await _show_review(message, short_review, kb, image_b64=img_data)
-
-        message.delete.assert_awaited_once()
-        message.answer_photo.assert_awaited_once()
-        call_kwargs = message.answer_photo.call_args[1]
-        assert call_kwargs["caption"] == short_review
-        assert call_kwargs["reply_markup"] is kb
-
-    async def test_show_review_long_caption_splits(self) -> None:
-        """When review_text > 1024 chars, sends photo without caption + text with keyboard."""
-        import base64
-
-        message = MagicMock()
-        message.delete = AsyncMock()
-        message.answer_photo = AsyncMock()
-        message.answer = AsyncMock()
-        kb = MagicMock()
-
-        img_data = base64.b64encode(b"\x89PNG_fake").decode("ascii")
-        long_review = "A" * 1100  # > 1024
-
-        await _show_review(message, long_review, kb, image_b64=img_data)
-
-        message.delete.assert_awaited_once()
-        # Photo sent without caption (no reply_markup, no caption)
-        photo_call = message.answer_photo.call_args_list[0]
-        assert "caption" not in photo_call[1] or photo_call[1].get("caption") is None
-        # Text sent with keyboard
-        message.answer.assert_awaited_once_with(long_review, reply_markup=kb)
-
-    async def test_show_review_delete_fails_gracefully(self) -> None:
-        """message.delete() raises TelegramBadRequest but answer_photo still called."""
-        import base64
-
-        from aiogram.exceptions import TelegramBadRequest
-
-        message = MagicMock()
-        message.delete = AsyncMock(
-            side_effect=TelegramBadRequest(method=MagicMock(), message="message can't be deleted")
-        )
-        message.answer_photo = AsyncMock()
-        message.answer = AsyncMock()
-        kb = MagicMock()
-
-        img_data = base64.b64encode(b"\x89PNG_fake").decode("ascii")
-
-        await _show_review(message, "Short", kb, image_b64=img_data)
-
-        # Delete failed, but photo still sent
-        message.delete.assert_awaited_once()
-        message.answer_photo.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -771,7 +693,8 @@ class TestRegenerateSocial:
                 new_callable=AsyncMock,
             ) as mock_run_gen,
         ):
-            await regenerate_social(mock_callback, mock_state, user, mock_db, mock_redis, mock_ai)
+            mock_http = MagicMock()
+            await regenerate_social(mock_callback, mock_state, user, mock_db, mock_redis, mock_ai, mock_http)
 
         # Old message deleted (suppresses TelegramBadRequest)
         msg.delete.assert_awaited_once()
