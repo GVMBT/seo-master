@@ -448,14 +448,28 @@ class TestPublish:
         assert result.success is False
 
     async def test_publish_upload_error_returns_failure(self) -> None:
-        """Failure during photo upload step."""
+        """Failure during photo upload step (both wall and album fallback)."""
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "photos.getWallUploadServer" in str(request.url):
+            url = str(request.url)
+            if "photos.getWallUploadServer" in url:
                 return httpx.Response(
                     200,
                     json={"error": {"error_code": 100, "error_msg": "Missing parameter"}},
                 )
+            if "photos.getAlbums" in url:
+                return httpx.Response(
+                    200,
+                    json={"error": {"error_code": 100, "error_msg": "Access denied"}},
+                )
+            if "photos.createAlbum" in url:
+                return httpx.Response(
+                    200,
+                    json={"error": {"error_code": 100, "error_msg": "Access denied"}},
+                )
+            if "wall.post" in url:
+                # Post without images (graceful degradation)
+                return httpx.Response(200, json={"response": {"post_id": 99}})
             return httpx.Response(404)
 
         pub = _make_publisher(handler)
@@ -467,7 +481,54 @@ class TestPublish:
             images=[b"DATA"],
         )
         result = await pub.publish(req)
-        assert result.success is False
+        # Publishes text without images (graceful degradation)
+        assert result.success is True
+
+    async def test_publish_album_fallback_on_error27(self) -> None:
+        """Community token: wall upload fails with error 27, album fallback succeeds."""
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "photos.getWallUploadServer" in url:
+                return httpx.Response(
+                    200,
+                    json={"error": {"error_code": 27, "error_msg": "Group authorization failed"}},
+                )
+            if "photos.getAlbums" in url:
+                return httpx.Response(
+                    200,
+                    json={"response": {"count": 1, "items": [{"id": 111, "title": "SEO Bot"}]}},
+                )
+            if "photos.getUploadServer" in url:
+                return httpx.Response(
+                    200,
+                    json={"response": {"upload_url": "https://upload.vk.com/album"}},
+                )
+            if "upload.vk.com/album" in url:
+                return httpx.Response(
+                    200,
+                    json={"photos_list": "[]", "server": 1, "hash": "abc"},
+                )
+            if "photos.save" in url and "saveWallPhoto" not in url:
+                return httpx.Response(
+                    200,
+                    json={"response": [{"id": 789, "owner_id": -12345}]},
+                )
+            if "wall.post" in url:
+                return httpx.Response(200, json={"response": {"post_id": 42}})
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection()
+        req = PublishRequest(
+            connection=conn,
+            content="text with image",
+            content_type="plain_text",
+            images=[b"IMGDATA"],
+        )
+        result = await pub.publish(req)
+        assert result.success is True
+        assert result.post_url is not None
 
     async def test_all_api_calls_use_post(self) -> None:
         """Verify every VK API call uses POST method (C3 security fix)."""

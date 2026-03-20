@@ -172,6 +172,168 @@ class VKPublisher(BasePublisher):
             log.error("vk_publish_error", error=str(exc))
             return PublishResult(success=False, error=str(exc))
 
+    async def _upload_photo_wall(
+        self,
+        token: str,
+        group_id: str,
+        image_data: bytes,
+    ) -> str | None:
+        """Upload photo via photos.getWallUploadServer (user tokens).
+
+        Returns attachment string like 'photo-123_456' or None on failure.
+        """
+        resp = await self._client.post(
+            f"{VK_API_URL}/photos.getWallUploadServer",
+            data={"access_token": token, "group_id": group_id, "v": VK_API_VERSION},
+            timeout=15,
+        )
+        server_data = resp.json()
+        if "error" in server_data:
+            return None
+        upload_url = server_data["response"]["upload_url"]
+        return await self._upload_and_save_wall(token, group_id, upload_url, image_data)
+
+    async def _upload_photo_album(
+        self,
+        token: str,
+        group_id: str,
+        image_data: bytes,
+    ) -> str | None:
+        """Upload photo via album (community token fallback).
+
+        Creates/reuses a hidden album, uploads photo there.
+        Returns attachment string like 'photo-123_456' or None on failure.
+        """
+        # Get or create album for bot uploads
+        album_id = await self._get_or_create_album(token, group_id)
+        if not album_id:
+            return None
+
+        resp = await self._client.post(
+            f"{VK_API_URL}/photos.getUploadServer",
+            data={
+                "access_token": token,
+                "album_id": album_id,
+                "group_id": group_id,
+                "v": VK_API_VERSION,
+            },
+            timeout=15,
+        )
+        server_data = resp.json()
+        if "error" in server_data:
+            log.warning(
+                "vk_album_upload_server_failed",
+                error_code=server_data["error"].get("error_code"),
+                error_msg=server_data["error"].get("error_msg", ""),
+            )
+            return None
+
+        upload_url = server_data["response"]["upload_url"]
+
+        # Upload file
+        upload_resp = await self._client.post(
+            upload_url,
+            files={"file1": ("image.png", image_data, "image/png")},
+            timeout=30,
+        )
+        upload_data = upload_resp.json()
+
+        # Save photo
+        save_resp = await self._client.post(
+            f"{VK_API_URL}/photos.save",
+            data={
+                "access_token": token,
+                "album_id": album_id,
+                "group_id": group_id,
+                "photos_list": upload_data.get("photos_list", ""),
+                "server": upload_data.get("server", ""),
+                "hash": upload_data.get("hash", ""),
+                "v": VK_API_VERSION,
+            },
+            timeout=15,
+        )
+        save_data = save_resp.json()
+        if "error" in save_data:
+            log.warning(
+                "vk_album_photo_save_failed",
+                error_code=save_data["error"].get("error_code"),
+                error_msg=save_data["error"].get("error_msg", ""),
+            )
+            return None
+
+        photo = save_data["response"][0]
+        return f"photo{photo['owner_id']}_{photo['id']}"
+
+    async def _get_or_create_album(self, token: str, group_id: str) -> int | None:
+        """Get or create a hidden album for bot photo uploads."""
+        # Try to find existing album named "SEO Bot"
+        resp = await self._client.post(
+            f"{VK_API_URL}/photos.getAlbums",
+            data={"access_token": token, "owner_id": f"-{group_id}", "v": VK_API_VERSION},
+            timeout=10,
+        )
+        albums_data = resp.json()
+        if "response" in albums_data:
+            for album in albums_data["response"].get("items", []):
+                if album.get("title") == "SEO Bot":
+                    return int(album["id"])
+
+        # Create new album
+        create_resp = await self._client.post(
+            f"{VK_API_URL}/photos.createAlbum",
+            data={
+                "access_token": token,
+                "group_id": group_id,
+                "title": "SEO Bot",
+                "upload_by_admins_only": 1,
+                "comments_disabled": 1,
+                "v": VK_API_VERSION,
+            },
+            timeout=10,
+        )
+        create_data = create_resp.json()
+        if "error" in create_data:
+            log.warning(
+                "vk_create_album_failed",
+                error_code=create_data["error"].get("error_code"),
+                error_msg=create_data["error"].get("error_msg", ""),
+            )
+            return None
+        return int(create_data["response"]["id"])
+
+    async def _upload_and_save_wall(
+        self,
+        token: str,
+        group_id: str,
+        upload_url: str,
+        image_data: bytes,
+    ) -> str | None:
+        """Upload file to VK server and save as wall photo."""
+        upload_resp = await self._client.post(
+            upload_url,
+            files={"photo": ("image.png", image_data, "image/png")},
+            timeout=30,
+        )
+        upload_data = upload_resp.json()
+
+        save_resp = await self._client.post(
+            f"{VK_API_URL}/photos.saveWallPhoto",
+            data={
+                "access_token": token,
+                "group_id": group_id,
+                "photo": upload_data["photo"],
+                "server": upload_data["server"],
+                "hash": upload_data["hash"],
+                "v": VK_API_VERSION,
+            },
+            timeout=15,
+        )
+        save_data = save_resp.json()
+        if "error" in save_data:
+            return None
+        photo = save_data["response"][0]
+        return f"photo{photo['owner_id']}_{photo['id']}"
+
     async def _do_publish(
         self,
         request: PublishRequest,
@@ -182,55 +344,22 @@ class VKPublisher(BasePublisher):
         """Execute the actual VK publish flow."""
         attachments: list[str] = []
 
-        # 1. Upload photo (3-step: get server -> upload -> save)
-        images_to_upload = list(request.images) if request.images else []
-        if images_to_upload:
-            # Step 1: get upload URL
-            resp = await self._client.post(
-                f"{VK_API_URL}/photos.getWallUploadServer",
-                data={
-                    "access_token": token,
-                    "group_id": group_id,
-                    "v": VK_API_VERSION,
-                },
-                timeout=15,
-            )
-            server_data = resp.json()
-            if "error" in server_data and server_data["error"].get("error_code") == 27:
-                # Community token doesn't support photo upload (VK API change Aug 2025)
-                # Graceful degradation: publish text without images
-                log.warning("vk_photo_upload_unavailable", group_id=group_id)
-                images_to_upload = []
+        # 1. Upload photo: try wall upload first, fallback to album upload
+        if request.images:
+            image_data = request.images[0]
+
+            # Try wall upload (works with user tokens)
+            attachment = await self._upload_photo_wall(token, group_id, image_data)
+
+            if not attachment:
+                # Fallback: album upload (works with community tokens)
+                log.info("vk_trying_album_upload", group_id=group_id)
+                attachment = await self._upload_photo_album(token, group_id, image_data)
+
+            if attachment:
+                attachments.append(attachment)
             else:
-                self._check_vk_response(server_data, "getWallUploadServer")
-                upload_url = server_data["response"]["upload_url"]
-
-        if images_to_upload:
-            # Step 2: upload file
-            upload_resp = await self._client.post(
-                upload_url,
-                files={"photo": ("image.png", images_to_upload[0], "image/png")},
-                timeout=30,
-            )
-            upload_data = upload_resp.json()
-
-            # Step 3: save photo
-            save_resp = await self._client.post(
-                f"{VK_API_URL}/photos.saveWallPhoto",
-                data={
-                    "access_token": token,
-                    "group_id": group_id,
-                    "photo": upload_data["photo"],
-                    "server": upload_data["server"],
-                    "hash": upload_data["hash"],
-                    "v": VK_API_VERSION,
-                },
-                timeout=15,
-            )
-            save_data = save_resp.json()
-            self._check_vk_response(save_data, "saveWallPhoto")
-            photo = save_data["response"][0]
-            attachments.append(f"photo{photo['owner_id']}_{photo['id']}")
+                log.warning("vk_all_photo_uploads_failed", group_id=group_id)
 
         # 2. Publish wall post
         resp = await self._client.post(
