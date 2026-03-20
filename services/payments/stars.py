@@ -392,6 +392,7 @@ class StarsPaymentService:
         s.separator()
         s.line(f"{E.WALLET} " + S.TARIFF_BALANCE_LINE.format(balance=balance))
         s.line(S.TARIFF_ESTIMATE.format(articles=articles_est, posts=posts_est))
+        s.hint(S.TARIFF_HINT)
         return s.build()
 
     def format_package_text(self, package_name: str) -> str:

@@ -734,6 +734,7 @@ def social_connections_kb(
             InlineKeyboardButton(
                 text="Отмена",
                 callback_data="pipeline:social:cancel",
+                style=ButtonStyle.DANGER,
             ),
         ]
     )
@@ -779,6 +780,7 @@ def social_no_connections_kb(
             InlineKeyboardButton(
                 text="Отмена",
                 callback_data="pipeline:social:cancel",
+                style=ButtonStyle.DANGER,
             ),
         ]
     )

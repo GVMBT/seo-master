@@ -76,8 +76,7 @@ async def show_category_list(
             Screen(E.HASHTAG, f"КАТЕГОРИИ \u2014 {safe_name}")
             .blank()
             .line(S.CATEGORY_EMPTY)
-            .blank()
-            .line(S.CATEGORY_EMPTY_HINT)
+            .hint(S.CATEGORY_EMPTY_HINT)
             .build()
         )
         await edit_screen(
@@ -318,7 +317,7 @@ async def show_category_card(
     pub_repo = PublicationsRepository(db)
     pub_count = await pub_repo.get_count_by_category(category_id)
     s.field(E.ANALYTICS, "Публикаций", pub_count)
-    s.separator()
+    s.hint(S.CATEGORY_HINT)
 
     text = s.build()
     await safe_edit_text(msg, text, reply_markup=category_card_kb(category_id, category.project_id))

@@ -469,6 +469,7 @@ async def show_html_style(
         .blank()
         .line(S.CONTENT_HTML_DESC)
         .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_HTML_HINT)
         .build()
     )
     await safe_edit_text(
@@ -613,6 +614,7 @@ async def show_image_menu(
         Screen(E.IMAGE, S.CONTENT_IMAGE_TITLE)
         .blank()
         .line(S.CONTENT_IMAGE_PROMPT)
+        .hint(S.CONTENT_IMAGE_MENU_HINT)
         .build()
     )
     await safe_edit_text(
@@ -648,6 +650,7 @@ async def show_preview_format(
         Screen(E.IMAGE, S.CONTENT_PREVIEW_TITLE)
         .blank()
         .line(S.CONTENT_PREVIEW_DESC)
+        .hint(S.CONTENT_PREVIEW_HINT)
         .build()
     )
     await safe_edit_text(
@@ -713,6 +716,7 @@ async def show_article_formats(
         .blank()
         .line(S.CONTENT_ARTICLE_FMT_DESC)
         .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_ARTICLE_FMT_HINT)
         .build()
     )
     await safe_edit_text(
@@ -755,6 +759,7 @@ async def toggle_article_format(
         .blank()
         .line(S.CONTENT_ARTICLE_FMT_DESC)
         .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_ARTICLE_FMT_HINT)
         .build()
     )
     await safe_edit_text(
@@ -786,6 +791,7 @@ async def show_image_styles(
         Screen(E.IMAGE, S.CONTENT_IMAGE_STYLE_TITLE)
         .blank()
         .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_IMAGE_STYLE_HINT)
         .build()
     )
     await safe_edit_text(
@@ -827,6 +833,7 @@ async def toggle_image_style(
         Screen(E.IMAGE, S.CONTENT_IMAGE_STYLE_TITLE)
         .blank()
         .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_IMAGE_STYLE_HINT)
         .build()
     )
     await safe_edit_text(
@@ -918,6 +925,7 @@ async def show_text_on_image(
         Screen(E.IMAGE, S.CONTENT_TEXT_ON_IMAGE_TITLE)
         .blank()
         .line(S.CONTENT_TEXT_ON_IMAGE_DESC)
+        .hint(S.CONTENT_TEXT_ON_IMAGE_HINT)
         .build()
     )
     await safe_edit_text(
@@ -981,6 +989,7 @@ async def show_cameras(
         Screen(E.IMAGE, S.CONTENT_CAMERA_TITLE)
         .blank()
         .line(S.CONTENT_CAMERA_DESC)
+        .hint(S.CONTENT_CAMERA_HINT)
         .build()
     )
     await safe_edit_text(
@@ -1022,6 +1031,7 @@ async def toggle_camera(
         Screen(E.IMAGE, S.CONTENT_CAMERA_TITLE)
         .blank()
         .line(S.CONTENT_CAMERA_DESC)
+        .hint(S.CONTENT_CAMERA_HINT)
         .build()
     )
     await safe_edit_text(
@@ -1053,6 +1063,7 @@ async def show_angles(
         Screen(E.IMAGE, S.CONTENT_ANGLE_TITLE)
         .blank()
         .line(S.CONTENT_ANGLE_DESC)
+        .hint(S.CONTENT_ANGLE_HINT)
         .build()
     )
     await safe_edit_text(
@@ -1094,6 +1105,7 @@ async def toggle_angle(
         Screen(E.IMAGE, S.CONTENT_ANGLE_TITLE)
         .blank()
         .line(S.CONTENT_ANGLE_DESC)
+        .hint(S.CONTENT_ANGLE_HINT)
         .build()
     )
     await safe_edit_text(
@@ -1125,6 +1137,7 @@ async def show_quality(
         Screen(E.IMAGE, S.CONTENT_QUALITY_TITLE)
         .blank()
         .line(S.CONTENT_QUALITY_DESC)
+        .hint(S.CONTENT_QUALITY_HINT)
         .build()
     )
     await safe_edit_text(
@@ -1166,6 +1179,7 @@ async def toggle_quality(
         Screen(E.IMAGE, S.CONTENT_QUALITY_TITLE)
         .blank()
         .line(S.CONTENT_QUALITY_DESC)
+        .hint(S.CONTENT_QUALITY_HINT)
         .build()
     )
     await safe_edit_text(
@@ -1197,6 +1211,7 @@ async def show_tones(
         Screen(E.IMAGE, S.CONTENT_TONE_TITLE)
         .blank()
         .line(S.CONTENT_TONE_DESC)
+        .hint(S.CONTENT_TONE_HINT)
         .build()
     )
     await safe_edit_text(
@@ -1238,6 +1253,7 @@ async def toggle_tone(
         Screen(E.IMAGE, S.CONTENT_TONE_TITLE)
         .blank()
         .line(S.CONTENT_TONE_DESC)
+        .hint(S.CONTENT_TONE_HINT)
         .build()
     )
     await safe_edit_text(
