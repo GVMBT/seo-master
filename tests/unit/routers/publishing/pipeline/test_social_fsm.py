@@ -12,7 +12,7 @@ from aiogram.fsm.state import State
 
 from routers.publishing.pipeline._common import SocialPipelineFSM
 
-# Expected state names — 24 states (create_project_name only, no company/spec/url)
+# Expected state names — 26 states (create_project_name only, no company/spec/url)
 _EXPECTED_STATES = [
     # Step 1: Project selection
     "select_project",
@@ -22,8 +22,10 @@ _EXPECTED_STATES = [
     "connect_tg_channel",
     "connect_tg_token",
     "connect_tg_verify",
+    "connect_vk_type",
     "connect_vk_group_url",
     "connect_vk_oauth",
+    "connect_vk_personal_token",
     "connect_pinterest_oauth",
     # Step 3: Category selection
     "select_category",
@@ -50,7 +52,7 @@ _EXPECTED_STATES = [
 class TestSocialPipelineFSMDefinition:
     def test_state_count(self) -> None:
         states = [attr for attr in dir(SocialPipelineFSM) if isinstance(getattr(SocialPipelineFSM, attr), State)]
-        assert len(states) == 24  # 21 base + 3 cross-post (F6.4), 3 create_project states removed
+        assert len(states) == 26  # 21 base + 3 cross-post (F6.4) + 2 VK personal page
 
     def test_all_expected_states_exist(self) -> None:
         for name in _EXPECTED_STATES:

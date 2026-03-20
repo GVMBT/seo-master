@@ -616,3 +616,172 @@ class TestDeletePost:
         # VK returns error object, but no "response" key -> get("response") returns None
         result = await pub.delete_post(conn, "42")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Personal page support (dual-mode)
+# ---------------------------------------------------------------------------
+
+
+def _make_personal_connection(**overrides: object) -> PlatformConnection:
+    """Connection for personal page (target=personal)."""
+    defaults: dict = {
+        "id": 10,
+        "project_id": 1,
+        "platform_type": "vk",
+        "identifier": "id789012",
+        "credentials": {
+            "access_token": "personal_token_123",
+            "target": "personal",
+            "user_vk_id": "789012",
+            "expires_at": "",
+        },
+    }
+    defaults.update(overrides)
+    return PlatformConnection(**defaults)
+
+
+class TestPublishPersonalPage:
+    async def test_publish_personal_page(self) -> None:
+        """Personal page: owner_id is positive user ID, no group_id."""
+        captured_form: dict[str, str] = {}
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "wall.post" in url:
+                captured_form.update(_parse_form_data(request))
+                return httpx.Response(200, json={"response": {"post_id": 555}})
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_personal_connection()
+        req = PublishRequest(
+            connection=conn,
+            content="Post on my wall",
+            content_type="plain_text",
+        )
+        result = await pub.publish(req)
+        assert result.success is True
+        assert result.platform_post_id == "555"
+        # owner_id should be positive (personal page)
+        assert captured_form["owner_id"] == "789012"
+        assert "vk.com/wall789012_555" in result.post_url  # type: ignore[operator]
+
+    async def test_publish_personal_with_image_no_group_id(self) -> None:
+        """Personal page photo upload: no group_id in API calls."""
+        captured_params: list[dict[str, str]] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "photos.getWallUploadServer" in url:
+                form = _parse_form_data(request)
+                captured_params.append(form)
+                assert "group_id" not in form  # personal page omits group_id
+                return httpx.Response(
+                    200,
+                    json={"response": {"upload_url": "https://upload.vk.com/upload"}},
+                )
+            if "upload.vk.com/upload" in url:
+                return httpx.Response(
+                    200,
+                    json={"photo": "data", "server": 1, "hash": "abc"},
+                )
+            if "photos.saveWallPhoto" in url:
+                form = _parse_form_data(request)
+                captured_params.append(form)
+                assert "group_id" not in form  # personal page omits group_id
+                return httpx.Response(
+                    200,
+                    json={"response": [{"id": 100, "owner_id": 789012}]},
+                )
+            if "wall.post" in url:
+                return httpx.Response(200, json={"response": {"post_id": 777}})
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_personal_connection()
+        req = PublishRequest(
+            connection=conn,
+            content="Photo post",
+            content_type="plain_text",
+            images=[b"IMG"],
+        )
+        result = await pub.publish(req)
+        assert result.success is True
+        assert len(captured_params) == 2
+
+
+class TestValidatePersonalConnection:
+    async def test_validate_personal_uses_users_get(self) -> None:
+        """Personal page validation uses users.get, not groups.getById."""
+        api_called: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "users.get" in url:
+                api_called.append("users.get")
+                return httpx.Response(200, json={"response": [{"id": 789012}]})
+            if "groups.getById" in url:
+                api_called.append("groups.getById")
+                return httpx.Response(200, json={"response": [{"id": 12345}]})
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_personal_connection()
+        result = await pub.validate_connection(conn)
+        assert result is True
+        assert api_called == ["users.get"]
+
+    async def test_validate_group_still_uses_groups_get(self) -> None:
+        """Group connection validation still uses groups.getById."""
+        api_called: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "users.get" in url:
+                api_called.append("users.get")
+                return httpx.Response(200, json={"response": [{"id": 789012}]})
+            if "groups.getById" in url:
+                api_called.append("groups.getById")
+                return httpx.Response(200, json={"response": [{"id": 12345}]})
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection()
+        result = await pub.validate_connection(conn)
+        assert result is True
+        assert api_called == ["groups.getById"]
+
+
+class TestDeletePostPersonal:
+    async def test_delete_post_personal_positive_owner_id(self) -> None:
+        """Personal page delete: owner_id is positive."""
+        captured_form: dict[str, str] = {}
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "wall.delete" in str(request.url):
+                captured_form.update(_parse_form_data(request))
+                return httpx.Response(200, json={"response": 1})
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_personal_connection()
+        result = await pub.delete_post(conn, "42")
+        assert result is True
+        assert captured_form["owner_id"] == "789012"  # positive, not negative
+
+    async def test_delete_post_group_negative_owner_id(self) -> None:
+        """Group delete: owner_id is negative (backward compat)."""
+        captured_form: dict[str, str] = {}
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "wall.delete" in str(request.url):
+                captured_form.update(_parse_form_data(request))
+                return httpx.Response(200, json={"response": 1})
+            return httpx.Response(404)
+
+        pub = _make_publisher(handler)
+        conn = _make_connection()
+        result = await pub.delete_post(conn, "42")
+        assert result is True
+        assert captured_form["owner_id"] == "-12345"  # negative for groups

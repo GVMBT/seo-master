@@ -1,4 +1,4 @@
-"""VK publisher — VK API v5.199, OAuth 2.1 token, single group per connection.
+"""VK publisher — VK API v5.199, dual-mode: group + personal page.
 
 Source of truth: docs/API_CONTRACTS.md section 3.5.
 Edge cases: E08 (VK token revoked).
@@ -8,6 +8,11 @@ Write idempotency (CR-78a): no retry on POST/create operations
 Token refresh: access_token TTL=3600s (60 min), refreshed via
 POST https://id.vk.ru/oauth2/auth (refresh_token grant).
 Pattern: same as PinterestPublisher._maybe_refresh_token().
+
+Dual-mode:
+- Group: owner_id=-{group_id}, photo upload with group_id
+- Personal: owner_id={user_vk_id} or omitted, photo upload without group_id
+  Detected via creds.get("target") == "personal"
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ _REFRESH_THRESHOLD = timedelta(minutes=5)
 
 
 class VKPublisher(BasePublisher):
-    """VK API v5.199. OAuth 2.1 token, one group per connection."""
+    """VK API v5.199. Dual-mode: group or personal page per connection."""
 
     def __init__(
         self,
@@ -103,16 +108,18 @@ class VKPublisher(BasePublisher):
 
         # Notify caller to persist updated credentials
         if self._on_token_refresh:
-            await self._on_token_refresh(
-                creds,
-                {
-                    "access_token": new_access,
-                    "refresh_token": new_refresh,
-                    "expires_at": new_expires_at.isoformat(),
-                    "device_id": creds.get("device_id", ""),
-                    "group_id": creds.get("group_id", ""),
-                },
-            )
+            updated: dict[str, Any] = {
+                "access_token": new_access,
+                "refresh_token": new_refresh,
+                "expires_at": new_expires_at.isoformat(),
+                "device_id": creds.get("device_id", ""),
+                "group_id": creds.get("group_id", ""),
+            }
+            # Preserve personal page fields
+            if creds.get("target") == "personal":
+                updated["target"] = "personal"
+                updated["user_vk_id"] = creds.get("user_vk_id", "")
+            await self._on_token_refresh(creds, updated)
 
         log.info("vk_token_refreshed")
         return new_access
@@ -139,10 +146,17 @@ class VKPublisher(BasePublisher):
     # ------------------------------------------------------------------
 
     async def validate_connection(self, connection: PlatformConnection) -> bool:
-        """groups.getById — verify token and group access."""
+        """Verify token: users.get for personal, groups.getById for group."""
         creds = connection.credentials
         try:
             token = await self._maybe_refresh_token(creds)
+            if creds.get("target") == "personal":
+                resp = await self._client.post(
+                    f"{VK_API_URL}/users.get",
+                    data={"access_token": token, "v": VK_API_VERSION},
+                    timeout=10,
+                )
+                return "response" in resp.json()
             resp = await self._client.post(
                 f"{VK_API_URL}/groups.getById",
                 data={
@@ -159,8 +173,13 @@ class VKPublisher(BasePublisher):
     async def publish(self, request: PublishRequest) -> PublishResult:
         """Publish to VK. No retry on write operations (CR-78a)."""
         creds = request.connection.credentials
-        group_id = creds["group_id"]
-        owner_id = f"-{group_id}"
+        is_personal = creds.get("target") == "personal"
+        if is_personal:
+            owner_id = str(creds.get("user_vk_id", ""))
+            group_id = ""
+        else:
+            group_id = creds["group_id"]
+            owner_id = f"-{group_id}"
 
         try:
             token = await self._maybe_refresh_token(creds)
@@ -181,10 +200,14 @@ class VKPublisher(BasePublisher):
         """Upload photo via photos.getWallUploadServer (user tokens).
 
         Returns attachment string like 'photo-123_456' or None on failure.
+        When group_id is empty (personal page), omit group_id from API calls.
         """
+        params: dict[str, str] = {"access_token": token, "v": VK_API_VERSION}
+        if group_id:
+            params["group_id"] = group_id
         resp = await self._client.post(
             f"{VK_API_URL}/photos.getWallUploadServer",
-            data={"access_token": token, "group_id": group_id, "v": VK_API_VERSION},
+            data=params,
             timeout=15,
         )
         server_data = resp.json()
@@ -203,7 +226,10 @@ class VKPublisher(BasePublisher):
 
         Creates/reuses a hidden album, uploads photo there.
         Returns attachment string like 'photo-123_456' or None on failure.
+        Skipped for personal pages (empty group_id).
         """
+        if not group_id:
+            return None
         # Get or create album for bot uploads
         album_id = await self._get_or_create_album(token, group_id)
         if not album_id:
@@ -316,16 +342,19 @@ class VKPublisher(BasePublisher):
         )
         upload_data = upload_resp.json()
 
+        save_params: dict[str, Any] = {
+            "access_token": token,
+            "photo": upload_data["photo"],
+            "server": upload_data["server"],
+            "hash": upload_data["hash"],
+            "v": VK_API_VERSION,
+        }
+        if group_id:
+            save_params["group_id"] = group_id
+
         save_resp = await self._client.post(
             f"{VK_API_URL}/photos.saveWallPhoto",
-            data={
-                "access_token": token,
-                "group_id": group_id,
-                "photo": upload_data["photo"],
-                "server": upload_data["server"],
-                "hash": upload_data["hash"],
-                "v": VK_API_VERSION,
-            },
+            data=save_params,
             timeout=15,
         )
         save_data = save_resp.json()
@@ -351,26 +380,29 @@ class VKPublisher(BasePublisher):
             # Try wall upload (works with user tokens)
             attachment = await self._upload_photo_wall(token, group_id, image_data)
 
-            if not attachment:
-                # Fallback: album upload (works with community tokens)
+            if not attachment and group_id:
+                # Fallback: album upload (works with community tokens, not for personal pages)
                 log.info("vk_trying_album_upload", group_id=group_id)
                 attachment = await self._upload_photo_album(token, group_id, image_data)
 
             if attachment:
                 attachments.append(attachment)
             else:
-                log.warning("vk_all_photo_uploads_failed", group_id=group_id)
+                log.warning("vk_all_photo_uploads_failed", group_id=group_id or "personal")
 
         # 2. Publish wall post
+        post_params: dict[str, str] = {
+            "access_token": token,
+            "message": request.content[:_VK_TEXT_LIMIT],
+            "attachments": ",".join(attachments),
+            "v": VK_API_VERSION,
+        }
+        if owner_id:
+            post_params["owner_id"] = owner_id
+
         resp = await self._client.post(
             f"{VK_API_URL}/wall.post",
-            data={
-                "access_token": token,
-                "owner_id": owner_id,
-                "message": request.content[:_VK_TEXT_LIMIT],
-                "attachments": ",".join(attachments),
-                "v": VK_API_VERSION,
-            },
+            data=post_params,
             timeout=15,
         )
         post_data = resp.json()
@@ -387,11 +419,15 @@ class VKPublisher(BasePublisher):
         creds = connection.credentials
         try:
             token = await self._maybe_refresh_token(creds)
+            if creds.get("target") == "personal":
+                owner_id = str(creds.get("user_vk_id", ""))
+            else:
+                owner_id = f"-{creds['group_id']}"
             resp = await self._client.post(
                 f"{VK_API_URL}/wall.delete",
                 data={
                     "access_token": token,
-                    "owner_id": f"-{creds['group_id']}",
+                    "owner_id": owner_id,
                     "post_id": post_id,
                     "v": VK_API_VERSION,
                 },

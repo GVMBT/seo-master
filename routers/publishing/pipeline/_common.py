@@ -81,8 +81,10 @@ class SocialPipelineFSM(StatesGroup):
     connect_tg_channel = State()
     connect_tg_token = State()
     connect_tg_verify = State()
+    connect_vk_type = State()  # group or personal
     connect_vk_group_url = State()
     connect_vk_oauth = State()
+    connect_vk_personal_token = State()  # personal page OAuth token
     connect_pinterest_oauth = State()
 
     # Step 3: Category selection
