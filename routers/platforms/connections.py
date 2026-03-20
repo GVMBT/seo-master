@@ -99,12 +99,14 @@ def _build_connections_text(
         s.hint(S.CONNECTIONS_HINT)
         return s.build()
 
-    # Group connections by platform_type
-    grouped: dict[str, list[str]] = {}
+    # Group connections by platform_type: list of (identifier, group_name|None)
+    grouped: dict[str, list[tuple[str, str | None]]] = {}
     for conn in connections:
         pt = getattr(conn, "platform_type", "unknown")
         identifier = html.escape(getattr(conn, "identifier", ""))
-        grouped.setdefault(pt, []).append(identifier)
+        meta = getattr(conn, "metadata", None) or {}
+        gn = meta.get("group_name") if isinstance(meta, dict) else None
+        grouped.setdefault(pt, []).append((identifier, gn))
 
     platform_order = ["wordpress", "telegram", "vk", "pinterest"]
     for pt in platform_order:
@@ -114,14 +116,15 @@ def _build_connections_text(
         icon = _PLAT_EMOJI.get(pt, "")
         label = _PLAT_LABEL.get(pt, pt.capitalize())
         s.line(f"{icon} {label} ({len(items)}):")
-        for i, ident in enumerate(items, 1):
-            s.line(f"  {i}. {ident}")
+        for i, (ident, gn) in enumerate(items, 1):
+            display = f"{html.escape(gn)} ({ident})" if gn else ident
+            s.line(f"  {i}. {display}")
         s.blank()
 
     # Remaining unknown platforms (if any)
     for pt, items in grouped.items():
         s.line(f"{pt.capitalize()} ({len(items)}):")
-        for i, ident in enumerate(items, 1):
+        for i, (ident, _gn) in enumerate(items, 1):
             s.line(f"  {i}. {ident}")
         s.blank()
 
@@ -285,27 +288,27 @@ async def manage_connection(
         return
 
     icon = _PLAT_EMOJI.get(conn.platform_type, "")
-    plat_label = _PLAT_LABEL.get(conn.platform_type, conn.platform_type.capitalize())
+    plat_name = S.PLATFORM_DISPLAY.get(conn.platform_type, conn.platform_type).upper()
     status_icon = E.CHECK if conn.status == "active" else E.WARNING
     status_text = S.CONNECTIONS_STATUS_ACTIVE if conn.status == "active" else S.CONNECTIONS_STATUS_ERROR
     safe_id = html.escape(conn.identifier)
     created_str = conn.created_at.strftime("%d.%m.%Y") if conn.created_at else "---"
+    metadata = conn.metadata or {}
+    group_name = metadata.get("group_name") if isinstance(metadata, dict) else None
 
     pub_repo = PublicationsRepository(db)
     pub_count = await pub_repo.get_count_by_connection(conn_id)
 
-    text = (
-        Screen(icon, "ПОДКЛЮЧЕНИЕ")
-        .blank()
-        .line(f"Платформа: {plat_label}")
-        .line(f"Идентификатор: {safe_id}")
-        .blank()
-        .line(f"Статус: {status_icon} {status_text}")
-        .line(f"Подключено: {created_str}")
-        .field(E.ANALYTICS, "Публикаций", pub_count)
-        .hint(S.CONNECTIONS_MANAGE_HINT)
-        .build()
-    )
+    s = Screen(icon, plat_name)
+    s.blank()
+    if group_name:
+        s.line(f"<b>{html.escape(group_name)}</b>")
+    s.line(safe_id)
+    s.blank()
+    s.line(f"{status_icon} {status_text} \u00b7 {created_str}")
+    s.field(E.ANALYTICS, "Публикаций", pub_count)
+    s.hint(S.CONNECTIONS_MANAGE_HINT)
+    text = s.build()
     await safe_edit_text(
         msg,
         text,
@@ -342,10 +345,15 @@ async def confirm_connection_delete(
 
     safe_id = html.escape(conn.identifier)
     icon = _PLAT_EMOJI.get(conn.platform_type, "")
+    plat_name = S.PLATFORM_DISPLAY.get(conn.platform_type, conn.platform_type)
+    metadata = conn.metadata or {}
+    group_name = metadata.get("group_name") if isinstance(metadata, dict) else None
+    conn_label = f"{html.escape(group_name)} ({safe_id})" if group_name else safe_id
+
     text = (
         Screen(E.WARNING, S.CONNECTIONS_DELETE_TITLE)
         .blank()
-        .line(f"{icon} {conn.platform_type.capitalize()} ({safe_id})")
+        .line(f"{icon} {plat_name} \u2014 {conn_label}")
         .blank()
         .line(f"{S.CONNECTIONS_DELETE_LIST_HEADER}")
         .line(f"\u2022 {S.CONNECTIONS_DELETE_ITEMS[0]}")
