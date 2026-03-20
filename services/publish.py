@@ -202,8 +202,9 @@ class PublishService:
             try:
                 await self._try_expand_keywords(payload, category, user_id)
                 # Reload category after expansion
-                category = await self._categories.get_by_id(payload.category_id)
-                if category and category.keywords:
+                refreshed = await self._categories.get_by_id(payload.category_id)
+                if refreshed and refreshed.keywords:
+                    category = refreshed
                     keyword, low_pool = await self._publications.get_rotation_keyword(
                         payload.category_id, category.keywords, content_type
                     )

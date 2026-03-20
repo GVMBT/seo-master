@@ -531,6 +531,7 @@ class ArticleService:
         research_data: dict[str, Any] | None = None,
         news_data: list[dict[str, Any]] | None = None,
         autocomplete_suggestions: list[str] | None = None,
+        previous_keywords: list[str] | None = None,
     ) -> GenerationResult:
         """Generate an SEO article via multi-step pipeline.
 
@@ -561,6 +562,7 @@ class ArticleService:
             research_data=research_data,
             news_data=news_data,
             autocomplete_suggestions=autocomplete_suggestions,
+            previous_keywords=previous_keywords,
         )
 
         # Step 1: OUTLINE → Step 2: EXPAND
@@ -616,6 +618,7 @@ class ArticleService:
         research_data: dict[str, Any] | None = None,
         news_data: list[dict[str, Any]] | None = None,
         autocomplete_suggestions: list[str] | None = None,
+        previous_keywords: list[str] | None = None,
     ) -> tuple[dict[str, Any], str, str, dict[str, str]]:
         """Build prompt context from project/category/competitor data."""
         text_settings = overrides or project.text_settings or category.text_settings or {}
@@ -690,6 +693,10 @@ class ArticleService:
             from services.research_helpers import format_news_for_prompt
 
             context["current_news"] = format_news_for_prompt(news_data)
+
+        # Previous keywords for anti-repetition in prompts
+        if previous_keywords:
+            context["previous_keywords"] = ", ".join(previous_keywords[:20])
 
         # Autocomplete: enrich LSI keywords with real Google suggestions
         if autocomplete_suggestions:
