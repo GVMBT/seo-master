@@ -352,16 +352,9 @@ async def _build_telegraph_html(
         image_data = b64mod.b64decode(image_b64)
         image_url = await telegraph.upload_image(image_data)
         if image_url:
-            parts.append(f'<img src="{image_url}">')
-
-    # Platform label
-    platform_labels = {
-        "telegram": "Telegram",
-        "vk": "ВКонтакте",
-        "pinterest": "Pinterest",
-    }
-    label = platform_labels.get(platform_type, platform_type.title())
-    parts.append(f"<p><b>Площадка: {label}</b></p>")
+            parts.append(f'<figure><img src="{image_url}"></figure>')
+        else:
+            log.warning("telegraph_image_upload_returned_none", size=len(image_data))
 
     # Post text: split by double newlines into paragraphs, escape HTML
     for paragraph in post_text.split("\n\n"):
@@ -520,10 +513,12 @@ async def _run_social_generation(
         tokens_charged = data.get("tokens_charged", cost)
 
         review_text = _build_review_text(
-            post_text, hashtags, keyword, tokens_charged, platform_type, telegraph_url,
+            post_text, hashtags, keyword, tokens_charged, platform_type,
         )
 
-        review_kb = social_review_kb(regen_count=regen_count, regen_cost=cost)
+        review_kb = social_review_kb(
+            regen_count=regen_count, regen_cost=cost, telegraph_url=telegraph_url,
+        )
         await _show_review(message, review_text, review_kb)
         await save_checkpoint(
             redis,
@@ -578,7 +573,6 @@ def _build_review_text(
     keyword: str,
     tokens_charged: int,
     platform: str,
-    telegraph_url: str | None = None,
 ) -> str:
     """Build review display text for social post."""
     s = Screen(E.MEGAPHONE, S.POST_READY_TITLE)
@@ -586,16 +580,12 @@ def _build_review_text(
     s.field(E.HASHTAG, "Ключевая фраза", html.escape(keyword))
     s.field(E.WALLET, "Списано", f"{tokens_charged} ток.")
 
-    if telegraph_url:
-        s.blank()
-        s.line(f'<a href="{telegraph_url}">Открыть превью</a>')
-    else:
-        # Fallback: inline snippet if Telegraph failed
-        s.blank()
-        snippet = html.escape(html.unescape(post_text[:300]))
-        if len(post_text) > 300:
-            snippet += "\u2026"
-        s.line(snippet)
+    # Short snippet of the post text
+    s.blank()
+    snippet = html.escape(html.unescape(post_text[:300]))
+    if len(post_text) > 300:
+        snippet += "\u2026"
+    s.line(snippet)
 
     return s.build()
 
