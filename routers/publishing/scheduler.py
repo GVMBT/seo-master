@@ -99,7 +99,7 @@ async def scheduler_articles_entry(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     cats = await scheduler_service.get_project_categories(project_id, user.id)
     if cats is None:
-        await callback.answer("Проект не найден", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
     if not cats:
         await callback.answer(S.SCHEDULE_NO_CATEGORIES, show_alert=True)
@@ -130,7 +130,7 @@ async def scheduler_social_entry(
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     social_conns = await scheduler_service.get_social_connections(project_id, user.id)
     if social_conns is None:
-        await callback.answer("Проект не найден", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
     if not social_conns:
         await callback.answer(S.SCHEDULE_NO_SOCIAL, show_alert=True)
@@ -174,7 +174,7 @@ async def scheduler_category(
 
     wp_connections = await scheduler_service.get_wp_connections(project_id, user.id)
     if wp_connections is None:
-        await callback.answer("Проект не найден", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
     if not wp_connections:
         await callback.answer(S.SCHEDULE_NO_WP, show_alert=True)
@@ -209,7 +209,7 @@ async def scheduler_conn_list_back(
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     ctx = await scheduler_service.verify_category_ownership(cat_id, user.id)
     if not ctx:
-        await callback.answer("Категория не найдена", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     wp_connections = await scheduler_service.get_wp_connections(ctx.project.id, user.id)
@@ -245,7 +245,7 @@ async def scheduler_connection(
 
     ctx = await scheduler_service.verify_category_ownership(cat_id, user.id)
     if not ctx:
-        await callback.answer("Категория не найдена", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
@@ -314,11 +314,11 @@ async def scheduler_preset(
         )
     except Exception:
         log.exception("preset_schedule_creation_failed", cat_id=cat_id, conn_id=conn_id, preset=preset_key)
-        await callback.answer("Ошибка создания расписания", show_alert=True)
+        await callback.answer(S.SCHEDULE_ERROR_CREATE, show_alert=True)
         return
 
     if not result:
-        await callback.answer("Категория или подключение не найдены", show_alert=True)
+        await callback.answer(S.SCHEDULE_CONN_NOT_FOUND, show_alert=True)
         return
 
     display = html_mod.escape(format_connection_display(result.connection))
@@ -337,13 +337,15 @@ async def scheduler_preset(
             schedule_days=days, posts_per_day=posts_per_day,
         )
 
-    await safe_edit_text(msg,
-        f"{E.CHECK} <b>{S.SCHEDULE_SET_TITLE}</b>\n\n"
-        f"Подключение: {display}\n"
-        f"Режим: {preset[0]}\n"
-        f"Ориент. расход: ~{result.weekly_cost} токенов/нед",
-        reply_markup=reply_markup,
+    set_text = (
+        Screen(E.CHECK, S.SCHEDULE_SET_TITLE)
+        .blank()
+        .line(f"Подключение: {display}")
+        .line(f"Режим: {preset[0]}")
+        .line(S.SCHEDULE_COST_ESTIMATE.format(cost=result.weekly_cost))
+        .build()
     )
+    await safe_edit_text(msg, set_text, reply_markup=reply_markup)
     await callback.answer()
 
 
@@ -370,7 +372,7 @@ async def scheduler_disable(
 
     ok = await scheduler_service.disable_connection_schedule(cat_id, conn_id, user.id)
     if not ok:
-        await callback.answer("Категория не найдена", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     conn = await scheduler_service.get_connection(conn_id, user.id)
@@ -417,7 +419,7 @@ async def scheduler_manual(
     # Verify ownership (callback_data tampering protection)
     ctx = await scheduler_service.verify_category_ownership(cat_id, user.id)
     if not ctx:
-        await callback.answer("Категория не найдена", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
@@ -493,7 +495,7 @@ async def schedule_days_done(callback: CallbackQuery, state: FSMContext) -> None
     selected = data.get("sched_days", [])
 
     if not selected:
-        await callback.answer("Выберите хотя бы один день", show_alert=True)
+        await callback.answer(S.SCHEDULE_SELECT_DAY, show_alert=True)
         return
 
     await state.set_state(ScheduleSetupFSM.select_count)
@@ -611,12 +613,12 @@ async def schedule_times_done(
         )
     except Exception:
         log.exception("manual_schedule_creation_failed", cat_id=cat_id, conn_id=conn_id)
-        await callback.answer("Ошибка создания расписания", show_alert=True)
+        await callback.answer(S.SCHEDULE_ERROR_CREATE, show_alert=True)
         await state.clear()
         return
 
     if not result:
-        await callback.answer("Категория или подключение не найдены", show_alert=True)
+        await callback.answer(S.SCHEDULE_CONN_NOT_FOUND, show_alert=True)
         await state.clear()
         return
 
@@ -639,14 +641,16 @@ async def schedule_times_done(
             schedule_days=list(selected_days), posts_per_day=required,
         )
 
-    await safe_edit_text(msg,
-        f"{E.CHECK} <b>{S.SCHEDULE_SET_TITLE}</b>\n\n"
-        f"  Дни: {days_str}\n"
-        f"  Время: {times_str}\n"
-        f"  Постов/день: {required}\n"
-        f"  Ориент. расход: ~{result.weekly_cost} токенов/нед",
-        reply_markup=reply_markup,
+    set_text = (
+        Screen(E.CHECK, S.SCHEDULE_SET_TITLE)
+        .blank()
+        .line(f"  Дни: {days_str}")
+        .line(f"  Время: {times_str}")
+        .line(f"  Постов/день: {required}")
+        .line(S.SCHEDULE_COST_ESTIMATE.format(cost=result.weekly_cost))
+        .build()
     )
+    await safe_edit_text(msg, set_text, reply_markup=reply_markup)
     await callback.answer()
 
 
@@ -673,7 +677,7 @@ async def scheduler_social_category(
 
     social_conns = await scheduler_service.get_social_connections(project_id, user.id)
     if social_conns is None:
-        await callback.answer("Проект не найден", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
     if not social_conns:
         await callback.answer(S.SCHEDULE_NO_SOCIAL, show_alert=True)
@@ -703,7 +707,7 @@ async def scheduler_social_conn_list_back(
     cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
     ctx = await scheduler_service.verify_category_ownership(cat_id, user.id)
     if not ctx:
-        await callback.answer("Категория не найдена", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     social_conns = await scheduler_service.get_social_connections(ctx.project.id, user.id)
@@ -739,7 +743,7 @@ async def scheduler_social_connection(
 
     ctx = await scheduler_service.verify_category_ownership(cat_id, user.id)
     if not ctx:
-        await callback.answer("Категория не найдена", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
@@ -801,7 +805,7 @@ async def scheduler_crosspost_config(
 
     config = await scheduler_service.get_crosspost_config(cat_id, conn_id, user.id)
     if not config:
-        await callback.answer("Категория или подключение не найдены", show_alert=True)
+        await callback.answer(S.SCHEDULE_CONN_NOT_FOUND, show_alert=True)
         return
 
     lead_display = html_mod.escape(format_connection_display(config.lead_connection))
@@ -843,7 +847,7 @@ async def scheduler_crosspost_toggle(
 
     social_conns = await scheduler_service.get_social_connections_by_category(cat_id, user.id)
     if social_conns is None:
-        await callback.answer("Категория не найдена", show_alert=True)
+        await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
         return
 
     # P0-3: verify target_conn_id belongs to this project's social connections
@@ -961,5 +965,5 @@ async def schedule_cancel(
             reply_markup=reply_markup,
         )
     else:
-        await safe_edit_text(msg, "Настройка расписания отменена.")
+        await safe_edit_text(msg, S.SCHEDULE_CANCELLED_FALLBACK)
     await callback.answer()

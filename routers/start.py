@@ -90,15 +90,13 @@ async def _handle_pinterest_deep_link(
     tokens_raw = await redis.get(CacheKeys.pinterest_auth(nonce))
     if not tokens_raw:
         log.warning("pinterest_deep_link_no_tokens", nonce=nonce, user_id=user.id)
-        await message.answer(
-            "Авторизация Pinterest не найдена или истекла. Попробуйте ещё раз.", reply_markup=menu_kb()
-        )
+        await message.answer(S.OAUTH_EXPIRED, reply_markup=menu_kb())
         return
 
     meta_raw = await redis.get(CacheKeys.pinterest_oauth(nonce))
     if not meta_raw:
         log.warning("pinterest_deep_link_no_meta", nonce=nonce, user_id=user.id)
-        await message.answer("Данные сессии Pinterest не найдены. Попробуйте ещё раз.", reply_markup=menu_kb())
+        await message.answer(S.OAUTH_SESSION_MISSING, reply_markup=menu_kb())
         return
 
     try:
@@ -119,7 +117,7 @@ async def _handle_pinterest_deep_link(
             project_id = int(meta_raw)
         except (ValueError, TypeError):  # fmt: skip
             log.warning("pinterest_deep_link_invalid_meta", nonce=nonce)
-            await message.answer("Ошибка данных Pinterest. Попробуйте ещё раз.", reply_markup=menu_kb())
+            await message.answer(S.OAUTH_DATA_ERROR, reply_markup=menu_kb())
             return
 
     if not project_id:
@@ -152,9 +150,7 @@ async def _handle_pinterest_deep_link(
         )
     except Exception:
         log.exception("pinterest_create_connection_failed", project_id=project_id, user_id=user.id)
-        await message.answer(
-            "Не удалось создать подключение Pinterest. Возможно, оно уже существует.", reply_markup=menu_kb()
-        )
+        await message.answer(S.OAUTH_CONN_EXISTS, reply_markup=menu_kb())
         return
 
     # Cleanup Redis keys
@@ -163,7 +159,7 @@ async def _handle_pinterest_deep_link(
 
     safe_name = html.escape(project.name)
     await message.answer(
-        f"Pinterest подключён к проекту «{safe_name}»!",
+        S.PINTEREST_CONNECTED.format(project_name=safe_name),
         reply_markup=connection_manage_kb(conn.id, project_id),
     )
     log.info(
@@ -220,17 +216,11 @@ async def _handle_vk_deep_link(
 
     if not dl:
         log.warning("vk_deep_link_no_result", nonce=nonce, user_id=user.id)
-        await message.answer(
-            "Авторизация VK не найдена или истекла. Попробуйте ещё раз.",
-            reply_markup=menu_kb(),
-        )
+        await message.answer(S.OAUTH_EXPIRED, reply_markup=menu_kb())
         return
 
     if not dl.project_id:
-        await message.answer(
-            "Данные сессии VK не найдены. Попробуйте подключить VK заново.",
-            reply_markup=menu_kb(),
-        )
+        await message.answer(S.OAUTH_SESSION_MISSING, reply_markup=menu_kb())
         return
 
     projects_repo = ProjectsRepository(db)
@@ -259,10 +249,7 @@ async def _handle_vk_deep_link(
     # Legacy: step 1 group picker (VK ID OAuth — kept for backward compat)
     if not dl.groups:
         await vk_svc.cleanup_meta(nonce)
-        await message.answer(
-            "У вас нет групп VK, в которых вы администратор или редактор.",
-            reply_markup=menu_kb(),
-        )
+        await message.answer(S.VK_NO_GROUPS, reply_markup=menu_kb())
         return
 
     await vk_svc.restore_result_for_group_select(nonce, dl.raw_result)
@@ -288,7 +275,7 @@ async def _show_vk_group_picker(
     buttons.append([InlineKeyboardButton(text="Отмена", callback_data="nav:dashboard")])
 
     await message.answer(
-        f"VK-авторизация успешна!\n\nВыберите группу для подключения к проекту «{html.escape(project.name)}»:",
+        f"{S.VK_GROUP_PICK}\n\nПроект: \u00ab{html.escape(project.name)}\u00bb",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
 
@@ -304,10 +291,7 @@ async def _create_vk_connection_from_community(
     """Create VK connection from community token (step 2 result)."""
     if not dl.group_id:
         log.error("vk_community_missing_group_id", project_id=project.id)
-        await message.answer(
-            "Ошибка: не указан ID группы. Попробуйте подключить VK заново.",
-            reply_markup=menu_kb(),
-        )
+        await message.answer(S.VK_GROUP_NO_ID, reply_markup=menu_kb())
         return
     group_id = str(dl.group_id)
     group_name = dl.group_name or f"Группа {group_id}"
@@ -323,17 +307,14 @@ async def _create_vk_connection_from_community(
         )
     except Exception:
         log.exception("vk_create_connection_failed", project_id=project.id, user_id=user.id)
-        await message.answer(
-            "Не удалось создать подключение VK. Возможно, оно уже существует.",
-            reply_markup=menu_kb(),
-        )
+        await message.answer(S.OAUTH_CONN_EXISTS, reply_markup=menu_kb())
         return
 
     # Show connections list (same as WP/TG success)
     connections = await conn_svc.get_by_project(project.id)
     safe_name = html.escape(project.name)
     await message.answer(
-        f"VK-группа «{html.escape(group_name)}» подключена!\n\n<b>{safe_name}</b> — Подключения",
+        f"{S.VK_GROUP_CONNECTED.format(group_name=html.escape(group_name))}\n\n<b>{safe_name}</b> \u2014 Подключения",
         reply_markup=connection_list_kb(connections, project.id),
     )
     log.info(
@@ -417,8 +398,7 @@ async def vk_group_select_deeplink(
     await vk_svc.cleanup(nonce)
 
     await msg.answer(
-        f"Отлично! Теперь нужно дать доступ к группе «{html.escape(group_name)}».\n\n"
-        "Нажмите кнопку ниже — VK попросит подтвердить права на публикацию.",
+        S.VK_GROUP_ACCESS_PROMPT.format(group_name=html.escape(group_name)),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Подтвердить доступ к группе", url=oauth_url)],
@@ -538,7 +518,7 @@ async def cmd_start(
     # OAuth deep-links: handle without clearing FSM and return early
     if args == "pinterest_error":
         await message.answer(
-            "Не удалось подключить Pinterest.\nАвторизация была отклонена или произошла ошибка.",
+            S.PINTEREST_AUTH_FAILED,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="Попробовать снова", callback_data="nav:projects")],
@@ -578,7 +558,7 @@ async def cmd_start(
         await remove_msg.delete()
 
     text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
-    full_text = text + "\n\nВыберите действие:"
+    full_text = text + f"\n\n{S.DASHBOARD_ACTION_PROMPT}"
     result = await message.answer_photo(
         asset_photo("welcome.png"),
         caption=full_text,
@@ -616,7 +596,7 @@ async def consent_accept(
         # Show dashboard (admin button included in inline kb via user.role check)
         text, kb = await _build_dashboard(user, is_new_user, db, redis, dashboard_service_factory)
         await msg.answer(
-            "Условия приняты!\n\n" + text + "\n\nВыберите действие:",
+            f"{S.CONSENT_ACCEPTED}\n\n{text}\n\n{S.DASHBOARD_ACTION_PROMPT}",
             reply_markup=kb,
         )
     except Exception:
@@ -937,17 +917,17 @@ async def _route_social_to_step(
         projects_repo = ProjectsRepository(db)
         projects = await projects_repo.get_by_user(user.id)
         if not projects:
-            await safe_edit_text(
-                msg,
-                "Пост (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
-                reply_markup=pipeline_no_projects_kb(pipeline_type="social"),
+            text = (
+                Screen(E.DOC, S.POST_PROJECT_TITLE.format(total=5))
+                .blank().line(S.POST_RESUME_NO_PROJECTS).build()
             )
+            await safe_edit_text(msg, text, reply_markup=pipeline_no_projects_kb(pipeline_type="social"))
         else:
-            await safe_edit_text(
-                msg,
-                "Пост (1/5) — Проект\n\nДля какого проекта?",
-                reply_markup=pipeline_projects_kb(projects, pipeline_type="social"),
+            text = (
+                Screen(E.DOC, S.POST_PROJECT_TITLE.format(total=5))
+                .blank().line(S.POST_RESUME_PROJECT_PROMPT).build()
             )
+            await safe_edit_text(msg, text, reply_markup=pipeline_projects_kb(projects, pipeline_type="social"))
         await state.set_state(SocialPipelineFSM.select_project)
         return
 
@@ -959,11 +939,11 @@ async def _route_social_to_step(
         cats_repo = CategoriesRepository(db)
         categories = await cats_repo.get_by_project(project_id)
         if not categories:
-            await safe_edit_text(
-                msg,
-                "Пост (3/5) — Тема\n\nО чём будет пост? Назовите тему.",
-                reply_markup=cancel_kb("pipeline:social:cancel"),
+            text = (
+                Screen(E.DOC, S.POST_CATEGORY_TITLE.format(total=5))
+                .blank().line(S.POST_RESUME_CATEGORY_PROMPT).build()
             )
+            await safe_edit_text(msg, text, reply_markup=cancel_kb("pipeline:social:cancel"))
             await state.set_state(SocialPipelineFSM.create_category_name)
         elif len(categories) == 1:
             cat = categories[0]
@@ -972,11 +952,12 @@ async def _route_social_to_step(
 
             await show_social_readiness_check(callback, state, user, db, redis)
         else:
-            await safe_edit_text(
-                msg,
-                "Пост (3/5) — Тема\n\nКакая тема?",
-                reply_markup=pipeline_categories_kb(categories, project_id, pipeline_type="social"),
+            text = (
+                Screen(E.DOC, S.POST_CATEGORY_TITLE.format(total=5))
+                .blank().line(S.POST_RESUME_CATEGORY_WHICH).build()
             )
+            kb = pipeline_categories_kb(categories, project_id, pipeline_type="social")
+            await safe_edit_text(msg, text, reply_markup=kb)
             await state.set_state(SocialPipelineFSM.select_category)
         return
 

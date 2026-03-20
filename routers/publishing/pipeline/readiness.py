@@ -321,14 +321,14 @@ async def readiness_prices_text_input(
     text = (message.text or "").strip()
     if not text:
         await message.answer(
-            "Введите прайс-лист текстом или нажмите Отмена.",
+            S.PIPELINE_PRICES_TEXT_FALLBACK,
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         return
 
     if len(text) > _MAX_PRICE_TEXT_LEN:
         await message.answer(
-            "Текст слишком длинный. Максимум 50 000 символов.",
+            S.PIPELINE_PRICES_TOO_LONG,
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         return
@@ -336,7 +336,7 @@ async def readiness_prices_text_input(
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if len(lines) > _MAX_PRICE_ROWS:
         await message.answer(
-            f"Максимум {_MAX_PRICE_ROWS} строк. Сейчас: {len(lines)}.",
+            S.PIPELINE_PRICES_MAX_ROWS.format(max=_MAX_PRICE_ROWS, count=len(lines)),
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         return
@@ -344,7 +344,7 @@ async def readiness_prices_text_input(
     data = await state.get_data()
     category_id = data.get("category_id")
     if not category_id:
-        await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
+        await message.answer(S.PIPELINE_PRICES_CAT_MISSING, reply_markup=menu_kb())
         return
 
     prices_text = "\n".join(lines)
@@ -352,7 +352,7 @@ async def readiness_prices_text_input(
     saved = await cat_svc.update_prices(category_id, user.id, prices_text)
     if not saved:
         log.error("pipeline.readiness.prices_save_failed", category_id=category_id, user_id=user.id)
-        await message.answer("Не удалось сохранить цены. Попробуйте снова.")
+        await message.answer(S.PIPELINE_PRICES_SAVE_ERROR)
         return
 
     log.info(
@@ -400,27 +400,27 @@ async def readiness_prices_excel_file(
     """Process uploaded Excel file with prices."""
     doc = message.document
     if not doc:
-        await message.answer("Файл не найден.")
+        await message.answer(S.PIPELINE_FILE_NOT_FOUND)
         return
 
     filename = doc.file_name or ""
     if not filename.lower().endswith(".xlsx"):
         await message.answer(
-            "Нужен .xlsx файл.",
+            S.PIPELINE_FILE_WRONG_FORMAT,
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         return
 
     if doc.file_size and doc.file_size > _MAX_EXCEL_FILE_SIZE:
         await message.answer(
-            "Файл слишком большой (макс. 5 МБ).",
+            S.PIPELINE_FILE_TOO_BIG,
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         return
 
     file = await message.bot.download(doc)  # type: ignore[union-attr]
     if file is None:
-        await message.answer("Не удалось загрузить файл.")
+        await message.answer(S.PIPELINE_FILE_DOWNLOAD_ERROR)
         return
 
     file_bytes = file.read()
@@ -431,19 +431,19 @@ async def readiness_prices_excel_file(
     result = parse_excel_rows(file_bytes)
 
     if isinstance(result, str):
-        error_msgs = {
-            "empty": "Файл пустой. Добавьте данные.",
-            "too_many_rows": f"Превышен лимит: максимум {_MAX_PRICE_ROWS} строк.",
+        error_msgs: dict[str, str] = {
+            "empty": S.PIPELINE_FILE_EMPTY,
+            "too_many_rows": S.PIPELINE_FILE_TOO_MANY_ROWS.format(max=_MAX_PRICE_ROWS),
         }
         await message.answer(
-            error_msgs.get(result, "Ошибка чтения файла."),
+            error_msgs.get(result, S.PIPELINE_FILE_READ_ERROR),
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         return
 
     if not result:
         await message.answer(
-            "Не удалось извлечь данные из файла.",
+            S.PIPELINE_FILE_EXTRACT_ERROR,
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         return
@@ -451,7 +451,7 @@ async def readiness_prices_excel_file(
     data = await state.get_data()
     category_id = data.get("category_id")
     if not category_id:
-        await message.answer("Категория не найдена. Начните заново.", reply_markup=menu_kb())
+        await message.answer(S.PIPELINE_PRICES_CAT_MISSING, reply_markup=menu_kb())
         return
 
     prices_text = "\n".join(result)
@@ -459,7 +459,7 @@ async def readiness_prices_excel_file(
     saved = await cat_svc.update_prices(category_id, user.id, prices_text)
     if not saved:
         log.error("pipeline.readiness.prices_excel_failed", category_id=category_id, user_id=user.id)
-        await message.answer("Не удалось сохранить цены. Попробуйте снова.")
+        await message.answer(S.PIPELINE_PRICES_SAVE_ERROR)
         return
 
     log.info(

@@ -674,3 +674,81 @@ VALIDATION_PASSWORD_SHORT = (
 FSM_INTERRUPTED = "Предыдущий процесс ({name}) прерван."
 FILE_NOT_FOUND = "Файл не найден."
 FILE_DOWNLOAD_ERROR = "Не удалось скачать файл. Попробуйте ещё раз."
+
+# -----------------------------------------------
+# OAuth deep-link strings
+# -----------------------------------------------
+OAUTH_EXPIRED = "Авторизация не найдена или истекла. Попробуйте ещё раз."
+OAUTH_SESSION_MISSING = "Данные сессии не найдены. Попробуйте подключить заново."
+OAUTH_DATA_ERROR = "Ошибка данных. Попробуйте ещё раз."
+OAUTH_CONN_EXISTS = "Не удалось создать подключение. Возможно, оно уже существует."
+VK_NO_GROUPS = "У вас нет групп VK, в которых вы администратор или редактор."
+VK_GROUP_PICK = "VK-авторизация успешна!\n\nВыберите группу для подключения:"
+VK_GROUP_NO_ID = "Ошибка: не указан ID группы. Попробуйте подключить VK заново."
+VK_GROUP_CONNECTED = 'VK-группа \u00ab{group_name}\u00bb подключена!'
+VK_GROUP_ACCESS_PROMPT = (
+    "Отлично! Теперь нужно дать доступ к группе \u00ab{group_name}\u00bb.\n\n"
+    "Нажмите кнопку ниже \u2014 VK попросит подтвердить права на публикацию."
+)
+PINTEREST_AUTH_FAILED = (
+    "Не удалось подключить Pinterest.\nАвторизация была отклонена или произошла ошибка."
+)
+PINTEREST_CONNECTED = 'Pinterest подключён к проекту \u00ab{project_name}\u00bb!'
+CONSENT_ACCEPTED = "Условия приняты!"
+DASHBOARD_ACTION_PROMPT = "Выберите действие:"
+
+# -----------------------------------------------
+# Pipeline: prices sub-flow (readiness)
+# -----------------------------------------------
+PIPELINE_PRICES_TEXT_FALLBACK = "Введите прайс-лист текстом или нажмите Отмена."
+PIPELINE_PRICES_TOO_LONG = "Текст слишком длинный. Максимум 50 000 символов."
+PIPELINE_PRICES_MAX_ROWS = "Максимум {max} строк. Сейчас: {count}."
+PIPELINE_PRICES_CAT_MISSING = "Категория не найдена. Начните заново."
+PIPELINE_FILE_NOT_FOUND = "Файл не найден."
+PIPELINE_FILE_WRONG_FORMAT = "Нужен .xlsx файл."
+PIPELINE_FILE_TOO_BIG = "Файл слишком большой (макс. 5 МБ)."
+PIPELINE_FILE_DOWNLOAD_ERROR = "Не удалось загрузить файл."
+PIPELINE_FILE_EMPTY = "Файл пустой. Добавьте данные."
+PIPELINE_FILE_EXTRACT_ERROR = "Не удалось извлечь данные из файла."
+PIPELINE_FILE_TOO_MANY_ROWS = "Превышен лимит: максимум {max} строк."
+PIPELINE_FILE_READ_ERROR = "Ошибка чтения файла."
+
+# -----------------------------------------------
+# Tariffs: callback.answer strings
+# -----------------------------------------------
+TARIFF_PACKAGE_NOT_FOUND = "Пакет не найден. Попробуйте снова."
+TARIFF_YOOKASSA_UNAVAILABLE = "ЮKassa не настроена. Используйте Telegram Stars."
+TARIFF_PAYMENT_ERROR = "Ошибка создания платежа. Попробуйте позже."
+
+# -----------------------------------------------
+# Content settings: validation
+# -----------------------------------------------
+CONTENT_INVALID_VALUE = "Недопустимое значение"
+CONTENT_UNKNOWN_STYLE = "Неизвестный стиль"
+
+# -----------------------------------------------
+# Scheduler: callback.answer strings
+# -----------------------------------------------
+SCHEDULE_ERROR_CREATE = "Ошибка создания расписания"
+SCHEDULE_SELECT_DAY = "Выберите хотя бы один день"
+SCHEDULE_CONN_NOT_FOUND = "Категория или подключение не найдены"
+SCHEDULE_CANCELLED_FALLBACK = "Настройка расписания отменена."
+
+# -----------------------------------------------
+# Admin: broadcast progress
+# -----------------------------------------------
+BROADCAST_PROGRESS = "Рассылка... ({sent}/{total})\nОтправлено: {ok}, ошибок: {failed}"
+BROADCAST_PROGRESS_INIT = "Рассылка... (0/{total})"
+BROADCAST_TEXT_EXPECT = "Отправьте текст сообщения (не файл/стикер)."
+ADMIN_USER_INPUT_PROMPT = "Отправьте ID (число) или @username."
+ADMIN_BALANCE_NO_TARGET = "Ошибка: нет данных о пользователе."
+ADMIN_BALANCE_ADJUST_ERROR = "Ошибка при корректировке баланса."
+ADMIN_ROLE_CHANGE_ERROR = "Ошибка при смене роли"
+
+# -----------------------------------------------
+# Social pipeline resume (hardcoded -> S.*)
+# -----------------------------------------------
+POST_RESUME_NO_PROJECTS = "Для начала создадим проект \u2014 это 30 секунд."
+POST_RESUME_PROJECT_PROMPT = "Для какого проекта?"
+POST_RESUME_CATEGORY_PROMPT = "О чём будет пост? Назовите тему."
+POST_RESUME_CATEGORY_WHICH = "Какая тема?"

@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiogram.types import Message
 
+from bot.texts import strings as S
 from db.models import Category, PlatformConnection, PlatformSchedule, Project, User
 from routers.publishing.scheduler import (
     ScheduleSetupFSM,
@@ -298,7 +299,7 @@ class TestSchedulerSocialEntry:
 
         await scheduler_social_entry(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.PROJECT_NOT_FOUND, show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +346,7 @@ class TestSchedulerCategory:
 
         await scheduler_category(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.PROJECT_NOT_FOUND, show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +400,7 @@ class TestSchedulerConnection:
 
         await scheduler_connection(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.CATEGORY_NOT_FOUND, show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -435,7 +436,7 @@ class TestSchedulerPreset:
 
         await scheduler_preset(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Категория или подключение не найдены", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.SCHEDULE_CONN_NOT_FOUND, show_alert=True)
 
     async def test_preset_creation_failure(
         self,
@@ -448,7 +449,7 @@ class TestSchedulerPreset:
 
         await scheduler_preset(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Ошибка создания расписания", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.SCHEDULE_ERROR_CREATE, show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -484,7 +485,7 @@ class TestSchedulerDisable:
 
         await scheduler_disable(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.CATEGORY_NOT_FOUND, show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -546,7 +547,7 @@ class TestSchedulerManualFSM:
 
         await scheduler_manual(mock_callback, user, scheduler_service, mock_state)
 
-        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.CATEGORY_NOT_FOUND, show_alert=True)
 
     @patch("routers.publishing.scheduler.schedule_days_kb", return_value=MagicMock())
     async def test_day_toggle_adds_day(
@@ -578,7 +579,7 @@ class TestSchedulerManualFSM:
 
         await schedule_days_done(mock_callback, mock_state)
 
-        mock_callback.answer.assert_awaited_with("Выберите хотя бы один день", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.SCHEDULE_SELECT_DAY, show_alert=True)
 
     @patch("routers.publishing.scheduler.schedule_count_kb", return_value=MagicMock())
     async def test_days_done_advances_to_count(
@@ -699,7 +700,7 @@ class TestScheduleTimesDone:
 
         await schedule_times_done(mock_callback, _make_user(), mock_state, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Ошибка создания расписания", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.SCHEDULE_ERROR_CREATE, show_alert=True)
         mock_state.clear.assert_awaited_once()
 
 
@@ -803,7 +804,7 @@ class TestSchedulerConnListBack:
 
         await scheduler_conn_list_back(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.CATEGORY_NOT_FOUND, show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -840,7 +841,7 @@ class TestSchedulerSocialConnection:
 
         await scheduler_social_connection(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Категория не найдена", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.CATEGORY_NOT_FOUND, show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -880,7 +881,7 @@ class TestSchedulerCrosspost:
 
         await scheduler_crosspost_config(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Категория или подключение не найдены", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.SCHEDULE_CONN_NOT_FOUND, show_alert=True)
 
     @patch("routers.publishing.scheduler.scheduler_social_config_kb", return_value=MagicMock())
     async def test_crosspost_save_updates_schedule(
@@ -972,4 +973,4 @@ class TestSchedulerArticlesEntry:
 
         await scheduler_articles_entry(mock_callback, user, scheduler_service)
 
-        mock_callback.answer.assert_awaited_with("Проект не найден", show_alert=True)
+        mock_callback.answer.assert_awaited_with(S.PROJECT_NOT_FOUND, show_alert=True)

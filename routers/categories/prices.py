@@ -220,7 +220,7 @@ async def process_text(
     prices_text = "\n".join(lines)
     result = await cat_svc.update_prices(cat_id, user.id, prices_text)
     if not result:
-        await message.answer("Категория не найдена.", reply_markup=menu_kb())
+        await message.answer(S.CATEGORY_NOT_FOUND, reply_markup=menu_kb())
         return
 
     log.info("prices_updated_text", category_id=cat_id, lines=len(lines), user_id=user.id)
@@ -292,7 +292,7 @@ async def handle_text_in_excel_state(
     text = (message.text or "").strip()
     if text == "Отмена":
         await state.clear()
-        await message.answer("Загрузка отменена.", reply_markup=menu_kb())
+        await message.answer(S.PRICES_CANCELLED, reply_markup=menu_kb())
         return
 
     await message.answer(S.PRICES_EXCEL_EXPECT)
@@ -422,7 +422,7 @@ async def process_excel(
     prices_text = "\n".join(lines)
     updated = await cat_svc.update_prices(cat_id, user.id, prices_text)
     if not updated:
-        await message.answer("Категория не найдена.", reply_markup=menu_kb())
+        await message.answer(S.CATEGORY_NOT_FOUND, reply_markup=menu_kb())
         return
 
     log.info("prices_updated_excel", category_id=cat_id, lines=len(lines), user_id=user.id)

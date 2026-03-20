@@ -1105,10 +1105,8 @@ async def connect_wp_publish(
         if project and project.website_url:
             await state.update_data(wp_url=project.website_url)
             await state.set_state(ArticlePipelineFSM.connect_wp_login)
-            await safe_edit_text(msg, 
-                f"Подключение WordPress\n\n"
-                f"Сайт: {html.escape(project.website_url)}\n\n"
-                f"Введите логин WordPress (имя пользователя).",
+            await safe_edit_text(msg,
+                S.PIPELINE_WP_CONNECT_LOGIN.format(url=html.escape(project.website_url)),
             )
             await callback.answer()
             return

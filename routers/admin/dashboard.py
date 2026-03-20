@@ -109,6 +109,7 @@ async def admin_panel(
         .line(f"Проектов: {stats.total_projects}")
         .line(f"Публикаций (7д): {stats.publications_7d}")
         .line(f"Затраты API (30д): ${stats.revenue_30d:.2f}")
+        .hint("Обновляется в реальном времени")
         .build()
     )
 
@@ -166,6 +167,7 @@ async def admin_api_status(
         .line(f"{redis_icon} Redis ({status.redis_latency_ms}ms)")
         .separator()
         .field(E.SCHEDULE, "Активных расписаний", status.active_schedules)
+        .hint("Нажмите для обновления статуса")
         .build()
     )
 
@@ -204,6 +206,7 @@ async def admin_api_costs(
         .line(f"7 дней: ${cost_7d:.2f}")
         .line(f"30 дней: ${cost_30d:.2f}")
         .line(f"90 дней: ${cost_90d:.2f}")
+        .hint("Суммы указаны в долларах США")
         .build()
     )
 
@@ -259,6 +262,7 @@ async def user_lookup_start(callback: CallbackQuery, user: User, state: FSMConte
         Screen(E.USER, S.ADMIN_USER_LOOKUP_TITLE)
         .blank()
         .line(S.ADMIN_USER_LOOKUP_PROMPT)
+        .hint("Поиск по Telegram ID или @username")
         .build()
     )
     await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
@@ -278,7 +282,7 @@ async def user_lookup_input(
         return
     raw = (message.text or "").strip()
     if not raw:
-        await message.answer("Отправьте ID (число) или @username.")
+        await message.answer(S.ADMIN_USER_INPUT_PROMPT)
         return
 
     admin_svc = admin_service_factory(db)
@@ -363,7 +367,7 @@ async def user_balance_input(
     await state.clear()
 
     if target_id is None:
-        await message.answer("Ошибка: нет данных о пользователе.", reply_markup=_BACK_TO_PANEL_KB)
+        await message.answer(S.ADMIN_BALANCE_NO_TARGET, reply_markup=_BACK_TO_PANEL_KB)
         return
 
     admin_svc = admin_service_factory(db)
@@ -378,7 +382,7 @@ async def user_balance_input(
         )
     except Exception:
         log.exception("admin_balance_adjust_failed", target_id=target_id)
-        await message.answer("Ошибка при корректировке баланса.", reply_markup=_BACK_TO_PANEL_KB)
+        await message.answer(S.ADMIN_BALANCE_ADJUST_ERROR, reply_markup=_BACK_TO_PANEL_KB)
         return
 
     verb = "Начислено" if action == "credit" else "Списано"
@@ -437,7 +441,7 @@ async def user_block_toggle(
         return
     except Exception:
         log.exception("admin_block_unblock_failed", target_id=target_id)
-        await callback.answer("Ошибка при смене роли", show_alert=True)
+        await callback.answer(S.ADMIN_ROLE_CHANGE_ERROR, show_alert=True)
         return
 
     verb = "заблокирован" if action == "block" else "разблокирован"
@@ -566,6 +570,7 @@ async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext
         Screen(E.MEGAPHONE, S.BROADCAST_TITLE)
         .blank()
         .line(f"<i>{S.BROADCAST_AUDIENCE_PROMPT}</i>")
+        .hint("Сообщение получат все пользователи выбранного сегмента")
         .build()
     )
     await safe_edit_text(msg, text, reply_markup=broadcast_audience_kb())
@@ -624,7 +629,7 @@ async def broadcast_text(message: Message, user: User, state: FSMContext) -> Non
     if not _is_admin(user):
         return
     if not message.text:
-        await message.answer("Отправьте текст сообщения (не файл/стикер).")
+        await message.answer(S.BROADCAST_TEXT_EXPECT)
         return
 
     await state.update_data(broadcast_text=message.text)
@@ -671,7 +676,7 @@ async def broadcast_confirm(
     user_ids = await admin_svc.get_audience_ids(audience_key)
     total = len(user_ids)
 
-    await safe_edit_text(msg, f"Рассылка... (0/{total})")
+    await safe_edit_text(msg, S.BROADCAST_PROGRESS_INIT.format(total=total))
 
     sent = 0
     failed = 0
@@ -690,7 +695,7 @@ async def broadcast_confirm(
         # Progress update every N users (Telegram edit rate limit is acceptable to suppress)
         if i % _BROADCAST_PROGRESS_STEP == 0 and i < total:
             with contextlib.suppress(Exception):
-                await safe_edit_text(msg, f"Рассылка... ({i}/{total})\nОтправлено: {sent}, ошибок: {failed}")
+                await safe_edit_text(msg, S.BROADCAST_PROGRESS.format(sent=i, total=total, ok=sent, failed=failed))
 
     done_text = (
         Screen(E.CHECK, S.BROADCAST_DONE)

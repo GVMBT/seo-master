@@ -157,7 +157,7 @@ async def _load_project(
     proj_svc = psf(db)
     project = await proj_svc.get_owned_project(pid, user.id)
     if not project:
-        await callback.answer("Проект не найден", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
     return project
 
 
@@ -333,7 +333,7 @@ async def reset_platform(
     svc = project_service_factory(db)
     project = await svc.get_owned_project(pid, user.id)
     if not project:
-        await callback.answer("Проект не найден", show_alert=True)
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
     await svc.delete_platform_settings(pid, user.id, target)
     log.info("platform_settings_reset", project_id=pid, platform=target)
@@ -428,7 +428,7 @@ async def select_word_count(
     parts = callback.data.split(":")  # type: ignore[union-attr]
     pid, target, wc = int(parts[1]), parts[2], int(parts[4])
     if wc not in WORD_COUNTS:
-        await callback.answer("Недопустимое значение", show_alert=True)
+        await callback.answer(S.CONTENT_INVALID_VALUE, show_alert=True)
         return
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -494,7 +494,7 @@ async def select_html_style(
     parts = callback.data.split(":")  # type: ignore[union-attr]
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(HTML_STYLES):
-        await callback.answer("Неизвестный стиль", show_alert=True)
+        await callback.answer(S.CONTENT_UNKNOWN_STYLE, show_alert=True)
         return
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -562,7 +562,7 @@ async def toggle_text_style(
     parts = callback.data.split(":")  # type: ignore[union-attr]
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(TEXT_STYLES):
-        await callback.answer("Неизвестный стиль", show_alert=True)
+        await callback.answer(S.CONTENT_UNKNOWN_STYLE, show_alert=True)
         return
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -811,7 +811,7 @@ async def toggle_image_style(
     parts = callback.data.split(":")  # type: ignore[union-attr]
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(IMAGE_STYLES):
-        await callback.answer("Неизвестный стиль", show_alert=True)
+        await callback.answer(S.CONTENT_UNKNOWN_STYLE, show_alert=True)
         return
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -945,7 +945,7 @@ async def select_text_on_image(
     parts = callback.data.split(":")  # type: ignore[union-attr]
     pid, target, pct = int(parts[1]), parts[2], int(parts[4])
     if pct not in TEXT_ON_IMAGE:
-        await callback.answer("Недопустимое значение", show_alert=True)
+        await callback.answer(S.CONTENT_INVALID_VALUE, show_alert=True)
         return
     project = await _load_project(
         callback, pid, user, db, project_service_factory,

@@ -62,7 +62,7 @@ async def _show_description_screen(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(category_id, user_id)
     if not category:
-        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, S.CATEGORY_NOT_FOUND, reply_markup=menu_kb())
         return
 
     safe_name = html.escape(category.name)
@@ -230,7 +230,7 @@ async def review_save(
     cat_svc = category_service_factory(db)
     result = await cat_svc.update_description(cat_id, user.id, generated_text)
     if not result:
-        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, S.CATEGORY_NOT_FOUND, reply_markup=menu_kb())
         await callback.answer()
         return
 
@@ -338,12 +338,12 @@ async def review_cancel(
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
-        await safe_edit_text(msg, "Категория не найдена.", reply_markup=menu_kb())
+        await safe_edit_text(msg, S.CATEGORY_NOT_FOUND, reply_markup=menu_kb())
         await callback.answer()
         return
 
     safe_name = html.escape(category.name)
-    await safe_edit_text(msg, 
+    await safe_edit_text(msg,
         f"<b>{safe_name}</b>",
         reply_markup=category_card_kb(cat_id, category.project_id),
     )
@@ -419,7 +419,7 @@ async def process_manual(
     result = await cat_svc.update_description(cat_id, user.id, text)
 
     if not result:
-        await message.answer("Категория не найдена.", reply_markup=menu_kb())
+        await message.answer(S.CATEGORY_NOT_FOUND, reply_markup=menu_kb())
         return
 
     log.info("description_manual_saved", cat_id=cat_id, user_id=user.id)
