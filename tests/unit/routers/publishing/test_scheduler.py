@@ -828,7 +828,7 @@ class TestSchedulerSocialConnection:
         await scheduler_social_connection(mock_callback, user, scheduler_service)
 
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "\u041a\u0440\u043e\u0441\u0441-\u043f\u043e\u0441\u0442\u0438\u043d\u0433" in text
+        assert "КРОСС-ПОСТИНГ" in text
 
     async def test_ownership_fail(
         self,
@@ -868,7 +868,7 @@ class TestSchedulerCrosspost:
         await scheduler_crosspost_config(mock_callback, user, scheduler_service)
 
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "\u041a\u0440\u043e\u0441\u0441-\u043f\u043e\u0441\u0442\u0438\u043d\u0433" in text
+        assert "КРОСС-ПОСТИНГ" in text
 
     async def test_crosspost_config_not_found(
         self,
@@ -960,7 +960,7 @@ class TestSchedulerArticlesEntry:
 
         mock_callback.message.edit_text.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "Статьи" in text
+        assert "СТАТЬИ" in text
 
     async def test_project_not_found(
         self,

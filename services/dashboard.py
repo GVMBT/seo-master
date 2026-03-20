@@ -16,7 +16,9 @@ from bot.texts.strings import (
     BALANCE_ESTIMATE,
     BALANCE_ESTIMATE_FULL,
     BALANCE_NEGATIVE,
+    BALANCE_NEGATIVE_TITLE,
     BALANCE_ZERO,
+    BALANCE_ZERO_TITLE,
     FORECAST,
     LAST_PUB,
     NO_PROJECTS,
@@ -162,14 +164,14 @@ class DashboardService:
         # Balance warning overrides (section 2.7)
         if balance < 0:
             return (
-                Screen(E.WARNING, f"Баланс: {balance} токенов")
+                Screen(E.WARNING, BALANCE_NEGATIVE_TITLE.format(balance=balance))
                 .blank()
                 .line(BALANCE_NEGATIVE.format(debt=abs(balance)))
                 .build()
             )
         if balance == 0:
             return (
-                Screen(E.WALLET, "Баланс: 0 токенов")
+                Screen(E.WALLET, BALANCE_ZERO_TITLE)
                 .blank()
                 .line(BALANCE_ZERO)
                 .build()

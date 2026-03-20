@@ -363,15 +363,15 @@ async def _build_telegraph_html(
     label = platform_labels.get(platform_type, platform_type.title())
     parts.append(f"<p><b>Площадка: {label}</b></p>")
 
-    # Post text: split by double newlines into paragraphs
+    # Post text: split by double newlines into paragraphs, escape HTML
     for paragraph in post_text.split("\n\n"):
         stripped = paragraph.strip()
         if stripped:
-            parts.append(f"<p>{stripped}</p>")
+            parts.append(f"<p>{html.escape(stripped)}</p>")
 
     # Hashtags
     if hashtags:
-        tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
+        tags_str = " ".join(f"#{html.escape(h.lstrip('#'))}" for h in hashtags)
         parts.append(f"<p><i>{tags_str}</i></p>")
 
     return "\n".join(parts)
@@ -420,6 +420,13 @@ async def _run_social_generation(
             log.debug("social_progress_edit_failed")
 
         from services.ai.social_posts import SocialPostService
+        from services.projects import ProjectService
+
+        # Resolve effective settings: platform override → project defaults → empty
+        project_svc = ProjectService(db)
+        eff_text_settings, eff_image_settings = await project_svc.resolve_effective_settings(
+            project_id, platform_type,
+        )
 
         social_service = SocialPostService(ai_orchestrator, db)
         result = await social_service.generate(
@@ -428,6 +435,7 @@ async def _run_social_generation(
             category_id=category_id,
             keyword=keyword,
             platform=platform_type,
+            overrides=eff_text_settings,
         )
 
         # Extract text from structured response
@@ -445,11 +453,8 @@ async def _run_social_generation(
 
         try:
             image_service = ImageService(ai_orchestrator)
-            cat = await CategoriesRepository(db).get_by_id(category_id)
             proj = await ProjectsRepository(db).get_by_id(project_id)
-            img_settings = dict(
-                (proj.image_settings if proj else None) or (cat.image_settings if cat else None) or {}
-            )
+            img_settings = dict(eff_image_settings)
             # Pinterest: vertical 2:3 aspect ratio
             if platform_type == "pinterest":
                 img_settings["formats"] = ["2:3"]

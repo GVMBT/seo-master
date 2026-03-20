@@ -94,6 +94,7 @@ async def refunded_payment_handler(
             Screen(E.WARNING, S.PAYMENT_REFUND_TITLE)
             .blank()
             .line(S.PAYMENT_REFUND_TEXT.format(tokens=tokens_debited, balance=new_balance))
+            .hint(S.PAYMENT_REFUND_HINT)
             .build()
         )
         await message.answer(refund_text, reply_markup=kb)

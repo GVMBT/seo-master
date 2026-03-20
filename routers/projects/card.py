@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery
 from bot.assets import edit_screen
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory, TokenServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from bot.texts.strings import (
@@ -30,12 +31,12 @@ from services.scheduler import SchedulerService
 log = structlog.get_logger()
 router = Router()
 
-# Platform type -> (emoji constant, display name)
-_PLATFORM_E: dict[str, tuple[str, str]] = {
-    "wordpress": (E.WORDPRESS, "WordPress"),
-    "telegram": (E.TELEGRAM, "Telegram"),
-    "vk": (E.VK, "ВКонтакте"),
-    "pinterest": (E.PINTEREST, "Pinterest"),
+# Platform type -> emoji constant
+_PLATFORM_ICON: dict[str, str] = {
+    "wordpress": E.WORDPRESS,
+    "telegram": E.TELEGRAM,
+    "vk": E.VK,
+    "pinterest": E.PINTEREST,
 }
 
 
@@ -45,7 +46,8 @@ def _build_platform_lines(platform_types: list[str]) -> list[str]:
         return [f"{E.LINK} " + PLATFORMS_NOT_CONNECTED]
     lines: list[str] = []
     for pt in platform_types:
-        emoji, name = _PLATFORM_E.get(pt, (E.LINK, pt.capitalize()))
+        emoji = _PLATFORM_ICON.get(pt, E.LINK)
+        name = S.PLATFORM_DISPLAY.get(pt, pt.capitalize())
         lines.append(f"{emoji} {name}")
     return lines
 
@@ -181,14 +183,20 @@ async def execute_delete(
 
     if deleted and project:
         safe_name = html.escape(project.name)
-        await safe_edit_text(msg,
-            PROJECT_DELETED.format(name=safe_name),
-            reply_markup=project_deleted_kb(),
+        success_text = (
+            Screen(E.CHECK, "ПРОЕКТ УДАЛ\u0401Н")
+            .blank()
+            .line(PROJECT_DELETED.format(name=safe_name))
+            .build()
         )
+        await safe_edit_text(msg, success_text, reply_markup=project_deleted_kb())
     else:
-        await safe_edit_text(msg,
-            f"{E.WARNING} " + PROJECT_DELETE_ERROR,
-            reply_markup=project_deleted_kb(),
+        error_text = (
+            Screen(E.WARNING, "ОШИБКА")
+            .blank()
+            .line(PROJECT_DELETE_ERROR)
+            .build()
         )
+        await safe_edit_text(msg, error_text, reply_markup=project_deleted_kb())
 
     await callback.answer()

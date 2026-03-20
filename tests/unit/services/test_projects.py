@@ -365,3 +365,159 @@ class TestUpdateImageSettings:
 
         result = await proj_svc.update_image_settings(5, 42, {"count": 3})
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Platform-specific settings (per-platform overrides)
+# ---------------------------------------------------------------------------
+
+
+class TestGetPlatformSettings:
+    async def test_returns_settings_when_owned(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(user_id=42)
+        settings = MagicMock()
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+        proj_svc._platform_settings_repo.get_by_project_and_platform = AsyncMock(return_value=settings)
+
+        result = await proj_svc.get_platform_settings(5, 42, "wordpress")
+        assert result is settings
+        proj_svc._platform_settings_repo.get_by_project_and_platform.assert_awaited_once_with(5, "wordpress")
+
+    async def test_returns_none_when_not_owned(self, proj_svc: ProjectService) -> None:
+        proj_svc._repo.get_by_id = AsyncMock(return_value=MagicMock(user_id=99))
+
+        result = await proj_svc.get_platform_settings(5, 42, "wordpress")
+        assert result is None
+
+    async def test_returns_none_when_project_not_found(self, proj_svc: ProjectService) -> None:
+        proj_svc._repo.get_by_id = AsyncMock(return_value=None)
+
+        result = await proj_svc.get_platform_settings(5, 42, "wordpress")
+        assert result is None
+
+    async def test_returns_none_when_no_override(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(user_id=42)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+        proj_svc._platform_settings_repo.get_by_project_and_platform = AsyncMock(return_value=None)
+
+        result = await proj_svc.get_platform_settings(5, 42, "telegram")
+        assert result is None
+
+
+class TestUpsertPlatformSettings:
+    async def test_upserts_when_owned(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(user_id=42)
+        upserted = MagicMock()
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+        proj_svc._platform_settings_repo.upsert = AsyncMock(return_value=upserted)
+
+        result = await proj_svc.upsert_platform_settings(
+            5, 42, "wordpress", text_settings={"words_min": 2000}
+        )
+        assert result is upserted
+        proj_svc._platform_settings_repo.upsert.assert_awaited_once_with(
+            5, "wordpress", {"words_min": 2000}, None
+        )
+
+    async def test_returns_none_when_not_owned(self, proj_svc: ProjectService) -> None:
+        proj_svc._repo.get_by_id = AsyncMock(return_value=MagicMock(user_id=99))
+
+        result = await proj_svc.upsert_platform_settings(5, 42, "wordpress", text_settings={"words_min": 2000})
+        assert result is None
+
+    async def test_returns_none_when_not_found(self, proj_svc: ProjectService) -> None:
+        proj_svc._repo.get_by_id = AsyncMock(return_value=None)
+
+        result = await proj_svc.upsert_platform_settings(5, 42, "wordpress")
+        assert result is None
+
+
+class TestDeletePlatformSettings:
+    async def test_deletes_when_owned(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(user_id=42)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+        proj_svc._platform_settings_repo.delete = AsyncMock(return_value=True)
+
+        result = await proj_svc.delete_platform_settings(5, 42, "wordpress")
+        assert result is True
+        proj_svc._platform_settings_repo.delete.assert_awaited_once_with(5, "wordpress")
+
+    async def test_returns_false_when_not_owned(self, proj_svc: ProjectService) -> None:
+        proj_svc._repo.get_by_id = AsyncMock(return_value=MagicMock(user_id=99))
+
+        result = await proj_svc.delete_platform_settings(5, 42, "wordpress")
+        assert result is False
+
+    async def test_returns_false_when_not_found(self, proj_svc: ProjectService) -> None:
+        proj_svc._repo.get_by_id = AsyncMock(return_value=None)
+
+        result = await proj_svc.delete_platform_settings(5, 42, "wordpress")
+        assert result is False
+
+
+class TestResolveEffectiveSettings:
+    async def test_platform_override_takes_priority(self, proj_svc: ProjectService) -> None:
+        override = MagicMock(
+            text_settings={"words_min": 2000},
+            image_settings={"count": 5},
+        )
+        project = MagicMock(
+            text_settings={"words_min": 1500},
+            image_settings={"count": 3},
+        )
+        proj_svc._platform_settings_repo.get_by_project_and_platform = AsyncMock(return_value=override)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+
+        ts, is_ = await proj_svc.resolve_effective_settings(5, "wordpress")
+        assert ts == {"words_min": 2000}
+        assert is_ == {"count": 5}
+
+    async def test_falls_back_to_project_defaults(self, proj_svc: ProjectService) -> None:
+        project = MagicMock(
+            text_settings={"words_min": 1500},
+            image_settings={"count": 3},
+        )
+        proj_svc._platform_settings_repo.get_by_project_and_platform = AsyncMock(return_value=None)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+
+        ts, is_ = await proj_svc.resolve_effective_settings(5, "telegram")
+        assert ts == {"words_min": 1500}
+        assert is_ == {"count": 3}
+
+    async def test_empty_override_falls_back(self, proj_svc: ProjectService) -> None:
+        override = MagicMock(text_settings={}, image_settings={})
+        project = MagicMock(
+            text_settings={"words_min": 1500},
+            image_settings={"count": 3},
+        )
+        proj_svc._platform_settings_repo.get_by_project_and_platform = AsyncMock(return_value=override)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+
+        ts, is_ = await proj_svc.resolve_effective_settings(5, "wordpress")
+        assert ts == {"words_min": 1500}
+        assert is_ == {"count": 3}
+
+    async def test_no_project_returns_empty(self, proj_svc: ProjectService) -> None:
+        proj_svc._platform_settings_repo.get_by_project_and_platform = AsyncMock(return_value=None)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=None)
+
+        ts, is_ = await proj_svc.resolve_effective_settings(5, "wordpress")
+        assert ts == {}
+        assert is_ == {}
+
+    async def test_mixed_override_and_defaults(self, proj_svc: ProjectService) -> None:
+        """Override has text but empty image -> image falls back to project."""
+        override = MagicMock(
+            text_settings={"words_min": 3000},
+            image_settings={},
+        )
+        project = MagicMock(
+            text_settings={"words_min": 1500},
+            image_settings={"count": 3, "style": "photo"},
+        )
+        proj_svc._platform_settings_repo.get_by_project_and_platform = AsyncMock(return_value=override)
+        proj_svc._repo.get_by_id = AsyncMock(return_value=project)
+
+        ts, is_ = await proj_svc.resolve_effective_settings(5, "wordpress")
+        assert ts == {"words_min": 3000}
+        assert is_ == {"count": 3, "style": "photo"}

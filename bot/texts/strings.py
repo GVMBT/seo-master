@@ -465,7 +465,7 @@ SCHEDULE_NO_CATEGORIES = "Сначала создайте категорию в 
 SCHEDULE_NO_WP = "Нет WordPress-подключений. Добавьте платформу."
 SCHEDULE_NO_SOCIAL = "Нет подключённых соцсетей"
 
-CROSSPOST_TITLE = "Кросс-постинг"
+CROSSPOST_TITLE = "КРОСС-ПОСТИНГ"
 CROSSPOST_COST = "Стоимость: ~10 ток/пост за кросс-пост."
 CROSSPOST_PROMPT = "Выберите платформы для автоматической адаптации поста."
 CROSSPOST_SAVED = "Кросс-постинг сохранён: {count} платформ."
@@ -502,7 +502,7 @@ PAYMENT_REFUND_TEXT = (
 # -----------------------------------------------
 # Exit Protection
 # -----------------------------------------------
-EXIT_CONFIRM_TITLE = "Прервать публикацию?"
+EXIT_CONFIRM_TITLE = "ПРЕРВАТЬ ПУБЛИКАЦИЮ?"
 EXIT_CONFIRM_TEXT = "Прогресс сохранится на 24 часа."
 EXIT_CONFIRMED = "Публикация приостановлена. Продолжить можно из /start."
 
@@ -547,7 +547,7 @@ MONITORING_TITLE = "МОНИТОРИНГ"
 BROADCAST_TITLE = "РАССЫЛКА"
 BROADCAST_AUDIENCE_PROMPT = "Выберите аудиторию:"
 BROADCAST_TEXT_PROMPT = "Отправьте текст сообщения:"
-BROADCAST_PREVIEW_TITLE = "Предпросмотр рассылки"
+BROADCAST_PREVIEW_TITLE = "ПРЕДПРОСМОТР РАССЫЛКИ"
 BROADCAST_DONE = "Рассылка завершена"
 BROADCAST_SENDING = "Рассылка... ({sent}/{total})"
 API_COSTS_TITLE = "ЗАТРАТЫ API"
@@ -640,7 +640,7 @@ AUTOPUB_SUCCESS = "Автопубликация выполнена: <b>{keyword}
 # -----------------------------------------------
 # Keyword wizard progress (shared)
 # -----------------------------------------------
-KW_PROGRESS_TITLE = "Подбор ключевиков"
+KW_PROGRESS_TITLE = "ПОДБОР КЛЮЧЕВИКОВ"
 KW_STEP_FETCH = "Получение фраз из DataForSEO"
 KW_STEP_FETCH_DONE = "Фразы получены"
 KW_STEP_CLUSTER = "Группировка по интенту"
@@ -752,3 +752,24 @@ POST_RESUME_NO_PROJECTS = "Для начала создадим проект \u2
 POST_RESUME_PROJECT_PROMPT = "Для какого проекта?"
 POST_RESUME_CATEGORY_PROMPT = "О чём будет пост? Назовите тему."
 POST_RESUME_CATEGORY_WHICH = "Какая тема?"
+
+# -----------------------------------------------
+# Hints (§2 — consistent hint lines)
+# -----------------------------------------------
+SCHEDULER_TYPE_HINT = "Статьи публикуются на сайт, посты \u2014 в соцсети"
+SCHEDULER_CAT_HINT = "Выберите тему для настройки расписания"
+SCHEDULER_CONN_HINT = "Выберите площадку для публикации"
+SCHEDULE_SET_HINT = "Расписание можно изменить в любой момент"
+CONTENT_TEXT_HINT = "Настройки влияют на генерацию текста"
+PAYMENT_REFUND_HINT = "Пополните баланс для продолжения работы"
+CROSSPOST_CONFIG_HINT = "Каждый кросс-пост адаптируется под платформу"
+
+# -----------------------------------------------
+# Platform display names (canonical map)
+# -----------------------------------------------
+PLATFORM_DISPLAY: dict[str, str] = {
+    "wordpress": "WordPress",
+    "telegram": "Telegram",
+    "vk": "\u0412\u041a\u043e\u043d\u0442\u0430\u043a\u0442\u0435",
+    "pinterest": "Pinterest",
+}

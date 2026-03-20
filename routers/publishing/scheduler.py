@@ -78,6 +78,7 @@ async def scheduler_entry(
         Screen(E.SCHEDULE, S.SCHEDULER_TITLE)
         .blank()
         .line(S.SCHEDULER_TYPE_PROMPT)
+        .hint(S.SCHEDULER_TYPE_HINT)
         .build()
     )
     await safe_edit_text(msg, text, reply_markup=scheduler_type_kb(project_id))
@@ -109,6 +110,7 @@ async def scheduler_articles_entry(
         Screen(E.SCHEDULE, S.SCHEDULER_ARTICLES_TITLE)
         .blank()
         .line(S.SCHEDULER_SELECT_CATEGORY)
+        .hint(S.SCHEDULER_CAT_HINT)
         .build()
     )
     await safe_edit_text(msg, text, reply_markup=scheduler_cat_list_kb(cats, project_id))
@@ -145,6 +147,7 @@ async def scheduler_social_entry(
         Screen(E.SCHEDULE, S.SCHEDULER_SOCIAL_TITLE)
         .blank()
         .line(S.SCHEDULER_SELECT_CATEGORY)
+        .hint(S.SCHEDULER_CAT_HINT)
         .build()
     )
     await safe_edit_text(msg, text, reply_markup=scheduler_social_cat_list_kb(cats, project_id))
@@ -182,8 +185,13 @@ async def scheduler_category(
 
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await safe_edit_text(msg,
-        Screen(E.SCHEDULE, S.SCHEDULE_ARTICLES_CONN_TITLE).blank().line(S.SCHEDULER_SELECT_CONNECTION).build(),
+    conn_text = (
+        Screen(E.SCHEDULE, S.SCHEDULE_ARTICLES_CONN_TITLE)
+        .blank().line(S.SCHEDULER_SELECT_CONNECTION)
+        .hint(S.SCHEDULER_CONN_HINT).build()
+    )
+    await safe_edit_text(
+        msg, conn_text,
         reply_markup=scheduler_conn_list_kb(wp_connections, schedules_map, cat_id, project_id),
     )
     await callback.answer()
@@ -215,8 +223,13 @@ async def scheduler_conn_list_back(
     wp_connections = await scheduler_service.get_wp_connections(ctx.project.id, user.id)
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await safe_edit_text(msg,
-        Screen(E.SCHEDULE, S.SCHEDULE_ARTICLES_CONN_TITLE).blank().line(S.SCHEDULER_SELECT_CONNECTION).build(),
+    conn_text = (
+        Screen(E.SCHEDULE, S.SCHEDULE_ARTICLES_CONN_TITLE)
+        .blank().line(S.SCHEDULER_SELECT_CONNECTION)
+        .hint(S.SCHEDULER_CONN_HINT).build()
+    )
+    await safe_edit_text(
+        msg, conn_text,
         reply_markup=scheduler_conn_list_kb(wp_connections or [], schedules_map, cat_id, ctx.project.id),
     )
     await callback.answer()
@@ -343,6 +356,7 @@ async def scheduler_preset(
         .line(f"Подключение: {display}")
         .line(f"Режим: {preset[0]}")
         .line(S.SCHEDULE_COST_ESTIMATE.format(cost=result.weekly_cost))
+        .hint(S.SCHEDULE_SET_HINT)
         .build()
     )
     await safe_edit_text(msg, set_text, reply_markup=reply_markup)
@@ -648,6 +662,7 @@ async def schedule_times_done(
         .line(f"  Время: {times_str}")
         .line(f"  Постов/день: {required}")
         .line(S.SCHEDULE_COST_ESTIMATE.format(cost=result.weekly_cost))
+        .hint(S.SCHEDULE_SET_HINT)
         .build()
     )
     await safe_edit_text(msg, set_text, reply_markup=reply_markup)
@@ -685,8 +700,13 @@ async def scheduler_social_category(
 
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await safe_edit_text(msg, 
-        Screen(E.SCHEDULE, S.SCHEDULE_SOCIAL_CONN_TITLE).blank().line(S.SCHEDULER_SELECT_CONNECTION).build(),
+    social_text = (
+        Screen(E.SCHEDULE, S.SCHEDULE_SOCIAL_CONN_TITLE)
+        .blank().line(S.SCHEDULER_SELECT_CONNECTION)
+        .hint(S.SCHEDULER_CONN_HINT).build()
+    )
+    await safe_edit_text(
+        msg, social_text,
         reply_markup=scheduler_social_conn_list_kb(social_conns, schedules_map, cat_id, project_id),
     )
     await callback.answer()
@@ -713,8 +733,13 @@ async def scheduler_social_conn_list_back(
     social_conns = await scheduler_service.get_social_connections(ctx.project.id, user.id)
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
-    await safe_edit_text(msg, 
-        Screen(E.SCHEDULE, S.SCHEDULE_SOCIAL_CONN_TITLE).blank().line(S.SCHEDULER_SELECT_CONNECTION).build(),
+    social_back_text = (
+        Screen(E.SCHEDULE, S.SCHEDULE_SOCIAL_CONN_TITLE)
+        .blank().line(S.SCHEDULER_SELECT_CONNECTION)
+        .hint(S.SCHEDULER_CONN_HINT).build()
+    )
+    await safe_edit_text(
+        msg, social_back_text,
         reply_markup=scheduler_social_conn_list_kb(social_conns or [], schedules_map, cat_id, ctx.project.id),
     )
     await callback.answer()
@@ -810,13 +835,17 @@ async def scheduler_crosspost_config(
 
     lead_display = html_mod.escape(format_connection_display(config.lead_connection))
     text = (
-        f"<b>Кросс-постинг</b>\n\n"
-        f"Ведущая платформа: {html_mod.escape(lead_display)}\n\n"
-        "Выберите платформы для автоматической адаптации поста.\n"
-        "Стоимость: ~10 ток/пост за кросс-пост."
+        Screen(E.SYNC, S.CROSSPOST_TITLE)
+        .blank()
+        .line(f"Ведущая платформа: {lead_display}")
+        .blank()
+        .line(S.CROSSPOST_PROMPT)
+        .line(S.CROSSPOST_COST)
+        .hint(S.CROSSPOST_CONFIG_HINT)
+        .build()
     )
 
-    await safe_edit_text(msg, 
+    await safe_edit_text(msg,
         text,
         reply_markup=scheduler_crosspost_kb(
             cat_id,
@@ -893,10 +922,23 @@ async def scheduler_crosspost_save(
         await callback.answer("Расписание не найдено", show_alert=True)
         return
 
-    result_msg = f"Кросс-постинг сохранён: {result.count} платформ." if result.count else "Кросс-постинг отключён."
+    if result.count:
+        result_text = (
+            Screen(E.CHECK, S.CROSSPOST_TITLE)
+            .blank()
+            .line(S.CROSSPOST_SAVED.format(count=result.count))
+            .build()
+        )
+    else:
+        result_text = (
+            Screen(E.SYNC, S.CROSSPOST_TITLE)
+            .blank()
+            .line(S.CROSSPOST_DISABLED)
+            .build()
+        )
 
-    await safe_edit_text(msg, 
-        result_msg,
+    await safe_edit_text(msg,
+        result_text,
         reply_markup=scheduler_social_config_kb(
             cat_id,
             conn_id,

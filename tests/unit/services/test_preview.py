@@ -383,10 +383,10 @@ class TestGenerateArticleContent:
     @patch("services.ai.articles.ArticleService")
     @patch("services.preview.AuditsRepository")
     @patch("services.preview.ProjectsRepository")
-    @patch("services.preview.CategoriesRepository")
+    @patch("services.projects.ProjectService")
     async def test_full_pipeline_returns_article_content(
         self,
-        mock_cat_cls: MagicMock,
+        mock_project_svc: MagicMock,
         mock_proj_cls: MagicMock,
         mock_audit_cls: MagicMock,
         mock_article_svc: MagicMock,
@@ -400,7 +400,9 @@ class TestGenerateArticleContent:
         preview_service: PreviewService,
         mock_image_storage: AsyncMock,
     ) -> None:
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={"count": 2}))
+        mock_project_svc.return_value.resolve_effective_settings = AsyncMock(
+            return_value=({}, {"count": 2}),
+        )
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
                 website_url="https://example.com",
@@ -442,10 +444,10 @@ class TestGenerateArticleContent:
     @patch("services.ai.images.ImageService")
     @patch("services.preview.AuditsRepository")
     @patch("services.preview.ProjectsRepository")
-    @patch("services.preview.CategoriesRepository")
+    @patch("services.projects.ProjectService")
     async def test_text_failure_raises(
         self,
-        mock_cat_cls: MagicMock,
+        mock_project_svc: MagicMock,
         mock_proj_cls: MagicMock,
         mock_audit_cls: MagicMock,
         mock_image_svc: MagicMock,
@@ -453,7 +455,9 @@ class TestGenerateArticleContent:
         preview_service: PreviewService,
     ) -> None:
         """E35: Text generation failure -> raise (caller should refund)."""
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={}))
+        mock_project_svc.return_value.resolve_effective_settings = AsyncMock(
+            return_value=({}, {}),
+        )
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
                 website_url=None,
@@ -479,10 +483,10 @@ class TestGenerateArticleContent:
     @patch("services.ai.articles.ArticleService")
     @patch("services.preview.AuditsRepository")
     @patch("services.preview.ProjectsRepository")
-    @patch("services.preview.CategoriesRepository")
+    @patch("services.projects.ProjectService")
     async def test_e34_image_failure_still_returns_content(
         self,
-        mock_cat_cls: MagicMock,
+        mock_project_svc: MagicMock,
         mock_proj_cls: MagicMock,
         mock_audit_cls: MagicMock,
         mock_article_svc: MagicMock,
@@ -493,7 +497,9 @@ class TestGenerateArticleContent:
         preview_service: PreviewService,
     ) -> None:
         """E34: Image generation fails -> article published without images."""
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={}))
+        mock_project_svc.return_value.resolve_effective_settings = AsyncMock(
+            return_value=({}, {}),
+        )
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
                 website_url=None,
@@ -520,10 +526,10 @@ class TestGenerateArticleContent:
     @patch("services.ai.articles.ArticleService")
     @patch("services.preview.AuditsRepository")
     @patch("services.preview.ProjectsRepository")
-    @patch("services.preview.CategoriesRepository")
+    @patch("services.projects.ProjectService")
     async def test_image_upload_failure_graceful(
         self,
-        mock_cat_cls: MagicMock,
+        mock_project_svc: MagicMock,
         mock_proj_cls: MagicMock,
         mock_audit_cls: MagicMock,
         mock_article_svc: MagicMock,
@@ -535,7 +541,9 @@ class TestGenerateArticleContent:
         mock_image_storage: AsyncMock,
     ) -> None:
         """Image upload to storage fails -> skip image, remove placeholder."""
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={}))
+        mock_project_svc.return_value.resolve_effective_settings = AsyncMock(
+            return_value=({}, {}),
+        )
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
                 website_url=None,
@@ -667,12 +675,12 @@ class TestImageDirectorIntegration:
     @patch("services.ai.articles.ArticleService")
     @patch("services.preview.AuditsRepository")
     @patch("services.preview.ProjectsRepository")
-    @patch("services.preview.CategoriesRepository")
+    @patch("services.projects.ProjectService")
     @patch("services.ai.image_director.ImageDirectorService")
     async def test_generate_article_calls_image_director(
         self,
         mock_director_cls: MagicMock,
-        mock_cat_cls: MagicMock,
+        mock_project_svc: MagicMock,
         mock_proj_cls: MagicMock,
         mock_audit_cls: MagicMock,
         mock_article_svc: MagicMock,
@@ -689,7 +697,9 @@ class TestImageDirectorIntegration:
         """Director is called and plans are passed to ImageService."""
         from services.ai.image_director import DirectorResult, ImagePlan
 
-        mock_cat_cls.return_value.get_by_id = AsyncMock(return_value=MagicMock(image_settings={"count": 1}))
+        mock_project_svc.return_value.resolve_effective_settings = AsyncMock(
+            return_value=({}, {"count": 1}),
+        )
         mock_proj_cls.return_value.get_by_id = AsyncMock(
             return_value=MagicMock(
                 website_url=None,

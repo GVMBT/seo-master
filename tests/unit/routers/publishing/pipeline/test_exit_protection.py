@@ -35,7 +35,7 @@ async def test_exit_protection_reply_article_shows_confirm(mock_message: MagicMo
 
     mock_message.answer.assert_called_once()
     text = mock_message.answer.call_args[0][0]
-    assert "Прервать публикацию?" in text
+    assert "ПРЕРВАТЬ ПУБЛИКАЦИЮ?" in text
     assert "24 часа" in text
     # Check that keyboard has exit_confirm and exit_cancel buttons
     kb = mock_message.answer.call_args[1]["reply_markup"]
@@ -58,7 +58,7 @@ async def test_exit_protection_reply_social_shows_confirm(mock_message: MagicMoc
 
     mock_message.answer.assert_called_once()
     text = mock_message.answer.call_args[0][0]
-    assert "Прервать публикацию?" in text
+    assert "ПРЕРВАТЬ ПУБЛИКАЦИЮ?" in text
     assert "24 часа" in text
     kb = mock_message.answer.call_args[1]["reply_markup"]
     callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
@@ -78,7 +78,7 @@ async def test_exit_protection_cancel_cmd_article(mock_message: MagicMock) -> No
     await exit_protection_cancel_cmd_article(mock_message)
 
     mock_message.answer.assert_called_once()
-    assert "Прервать публикацию?" in mock_message.answer.call_args[0][0]
+    assert "ПРЕРВАТЬ ПУБЛИКАЦИЮ?" in mock_message.answer.call_args[0][0]
 
 
 async def test_exit_protection_cancel_cmd_social(mock_message: MagicMock) -> None:
@@ -88,7 +88,7 @@ async def test_exit_protection_cancel_cmd_social(mock_message: MagicMock) -> Non
     await exit_protection_cancel_cmd_social(mock_message)
 
     mock_message.answer.assert_called_once()
-    assert "Прервать публикацию?" in mock_message.answer.call_args[0][0]
+    assert "ПРЕРВАТЬ ПУБЛИКАЦИЮ?" in mock_message.answer.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------

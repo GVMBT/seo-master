@@ -1086,15 +1086,18 @@ async def _return_to_preview(
         regen_cost=preview.tokens_charged or 0,
     )
 
-    lines = [
-        f"{E.CHECK} <b>СТАТЬЯ ГОТОВА</b>\n",
-        f"<b>{html.escape(preview.title or '')}</b>\n",
-        f"{E.HASHTAG} Ключевая фраза: {html.escape(preview.keyword or '')}",
-        f"{E.DOC} Объём: ~{preview.word_count or 0} слов | Изображения: {preview.images_count or 0}",
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-        f"{E.WALLET} Списано: {preview.tokens_charged or 0} ток.",
-    ]
-    await message.answer("\n".join(lines), reply_markup=kb)
+    preview_text = (
+        Screen(E.CHECK, S.ARTICLE_READY_TITLE)
+        .blank()
+        .line(f"<b>{html.escape(preview.title or '')}</b>")
+        .blank()
+        .field(E.HASHTAG, "Ключевая фраза", html.escape(preview.keyword or ""))
+        .field(E.DOC, "Объём", f"~{preview.word_count or 0} слов | Изображения: {preview.images_count or 0}")
+        .separator()
+        .line(f"\n{E.WALLET} Списано: {preview.tokens_charged or 0} ток.")
+        .build()
+    )
+    await message.answer(preview_text, reply_markup=kb)
     await save_checkpoint(
         redis,
         user.id,
