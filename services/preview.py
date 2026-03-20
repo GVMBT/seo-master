@@ -15,7 +15,6 @@ import structlog
 from bot.exceptions import AIGenerationError
 from db.client import SupabaseClient
 from db.repositories.audits import AuditsRepository
-from db.repositories.categories import CategoriesRepository
 from db.repositories.projects import ProjectsRepository
 from services.ai.articles import RESEARCH_SCHEMA
 from services.ai.orchestrator import AIOrchestrator, GenerationRequest
@@ -86,11 +85,13 @@ class PreviewService:
         category_id: int,
         keyword: str,
         image_count: int | None = None,
+        platform_type: str = "wordpress",
     ) -> ArticleContent:
         """Run full article pipeline: websearch → text + images in parallel.
 
         Args:
             image_count: Override image count. If None, uses category settings.
+            platform_type: Platform for settings resolution (default wordpress).
 
         Returns ArticleContent with real AI-generated content.
         Raises on text generation failure (caller should refund).
@@ -108,12 +109,15 @@ class PreviewService:
         article_service = ArticleService(self._orchestrator, self._db)
         image_service = ImageService(self._orchestrator)
 
-        category = await CategoriesRepository(self._db).get_by_id(category_id)
-        project = await ProjectsRepository(self._db).get_by_id(project_id)
-        # Fallback: project.image_settings → category.image_settings
-        eff_image_settings = (
-            (project.image_settings if project else None) or (category.image_settings if category else None) or {}
+        # Resolve effective settings: platform override → project defaults → empty
+        from services.projects import ProjectService
+
+        project_svc = ProjectService(self._db)
+        eff_text_settings, eff_image_settings = await project_svc.resolve_effective_settings(
+            project_id, platform_type,
         )
+
+        project = await ProjectsRepository(self._db).get_by_id(project_id)
         if image_count is None:
             image_count = int(eff_image_settings.get("count", 4))
 
@@ -286,9 +290,6 @@ class PreviewService:
         word_count = len(content_markdown.split())
 
         # Word count warning: log if significantly below target (not a hard block)
-        eff_text_settings = (
-            (project.text_settings if project else None) or (category.text_settings if category else None) or {}
-        )
         words_min = _safe_int(eff_text_settings.get("words_min"), 1500)
         if word_count < int(words_min * 0.8):
             log.warning(

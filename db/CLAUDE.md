@@ -1,7 +1,7 @@
 # Модуль db/ — База данных
 
 ## 13 таблиц (docs/ARCHITECTURE.md §3)
-users, projects, platform_connections, categories, platform_content_overrides,
+users, projects, platform_connections, categories, project_platform_settings,
 platform_schedules, publication_logs, token_expenses, payments,
 site_audits, site_brandings, article_previews, prompt_versions
 
@@ -29,12 +29,17 @@ async def delete_category(category_id):
 - UNIQUE(project_id, platform_type, identifier)
 
 ### Наследование настроек контента (F41)
+Per-platform overrides at project level via `project_platform_settings` table.
+Resolution: platform override -> project defaults -> empty dict.
 ```python
-def get_content_settings(category_id, platform_type):
-    override = overrides.get(category_id, platform_type)
-    if override and override.image_settings is not None:
-        return override
-    return categories.get(category_id)  # fallback
+async def resolve_effective_settings(project_id, platform_type):
+    override = await platform_settings_repo.get_by_project_and_platform(project_id, platform_type)
+    project = await projects_repo.get_by_id(project_id)
+    ts = (override.text_settings if override and override.text_settings else None) \
+         or (project.text_settings if project else None) or {}
+    is_ = (override.image_settings if override and override.image_settings else None) \
+          or (project.image_settings if project else None) or {}
+    return ts, is_
 ```
 
 ### Phase 9 repository methods

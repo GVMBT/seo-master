@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from api.models import PublishPayload
 from db.models import Category, PlatformConnection, PlatformSchedule, User
 from services.publish import PublishService
@@ -15,6 +17,15 @@ from services.research_helpers import (
     identify_gaps,
     is_own_site,
 )
+
+
+@pytest.fixture(autouse=True)
+def _mock_project_service():
+    """Auto-mock ProjectService.resolve_effective_settings for all publish tests."""
+    with patch("services.publish.ProjectService") as cls:
+        cls.return_value.resolve_effective_settings = AsyncMock(return_value=({}, {}))
+        yield cls
+
 
 # ---------------------------------------------------------------------------
 # Factories

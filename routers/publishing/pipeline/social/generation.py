@@ -376,6 +376,13 @@ async def _run_social_generation(
             log.debug("social_progress_edit_failed")
 
         from services.ai.social_posts import SocialPostService
+        from services.projects import ProjectService
+
+        # Resolve effective settings: platform override → project defaults → empty
+        project_svc = ProjectService(db)
+        eff_text_settings, eff_image_settings = await project_svc.resolve_effective_settings(
+            project_id, platform_type,
+        )
 
         social_service = SocialPostService(ai_orchestrator, db)
         result = await social_service.generate(
@@ -384,6 +391,7 @@ async def _run_social_generation(
             category_id=category_id,
             keyword=keyword,
             platform=platform_type,
+            overrides=eff_text_settings,
         )
 
         # Extract text from structured response
@@ -401,11 +409,8 @@ async def _run_social_generation(
 
         try:
             image_service = ImageService(ai_orchestrator)
-            cat = await CategoriesRepository(db).get_by_id(category_id)
             proj = await ProjectsRepository(db).get_by_id(project_id)
-            img_settings = dict(
-                (proj.image_settings if proj else None) or (cat.image_settings if cat else None) or {}
-            )
+            img_settings = dict(eff_image_settings)
             # Pinterest: vertical 2:3 aspect ratio
             if platform_type == "pinterest":
                 img_settings["formats"] = ["2:3"]

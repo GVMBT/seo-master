@@ -5,6 +5,7 @@ from db.repositories.categories import CategoriesRepository
 from db.repositories.connections import ConnectionsRepository
 from db.repositories.payments import PaymentsRepository
 from db.repositories.previews import PreviewsRepository
+from db.repositories.project_settings import ProjectPlatformSettingsRepository
 from db.repositories.projects import ProjectsRepository
 from db.repositories.prompts import PromptsRepository
 from db.repositories.publications import PublicationsRepository
@@ -17,6 +18,7 @@ __all__ = [
     "ConnectionsRepository",
     "PaymentsRepository",
     "PreviewsRepository",
+    "ProjectPlatformSettingsRepository",
     "ProjectsRepository",
     "PromptsRepository",
     "PublicationsRepository",

@@ -84,15 +84,15 @@ CREATE TABLE categories (
 CREATE INDEX idx_categories_project ON categories(project_id);
 
 -- ============================================================================
--- 5. platform_content_overrides
+-- 5. project_platform_settings (per-platform content overrides at project level)
 -- ============================================================================
-CREATE TABLE platform_content_overrides (
+CREATE TABLE project_platform_settings (
     id              SERIAL PRIMARY KEY,
-    category_id     INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     platform_type   VARCHAR(20) NOT NULL,
-    image_settings  JSONB,
-    text_settings   JSONB,
-    UNIQUE(category_id, platform_type)
+    text_settings   JSONB NOT NULL DEFAULT '{}',
+    image_settings  JSONB NOT NULL DEFAULT '{}',
+    UNIQUE(project_id, platform_type)
 );
 
 -- ============================================================================
