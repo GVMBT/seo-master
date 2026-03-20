@@ -61,12 +61,7 @@ _PLAT_ICONS: dict[str, str] = {
     "pinterest": E.PINTEREST,
 }
 
-_PLAT_NAMES: dict[str, str] = {
-    "wordpress": "WORDPRESS",
-    "telegram": "TELEGRAM",
-    "vk": "VK",
-    "pinterest": "PINTEREST",
-}
+_PLAT_NAMES = {k: v.upper() for k, v in S.PLATFORM_DISPLAY.items()}
 
 # Regex for target: "d" or platform names
 _PT_RE = r"(d|wordpress|telegram|vk|pinterest)"
@@ -371,6 +366,7 @@ async def show_text_menu(
         Screen(E.PEN, S.CONTENT_TEXT_TITLE)
         .blank()
         .line(S.CONTENT_TEXT_PROMPT)
+        .hint(S.CONTENT_TEXT_HINT)
         .build()
     )
     await safe_edit_text(

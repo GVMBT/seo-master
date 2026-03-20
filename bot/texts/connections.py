@@ -1,19 +1,16 @@
 """Connection instruction texts for platform onboarding.
 
-Premium emoji IDs from screen/icons/:
-- 5305396259765394964 = VK logo
-- 5305702774401439462 = WordPress logo
-- 5305643301989290953 = Telegram logo
-- 5305635128666526830 = key
-- 5305748374069221919 = lock
+Uses E.* emoji constants from bot.texts.emoji for consistency.
 """
+
+from bot.texts.emoji import E
 
 # ---------------------------------------------------------------------------
 # VK
 # ---------------------------------------------------------------------------
 
 VK_STEP1_GROUP_URL = (
-    '<tg-emoji emoji-id="5305396259765394964">\U0001f535</tg-emoji>'
+    f"{E.VK}"
     " <b>Подключение VK</b>\n\n"
     "Шаг 1/2 \u2014 Отправьте ссылку на группу VK\n\n"
     "Примеры:\n"
@@ -25,31 +22,31 @@ VK_STEP1_GROUP_URL = (
 )
 
 VK_STEP2_API_KEY = (
-    '<tg-emoji emoji-id="5305396259765394964">\U0001f535</tg-emoji>'
+    f"{E.VK}"
     " <b>Подключение VK</b>\n\n"
     "Шаг 2/2 \u2014 Создайте ключ API\n"
     "Группа: <b>{group_name}</b>\n\n"
-    '<tg-emoji emoji-id="5305635128666526830">\U0001f511</tg-emoji>'
+    f"{E.KEY}"
     " <b>Инструкция:</b>\n\n"
-    '<tg-emoji emoji-id="5305338243347157769">1\ufe0f\u20e3</tg-emoji>'
+    f"{E.N1}"
     " Откройте настройки API группы:\n"
     '   <a href="https://vk.com/club{group_id}?act=tokens">Открыть настройки API</a>\n\n'
-    '<tg-emoji emoji-id="5307730153583972349">2\ufe0f\u20e3</tg-emoji>'
+    f"{E.N2}"
     " Нажмите <b>Создать ключ</b>\n\n"
-    '<tg-emoji emoji-id="5305563909518825468">3\ufe0f\u20e3</tg-emoji>'
+    f"{E.N3}"
     " Отметьте три галочки:\n"
-    '   <tg-emoji emoji-id="5307785824950064221">\u2705</tg-emoji>'
+    f"   {E.CHECK}"
     " Управление сообществом\n"
-    '   <tg-emoji emoji-id="5307785824950064221">\u2705</tg-emoji>'
+    f"   {E.CHECK}"
     " Доступ к фотографиям\n"
-    '   <tg-emoji emoji-id="5307785824950064221">\u2705</tg-emoji>'
+    f"   {E.CHECK}"
     " Доступ к стене\n\n"
-    '<tg-emoji emoji-id="5305799131992730110">4\ufe0f\u20e3</tg-emoji>'
+    f"{E.N4}"
     " Подтвердите через SMS\n\n"
-    '<tg-emoji emoji-id="5307500080775863670">5\ufe0f\u20e3</tg-emoji>'
+    f"{E.N5}"
     " Скопируйте ключ и вставьте сюда \u2b07\ufe0f\n\n"
     "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-    '<tg-emoji emoji-id="5305748374069221919">\U0001f512</tg-emoji>'
+    f"{E.LOCK}"
     " <i>Ключ хранится в зашифрованном виде</i>"
 )
 
@@ -64,7 +61,7 @@ _VK_AUTH_URL = (
 )
 
 VK_STEP2_AUTH = (
-    '<tg-emoji emoji-id="5305396259765394964">\U0001f535</tg-emoji>'
+    f"{E.VK}"
     " <b>Подключение VK</b>\n\n"
     "Шаг 2/2 \u2014 Авторизуйте доступ к группе\n"
     "<b>{group_name}</b>\n\n"
@@ -75,7 +72,7 @@ VK_STEP2_AUTH = (
     "   и отправьте её сюда \u2b07\n\n"
     "<i>Ссылка будет выглядеть примерно так:\n"
     "https://oauth.vk.com/blank.html#access_token=...</i>\n\n"
-    '<tg-emoji emoji-id="5305748374069221919">\U0001f512</tg-emoji>'
+    f"{E.LOCK}"
     " Токен хранится в зашифрованном виде"
 )
 
@@ -84,28 +81,28 @@ VK_STEP2_AUTH = (
 # ---------------------------------------------------------------------------
 
 WP_STEP1_URL = (
-    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
+    f"{E.WORDPRESS}"
     " <b>Подключение WordPress</b>\n\n"
-    "Шаг 1/3 — Введите адрес вашего сайта\n\n"
+    "Шаг 1/3 \u2014 Введите адрес вашего сайта\n\n"
     "<i>Пример: example.com</i>"
 )
 
 WP_STEP2_LOGIN = (
-    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
+    f"{E.WORDPRESS}"
     " <b>Подключение WordPress</b>\n\n"
-    "Шаг 2/3 — Введите логин WordPress\n\n"
+    "Шаг 2/3 \u2014 Введите логин WordPress\n\n"
     "Это ваш логин для входа в панель управления\n"
     "WordPress (wp-admin).\n\n"
     "Обычно это имя пользователя, <b>не email</b>.\n"
-    "Найти его можно: WP-Admin → Пользователи → Ваш профиль."
+    "Найти его можно: WP-Admin \u2192 Пользователи \u2192 Ваш профиль."
 )
 
 WP_STEP3_CREDENTIALS = (
-    '<tg-emoji emoji-id="5305702774401439462">🌐</tg-emoji>'
+    f"{E.WORDPRESS}"
     " <b>Подключение WordPress</b>\n\n"
-    "Шаг 3/3 — Введите Application Password\n\n"
+    "Шаг 3/3 \u2014 Введите Application Password\n\n"
     "Как создать:\n"
-    "1. Откройте WP-Admin → Пользователи → Профиль\n"
+    "1. Откройте WP-Admin \u2192 Пользователи \u2192 Профиль\n"
     "2. Прокрутите вниз до раздела <b>Application Passwords</b>\n"
     "3. Введите название (например: SEO Master)\n"
     "4. Нажмите <b>Добавить новый</b>\n"
@@ -115,16 +112,16 @@ WP_STEP3_CREDENTIALS = (
 )
 
 TG_STEP1_CHANNEL = (
-    '<tg-emoji emoji-id="5305643301989290953">✈</tg-emoji>'
+    f"{E.TELEGRAM}"
     " <b>Подключение Telegram-канала</b>\n\n"
-    "Шаг 1/2 — Введите ссылку на канал\n\n"
+    "Шаг 1/2 \u2014 Введите ссылку на канал\n\n"
     "<i>Формат: @channel или t.me/channel</i>"
 )
 
 TG_STEP2_BOT_SETUP = (
-    '<tg-emoji emoji-id="5305643301989290953">✈</tg-emoji>'
+    f"{E.TELEGRAM}"
     " <b>Подключение Telegram-канала</b>\n\n"
-    "Шаг 2/2 — Создайте бота-публикатора\n\n"
+    "Шаг 2/2 \u2014 Создайте бота-публикатора\n\n"
     "Инструкция (30 секунд):\n"
     "1. Откройте @BotFather в Telegram\n"
     "2. Отправьте команду /newbot\n"

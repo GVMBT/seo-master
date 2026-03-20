@@ -395,7 +395,8 @@ async def process_field_value(
         edit_text = S.PROJECT_EDIT_UPDATED.format(label=label) + "\n\n" + _build_edit_text(project)
         await message.answer(edit_text, reply_markup=project_edit_kb(project_id, _project_completed(project)))
     else:
-        await message.answer(f"{E.WARNING} " + S.ERROR_UPDATE, reply_markup=menu_kb())
+        error_text = Screen(E.WARNING, "ОШИБКА").blank().line(S.ERROR_UPDATE).build()
+        await message.answer(error_text, reply_markup=menu_kb())
 
     log.info("project_field_updated", project_id=project_id, field=field, user_id=user.id)
 

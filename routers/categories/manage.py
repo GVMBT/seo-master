@@ -73,7 +73,7 @@ async def show_category_list(
     if not categories:
         safe_name = html.escape(project.name)
         empty_text = (
-            Screen(E.FOLDER, f"{safe_name} \u2014 Категории")
+            Screen(E.HASHTAG, f"КАТЕГОРИИ \u2014 {safe_name}")
             .blank()
             .line(S.CATEGORY_EMPTY)
             .blank()
@@ -395,13 +395,15 @@ async def execute_category_delete(
             if remaining
             else category_list_empty_kb(category.project_id)
         )
-        await safe_edit_text(msg,
-            S.CATEGORY_DELETED.format(name=safe_name),
-            reply_markup=kb,
+        success_text = (
+            Screen(E.CHECK, "КАТЕГОРИЯ УДАЛЕНА")
+            .blank()
+            .line(S.CATEGORY_DELETED.format(name=safe_name))
+            .build()
         )
+        await safe_edit_text(msg, success_text, reply_markup=kb)
     else:
-        await safe_edit_text(
-            msg, f"{E.WARNING} " + S.CATEGORY_DELETE_ERROR, reply_markup=menu_kb(),
-        )
+        error_text = Screen(E.WARNING, "ОШИБКА").blank().line(S.CATEGORY_DELETE_ERROR).build()
+        await safe_edit_text(msg, error_text, reply_markup=menu_kb())
 
     await callback.answer()

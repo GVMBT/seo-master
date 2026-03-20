@@ -217,12 +217,12 @@ def _data(**overrides: object) -> DashboardData:
 class TestBuildText:
     def test_negative_balance_shows_debt_warning(self) -> None:
         text = DashboardService.build_text("Test", -100, False, _data())
-        assert "Баланс: -100 токенов" in text
+        assert "БАЛАНС: -100 ТОКЕНОВ" in text
         assert "Долг 100 токенов" in text
 
     def test_zero_balance_shows_topup_message(self) -> None:
         text = DashboardService.build_text("Test", 0, False, _data())
-        assert "Баланс: 0 токенов" in text
+        assert "БАЛАНС: 0 ТОКЕНОВ" in text
         assert "пополнить" in text
 
     def test_new_user_no_projects_shows_welcome(self) -> None:
