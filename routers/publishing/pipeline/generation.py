@@ -1168,8 +1168,8 @@ async def _jump_to_category_selection(
     if not categories:
         from keyboards.inline import cancel_kb
 
-        await safe_edit_text(msg, 
-            f"{E.DOC} Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
+        await safe_edit_text(msg,
+            Screen(E.DOC, S.ARTICLE_STEP3_TITLE).blank().line(S.ARTICLE_STEP3_PROMPT).build(),
             reply_markup=cancel_kb("pipeline:article:cancel"),
         )
         await state.set_state(ArticlePipelineFSM.create_category_name)
@@ -1180,8 +1180,8 @@ async def _jump_to_category_selection(
 
         await show_readiness_check(callback, state, user, db, redis)
     else:
-        await safe_edit_text(msg, 
-            f"{E.DOC} Статья (3/5) — Тема\n\nКакая тема?",
+        await safe_edit_text(msg,
+            Screen(E.DOC, S.ARTICLE_STEP3_TITLE).blank().line(S.ARTICLE_STEP3_WHICH).build(),
             reply_markup=pipeline_categories_kb(categories, project_id),
         )
         await state.set_state(ArticlePipelineFSM.select_category)

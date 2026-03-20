@@ -28,6 +28,7 @@ FORECAST = "~{weekly} ток/нед  \u00b7  ~{monthly} ток/мес"
 # Projects
 # -----------------------------------------------
 PROJECTS_TITLE = "ПРОЕКТЫ"
+PROJECTS_LIST_HINT = "Выберите проект или создайте новый"
 PROJECT_CARD_HINT = "Добавьте категории и подключите площадки"
 PROJECT_EDIT_TITLE = "РЕДАКТИРОВАНИЕ"
 PROJECT_EDIT_HINT = "Нажмите на поле для редактирования"
@@ -113,6 +114,8 @@ CATEGORY_CREATE_EXAMPLE = "Пример: Кухни на заказ"
 CATEGORY_CREATE_CANCELLED = "Создание категории отменено."
 CATEGORY_NAME_LENGTH = "Название: от 2 до 100 символов."
 CATEGORY_HINT = "Заполните все пункты \u2014 статьи будут качественнее"
+CATEGORIES_LIST_HINT = "Каждая категория = тема для статей"
+CATEGORY_CREATE_TITLE = "НОВАЯ КАТЕГОРИЯ"
 
 CATEGORY_DELETE_QUESTION = "Удалить категорию \u00ab{name}\u00bb?"
 CATEGORY_DELETE_SCHEDULES = "Будет отменено расписаний: {count}"
@@ -128,6 +131,7 @@ CATEGORY_NEEDS_WEBSITE = "Сначала заполните информацию
 # -----------------------------------------------
 KEYWORDS_EMPTY = "Фразы не добавлены. Без них бот не знает о чём писать статьи."
 KEYWORDS_HINT = "Ключевики \u2014 основа для качественных статей"
+KEYWORDS_CLUSTERS_HINT = "Нажмите на группу чтобы увидеть фразы"
 KEYWORDS_DELETED_ALL = "Все фразы удалены."
 KEYWORDS_CLUSTER_DELETED = "Группа \u00ab{name}\u00bb удалена."
 KEYWORDS_CLUSTER_DELETED_EMPTY = "Группа \u00ab{name}\u00bb удалена. Фразы закончились."
@@ -151,6 +155,7 @@ KEYWORDS_GEO_PROMPT = (
 # Description
 # -----------------------------------------------
 DESCRIPTION_HINT = "Описание помогает AI писать точнее"
+DESCRIPTION_REVIEW_HINT = "Прочитайте и отредактируйте если нужно \u2014 AI не всегда попадает в точку"
 DESCRIPTION_EMPTY = "Описание не задано."
 DESCRIPTION_EMPTY_DETAIL = (
     "Расскажите о вашем бизнесе в этой категории \u2014 "
@@ -369,6 +374,18 @@ POST_CROSSPOST_RUNNING = "Адаптирую посты..."
 POST_CROSSPOST_CANCELLED = "Кросс-постинг отмен\u0451н."
 POST_CROSSPOST_MIN_ONE = "Выберите хотя бы одну платформу."
 
+# Article pipeline step strings (Screen builder)
+ARTICLE_STEP1_TITLE = "СТАТЬЯ (1/5) \u2014 ПРОЕКТ"
+ARTICLE_STEP1_PROMPT = "Выберите проект для публикации"
+ARTICLE_STEP1_NO_PROJECTS = "Для начала создадим проект \u2014 это 30 секунд"
+ARTICLE_STEP2_TITLE = "СТАТЬЯ (2/5) \u2014 САЙТ"
+ARTICLE_STEP2_PROMPT = "На какой сайт опубликуем?"
+ARTICLE_STEP2_NO_WP = "Для публикации нужен WordPress-сайт. Подключим?"
+ARTICLE_STEP3_TITLE = "СТАТЬЯ (3/5) \u2014 ТЕМА"
+ARTICLE_STEP3_PROMPT = "О ч\u0451м будет статья?"
+ARTICLE_STEP3_WHICH = "Какая тема?"
+ARTICLE_CREATE_PROJECT_TITLE = "СТАТЬЯ (1/5) \u2014 НОВЫЙ ПРОЕКТ"
+
 PIPELINE_READINESS_TITLE = "СТАТЬЯ (4/5) \u2014 ПОДГОТОВКА"
 PIPELINE_CONFIRM_TITLE = "СТАТЬЯ (5/5) \u2014 ПОДТВЕРЖДЕНИЕ"
 PIPELINE_COST_GOD = "Стоимость: ~{cost} ток. (GOD_MODE \u2014 бесплатно)"
@@ -438,6 +455,11 @@ SCHEDULE_SELECT_DAYS = "Выберите дни публикации:"
 SCHEDULE_SELECT_COUNT = "Сколько постов в день?"
 SCHEDULE_SELECT_TIMES = "Выберите {count} временных слотов:"
 SCHEDULE_CANCELLED = "Настройка расписания отменена."
+SCHEDULE_DAYS_HINT = "Рекомендуем 3 дня в неделю для стабильного SEO-эффекта"
+SCHEDULE_TIMES_HINT = "Лучшее время \u2014 утро (8-10) или обед (12-14)"
+SCHEDULE_COUNT_HINT = "1 пост в день \u2014 оптимально для большинства сайтов"
+SCHEDULE_ARTICLES_CONN_TITLE = "СТАТЬИ \u2014 ПОДКЛЮЧЕНИЯ"
+SCHEDULE_SOCIAL_CONN_TITLE = "СОЦСЕТИ \u2014 ПОДКЛЮЧЕНИЯ"
 SCHEDULE_COST_ESTIMATE = "Ориент. расход: ~{cost} токенов/нед"
 SCHEDULE_NO_CATEGORIES = "Сначала создайте категорию в карточке проекта"
 SCHEDULE_NO_WP = "Нет WordPress-подключений. Добавьте платформу."
@@ -530,6 +552,11 @@ BROADCAST_DONE = "Рассылка завершена"
 BROADCAST_SENDING = "Рассылка... ({sent}/{total})"
 API_COSTS_TITLE = "ЗАТРАТЫ API"
 ADMIN_USER_NOT_FOUND = "Пользователь не найден."
+ADMIN_USER_LOOKUP_TITLE = "ПОИСК ПОЛЬЗОВАТЕЛЯ"
+ADMIN_USER_ACTIVITY_TITLE = "АКТИВНОСТЬ"
+BROADCAST_AUDIENCE_TEXT = "Аудитория: {label}\nПолучателей: ~{count}"
+BROADCAST_PREVIEW_PROMPT = "Проверьте текст перед отправкой"
+BROADCAST_DONE_TEXT = "Отправлено: {sent}\nОшибок: {failed}"
 ADMIN_USER_LOOKUP_PROMPT = "Отправьте ID (число) или @username:"
 ADMIN_BALANCE_INPUT = "Введите сумму для {action} (целое число):"
 ADMIN_BALANCE_CREDIT_LABEL = "начисления"
@@ -586,6 +613,42 @@ CONTENT_TONE_DESC = "Цветовая гамма изображений:"
 CONTENT_TEXT_ON_IMAGE_TITLE = "ТЕКСТ НА ИЗОБРАЖЕНИИ"
 CONTENT_TEXT_ON_IMAGE_DESC = "Процент текста поверх изображения:"
 CONTENT_RESET_DONE = "Настройки сброшены"
+
+# -----------------------------------------------
+# Autopublish notification templates (api/publish.py)
+# -----------------------------------------------
+AUTOPUB_INSUFFICIENT_BALANCE = (
+    "Автопубликация пропущена: недостаточно токенов. Расписание приостановлено.\n"
+    "Пополните баланс через /start."
+)
+AUTOPUB_NO_KEYWORDS = (
+    "Автопубликация пропущена: нет ключевых фраз в категории.\n"
+    "Добавьте фразы через карточку категории."
+)
+AUTOPUB_CONNECTION_INACTIVE = (
+    "Автопубликация не удалась: платформа не отвечает.\n"
+    "Проверьте подключение в настройках проекта."
+)
+AUTOPUB_VALIDATION_FAILED = "Автопубликация пропущена: контент не прошёл проверку качества. Токены возвращены."
+AUTOPUB_AI_UNAVAILABLE = "Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."
+AUTOPUB_NO_AVAILABLE_KEYWORD = (
+    "Автопубликация пропущена: все ключевые фразы уже использованы.\n"
+    "Добавьте новые фразы в категорию."
+)
+AUTOPUB_SUCCESS = "Автопубликация выполнена: <b>{keyword}</b>"
+
+# -----------------------------------------------
+# Keyword wizard progress (shared)
+# -----------------------------------------------
+KW_PROGRESS_TITLE = "Подбор ключевиков"
+KW_STEP_FETCH = "Получение фраз из DataForSEO"
+KW_STEP_FETCH_DONE = "Фразы получены"
+KW_STEP_CLUSTER = "Группировка по интенту"
+KW_STEP_CLUSTER_DONE = "Группировка завершена"
+KW_STEP_ENRICH = "Обогащение данными"
+KW_STEP_ENRICH_DONE = "Данные обогащены"
+KW_RESULT_ADDED = "Добавлено: {clusters} групп, {phrases} фраз"
+KW_RESULT_UPLOADED = "Загружено: {clusters} групп, {phrases} фраз"
 
 # -----------------------------------------------
 # Common

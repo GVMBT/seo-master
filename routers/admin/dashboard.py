@@ -199,8 +199,12 @@ async def admin_api_costs(
     )
 
     text = (
-        f"{E.WALLET} <b>{S.API_COSTS_TITLE}</b>\n\n"
-        f"7 дней: ${cost_7d:.2f}\n30 дней: ${cost_30d:.2f}\n90 дней: ${cost_90d:.2f}\n"
+        Screen(E.WALLET, S.API_COSTS_TITLE)
+        .blank()
+        .line(f"7 дней: ${cost_7d:.2f}")
+        .line(f"30 дней: ${cost_30d:.2f}")
+        .line(f"90 дней: ${cost_90d:.2f}")
+        .build()
     )
 
     await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
@@ -251,11 +255,13 @@ async def user_lookup_start(callback: CallbackQuery, user: User, state: FSMConte
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(UserLookupFSM.waiting_input)
-    await safe_edit_text(
-        msg,
-        f"<b>Просмотр пользователя</b>\n\n{S.ADMIN_USER_LOOKUP_PROMPT}",
-        reply_markup=_BACK_TO_PANEL_KB,
+    text = (
+        Screen(E.USER, S.ADMIN_USER_LOOKUP_TITLE)
+        .blank()
+        .line(S.ADMIN_USER_LOOKUP_PROMPT)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
     await callback.answer()
 
 
@@ -470,14 +476,20 @@ async def user_activity(
     pubs = await admin_svc.get_recent_publications(target_id, limit=5)
 
     if not pubs:
-        text = f"<b>Активность #{target_id}</b>\n\n{S.ADMIN_NO_PUBLICATIONS}"
+        text = (
+            Screen(E.ANALYTICS, f"{S.ADMIN_USER_ACTIVITY_TITLE} #{target_id}")
+            .blank()
+            .line(S.ADMIN_NO_PUBLICATIONS)
+            .build()
+        )
     else:
-        lines = [f"<b>Активность #{target_id}</b>\n"]
+        s = Screen(E.ANALYTICS, f"{S.ADMIN_USER_ACTIVITY_TITLE} #{target_id}")
+        s.blank()
         for p in pubs:
             date = str(p.created_at)[:10] if p.created_at else "\u2014"
             kw = p.keyword or "\u2014"
-            lines.append(f"{date} | {p.status} | {kw}")
-        text = "\n".join(lines)
+            s.line(f"{date} | {p.status} | {kw}")
+        text = s.build()
 
     await safe_edit_text(
         msg,
@@ -550,11 +562,13 @@ async def broadcast_start(callback: CallbackQuery, user: User, state: FSMContext
         await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
 
     await state.set_state(BroadcastFSM.audience)
-    await safe_edit_text(
-        msg,
-        f"{E.MEGAPHONE} <b>{S.BROADCAST_TITLE}</b>\n\n<i>{S.BROADCAST_AUDIENCE_PROMPT}</i>",
-        reply_markup=broadcast_audience_kb(),
+    text = (
+        Screen(E.MEGAPHONE, S.BROADCAST_TITLE)
+        .blank()
+        .line(f"<i>{S.BROADCAST_AUDIENCE_PROMPT}</i>")
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=broadcast_audience_kb())
     await callback.answer()
 
 
@@ -591,14 +605,16 @@ async def broadcast_audience(
     await state.update_data(broadcast_audience=audience_key, broadcast_count=count)
     await state.set_state(BroadcastFSM.text)
 
-    await safe_edit_text(
-        msg,
-        f"<b>Рассылка</b>\n\n"
-        f"Аудитория: {_AUDIENCE_LABELS.get(audience_key, audience_key)}\n"
-        f"Получателей: ~{count}\n\n"
-        f"{S.BROADCAST_TEXT_PROMPT}",
-        reply_markup=_BACK_TO_PANEL_KB,
+    label = _AUDIENCE_LABELS.get(audience_key, audience_key)
+    text = (
+        Screen(E.MEGAPHONE, S.BROADCAST_TITLE)
+        .blank()
+        .line(S.BROADCAST_AUDIENCE_TEXT.format(label=label, count=count))
+        .blank()
+        .line(S.BROADCAST_TEXT_PROMPT)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
     await callback.answer()
 
 
@@ -616,13 +632,16 @@ async def broadcast_text(message: Message, user: User, state: FSMContext) -> Non
 
     data = await state.get_data()
 
-    await message.answer(
-        f"<b>Предпросмотр рассылки</b>\n\n"
-        f"Получателей: ~{data['broadcast_count']}\n\n"
-        f"<b>Текст рассылки:</b>\n{message.text}\n\n"
-        f"Отправить?",
-        reply_markup=broadcast_confirm_kb(),
+    preview_text = (
+        Screen(E.MEGAPHONE, S.BROADCAST_PREVIEW_TITLE)
+        .blank()
+        .line(f"Получателей: ~{data['broadcast_count']}")
+        .blank()
+        .line(f"<b>Текст рассылки:</b>\n{message.text}")
+        .hint(S.BROADCAST_PREVIEW_PROMPT)
+        .build()
     )
+    await message.answer(preview_text, reply_markup=broadcast_confirm_kb())
 
 
 @router.callback_query(BroadcastFSM.confirm, F.data == "broadcast:send")
@@ -673,8 +692,11 @@ async def broadcast_confirm(
             with contextlib.suppress(Exception):
                 await safe_edit_text(msg, f"Рассылка... ({i}/{total})\nОтправлено: {sent}, ошибок: {failed}")
 
-    await safe_edit_text(msg, 
-        f"<b>Рассылка завершена</b>\n\nОтправлено: {sent}\nОшибок: {failed}",
-        reply_markup=_BACK_TO_PANEL_KB,
+    done_text = (
+        Screen(E.CHECK, S.BROADCAST_DONE)
+        .blank()
+        .line(S.BROADCAST_DONE_TEXT.format(sent=sent, failed=failed))
+        .build()
     )
+    await safe_edit_text(msg, done_text, reply_markup=_BACK_TO_PANEL_KB)
     await callback.answer()

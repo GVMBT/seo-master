@@ -74,11 +74,13 @@ async def scheduler_entry(
         return
 
     project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
-    await safe_edit_text(
-        msg,
-        f"{E.SCHEDULE} <b>{S.SCHEDULER_TITLE}</b>\n\n{S.SCHEDULER_TYPE_PROMPT}",
-        reply_markup=scheduler_type_kb(project_id),
+    text = (
+        Screen(E.SCHEDULE, S.SCHEDULER_TITLE)
+        .blank()
+        .line(S.SCHEDULER_TYPE_PROMPT)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=scheduler_type_kb(project_id))
     await callback.answer()
 
 
@@ -103,10 +105,13 @@ async def scheduler_articles_entry(
         await callback.answer(S.SCHEDULE_NO_CATEGORIES, show_alert=True)
         return
 
-    await safe_edit_text(msg, 
-        f"{E.SCHEDULE} <b>{S.SCHEDULER_ARTICLES_TITLE}</b>\n\n{S.SCHEDULER_SELECT_CATEGORY}",
-        reply_markup=scheduler_cat_list_kb(cats, project_id),
+    text = (
+        Screen(E.SCHEDULE, S.SCHEDULER_ARTICLES_TITLE)
+        .blank()
+        .line(S.SCHEDULER_SELECT_CATEGORY)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=scheduler_cat_list_kb(cats, project_id))
     await callback.answer()
 
 
@@ -136,10 +141,13 @@ async def scheduler_social_entry(
         await callback.answer(S.SCHEDULE_NO_CATEGORIES, show_alert=True)
         return
 
-    await safe_edit_text(msg, 
-        f"{E.SCHEDULE} <b>{S.SCHEDULER_SOCIAL_TITLE}</b>\n\n{S.SCHEDULER_SELECT_CATEGORY}",
-        reply_markup=scheduler_social_cat_list_kb(cats, project_id),
+    text = (
+        Screen(E.SCHEDULE, S.SCHEDULER_SOCIAL_TITLE)
+        .blank()
+        .line(S.SCHEDULER_SELECT_CATEGORY)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=scheduler_social_cat_list_kb(cats, project_id))
     await callback.answer()
 
 
@@ -175,7 +183,7 @@ async def scheduler_category(
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
     await safe_edit_text(msg,
-        "<b>Статьи — Подключения</b>\n\nВыберите подключение для настройки расписания:",
+        Screen(E.SCHEDULE, S.SCHEDULE_ARTICLES_CONN_TITLE).blank().line(S.SCHEDULER_SELECT_CONNECTION).build(),
         reply_markup=scheduler_conn_list_kb(wp_connections, schedules_map, cat_id, project_id),
     )
     await callback.answer()
@@ -208,7 +216,7 @@ async def scheduler_conn_list_back(
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
     await safe_edit_text(msg,
-        "<b>Статьи — Подключения</b>\n\nВыберите подключение для настройки расписания:",
+        Screen(E.SCHEDULE, S.SCHEDULE_ARTICLES_CONN_TITLE).blank().line(S.SCHEDULER_SELECT_CONNECTION).build(),
         reply_markup=scheduler_conn_list_kb(wp_connections or [], schedules_map, cat_id, ctx.project.id),
     )
     await callback.answer()
@@ -427,10 +435,14 @@ async def scheduler_manual(
     )
     await state.set_state(ScheduleSetupFSM.select_days)
 
-    await safe_edit_text(msg, 
-        f"{E.SCHEDULE} <b>{S.SCHEDULE_TITLE}</b>\n\n{S.SCHEDULE_SELECT_DAYS}",
-        reply_markup=schedule_days_kb(set()),
+    text = (
+        Screen(E.SCHEDULE, S.SCHEDULE_TITLE)
+        .blank()
+        .line(S.SCHEDULE_SELECT_DAYS)
+        .hint(S.SCHEDULE_DAYS_HINT)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=schedule_days_kb(set()))
     await callback.answer()
 
 
@@ -485,10 +497,14 @@ async def schedule_days_done(callback: CallbackQuery, state: FSMContext) -> None
         return
 
     await state.set_state(ScheduleSetupFSM.select_count)
-    await safe_edit_text(msg, 
-        f"{E.SCHEDULE} <b>{S.SCHEDULE_TITLE}</b>\n\n{S.SCHEDULE_SELECT_COUNT}",
-        reply_markup=schedule_count_kb(),
+    text = (
+        Screen(E.SCHEDULE, S.SCHEDULE_TITLE)
+        .blank()
+        .line(S.SCHEDULE_SELECT_COUNT)
+        .hint(S.SCHEDULE_COUNT_HINT)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=schedule_count_kb())
     await callback.answer()
 
 
@@ -509,10 +525,14 @@ async def schedule_count_select(callback: CallbackQuery, state: FSMContext) -> N
     await state.update_data(sched_count=count, sched_times=[])
     await state.set_state(ScheduleSetupFSM.select_times)
 
-    await safe_edit_text(msg, 
-        f"{E.SCHEDULE} <b>{S.SCHEDULE_TITLE}</b>\n\n" + S.SCHEDULE_SELECT_TIMES.format(count=count),
-        reply_markup=schedule_times_kb(set(), count),
+    text = (
+        Screen(E.SCHEDULE, S.SCHEDULE_TITLE)
+        .blank()
+        .line(S.SCHEDULE_SELECT_TIMES.format(count=count))
+        .hint(S.SCHEDULE_TIMES_HINT)
+        .build()
     )
+    await safe_edit_text(msg, text, reply_markup=schedule_times_kb(set(), count))
     await callback.answer()
 
 
@@ -662,7 +682,7 @@ async def scheduler_social_category(
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
     await safe_edit_text(msg, 
-        "<b>Соцсети — Подключения</b>\n\nВыберите подключение для настройки расписания:",
+        Screen(E.SCHEDULE, S.SCHEDULE_SOCIAL_CONN_TITLE).blank().line(S.SCHEDULER_SELECT_CONNECTION).build(),
         reply_markup=scheduler_social_conn_list_kb(social_conns, schedules_map, cat_id, project_id),
     )
     await callback.answer()
@@ -690,7 +710,7 @@ async def scheduler_social_conn_list_back(
     schedules_map = await scheduler_service.get_category_schedules_map(cat_id)
 
     await safe_edit_text(msg, 
-        "<b>Соцсети — Подключения</b>\n\nВыберите подключение для настройки расписания:",
+        Screen(E.SCHEDULE, S.SCHEDULE_SOCIAL_CONN_TITLE).blank().line(S.SCHEDULER_SELECT_CONNECTION).build(),
         reply_markup=scheduler_social_conn_list_kb(social_conns or [], schedules_map, cat_id, ctx.project.id),
     )
     await callback.answer()

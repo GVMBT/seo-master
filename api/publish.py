@@ -11,6 +11,7 @@ from aiohttp import web
 
 from api import require_qstash_signature
 from api.models import PublishPayload
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from cache.keys import PUBLISH_LOCK_TTL, CacheKeys
 from services.publish import PublishOutcome, PublishService
@@ -19,28 +20,12 @@ log = structlog.get_logger()
 
 # Notification text templates per EDGE_CASES.md - missed auto-publish notifications
 _REASON_TEMPLATES: dict[str, str] = {
-    "insufficient_balance": (
-        f"{E.WARNING} Автопубликация пропущена: недостаточно токенов. "
-        "Расписание приостановлено.\nПополните баланс через /start."
-    ),
-    "no_keywords": (
-        f"{E.WARNING} Автопубликация пропущена: нет ключевых фраз в категории.\n"
-        "Добавьте фразы через карточку категории."
-    ),
-    "connection_inactive": (
-        f"{E.WARNING} Автопубликация не удалась: платформа не отвечает.\n"
-        "Проверьте подключение в настройках проекта."
-    ),
-    "content_validation_failed": (
-        f"{E.WARNING} Автопубликация пропущена: контент не прошёл проверку качества. Токены возвращены."
-    ),
-    "ai_service_unavailable": (
-        f"{E.WARNING} Автопубликация отложена: AI-сервис временно недоступен. Повторим через 1 час."
-    ),
-    "no_available_keyword": (
-        f"{E.WARNING} Автопубликация пропущена: все ключевые фразы уже использованы.\n"
-        "Добавьте новые фразы в категорию."
-    ),
+    "insufficient_balance": f"{E.WARNING} {S.AUTOPUB_INSUFFICIENT_BALANCE}",
+    "no_keywords": f"{E.WARNING} {S.AUTOPUB_NO_KEYWORDS}",
+    "connection_inactive": f"{E.WARNING} {S.AUTOPUB_CONNECTION_INACTIVE}",
+    "content_validation_failed": f"{E.WARNING} {S.AUTOPUB_VALIDATION_FAILED}",
+    "ai_service_unavailable": f"{E.WARNING} {S.AUTOPUB_AI_UNAVAILABLE}",
+    "no_available_keyword": f"{E.WARNING} {S.AUTOPUB_NO_AVAILABLE_KEYWORD}",
 }
 
 
@@ -58,7 +43,7 @@ def _build_notification_text(result: PublishOutcome) -> str:
 
     if result.status == "ok":
         keyword_safe = html_mod.escape(result.keyword)
-        text = f"{E.CHECK} Автопубликация выполнена: <b>{keyword_safe}</b>"
+        text = f"{E.CHECK} {S.AUTOPUB_SUCCESS.format(keyword=keyword_safe)}"
         if result.post_url:
             text += f"\n{result.post_url}"
         # Append cross-post results

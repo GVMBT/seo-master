@@ -17,8 +17,10 @@ from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.service_factory import DashboardServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.legal import LEGAL_NOTICE
+from bot.texts.screens import Screen
 from cache.client import RedisClient
 from cache.keys import CacheKeys
 from db.client import SupabaseClient
@@ -709,26 +711,17 @@ async def _route_to_step(
         projects_repo = ProjectsRepository(db)
         projects = await projects_repo.get_by_user(user.id)
         if not projects:
-            await safe_edit_text(
-                msg,
-                "Статья (1/5) — Проект\n\nДля начала создадим проект — это 30 секунд.",
-                reply_markup=pipeline_no_projects_kb(),
-            )
+            text = Screen(E.DOC, S.ARTICLE_STEP1_TITLE).blank().line(S.ARTICLE_STEP1_NO_PROJECTS).build()
+            await safe_edit_text(msg, text, reply_markup=pipeline_no_projects_kb())
         else:
-            await safe_edit_text(
-                msg,
-                "Статья (1/5) — Проект\n\nДля какого проекта?",
-                reply_markup=pipeline_projects_kb(projects),
-            )
+            text = Screen(E.DOC, S.ARTICLE_STEP1_TITLE).blank().line(S.ARTICLE_STEP1_PROMPT).build()
+            await safe_edit_text(msg, text, reply_markup=pipeline_projects_kb(projects))
         await state.set_state(ArticlePipelineFSM.select_project)
         return
 
     if step == "select_wp":
-        await safe_edit_text(
-            msg,
-            "Статья (2/5) — Сайт\n\nДля публикации нужен WordPress-сайт. Подключим?",
-            reply_markup=pipeline_no_wp_kb(),
-        )
+        text = Screen(E.DOC, S.ARTICLE_STEP2_TITLE).blank().line(S.ARTICLE_STEP2_NO_WP).build()
+        await safe_edit_text(msg, text, reply_markup=pipeline_no_wp_kb())
         await state.set_state(ArticlePipelineFSM.select_wp)
         return
 
@@ -745,11 +738,8 @@ async def _route_to_step(
         cats_repo = CategoriesRepository(db)
         categories = await cats_repo.get_by_project(project_id)
         if not categories:
-            await safe_edit_text(
-                msg,
-                "Статья (3/5) — Тема\n\nО чём будет статья? Назовите тему.",
-                reply_markup=cancel_kb("pipeline:article:cancel"),
-            )
+            text = Screen(E.DOC, S.ARTICLE_STEP3_TITLE).blank().line(S.ARTICLE_STEP3_PROMPT).build()
+            await safe_edit_text(msg, text, reply_markup=cancel_kb("pipeline:article:cancel"))
             await state.set_state(ArticlePipelineFSM.create_category_name)
         elif len(categories) == 1:
             cat = categories[0]
@@ -758,10 +748,8 @@ async def _route_to_step(
 
             await show_readiness_check(callback, state, user, db, redis)
         else:
-            await safe_edit_text(
-                msg,
-                "Статья (3/5) — Тема\n\nКакая тема?",
-                reply_markup=pipeline_categories_kb(categories, project_id),
+            text = Screen(E.DOC, S.ARTICLE_STEP3_TITLE).blank().line(S.ARTICLE_STEP3_WHICH).build()
+            await safe_edit_text(msg, text, reply_markup=pipeline_categories_kb(categories, project_id),
             )
             await state.set_state(ArticlePipelineFSM.select_category)
         return

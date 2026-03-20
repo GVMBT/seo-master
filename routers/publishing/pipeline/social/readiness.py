@@ -93,7 +93,7 @@ def _build_social_checklist_text(report: ReadinessReport, fsm_data: dict[str, An
 
     # Cost estimate
     s.blank()
-    s.line(S.PIPELINE_COST_NORMAL.format(cost=report.estimated_cost))
+    s.line(f"{E.WALLET} {S.PIPELINE_COST_NORMAL.format(cost=report.estimated_cost)}")
 
     return s.build()
 

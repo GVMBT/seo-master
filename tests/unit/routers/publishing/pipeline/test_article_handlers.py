@@ -1109,7 +1109,7 @@ class TestPipelineCancelWpSubflow:
 
         mock_state.set_state.assert_called_with(ArticlePipelineFSM.select_wp)
         text = mock_callback.message.edit_text.call_args.args[0]
-        assert "Сайт" in text
+        assert "САЙТ" in text
 
     async def test_clears_pipeline_without_project(
         self,
@@ -1549,7 +1549,7 @@ class TestBackToProject:
         mock_state.set_state.assert_awaited_once_with(ArticlePipelineFSM.select_project)
         mock_callback.message.edit_text.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "Для какого проекта" in text
+        assert "проект" in text.lower()
 
     async def test_back_zero_projects_shows_create(
         self,
@@ -1612,7 +1612,7 @@ class TestBackToWp:
 
         mock_callback.message.edit_text.assert_awaited_once()
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "Сайт" in text or "WordPress" in text
+        assert "САЙТ" in text or "WordPress" in text
 
     async def test_back_no_project_id_clears_state(
         self,

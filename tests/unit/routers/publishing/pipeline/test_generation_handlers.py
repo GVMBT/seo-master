@@ -1150,7 +1150,7 @@ async def test_change_topic_multiple_categories_shows_list(
 
     mock_callback.message.edit_text.assert_called_once()
     text = mock_callback.message.edit_text.call_args[0][0]
-    assert "Тема" in text
+    assert "тема" in text.lower()
     mock_state.set_state.assert_called_with(ArticlePipelineFSM.select_category)
 
 

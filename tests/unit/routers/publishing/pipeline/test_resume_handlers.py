@@ -196,7 +196,7 @@ async def test_route_to_step_select_project(
 
     mock_callback.message.edit_text.assert_called_once()
     text = mock_callback.message.edit_text.call_args[0][0]
-    assert "Проект" in text
+    assert "проект" in text.lower()
     mock_state.set_state.assert_called_once_with(ArticlePipelineFSM.select_project)
 
 
@@ -229,7 +229,7 @@ async def test_route_to_step_select_category_multi(
 
     mock_callback.message.edit_text.assert_called_once()
     text = mock_callback.message.edit_text.call_args[0][0]
-    assert "Тема" in text
+    assert "тема" in text.lower()
     mock_state.set_state.assert_called_once_with(ArticlePipelineFSM.select_category)
 
 

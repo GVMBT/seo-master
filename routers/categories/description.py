@@ -185,8 +185,15 @@ async def start_generate(
     )
 
     safe_text = html.escape(generated_text)
+    review_text = (
+        Screen(E.AI_BRAIN, S.DESCRIPTION_GENERATED_TITLE)
+        .blank()
+        .line(f"<i>{safe_text}</i>")
+        .hint(S.DESCRIPTION_REVIEW_HINT)
+        .build()
+    )
     await safe_edit_text(msg,
-        f"{E.AI_BRAIN} <b>{S.DESCRIPTION_GENERATED_TITLE}</b>\n\n<i>{safe_text}</i>",
+        review_text,
         reply_markup=description_review_kb(cat_id, 0),
     )
     log.info(
@@ -285,8 +292,15 @@ async def review_regenerate(
     )
 
     safe_text = html.escape(generated_text)
+    review_text = (
+        Screen(E.AI_BRAIN, S.DESCRIPTION_GENERATED_TITLE)
+        .blank()
+        .line(f"<i>{safe_text}</i>")
+        .hint(S.DESCRIPTION_REVIEW_HINT)
+        .build()
+    )
     await safe_edit_text(msg,
-        f"{E.AI_BRAIN} <b>{S.DESCRIPTION_GENERATED_TITLE}</b>\n\n<i>{safe_text}</i>",
+        review_text,
         reply_markup=description_review_kb(cat_id, regen_count),
     )
     await callback.answer()
@@ -412,11 +426,15 @@ async def process_manual(
 
     safe_name = html.escape(result.name)
     safe_desc = html.escape(text)
+    result_text = (
+        Screen(E.DOC, f"ОПИСАНИЕ \u2014 {safe_name}")
+        .blank()
+        .line(f"<i>{safe_desc}</i>")
+        .hint(S.DESCRIPTION_HINT)
+        .build()
+    )
     await message.answer(
-        f"{E.DOC} <b>ОПИСАНИЕ</b> \u2014 {safe_name}\n\n"
-        f"<i>{safe_desc}</i>\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>{S.DESCRIPTION_HINT}</i>",
+        result_text,
         reply_markup=description_kb(cat_id, has_description=True),
     )
 

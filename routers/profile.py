@@ -85,6 +85,7 @@ async def nav_profile(
         pay_amount = int(last_completed.amount_rub) if last_completed.amount_rub else last_completed.tokens_amount
         s.line(f"Последняя оплата: {pay_date} ({pay_amount} руб.)")
 
+    s.hint(S.PROFILE_HINT)
     text = s.build()
 
     await edit_screen(msg, "profile.png", text, reply_markup=profile_kb())
@@ -122,15 +123,18 @@ async def show_notifications(
 
 
 def _build_notifications_text() -> str:
-    """Build notification screen text."""
+    """Build notification screen text.
+
+    Hardcoded markers removed -- real toggle state is shown by keyboard buttons.
+    """
     return (
         Screen(E.BELL, S.NOTIFICATIONS_TITLE)
         .blank()
         .line(f"<i>{S.NOTIFICATIONS_PROMPT}</i>")
         .blank()
-        .line(f"\u2713 {S.NOTIFICATIONS_PUBLICATIONS}")
-        .line(f"\u2713 {S.NOTIFICATIONS_BALANCE}")
-        .line(f"\u2717 {S.NOTIFICATIONS_NEWS}")
+        .line(S.NOTIFICATIONS_PUBLICATIONS)
+        .line(S.NOTIFICATIONS_BALANCE)
+        .line(S.NOTIFICATIONS_NEWS)
         .hint(S.NOTIFICATIONS_HINT)
         .build()
     )

@@ -233,8 +233,12 @@ async def process_text(
         preview += f"\n  ... ещё {count - 10}"
 
     result_text = (
-        f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
-        f"{E.CHECK} {S.PRICES_SAVED.format(count=count)}:\n{preview}"
+        Screen(E.PRICE, f"ЦЕНЫ \u2014 {safe_name}")
+        .blank()
+        .line(f"{E.CHECK} {S.PRICES_SAVED.format(count=count)}:")
+        .line(preview)
+        .hint(S.PRICES_HINT)
+        .build()
     )
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 
@@ -427,8 +431,11 @@ async def process_excel(
     count = len(lines)
 
     result_text = (
-        f"{E.PRICE} <b>ЦЕНЫ</b> \u2014 {safe_name}\n\n"
-        f"{E.CHECK} {S.PRICES_EXCEL_UPLOADED.format(count=count)}"
+        Screen(E.PRICE, f"ЦЕНЫ \u2014 {safe_name}")
+        .blank()
+        .line(f"{E.CHECK} {S.PRICES_EXCEL_UPLOADED.format(count=count)}")
+        .hint(S.PRICES_HINT)
+        .build()
     )
     await message.answer(result_text, reply_markup=prices_kb(cat_id, has_prices=True))
 

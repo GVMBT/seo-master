@@ -23,6 +23,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
 from bot.helpers import safe_edit_text, safe_message
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from db.models import User
 from keyboards.inline import cancel_kb, menu_kb
@@ -155,22 +156,22 @@ def _keyword_error_message(exc: Exception) -> str:
 # ---------------------------------------------------------------------------
 
 # Steps: (active_label, done_label)
-_KW_STEPS = [
-    ("Получение фраз из DataForSEO", "Фразы получены"),
-    ("Группировка по интенту", "Группировка завершена"),
-    ("Обогащение данными", "Данные обогащены"),
+_KW_STEPS: list[tuple[str, str]] = [
+    (S.KW_STEP_FETCH, S.KW_STEP_FETCH_DONE),
+    (S.KW_STEP_CLUSTER, S.KW_STEP_CLUSTER_DONE),
+    (S.KW_STEP_ENRICH, S.KW_STEP_ENRICH_DONE),
 ]
 
 # Upload pipeline steps
-_KW_UPLOAD_STEPS = [
-    ("Группировка по интенту", "Группировка завершена"),
-    ("Обогащение данными", "Данные обогащены"),
+_KW_UPLOAD_STEPS: list[tuple[str, str]] = [
+    (S.KW_STEP_CLUSTER, S.KW_STEP_CLUSTER_DONE),
+    (S.KW_STEP_ENRICH, S.KW_STEP_ENRICH_DONE),
 ]
 
 
 def _kw_progress_text(steps: list[tuple[str, str]], current: int, extra: str = "") -> str:
     """Build cumulative progress text for keyword generation."""
-    lines = [f"{E.HASHTAG} <b>Подбор ключевиков</b>", ""]
+    lines = [f"{E.HASHTAG} <b>{S.KW_PROGRESS_TITLE}</b>", ""]
     for i, (active_label, done_label) in enumerate(steps):
         if i < current:
             label = done_label
@@ -332,11 +333,11 @@ async def run_keyword_generation(
         return
     with contextlib.suppress(Exception):
         done_text = (
-            f"{E.HASHTAG} <b>Подбор ключевиков</b>\n\n"
-            f"{EMOJI_DONE} Фразы получены\n"
-            f"{EMOJI_DONE} Группировка завершена\n"
-            f"{EMOJI_DONE} Данные обогащены\n\n"
-            f"{E.CHECK} Добавлено: {len(enriched)} групп, {total_phrases} фраз"
+            f"{E.HASHTAG} <b>{S.KW_PROGRESS_TITLE}</b>\n\n"
+            f"{EMOJI_DONE} {S.KW_STEP_FETCH_DONE}\n"
+            f"{EMOJI_DONE} {S.KW_STEP_CLUSTER_DONE}\n"
+            f"{EMOJI_DONE} {S.KW_STEP_ENRICH_DONE}\n\n"
+            f"{E.CHECK} {S.KW_RESULT_ADDED.format(clusters=len(enriched), phrases=total_phrases)}"
             f"{volume_line}"
         )
         await bot.send_message(chat_id=chat_id, text=done_text)
@@ -408,10 +409,10 @@ async def _run_upload_enrich_pipeline(
 
         volume_line = f"\nОбщий объём: {total_volume:,}/мес" if total_volume > 0 else ""
         done_text = (
-            f"{E.HASHTAG} <b>Подбор ключевиков</b>\n\n"
-            f"{EMOJI_DONE} Группировка завершена\n"
-            f"{EMOJI_DONE} Данные обогащены\n\n"
-            f"{E.CHECK} Загружено: {len(enriched)} групп, {total_phrases} фраз"
+            f"{E.HASHTAG} <b>{S.KW_PROGRESS_TITLE}</b>\n\n"
+            f"{EMOJI_DONE} {S.KW_STEP_CLUSTER_DONE}\n"
+            f"{EMOJI_DONE} {S.KW_STEP_ENRICH_DONE}\n\n"
+            f"{E.CHECK} {S.KW_RESULT_UPLOADED.format(clusters=len(enriched), phrases=total_phrases)}"
             f"{volume_line}"
         )
         await safe_edit_text(progress_msg, done_text)

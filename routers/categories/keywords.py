@@ -135,7 +135,7 @@ def _build_keywords_summary(category: Any) -> str:
     s.line(f"Фраз: {total_phrases}")
     if total_volume > 0:
         s.line(f"Объём: {total_volume:,}/мес")
-    s.hint(S.KEYWORDS_HINT)
+    s.hint(S.KEYWORDS_CLUSTERS_HINT)
     return s.build()
 
 
@@ -429,10 +429,16 @@ async def show_cluster_list(
         return
 
     safe_name = html.escape(category.name)
+    text = (
+        Screen(E.HASHTAG, f"ГРУППЫ ФРАЗ \u2014 {safe_name}")
+        .blank()
+        .line(f"Всего групп: {len(clusters)}")
+        .hint(S.KEYWORDS_CLUSTERS_HINT)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{E.HASHTAG} <b>ГРУППЫ ФРАЗ</b> \u2014 {safe_name}\n\n"
-        f"Всего групп: {len(clusters)}",
+        text,
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=1),
     )
     await callback.answer()
@@ -461,10 +467,16 @@ async def paginate_clusters(
 
     clusters: list[dict[str, Any]] = category.keywords or []
     safe_name = html.escape(category.name)
+    text = (
+        Screen(E.HASHTAG, f"ГРУППЫ ФРАЗ \u2014 {safe_name}")
+        .blank()
+        .line(f"Всего групп: {len(clusters)}")
+        .hint(S.KEYWORDS_CLUSTERS_HINT)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{E.HASHTAG} <b>ГРУППЫ ФРАЗ</b> \u2014 {safe_name}\n\n"
-        f"Всего групп: {len(clusters)}",
+        text,
         reply_markup=keywords_cluster_list_kb(clusters, cat_id, page=page),
     )
     await callback.answer()
@@ -507,23 +519,25 @@ async def show_cluster_detail(
     phrases = cluster.get("phrases", [])
     total_volume = cluster.get("total_volume", 0)
 
-    volume_info = f" | Объём: {total_volume:,}/мес" if total_volume > 0 else ""
-    lines = [
-        f"<b>{name}</b>",
-        f"Тип: {cluster_type}" if cluster_type else "",
-        f"Фраз: {len(phrases)}{volume_info}\n",
-    ]
+    s = Screen(E.HASHTAG, name)
+    s.blank()
+    if cluster_type:
+        s.line(f"Тип: {cluster_type}")
+    s.line(f"Фраз: {len(phrases)}")
+    if total_volume > 0:
+        s.line(f"Объём: {total_volume:,}/мес")
+    s.blank()
 
     for p in phrases[:50]:  # limit display
         phrase = html.escape(p.get("phrase", ""))
         vol = p.get("volume", 0)
         if vol > 0:
-            lines.append(f"  \u2022 {phrase} ({vol:,}/мес)")
+            s.line(f"  \u2022 {phrase} ({vol:,}/мес)")
         else:
-            lines.append(f"  \u2022 {phrase}")
+            s.line(f"  \u2022 {phrase}")
 
     if len(phrases) > 50:
-        lines.append(f"\n  ... ещё {len(phrases) - 50}")
+        s.line(f"\n  ... ещё {len(phrases) - 50}")
 
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -534,7 +548,7 @@ async def show_cluster_detail(
         ]
     )
 
-    text = "\n".join(ln for ln in lines if ln)
+    text = s.build()
     # Trim to 4096 chars (Telegram limit)
     if len(text) > 4000:
         text = text[:4000] + "\n..."
@@ -750,11 +764,16 @@ async def delete_all_ask(
     clusters: list[dict[str, Any]] = category.keywords or []
     total = sum(len(c.get("phrases", [])) for c in clusters)
 
+    text = (
+        Screen(E.WARNING, S.KEYWORDS_DELETE_ALL_TITLE)
+        .blank()
+        .line(S.KEYWORDS_DELETE_ALL_QUESTION.format(total=total, clusters=len(clusters)))
+        .hint(S.KEYWORDS_DELETE_ALL_WARNING)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{E.WARNING} <b>{S.KEYWORDS_DELETE_ALL_TITLE}</b>\n\n"
-        + S.KEYWORDS_DELETE_ALL_QUESTION.format(total=total, clusters=len(clusters))
-        + "\n" + S.KEYWORDS_DELETE_ALL_WARNING,
+        text,
         reply_markup=keywords_delete_all_confirm_kb(cat_id),
     )
     await callback.answer()
@@ -784,12 +803,16 @@ async def delete_all_confirm(
     log.info("keywords_deleted_all", cat_id=cat_id, user_id=user.id)
 
     safe_name = html.escape(category.name)
+    text = (
+        Screen(E.HASHTAG, f"КЛЮЧЕВЫЕ ФРАЗЫ \u2014 {safe_name}")
+        .blank()
+        .line(f"{E.CHECK} {S.KEYWORDS_DELETED_ALL}")
+        .hint(S.KEYWORDS_HINT)
+        .build()
+    )
     await safe_edit_text(
         msg,
-        f"{E.HASHTAG} <b>КЛЮЧЕВЫЕ ФРАЗЫ</b> \u2014 {safe_name}\n\n"
-        f"{E.CHECK} {S.KEYWORDS_DELETED_ALL}\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
-        f"{E.LIGHTBULB} <i>{S.KEYWORDS_HINT}</i>",
+        text,
         reply_markup=keywords_empty_kb(cat_id),
     )
     await callback.answer()

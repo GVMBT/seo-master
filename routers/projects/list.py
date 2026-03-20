@@ -6,9 +6,9 @@ from aiogram.types import CallbackQuery
 from bot.assets import edit_screen
 from bot.helpers import safe_message
 from bot.service_factory import ProjectServiceFactory
+from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
-from bot.texts.strings import NO_PROJECTS, PROJECTS_TITLE, WELCOME_HINT
 from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import project_list_empty_kb, project_list_kb
@@ -61,10 +61,10 @@ async def _show_list(
 
     if not projects:
         empty_text = (
-            Screen(E.FOLDER, PROJECTS_TITLE)
+            Screen(E.FOLDER, S.PROJECTS_TITLE)
             .blank()
-            .line(NO_PROJECTS)
-            .hint(WELCOME_HINT)
+            .line(S.NO_PROJECTS)
+            .hint(S.WELCOME_HINT)
             .build()
         )
         await edit_screen(
@@ -75,10 +75,15 @@ async def _show_list(
         )
     else:
         kb = project_list_kb(projects, page)
+        text = (
+            Screen(E.FOLDER, f"{S.PROJECTS_TITLE} ({len(projects)})")
+            .hint(S.PROJECTS_LIST_HINT)
+            .build()
+        )
         await edit_screen(
             msg,
             "project_card.png",
-            f"{E.FOLDER} <b>{PROJECTS_TITLE}</b> ({len(projects)}):",
+            text,
             reply_markup=kb,
         )
     await callback.answer()

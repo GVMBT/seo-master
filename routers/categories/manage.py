@@ -88,10 +88,15 @@ async def show_category_list(
         )
     else:
         safe_name = html.escape(project.name)
+        text = (
+            Screen(E.HASHTAG, f"КАТЕГОРИИ \u2014 {safe_name} ({len(categories)})")
+            .hint(S.CATEGORIES_LIST_HINT)
+            .build()
+        )
         await edit_screen(
             msg,
             "empty_categories.png",
-            f"<b>{safe_name}</b> — Категории ({len(categories)})",
+            text,
             reply_markup=category_list_kb(categories, project_id),
         )
     await callback.answer()
@@ -126,10 +131,15 @@ async def paginate_categories(
         return
 
     safe_name = html.escape(project.name)
+    text = (
+        Screen(E.HASHTAG, f"КАТЕГОРИИ \u2014 {safe_name} ({len(categories)})")
+        .hint(S.CATEGORIES_LIST_HINT)
+        .build()
+    )
     await edit_screen(
         msg,
         "empty_categories.png",
-        f"<b>{safe_name}</b> — Категории ({len(categories)})",
+        text,
         reply_markup=category_list_kb(categories, project_id, page),
     )
     await callback.answer()
@@ -193,9 +203,14 @@ async def start_category_create(
     await state.set_state(CategoryCreateFSM.name)
     await state.update_data(last_update_time=time.time(), create_project_id=project_id)
 
-    await msg.answer(
-        f"{S.CATEGORY_CREATE_PROMPT}\n\n<i>{S.CATEGORY_CREATE_EXAMPLE}</i>",
+    text = (
+        Screen(E.FOLDER, S.CATEGORY_CREATE_TITLE)
+        .blank()
+        .line(S.CATEGORY_CREATE_PROMPT)
+        .hint(S.CATEGORY_CREATE_EXAMPLE)
+        .build()
     )
+    await msg.answer(text)
     await callback.answer()
 
 
@@ -338,14 +353,15 @@ async def confirm_category_delete(
     category, active_count = result
 
     safe_name = html.escape(category.name)
-    impact_lines = [S.CATEGORY_DELETE_QUESTION.format(name=safe_name) + "\n"]
+    s = Screen(E.WARNING, S.CATEGORY_DELETE_QUESTION.format(name=safe_name))
+    s.blank()
     if active_count > 0:
-        impact_lines.append(S.CATEGORY_DELETE_SCHEDULES.format(count=active_count))
-    impact_lines.append(S.CATEGORY_DELETE_WARNING)
+        s.line(S.CATEGORY_DELETE_SCHEDULES.format(count=active_count))
+    s.hint(S.CATEGORY_DELETE_WARNING)
 
     await safe_edit_text(
         msg,
-        "\n".join(impact_lines),
+        s.build(),
         reply_markup=category_delete_confirm_kb(category_id, category.project_id),
     )
     await callback.answer()
