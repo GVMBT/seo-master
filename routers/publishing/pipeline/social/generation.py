@@ -23,7 +23,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.config import get_settings
 from bot.custom_emoji import EMOJI_DONE, EMOJI_PROGRESS
@@ -56,6 +56,7 @@ from services.ai.images import ImageService
 from services.ai.orchestrator import AIOrchestrator
 from services.ai.rate_limiter import RateLimiter
 from services.connections import ConnectionService
+from services.external.telegraph import TelegraphClient
 from services.publishers.base import PublishRequest, PublishResult
 from services.readiness import ReadinessReport
 from services.tokens import TokenService, estimate_social_post_cost
@@ -245,6 +246,7 @@ async def confirm_social_generate(
     db: SupabaseClient,
     redis: RedisClient,
     ai_orchestrator: AIOrchestrator,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """User confirmed -- charge and start generation (step 5 -> step 6)."""
     msg = safe_message(callback)
@@ -308,6 +310,7 @@ async def confirm_social_generate(
         data,
         ai_orchestrator=ai_orchestrator,
         cost=cost,
+        http_client=http_client,
     )
 
 
@@ -334,6 +337,46 @@ async def back_to_readiness_social(
 # ---------------------------------------------------------------------------
 
 
+async def _build_telegraph_html(
+    post_text: str,
+    hashtags: list[str],
+    image_b64: str | None,
+    platform_type: str,
+    telegraph: TelegraphClient,
+) -> str:
+    """Build HTML for Telegraph preview page with image + text + hashtags."""
+    parts: list[str] = []
+
+    # Upload and embed image if available
+    if image_b64:
+        image_data = b64mod.b64decode(image_b64)
+        image_url = await telegraph.upload_image(image_data)
+        if image_url:
+            parts.append(f'<img src="{image_url}">')
+
+    # Platform label
+    platform_labels = {
+        "telegram": "Telegram",
+        "vk": "ВКонтакте",
+        "pinterest": "Pinterest",
+    }
+    label = platform_labels.get(platform_type, platform_type.title())
+    parts.append(f"<p><b>Площадка: {label}</b></p>")
+
+    # Post text: split by double newlines into paragraphs
+    for paragraph in post_text.split("\n\n"):
+        stripped = paragraph.strip()
+        if stripped:
+            parts.append(f"<p>{stripped}</p>")
+
+    # Hashtags
+    if hashtags:
+        tags_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags)
+        parts.append(f"<p><i>{tags_str}</i></p>")
+
+    return "\n".join(parts)
+
+
 async def _run_social_generation(
     message: Message,
     state: FSMContext,
@@ -344,6 +387,7 @@ async def _run_social_generation(
     *,
     ai_orchestrator: AIOrchestrator,
     cost: int,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Core social generation logic -- called from confirm and regenerate."""
     category_id = fsm_data.get("category_id")
@@ -431,6 +475,25 @@ async def _run_social_generation(
         if isinstance(result.content, dict):
             pin_title = result.content.get("pin_title", "")
 
+        # Create Telegraph preview page (image + text + hashtags)
+        telegraph_url: str | None = None
+        telegraph_path: str | None = None
+        try:
+            telegraph = TelegraphClient(http_client)
+            telegraph_html = await _build_telegraph_html(
+                post_text, hashtags, image_b64, platform_type, telegraph,
+            )
+            page = await telegraph.create_page(
+                title=keyword[:256],
+                html=telegraph_html,
+                author="SEO Master Bot",
+            )
+            if page:
+                telegraph_url = page.url
+                telegraph_path = page.path
+        except Exception:
+            log.warning("social_telegraph_preview_failed", exc_info=True)
+
         # E38: store in FSM state.data (not DB), acceptable to lose on timeout
         update_data: dict[str, Any] = {
             "generated_text": post_text,
@@ -440,19 +503,23 @@ async def _run_social_generation(
             "generated_prompt_version": result.prompt_version,
             "generated_image_b64": image_b64,
             "generated_pin_title": pin_title,
+            "telegraph_url": telegraph_url,
+            "telegraph_path": telegraph_path,
         }
         await state.update_data(**update_data)
         await state.set_state(SocialPipelineFSM.review)
 
-        # Build review screen text (show inline, no Telegraph for social posts)
+        # Build review screen
         data = await state.get_data()
         regen_count = data.get("regen_count", 0)
         tokens_charged = data.get("tokens_charged", cost)
 
-        review_text = _build_review_text(post_text, hashtags, keyword, tokens_charged, platform_type)
+        review_text = _build_review_text(
+            post_text, hashtags, keyword, tokens_charged, platform_type, telegraph_url,
+        )
 
         review_kb = social_review_kb(regen_count=regen_count, regen_cost=cost)
-        await _show_review(message, review_text, review_kb, image_b64)
+        await _show_review(message, review_text, review_kb)
         await save_checkpoint(
             redis,
             user.id,
@@ -495,34 +562,9 @@ async def _show_review(
     message: Message,
     review_text: str,
     review_kb: InlineKeyboardMarkup,
-    image_b64: str | None,
 ) -> None:
-    """Show review screen with optional photo preview.
-
-    If image_b64 is provided, sends photo+caption. Falls back to text
-    if caption exceeds Telegram's 1024-char limit (photo first, then text+KB).
-    """
-    if not image_b64:
-        await safe_edit_text(message, review_text, reply_markup=review_kb)
-        return
-
-    image_bytes = b64mod.b64decode(image_b64)
-    photo = BufferedInputFile(image_bytes, filename="preview.webp")
-
-    # Delete previous message (could be progress text or old photo)
-    with contextlib.suppress(TelegramBadRequest):
-        await message.delete()
-
-    if len(review_text) <= _CAPTION_LIMIT:
-        await message.answer_photo(
-            photo=photo,
-            caption=review_text,
-            reply_markup=review_kb,
-        )
-    else:
-        # Photo without caption, then text with keyboard
-        await message.answer_photo(photo=photo)
-        await message.answer(review_text, reply_markup=review_kb)
+    """Show review screen with Telegraph preview link."""
+    await safe_edit_text(message, review_text, reply_markup=review_kb)
 
 
 def _build_review_text(
@@ -531,33 +573,26 @@ def _build_review_text(
     keyword: str,
     tokens_charged: int,
     platform: str,
+    telegraph_url: str | None = None,
 ) -> str:
-    """Build review display text for social post.
+    """Build review display text for social post."""
+    s = Screen(E.MEGAPHONE, S.POST_READY_TITLE)
+    s.blank()
+    s.field(E.HASHTAG, "Ключевая фраза", html.escape(keyword))
+    s.field(E.WALLET, "Списано", f"{tokens_charged} ток.")
 
-    Escaping strategy differs by platform:
-    - Telegram: nh3 preserved <b>,<i> tags — already valid HTML for parse_mode=HTML.
-    - VK/Pinterest: nh3 stripped all tags, output has HTML entities (& → &amp;).
-      We unescape then re-escape to normalize for Telegram's parse_mode=HTML display.
-    """
-    lines = [
-        f"{E.MEGAPHONE} <b>{S.POST_READY_TITLE}</b>\n",
-        f"Ключевая фраза: {html.escape(keyword)}",
-        f"Списано: {tokens_charged} ток.\n",
-        "---",
-    ]
-    if platform == "telegram":
-        # nh3 left <b>,<i> — already valid HTML for parse_mode=HTML
-        lines.append(post_text)
+    if telegraph_url:
+        s.blank()
+        s.line(f'<a href="{telegraph_url}">Открыть превью</a>')
     else:
-        # nh3 output has HTML entities (e.g. &amp;) — normalize for display
-        lines.append(html.escape(html.unescape(post_text)))
+        # Fallback: inline snippet if Telegraph failed
+        s.blank()
+        snippet = html.escape(html.unescape(post_text[:300]))
+        if len(post_text) > 300:
+            snippet += "\u2026"
+        s.line(snippet)
 
-    if hashtags:
-        lines.append("\n" + " ".join(
-            f"#{html.escape(h.lstrip('#'))}" for h in hashtags
-        ))
-    lines.append("---")
-    return "\n".join(lines)
+    return s.build()
 
 
 # ---------------------------------------------------------------------------
@@ -799,6 +834,7 @@ async def regenerate_social(
     db: SupabaseClient,
     redis: RedisClient,
     ai_orchestrator: AIOrchestrator,
+    http_client: httpx.AsyncClient,
 ) -> None:
     """Regenerate social post (step 7 -> regenerating -> step 7).
 
@@ -881,6 +917,7 @@ async def regenerate_social(
         data,
         ai_orchestrator=ai_orchestrator,
         cost=charged_now,
+        http_client=http_client,
     )
 
 
