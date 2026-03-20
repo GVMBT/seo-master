@@ -31,8 +31,10 @@ from bot.texts.connections import (
     _VK_AUTH_URL,
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
+    VK_PERSONAL_AUTH,
     VK_STEP1_GROUP_URL,
     VK_STEP2_AUTH,
+    VK_TYPE_SELECT,
     WP_STEP1_URL,
     WP_STEP2_LOGIN,
     WP_STEP3_CREDENTIALS,
@@ -82,6 +84,27 @@ _PLAT_LABEL: dict[str, str] = {
 }
 
 
+def _build_platform_url(platform_type: str, identifier: str) -> str | None:
+    """Build clickable URL for a platform connection."""
+    ident = identifier.strip()
+    if platform_type == "wordpress":
+        proto = "" if ident.startswith(("http://", "https://")) else "https://"
+        return f"{proto}{ident}"
+    if platform_type == "vk":
+        # identifier is like "club141149920" or numeric group ID
+        slug = ident if ident.startswith("club") else f"club{ident}"
+        return f"https://vk.com/{slug}"
+    if platform_type == "telegram":
+        # identifier is like "@channel" or "-100..." or "t.me/channel"
+        clean = ident.lstrip("@")
+        if clean.startswith("-100"):
+            return None  # private channel ID — no public URL
+        return f"https://t.me/{clean}"
+    if platform_type == "pinterest":
+        return f"https://pinterest.com/{ident}"
+    return None
+
+
 def _build_connections_text(
     project_name: str,
     connections: Sequence[object],
@@ -117,7 +140,9 @@ def _build_connections_text(
         label = _PLAT_LABEL.get(pt, pt.capitalize())
         s.line(f"{icon} {label} ({len(items)}):")
         for i, (ident, gn) in enumerate(items, 1):
-            display = f"{html.escape(gn)} ({ident})" if gn else ident
+            url = _build_platform_url(pt, ident)
+            linked = f'<a href="{url}">{ident}</a>' if url else ident
+            display = f"{html.escape(gn)} ({linked})" if gn else linked
             s.line(f"  {i}. {display}")
         s.blank()
 
@@ -172,8 +197,9 @@ class ConnectTelegramFSM(StatesGroup):
 
 
 class ConnectVKFSM(StatesGroup):
+    select_type = State()  # NEW: group or personal page
     enter_group_url = State()  # User enters VK group URL/ID
-    enter_token = State()  # User pastes community API token
+    enter_token = State()  # User pastes community API token or personal OAuth URL
 
 
 class ConnectPinterestFSM(StatesGroup):
@@ -299,11 +325,15 @@ async def manage_connection(
     pub_repo = PublicationsRepository(db)
     pub_count = await pub_repo.get_count_by_connection(conn_id)
 
+    # Build clickable URL for the connection
+    url = _build_platform_url(conn.platform_type, conn.identifier)
+    id_line = f'<a href="{url}">{safe_id}</a>' if url else safe_id
+
     s = Screen(icon, plat_name)
     s.blank()
     if group_name:
         s.line(f"<b>{html.escape(group_name)}</b>")
-    s.line(safe_id)
+    s.line(id_line)
     s.blank()
     s.line(f"{status_icon} {status_text} \u00b7 {created_str}")
     s.field(E.ANALYTICS, "Публикаций", pub_count)
@@ -805,8 +835,27 @@ async def tg_process_token(
 
 
 # ---------------------------------------------------------------------------
-# ConnectVKFSM (2 states)
+# ConnectVKFSM (3 states: select_type -> enter_group_url -> enter_token)
 # ---------------------------------------------------------------------------
+
+
+def _vk_type_selector_kb(
+    project_id: int,
+    *,
+    exclude_group: bool = False,
+    exclude_personal: bool = False,
+) -> InlineKeyboardMarkup:
+    """Build VK type selector keyboard."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if not exclude_group:
+        rows.append([InlineKeyboardButton(text="Группа", callback_data=f"conn:{project_id}:vk:group")])
+    if not exclude_personal:
+        rows.append([InlineKeyboardButton(
+            text="Личная страница",
+            callback_data=f"conn:{project_id}:vk:personal",
+        )])
+    rows.append([InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @router.callback_query(F.data.regexp(r"^conn:\d+:add:vk$"))
@@ -819,7 +868,7 @@ async def start_vk_connect(
     project_service_factory: ProjectServiceFactory,
     redis: RedisClient,
 ) -> None:
-    """Start VK connection — ask user for group URL/ID."""
+    """Start VK connection — show type selector (group / personal)."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -831,21 +880,28 @@ async def start_vk_connect(
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
         return
 
-    # Rule: 1 project = max 1 VK connection
+    # Check existing VK connections — allow group + personal
     conn_svc = ConnectionService(db, http_client)
     existing_vk = await conn_svc.get_by_project_and_platform(project_id, "vk")
-    if existing_vk:
-        await callback.answer(
-            S.CONNECTIONS_VK_ALREADY,
-            show_alert=True,
-        )
+
+    has_group = any(
+        (getattr(c, "credentials", None) or {}).get("target") != "personal"
+        for c in existing_vk
+    )
+    has_personal = any(
+        (getattr(c, "credentials", None) or {}).get("target") == "personal"
+        for c in existing_vk
+    )
+
+    if has_group and has_personal:
+        await callback.answer(S.VK_BOTH_CONNECTED, show_alert=True)
         return
 
     interrupted = await ensure_no_active_fsm(state)
     if interrupted:
         await msg.answer(S.FSM_INTERRUPTED.format(name=interrupted))
 
-    await state.set_state(ConnectVKFSM.enter_group_url)
+    await state.set_state(ConnectVKFSM.select_type)
     await state.update_data(
         last_update_time=time.time(),
         connect_project_id=project_id,
@@ -853,14 +909,66 @@ async def start_vk_connect(
     )
 
     await msg.answer(
-        VK_STEP1_GROUP_URL,
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:vk_cancel")],
-            ]
+        VK_TYPE_SELECT,
+        reply_markup=_vk_type_selector_kb(
+            project_id,
+            exclude_group=has_group,
+            exclude_personal=has_personal,
         ),
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
+    await callback.answer()
+
+
+@router.callback_query(ConnectVKFSM.select_type, F.data.regexp(r"^conn:\d+:vk:(group|personal)$"))
+async def vk_type_selected(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+    project_service_factory: ProjectServiceFactory,
+) -> None:
+    """Handle VK type selection: group or personal."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")  # type: ignore[union-attr]
+    pid, vk_type = int(parts[1]), parts[3]
+
+    project = await project_service_factory(db).get_owned_project(pid, user.id)
+    if not project:
+        await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
+        return
+
+    await state.update_data(vk_type=vk_type, connect_project_id=pid)
+
+    if vk_type == "group":
+        await state.set_state(ConnectVKFSM.enter_group_url)
+        await msg.answer(
+            VK_STEP1_GROUP_URL,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{pid}:vk_cancel")],
+                ]
+            ),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+    else:
+        # Personal page: skip group URL, go straight to OAuth
+        await state.set_state(ConnectVKFSM.enter_token)
+        await msg.answer(
+            VK_PERSONAL_AUTH,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Авторизоваться", url=_VK_AUTH_URL)],
+                    [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{pid}:vk_cancel")],
+                ]
+            ),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
     await callback.answer()
 
 
@@ -994,69 +1102,135 @@ async def vk_process_token(
 
     data = await state.get_data()
     project_id = int(data["connect_project_id"])
-    group_id = data.get("vk_group_id")
-    group_name = data.get("vk_group_name", "")
+    vk_type = data.get("vk_type", "group")
 
-    # Validate token by calling groups.getById
-    try:
-        resp = await http_client.post(
-            "https://api.vk.ru/method/groups.getById",
-            data={
+    if vk_type == "personal":
+        # Personal page: validate via users.get
+        try:
+            resp = await http_client.post(
+                "https://api.vk.ru/method/users.get",
+                data={"access_token": token, "v": "5.199"},
+                timeout=10,
+            )
+            result = resp.json()
+            if "error" in result:
+                err = result["error"].get("error_msg", "")
+                await message.answer(
+                    f"Ошибка проверки токена: {err}\n\n"
+                    "Попробуйте авторизоваться заново\n"
+                    "и скопировать ссылку целиком.",
+                )
+                return
+            vk_user = result["response"][0]
+            user_vk_id = str(vk_user["id"])
+            user_name = f"{vk_user.get('first_name', '')} {vk_user.get('last_name', '')}".strip()
+        except httpx.HTTPError:
+            await message.answer("Не удалось связаться с VK.\nПопробуйте позже.")
+            return
+
+        # Delete message with token for security
+        with contextlib.suppress(Exception):
+            await message.delete()
+
+        conn_svc = ConnectionService(db, http_client)
+        identifier = f"id{user_vk_id}"
+
+        # Check personal page not already connected
+        existing_vk = await conn_svc.get_by_project_and_platform(project_id, "vk")
+        if any((getattr(c, "credentials", None) or {}).get("target") == "personal" for c in existing_vk):
+            await message.answer(S.VK_PERSONAL_ALREADY)
+            return
+
+        conn = await conn_svc.create(
+            PlatformConnectionCreate(
+                project_id=project_id,
+                platform_type="vk",
+                identifier=identifier,
+                metadata={"group_name": user_name},
+            ),
+            raw_credentials={
+                "access_token": token,
+                "target": "personal",
+                "user_vk_id": user_vk_id,
+                "expires_at": "",
+            },
+        )
+
+        await state.clear()
+        log.info("vk_personal_connected", conn_id=conn.id, project_id=project_id, user_vk_id=user_vk_id)
+
+        connections = await conn_svc.get_by_project(project_id)
+        safe_user = html.escape(user_name)
+        proj_name = html.escape(data.get("project_name", ""))
+        await message.answer(
+            f"\u2705 {S.VK_PERSONAL_CONNECTED}\n"
+            f"{safe_user} ({identifier})\n\n"
+            f"<b>{proj_name}</b> \u2014 Подключения",
+            reply_markup=connection_list_kb(connections, project_id),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+    else:
+        # Group flow (existing behavior)
+        group_id = data.get("vk_group_id")
+        group_name = data.get("vk_group_name", "")
+
+        # Validate token by calling groups.getById
+        try:
+            resp = await http_client.post(
+                "https://api.vk.ru/method/groups.getById",
+                data={
+                    "access_token": token,
+                    "group_id": str(group_id),
+                    "v": "5.199",
+                },
+                timeout=10,
+            )
+            result = resp.json()
+            if "error" in result:
+                err = result["error"].get("error_msg", "")
+                await message.answer(
+                    f"Ошибка проверки токена: {err}\n\n"
+                    "Попробуйте авторизоваться заново\n"
+                    "и скопировать ссылку целиком.",
+                )
+                return
+        except httpx.HTTPError:
+            await message.answer("Не удалось связаться с VK.\nПопробуйте позже.")
+            return
+
+        # Delete message with token for security
+        with contextlib.suppress(Exception):
+            await message.delete()
+
+        # Create connection
+        conn_svc = ConnectionService(db, http_client)
+        identifier = f"club{group_id}"
+        conn = await conn_svc.create(
+            PlatformConnectionCreate(
+                project_id=project_id,
+                platform_type="vk",
+                identifier=identifier,
+                metadata={"group_name": group_name},
+            ),
+            raw_credentials={
                 "access_token": token,
                 "group_id": str(group_id),
-                "v": "5.199",
+                "expires_at": "",
             },
-            timeout=10,
         )
-        result = resp.json()
-        if "error" in result:
-            err = result["error"].get("error_msg", "")
-            await message.answer(
-                f"Ошибка проверки токена: {err}\n\n"
-                "Попробуйте авторизоваться заново\n"
-                "и скопировать ссылку целиком.",
-            )
-            return
-    except httpx.HTTPError:
+
+        await state.clear()
+        log.info("vk_connected_via_token", conn_id=conn.id, project_id=project_id, group_id=group_id)
+
+        connections = await conn_svc.get_by_project(project_id)
+        safe_name = html.escape(group_name)
+        proj_name = html.escape(data.get("project_name", ""))
         await message.answer(
-            "Не удалось связаться с VK.\n"
-            "Попробуйте позже.",
+            f"\u2705 VK-группа \u00ab{safe_name}\u00bb подключена!\n\n"
+            f"<b>{proj_name}</b> \u2014 Подключения",
+            reply_markup=connection_list_kb(connections, project_id),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
-        return
-
-    # Delete message with token for security
-    with contextlib.suppress(Exception):
-        await message.delete()
-
-    # Create connection
-    conn_svc = ConnectionService(db, http_client)
-    identifier = f"club{group_id}"
-    conn = await conn_svc.create(
-        PlatformConnectionCreate(
-            project_id=project_id,
-            platform_type="vk",
-            identifier=identifier,
-            metadata={"group_name": group_name},
-        ),
-        raw_credentials={
-            "access_token": token,
-            "group_id": str(group_id),
-            "expires_at": "",
-        },
-    )
-
-    await state.clear()
-    log.info("vk_connected_via_token", conn_id=conn.id, project_id=project_id, group_id=group_id)
-
-    connections = await conn_svc.get_by_project(project_id)
-    safe_name = html.escape(group_name)
-    proj_name = html.escape(data.get("project_name", ""))
-    await message.answer(
-        f"\u2705 VK-группа \u00ab{safe_name}\u00bb подключена!\n\n"
-        f"<b>{proj_name}</b> \u2014 Подключения",
-        reply_markup=connection_list_kb(connections, project_id),
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
-    )
 
 
 # ---------------------------------------------------------------------------
