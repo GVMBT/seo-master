@@ -655,8 +655,10 @@ async def pipeline_connect_tg_verify(
 async def pipeline_start_connect_vk(
     callback: CallbackQuery,
     state: FSMContext,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
 ) -> None:
-    """Start VK connection — ask user for group URL/ID."""
+    """Start VK connection — show type selector (group / personal)."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
@@ -668,14 +670,78 @@ async def pipeline_start_connect_vk(
         await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
         return
 
-    await state.set_state(SocialPipelineFSM.connect_vk_group_url)
-    text = (
-        Screen(E.LINK, S.POST_CONNECTION_VK_TITLE.format(total=_TOTAL_STEPS))
-        .blank()
-        .line(S.POST_CONNECTION_VK_PROMPT)
-        .build()
+    # Check existing VK connections
+    conn_svc = ConnectionService(db, http_client)
+    existing_vk = await conn_svc.get_by_project_and_platform(project_id, "vk")
+    has_group = any(
+        (getattr(c, "credentials", None) or {}).get("target") != "personal"
+        for c in existing_vk
     )
-    await safe_edit_text(msg, text, reply_markup=cancel_kb("pipeline:social:cancel"))
+    has_personal = any(
+        (getattr(c, "credentials", None) or {}).get("target") == "personal"
+        for c in existing_vk
+    )
+
+    if has_group and has_personal:
+        await callback.answer(S.VK_BOTH_CONNECTED, show_alert=True)
+        return
+
+    await state.set_state(SocialPipelineFSM.connect_vk_type)
+    from bot.texts.connections import VK_TYPE_SELECT
+
+    await safe_edit_text(
+        msg,
+        VK_TYPE_SELECT,
+        reply_markup=_pipeline_vk_type_kb(exclude_group=has_group, exclude_personal=has_personal),
+    )
+    await callback.answer()
+
+
+@router.callback_query(
+    SocialPipelineFSM.connect_vk_type,
+    F.data.regexp(r"^pipeline:social:vk:(group|personal)$"),
+)
+async def pipeline_vk_type_selected(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """Handle VK type selection in pipeline."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    if not callback.data:
+        await callback.answer()
+        return
+
+    vk_type = callback.data.split(":")[-1]
+    await state.update_data(vk_type=vk_type)
+
+    if vk_type == "group":
+        await state.set_state(SocialPipelineFSM.connect_vk_group_url)
+        text = (
+            Screen(E.LINK, S.POST_CONNECTION_VK_TITLE.format(total=_TOTAL_STEPS))
+            .blank()
+            .line(S.POST_CONNECTION_VK_PROMPT)
+            .build()
+        )
+        await safe_edit_text(msg, text, reply_markup=cancel_kb("pipeline:social:cancel"))
+    else:
+        # Personal page: show OAuth link + token input
+        from bot.texts.connections import _VK_AUTH_URL, VK_PERSONAL_AUTH
+
+        await state.set_state(SocialPipelineFSM.connect_vk_personal_token)
+        await safe_edit_text(
+            msg,
+            VK_PERSONAL_AUTH,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Авторизоваться", url=_VK_AUTH_URL)],
+                    [InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")],
+                ]
+            ),
+        )
     await callback.answer()
 
 
@@ -763,6 +829,135 @@ async def pipeline_connect_vk_group_url(
 
     # NOTE: After OAuth, user returns via deep-link /start vk_auth_{nonce},
     # which is handled in routers/start.py.
+
+
+# ---------------------------------------------------------------------------
+# VK Personal Page inline token handler
+# ---------------------------------------------------------------------------
+
+
+def _extract_vk_token(text: str) -> str | None:
+    """Extract access_token from VK OAuth redirect URL or raw token string."""
+    import re
+
+    match = re.search(r"access_token=([a-zA-Z0-9._-]+)", text)
+    if match:
+        return match.group(1)
+    cleaned = text.strip()
+    if len(cleaned) >= 20 and re.fullmatch(r"[a-zA-Z0-9._-]+", cleaned):
+        return cleaned
+    return None
+
+
+@router.message(SocialPipelineFSM.connect_vk_personal_token, F.text)
+async def pipeline_connect_vk_personal_token(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """VK personal page: parse OAuth token URL, validate via users.get, create connection."""
+    text = (message.text or "").strip()
+
+    token = _extract_vk_token(text)
+    if not token:
+        await message.answer(
+            "Не удалось извлечь токен.\n\n"
+            "Скопируйте <b>всю ссылку</b> из адресной строки\n"
+            "после нажатия \u00abРазрешить\u00bb.\n\n"
+            "<i>Она начинается с:\n"
+            "https://oauth.vk.com/blank.html#access_token=...</i>",
+            reply_markup=cancel_kb("pipeline:social:cancel"),
+        )
+        return
+
+    # Delete message with token for security
+    try:
+        await message.delete()
+    except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound) as exc:
+        log.warning("pipeline.failed_to_delete_vk_token", reason=str(exc))
+
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    project_name = data.get("project_name", "")
+    if not project_id:
+        await message.answer(S.PIPELINE_SESSION_EXPIRED, reply_markup=menu_kb())
+        return
+
+    # Validate via users.get
+    try:
+        resp = await http_client.post(
+            "https://api.vk.ru/method/users.get",
+            data={"access_token": token, "v": "5.199"},
+            timeout=10,
+        )
+        result = resp.json()
+        if "error" in result:
+            err = result["error"].get("error_msg", "")
+            await message.answer(
+                f"Ошибка проверки токена: {err}\n\n"
+                "Попробуйте авторизоваться заново.",
+                reply_markup=cancel_kb("pipeline:social:cancel"),
+            )
+            return
+        vk_user = result["response"][0]
+        user_vk_id = str(vk_user["id"])
+        user_name = f"{vk_user.get('first_name', '')} {vk_user.get('last_name', '')}".strip()
+    except httpx.HTTPError:
+        await message.answer(
+            "Не удалось связаться с VK.\nПопробуйте позже.",
+            reply_markup=cancel_kb("pipeline:social:cancel"),
+        )
+        return
+
+    conn_svc = ConnectionService(db, http_client)
+    identifier = f"id{user_vk_id}"
+
+    conn = await conn_svc.create(
+        PlatformConnectionCreate(
+            project_id=project_id,
+            platform_type="vk",
+            identifier=identifier,
+            metadata={"group_name": user_name},
+        ),
+        raw_credentials={
+            "access_token": token,
+            "target": "personal",
+            "user_vk_id": user_vk_id,
+            "expires_at": "",
+        },
+    )
+
+    log.info(
+        "pipeline.social.vk_personal_connected",
+        connection_id=conn.id,
+        user_vk_id=user_vk_id,
+        user_id=user.id,
+    )
+
+    await state.update_data(
+        connection_id=conn.id, platform_type="vk",
+        connection_identifier=identifier,
+    )
+
+    safe_user = html.escape(user_name)
+    await message.answer(
+        f"\u2705 {S.VK_PERSONAL_CONNECTED}\n{safe_user} ({identifier})",
+    )
+
+    from routers.publishing.pipeline.social.social import _show_category_step_msg
+
+    await _show_category_step_msg(
+        message,
+        state,
+        user,
+        db=db,
+        redis=redis,
+        project_id=project_id,
+        project_name=project_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -870,3 +1065,21 @@ def _tg_verify_retry_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")],
         ]
     )
+
+
+def _pipeline_vk_type_kb(
+    *,
+    exclude_group: bool = False,
+    exclude_personal: bool = False,
+) -> InlineKeyboardMarkup:
+    """Build VK type selector keyboard for pipeline."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if not exclude_group:
+        rows.append([InlineKeyboardButton(text="Группа", callback_data="pipeline:social:vk:group")])
+    if not exclude_personal:
+        rows.append([InlineKeyboardButton(
+            text="Личная страница",
+            callback_data="pipeline:social:vk:personal",
+        )])
+    rows.append([InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

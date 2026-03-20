@@ -226,6 +226,9 @@ CONNECTIONS_TG_ALREADY = (
 CONNECTIONS_VK_ALREADY = (
     "К проекту уже подключена VK-группа. Для другой группы создайте новый проект."
 )
+VK_PERSONAL_ALREADY = "К проекту уже подключена VK-личная страница."
+VK_PERSONAL_CONNECTED = "VK личная страница подключена!"
+VK_BOTH_CONNECTED = "К проекту уже подключены и VK-группа, и личная страница."
 CONNECTIONS_PINTEREST_ALREADY = (
     "К проекту уже подключён Pinterest. Для другой доски создайте новый проект."
 )

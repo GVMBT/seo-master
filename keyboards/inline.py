@@ -485,13 +485,24 @@ def format_connection_display(conn: Any, *, with_status: bool = False) -> str:
 def connection_list_kb(connections: list[PlatformConnection], project_id: int) -> InlineKeyboardMarkup:
     """Connection list with platform status + add buttons (UX_TOOLBOX.md section 5.1).
 
-    Rule: 1 project = max 1 connection per platform type.
+    Rule: 1 project = max 1 connection per platform type (except VK: group + personal).
     "Add" buttons are hidden for platform types that already have a connection.
+    VK allows both group and personal — hide "+ VK" only if both are connected.
     """
     rows: list[list[InlineKeyboardButton]] = []
 
     # Determine which platform types already exist
     connected_types = {conn.platform_type for conn in connections}
+
+    # VK special case: allow group + personal
+    vk_conns = [c for c in connections if c.platform_type == "vk"]
+    vk_has_group = any(
+        (c.credentials or {}).get("target") != "personal" for c in vk_conns
+    )
+    vk_has_personal = any(
+        (c.credentials or {}).get("target") == "personal" for c in vk_conns
+    )
+    vk_full = vk_has_group and vk_has_personal
 
     for conn in connections:
         text = format_connection_display(conn, with_status=True)
@@ -504,11 +515,16 @@ def connection_list_kb(connections: list[PlatformConnection], project_id: int) -
         ("vk", "+ VK"),
         ("pinterest", "+ Pinterest"),
     ]
-    add_buttons = [
-        InlineKeyboardButton(text=label, callback_data=f"conn:{project_id}:add:{ptype}")
-        for ptype, label in _ALL_PLATFORMS
-        if ptype not in connected_types
-    ]
+    add_buttons = []
+    for ptype, label in _ALL_PLATFORMS:
+        if ptype == "vk":
+            if vk_full:
+                continue
+        elif ptype in connected_types:
+            continue
+        add_buttons.append(
+            InlineKeyboardButton(text=label, callback_data=f"conn:{project_id}:add:{ptype}")
+        )
     # Layout: 2 per row
     for i in range(0, len(add_buttons), 2):
         rows.append(add_buttons[i : i + 2])

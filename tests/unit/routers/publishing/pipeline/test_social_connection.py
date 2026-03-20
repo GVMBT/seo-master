@@ -552,15 +552,19 @@ class TestTGInlineVerify:
 
 
 class TestVKOAuthConnect:
-    async def test_start_sets_group_url_state(
+    async def test_start_shows_type_selector(
         self,
         mock_callback: MagicMock,
         mock_state: MagicMock,
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={"project_id": 1})
-        await pipeline_start_connect_vk(mock_callback, mock_state)
+        mock_db = MagicMock()
+        mock_http = MagicMock()
+        _svc, p = _mock_conn_svc()
+        with p:
+            await pipeline_start_connect_vk(mock_callback, mock_state, mock_db, mock_http)
 
-        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_group_url)
+        mock_state.set_state.assert_awaited_once_with(SocialPipelineFSM.connect_vk_type)
 
     async def test_no_project_shows_alert(
         self,
@@ -568,7 +572,9 @@ class TestVKOAuthConnect:
         mock_state: MagicMock,
     ) -> None:
         mock_state.get_data = AsyncMock(return_value={})
-        await pipeline_start_connect_vk(mock_callback, mock_state)
+        mock_db = MagicMock()
+        mock_http = MagicMock()
+        await pipeline_start_connect_vk(mock_callback, mock_state, mock_db, mock_http)
         mock_callback.answer.assert_awaited()
         assert "устарели" in mock_callback.answer.call_args[0][0]
 
