@@ -13,7 +13,7 @@ import httpx
 
 from db.models import PlatformConnection
 from services.publishers.base import PublishRequest
-from services.publishers.telegram import _CAPTION_LIMIT, _TEXT_LIMIT, _with_thread, TelegramPublisher
+from services.publishers.telegram import _CAPTION_LIMIT, _TEXT_LIMIT, TelegramPublisher, _with_thread
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -303,11 +303,6 @@ class TestDeletePost:
         conn = _make_connection()
         result = await pub.delete_post(conn, "42")
         assert result is False
-
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------

@@ -795,6 +795,7 @@ async def tg_process_token(
             chat_obj = await temp_bot.get_chat(channel_id)
             is_forum = getattr(chat_obj, "is_forum", False) or False
         except Exception:
+            log.warning("tg_forum_detect_failed", channel=channel_id)
             is_forum = False
     finally:
         await temp_bot.session.close()
@@ -827,7 +828,7 @@ async def tg_process_token(
         from services.external.mtproto import get_forum_topics
         topics = await get_forum_topics(
             api_id=settings.telegram_api_id,
-            api_hash=settings.telegram_api_hash,
+            api_hash=settings.telegram_api_hash.get_secret_value(),
             bot_token=text,
             chat_id=channel_id,
         )
@@ -921,17 +922,18 @@ def _tg_topic_selector_kb(
     if topics:
         for t in topics:
             if isinstance(t, TopicInfo):
-                # callback_data: conn:{pid}:tg_topic:{thread_id}
                 rows.append([InlineKeyboardButton(
-                    text=t.name,
+                    text=f"\U0001f4cc {t.name}",
                     callback_data=f"conn:{project_id}:tg_topic:{t.thread_id}",
                 )])
-    _general_label = "\U0001f4ec \u0412 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0442"
     rows.append([InlineKeyboardButton(
-        text=_general_label,
+        text="\U0001f4ec \u0412 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0442",
         callback_data=f"conn:{project_id}:tg_topic:0",
     )])
-    rows.append([InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:tg_cancel")])
+    rows.append([InlineKeyboardButton(
+        text="\u274c \u041e\u0442\u043c\u0435\u043d\u0430",
+        callback_data=f"conn:{project_id}:tg_cancel",
+    )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

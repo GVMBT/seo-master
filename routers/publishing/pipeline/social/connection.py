@@ -579,7 +579,12 @@ async def pipeline_connect_tg_verify(
             await callback.answer()
             return
 
-        is_admin = any(admin.user.id == bot_info.id and getattr(admin, "can_post_messages", False) for admin in admins)
+        # can_post_messages is None for supergroups/forums (only set for channels)
+        is_admin = any(
+            admin.user.id == bot_info.id
+            and getattr(admin, "can_post_messages", None) is not False
+            for admin in admins
+        )
 
         if not is_admin:
             await safe_edit_text(msg,
@@ -594,6 +599,7 @@ async def pipeline_connect_tg_verify(
             chat_obj = await temp_bot.get_chat(channel)
             is_forum = getattr(chat_obj, "is_forum", False) or False
         except Exception:
+            log.warning("pipeline.tg_forum_detect_failed", channel=channel)
             is_forum = False
 
     except Exception as exc:
@@ -621,7 +627,7 @@ async def pipeline_connect_tg_verify(
         settings = get_settings()
         topics = await get_forum_topics(
             api_id=settings.telegram_api_id,
-            api_hash=settings.telegram_api_hash,
+            api_hash=settings.telegram_api_hash.get_secret_value(),
             bot_token=token,
             chat_id=channel,
         )
@@ -665,15 +671,17 @@ def _pipeline_topic_selector_kb(
         for t in topics:
             if isinstance(t, TopicInfo):
                 rows.append([InlineKeyboardButton(
-                    text=t.name,
+                    text=f"\U0001f4cc {t.name}",
                     callback_data=f"pipeline:social:tg_topic:{t.thread_id}",
                 )])
-    _general = "\U0001f4ec \u0412 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0442"
     rows.append([InlineKeyboardButton(
-        text=_general,
+        text="\U0001f4ec \u0412 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0442",
         callback_data="pipeline:social:tg_topic:0",
     )])
-    rows.append([InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")])
+    rows.append([InlineKeyboardButton(
+        text="\u274c \u041e\u0442\u043c\u0435\u043d\u0430",
+        callback_data="pipeline:social:cancel",
+    )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

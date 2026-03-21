@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     vk_service_key: SecretStr = SecretStr("")
     health_check_token: SecretStr = SecretStr("")
     telegram_api_id: int = 0  # from https://my.telegram.org — needed for forum topics
-    telegram_api_hash: str = ""  # from https://my.telegram.org — needed for forum topics
+    telegram_api_hash: SecretStr = SecretStr("")  # from https://my.telegram.org
     usd_rub_rate: float = 92.5
 
     # === Server ===
