@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import secrets
+from collections.abc import Sequence
 
 import httpx
 import structlog
@@ -614,12 +615,25 @@ async def pipeline_connect_tg_verify(
     )
 
     if is_forum:
-        # Forum detected — ask which topic to publish to
+        # Forum detected — fetch topic list via MTProto
+        from bot.config import get_settings
+        from services.external.mtproto import get_forum_topics
+        settings = get_settings()
+        topics = await get_forum_topics(
+            api_id=settings.telegram_api_id,
+            api_hash=settings.telegram_api_hash,
+            bot_token=token,
+            chat_id=channel,
+        )
+        await state.update_data(
+            tg_bot_username=bot_info.username or "",
+            tg_topics=[{"id": t.thread_id, "name": t.name} for t in topics],
+        )
         await state.set_state(SocialPipelineFSM.connect_tg_topic)
         await safe_edit_text(
             msg,
             _build_topic_text(),
-            reply_markup=_pipeline_topic_selector_kb(),
+            reply_markup=_pipeline_topic_selector_kb(topics),
         )
         await callback.answer()
         return
@@ -640,19 +654,27 @@ def _build_topic_text() -> str:
     return TG_STEP3_TOPIC
 
 
-def _pipeline_topic_selector_kb() -> InlineKeyboardMarkup:
-    """Keyboard: General topic or Create new."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="Основная тема (General)",
-            callback_data="pipeline:social:tg_topic:general",
-        )],
-        [InlineKeyboardButton(
-            text="Создать тему",
-            callback_data="pipeline:social:tg_topic:create",
-        )],
-        [InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")],
-    ])
+def _pipeline_topic_selector_kb(
+    topics: Sequence[object] | None = None,
+) -> InlineKeyboardMarkup:
+    """Keyboard: list of real topics + General + Cancel."""
+    from services.external.mtproto import TopicInfo
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if topics:
+        for t in topics:
+            if isinstance(t, TopicInfo):
+                rows.append([InlineKeyboardButton(
+                    text=t.name,
+                    callback_data=f"pipeline:social:tg_topic:{t.thread_id}",
+                )])
+    _general = "\U0001f4ec \u0412 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0442"
+    rows.append([InlineKeyboardButton(
+        text=_general,
+        callback_data="pipeline:social:tg_topic:0",
+    )])
+    rows.append([InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def _pipeline_finalize_tg(
@@ -727,7 +749,7 @@ async def _pipeline_finalize_tg(
 
 @router.callback_query(
     SocialPipelineFSM.connect_tg_topic,
-    F.data.regexp(r"^pipeline:social:tg_topic:(general|create)$"),
+    F.data.regexp(r"^pipeline:social:tg_topic:\d+$"),
 )
 async def pipeline_tg_topic_choice(
     callback: CallbackQuery,
@@ -737,66 +759,33 @@ async def pipeline_tg_topic_choice(
     redis: RedisClient,
     http_client: httpx.AsyncClient,
 ) -> None:
-    """Handle forum topic selection in pipeline."""
+    """Handle forum topic selection in pipeline — real topic ID or 0 for General."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
         return
 
-    choice = callback.data.split(":")[-1]  # type: ignore[union-attr]
+    thread_id = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
 
-    if choice == "general":
+    if thread_id == 0:
+        # General / no topic
         await _pipeline_finalize_tg(msg, state, user, db, redis, http_client)
         await callback.answer()
         return
 
-    # Create new topic — ask for name
-    await state.set_state(SocialPipelineFSM.connect_tg_topic_name)
-    from bot.texts.connections import TG_TOPIC_NAME_PROMPT
-    await safe_edit_text(
-        msg, TG_TOPIC_NAME_PROMPT,
-        reply_markup=cancel_kb("pipeline:social:cancel"),
-    )
-    await callback.answer()
-
-
-@router.message(SocialPipelineFSM.connect_tg_topic_name, F.text)
-async def pipeline_tg_topic_name_input(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    redis: RedisClient,
-    http_client: httpx.AsyncClient,
-) -> None:
-    """Create forum topic with user-provided name in pipeline."""
-    name = (message.text or "").strip()
-    if not name or len(name) > 128:
-        await message.answer("Название темы: от 1 до 128 символов.")
-        return
-
+    # Find topic name from stored list
     data = await state.get_data()
-    token = data.get("tg_token", "")
-    channel = data.get("tg_channel", "")
-
-    temp_bot = Bot(token=token)
-    try:
-        try:
-            result = await temp_bot.create_forum_topic(
-                chat_id=channel, name=name,
-            )
-            thread_id = result.message_thread_id
-        except Exception as exc:
-            log.warning("pipeline.tg_create_topic_failed", channel=channel, error=str(exc))
-            await message.answer(S.CONN_TG_TOPIC_CREATE_FAILED)
-            return
-    finally:
-        await temp_bot.session.close()
+    topics_data: list[dict[str, object]] = data.get("tg_topics", [])
+    topic_name = next(
+        (str(t["name"]) for t in topics_data if t.get("id") == thread_id),
+        f"Topic #{thread_id}",
+    )
 
     await _pipeline_finalize_tg(
-        message, state, user, db, redis, http_client,
-        topic_name=name, thread_id=thread_id,
+        msg, state, user, db, redis, http_client,
+        topic_name=topic_name, thread_id=thread_id,
     )
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,6 @@ from bot.texts.connections import (
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
     TG_STEP3_TOPIC,
-    TG_TOPIC_NAME_PROMPT,
     VK_PERSONAL_AUTH,
     VK_STEP1_GROUP_URL,
     VK_STEP2_AUTH,
@@ -197,7 +196,6 @@ class ConnectTelegramFSM(StatesGroup):
     channel = State()
     token = State()
     topic = State()  # forum topic selection (if is_forum)
-    topic_name = State()  # custom topic name input
 
 
 class ConnectVKFSM(StatesGroup):
@@ -824,11 +822,20 @@ async def tg_process_token(
     )
 
     if is_forum:
-        # Forum detected — ask which topic to publish to
+        # Forum detected — fetch topic list via MTProto and show selector
+        settings = get_settings()
+        from services.external.mtproto import get_forum_topics
+        topics = await get_forum_topics(
+            api_id=settings.telegram_api_id,
+            api_hash=settings.telegram_api_hash,
+            bot_token=text,
+            chat_id=channel_id,
+        )
+        await state.update_data(tg_topics=[{"id": t.thread_id, "name": t.name} for t in topics])
         await state.set_state(ConnectTelegramFSM.topic)
         await message.answer(
             TG_STEP3_TOPIC,
-            reply_markup=_tg_topic_selector_kb(project_id),
+            reply_markup=_tg_topic_selector_kb(project_id, topics),
         )
         return
 
@@ -903,24 +910,34 @@ async def _finalize_tg_connection(
     )
 
 
-def _tg_topic_selector_kb(project_id: int) -> InlineKeyboardMarkup:
-    """Keyboard for forum topic selection: General or Create new."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="Основная тема (General)",
-            callback_data=f"conn:{project_id}:tg_topic:general",
-        )],
-        [InlineKeyboardButton(
-            text="Создать тему",
-            callback_data=f"conn:{project_id}:tg_topic:create",
-        )],
-        [InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:tg_cancel")],
-    ])
+def _tg_topic_selector_kb(
+    project_id: int,
+    topics: Sequence[object] | None = None,
+) -> InlineKeyboardMarkup:
+    """Keyboard for forum topic selection: list of real topics + General + Cancel."""
+    from services.external.mtproto import TopicInfo
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if topics:
+        for t in topics:
+            if isinstance(t, TopicInfo):
+                # callback_data: conn:{pid}:tg_topic:{thread_id}
+                rows.append([InlineKeyboardButton(
+                    text=t.name,
+                    callback_data=f"conn:{project_id}:tg_topic:{t.thread_id}",
+                )])
+    _general_label = "\U0001f4ec \u0412 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0442"
+    rows.append([InlineKeyboardButton(
+        text=_general_label,
+        callback_data=f"conn:{project_id}:tg_topic:0",
+    )])
+    rows.append([InlineKeyboardButton(text="Отмена", callback_data=f"conn:{project_id}:tg_cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @router.callback_query(
     ConnectTelegramFSM.topic,
-    F.data.regexp(r"^conn:\d+:tg_topic:(general|create)$"),
+    F.data.regexp(r"^conn:\d+:tg_topic:\d+$"),
 )
 async def tg_topic_choice(
     callback: CallbackQuery,
@@ -929,69 +946,33 @@ async def tg_topic_choice(
     db: SupabaseClient,
     http_client: httpx.AsyncClient,
 ) -> None:
-    """Handle forum topic selection."""
+    """Handle forum topic selection — real topic ID or 0 for General."""
     msg = safe_message(callback)
     if not msg:
         await callback.answer()
         return
 
-    choice = callback.data.split(":")[-1]  # type: ignore[union-attr]
+    thread_id = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
 
-    if choice == "general":
-        # General topic — no message_thread_id needed
+    if thread_id == 0:
+        # General / no topic
         await _finalize_tg_connection(msg, state, user, db, http_client)
         await callback.answer()
         return
 
-    # Create new topic — ask for name
-    await state.set_state(ConnectTelegramFSM.topic_name)
+    # Find topic name from stored list
     data = await state.get_data()
-    pid = data.get("connect_project_id", 0)
-    await msg.edit_text(
-        TG_TOPIC_NAME_PROMPT,
-        reply_markup=cancel_kb(f"conn:{pid}:tg_cancel"),
+    topics_data: list[dict[str, object]] = data.get("tg_topics", [])
+    topic_name = next(
+        (str(t["name"]) for t in topics_data if t.get("id") == thread_id),
+        f"Topic #{thread_id}",
     )
-    await callback.answer()
-
-
-@router.message(ConnectTelegramFSM.topic_name, F.text)
-async def tg_topic_name_input(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    db: SupabaseClient,
-    http_client: httpx.AsyncClient,
-) -> None:
-    """Create forum topic with user-provided name."""
-    name = (message.text or "").strip()
-    if not name or len(name) > 128:
-        await message.answer("Название темы: от 1 до 128 символов.")
-        return
-
-    data = await state.get_data()
-    token = data.get("tg_bot_token", "")
-    channel_id = data.get("tg_channel", "")
-
-    # Create topic via Bot API
-    temp_bot = Bot(token=token)
-    try:
-        try:
-            result = await temp_bot.create_forum_topic(
-                chat_id=channel_id,
-                name=name,
-            )
-            thread_id = result.message_thread_id
-        except Exception as exc:
-            log.warning("tg_create_topic_failed", channel=channel_id, error=str(exc))
-            await message.answer(S.CONN_TG_TOPIC_CREATE_FAILED)
-            return
-    finally:
-        await temp_bot.session.close()
 
     await _finalize_tg_connection(
-        message, state, user, db, http_client,
-        topic_name=name, thread_id=thread_id,
+        msg, state, user, db, http_client,
+        topic_name=topic_name, thread_id=thread_id,
     )
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
