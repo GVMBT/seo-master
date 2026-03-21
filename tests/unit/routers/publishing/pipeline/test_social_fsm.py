@@ -1,7 +1,7 @@
 """Tests for SocialPipelineFSM definition.
 
 Verifies:
-- FSM has exactly 24 states (3 create_project states removed: company, spec, url)
+- FSM has exactly 27 states (21 base + 3 cross-post + 2 VK personal + 1 TG forum)
 - All expected state names exist
 - State group name matches convention (*FSM suffix)
 """
@@ -12,7 +12,7 @@ from aiogram.fsm.state import State
 
 from routers.publishing.pipeline._common import SocialPipelineFSM
 
-# Expected state names — 26 states (create_project_name only, no company/spec/url)
+# Expected state names — 27 states (21 base + 3 cross-post + 2 VK personal + 1 TG forum)
 _EXPECTED_STATES = [
     # Step 1: Project selection
     "select_project",
@@ -22,6 +22,7 @@ _EXPECTED_STATES = [
     "connect_tg_channel",
     "connect_tg_token",
     "connect_tg_verify",
+    "connect_tg_topic",
     "connect_vk_type",
     "connect_vk_group_url",
     "connect_vk_oauth",
@@ -52,7 +53,7 @@ _EXPECTED_STATES = [
 class TestSocialPipelineFSMDefinition:
     def test_state_count(self) -> None:
         states = [attr for attr in dir(SocialPipelineFSM) if isinstance(getattr(SocialPipelineFSM, attr), State)]
-        assert len(states) == 26  # 21 base + 3 cross-post (F6.4) + 2 VK personal page
+        assert len(states) == 27  # 21 base + 3 cross-post (F6.4) + 2 VK personal + 1 TG forum topic
 
     def test_all_expected_states_exist(self) -> None:
         for name in _EXPECTED_STATES:

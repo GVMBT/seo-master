@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import secrets
+from collections.abc import Sequence
 
 import httpx
 import structlog
@@ -557,7 +558,6 @@ async def pipeline_connect_tg_verify(
     token = data.get("tg_token", "")
     channel = data.get("tg_channel", "")
     project_id = data.get("project_id")
-    project_name = data.get("project_name", "")
 
     if not token or not channel or not project_id:
         await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
@@ -579,7 +579,12 @@ async def pipeline_connect_tg_verify(
             await callback.answer()
             return
 
-        is_admin = any(admin.user.id == bot_info.id and getattr(admin, "can_post_messages", False) for admin in admins)
+        # can_post_messages is None for supergroups/forums (only set for channels)
+        is_admin = any(
+            admin.user.id == bot_info.id
+            and getattr(admin, "can_post_messages", None) is not False
+            for admin in admins
+        )
 
         if not is_admin:
             await safe_edit_text(msg,
@@ -588,6 +593,14 @@ async def pipeline_connect_tg_verify(
             )
             await callback.answer()
             return
+
+        # Detect forum (supergroup with topics enabled)
+        try:
+            chat_obj = await temp_bot.get_chat(channel)
+            is_forum = getattr(chat_obj, "is_forum", False) or False
+        except Exception:
+            log.warning("pipeline.tg_forum_detect_failed", channel=channel)
+            is_forum = False
 
     except Exception as exc:
         log.warning("pipeline.tg_bot_validation_failed", error=str(exc))
@@ -601,16 +614,113 @@ async def pipeline_connect_tg_verify(
         if temp_bot:
             await temp_bot.session.close()
 
-    # Create connection
+    # Save bot info for later (topic step or direct creation)
+    await state.update_data(
+        tg_bot_username=bot_info.username or "",
+        tg_is_forum=is_forum,
+    )
+
+    if is_forum:
+        # Forum detected — fetch topic list via MTProto
+        from bot.config import get_settings
+        from services.external.mtproto import get_forum_topics
+        settings = get_settings()
+        topics = await get_forum_topics(
+            api_id=settings.telegram_api_id,
+            api_hash=settings.telegram_api_hash.get_secret_value(),
+            bot_token=token,
+            chat_id=channel,
+        )
+        await state.update_data(
+            tg_bot_username=bot_info.username or "",
+            tg_topics=[{"id": t.thread_id, "name": t.name} for t in topics],
+        )
+        await state.set_state(SocialPipelineFSM.connect_tg_topic)
+        await safe_edit_text(
+            msg,
+            _build_topic_text(),
+            reply_markup=_pipeline_topic_selector_kb(topics),
+        )
+        await callback.answer()
+        return
+
+    # Regular channel — create connection immediately
+    await _pipeline_finalize_tg(msg, state, user, db, redis, http_client)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Inline TG topic helpers (forum support)
+# ---------------------------------------------------------------------------
+
+
+def _build_topic_text() -> str:
+    """Build topic selection prompt for pipeline."""
+    from bot.texts.connections import TG_STEP3_TOPIC
+    return TG_STEP3_TOPIC
+
+
+def _pipeline_topic_selector_kb(
+    topics: Sequence[object] | None = None,
+) -> InlineKeyboardMarkup:
+    """Keyboard: list of real topics + General + Cancel."""
+    from services.external.mtproto import TopicInfo
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if topics:
+        for t in topics:
+            if isinstance(t, TopicInfo):
+                rows.append([InlineKeyboardButton(
+                    text=f"\U0001f4cc {t.name}",
+                    callback_data=f"pipeline:social:tg_topic:{t.thread_id}",
+                )])
+    rows.append([InlineKeyboardButton(
+        text="\U0001f4ec \u0412 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0442",
+        callback_data="pipeline:social:tg_topic:0",
+    )])
+    rows.append([InlineKeyboardButton(
+        text="\u274c \u041e\u0442\u043c\u0435\u043d\u0430",
+        callback_data="pipeline:social:cancel",
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _pipeline_finalize_tg(
+    msg: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    *,
+    topic_name: str | None = None,
+    thread_id: int | None = None,
+) -> None:
+    """Create Telegram connection and proceed to category step."""
+    data = await state.get_data()
+    token: str = data.get("tg_token", "")
+    channel: str = data.get("tg_channel", "")
+    project_id: int = int(data.get("project_id", 0))
+    project_name: str = data.get("project_name", "")
+    bot_username: str = data.get("tg_bot_username", "")
+
+    raw_creds: dict[str, str | int] = {"bot_token": token, "channel_id": channel}
+    if thread_id is not None:
+        raw_creds["message_thread_id"] = thread_id
+
+    metadata: dict[str, str | int] = {"bot_username": bot_username}
+    if topic_name:
+        metadata["topic_name"] = topic_name
+
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.create(
         PlatformConnectionCreate(
             project_id=project_id,
             platform_type="telegram",
             identifier=channel,
-            metadata={"bot_username": bot_info.username or ""},
+            metadata=metadata,
         ),
-        raw_credentials={"bot_token": token, "channel_id": channel},
+        raw_credentials=raw_creds,
     )
 
     log.info(
@@ -618,27 +728,70 @@ async def pipeline_connect_tg_verify(
         connection_id=conn.id,
         channel=channel,
         user_id=user.id,
+        thread_id=thread_id,
     )
 
     await state.update_data(
         connection_id=conn.id, platform_type="telegram",
         connection_identifier=channel,
     )
-    await safe_edit_text(msg,
-        S.POST_CONNECTION_TG_CONNECTED.format(channel=html.escape(channel)),
-    )
+
+    if topic_name:
+        connected_text = S.POST_CONNECTION_TG_CONNECTED_TOPIC.format(
+            channel=html.escape(channel), topic=html.escape(topic_name),
+        )
+    else:
+        connected_text = S.POST_CONNECTION_TG_CONNECTED.format(channel=html.escape(channel))
+
+    await safe_edit_text(msg, connected_text)
 
     from routers.publishing.pipeline.social.social import _show_category_step_msg
 
-    # Use message context (we just edited, next screen sends new message)
     await _show_category_step_msg(
-        msg,
-        state,
-        user,
-        db=db,
-        redis=redis,
+        msg, state, user,
+        db=db, redis=redis,
         project_id=project_id,
         project_name=project_name,
+    )
+
+
+@router.callback_query(
+    SocialPipelineFSM.connect_tg_topic,
+    F.data.regexp(r"^pipeline:social:tg_topic:\d+$"),
+)
+async def pipeline_tg_topic_choice(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Handle forum topic selection in pipeline — real topic ID or 0 for General."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    thread_id = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+
+    if thread_id == 0:
+        # General / no topic
+        await _pipeline_finalize_tg(msg, state, user, db, redis, http_client)
+        await callback.answer()
+        return
+
+    # Find topic name from stored list
+    data = await state.get_data()
+    topics_data: list[dict[str, object]] = data.get("tg_topics", [])
+    topic_name = next(
+        (str(t["name"]) for t in topics_data if t.get("id") == thread_id),
+        f"Topic #{thread_id}",
+    )
+
+    await _pipeline_finalize_tg(
+        msg, state, user, db, redis, http_client,
+        topic_name=topic_name, thread_id=thread_id,
     )
     await callback.answer()
 

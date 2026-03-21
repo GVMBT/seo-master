@@ -65,12 +65,12 @@ class ArticlePipelineFSM(StatesGroup):
 
 
 # ---------------------------------------------------------------------------
-# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 24 states)
+# FSM (FSM_SPEC.md §2.2 — SocialPipelineFSM, 27 states)
 # ---------------------------------------------------------------------------
 
 
 class SocialPipelineFSM(StatesGroup):
-    """Social pipeline FSM — 24 states (21 base + 3 cross-post F6.4)."""
+    """Social pipeline FSM — 27 states (21 base + 3 cross-post + 2 VK personal + 1 TG forum)."""
 
     # Step 1: Project selection
     select_project = State()
@@ -81,6 +81,7 @@ class SocialPipelineFSM(StatesGroup):
     connect_tg_channel = State()
     connect_tg_token = State()
     connect_tg_verify = State()
+    connect_tg_topic = State()  # forum topic selection
     connect_vk_type = State()  # group or personal
     connect_vk_group_url = State()
     connect_vk_oauth = State()

@@ -516,8 +516,6 @@ CONN_TG_SUCCESS = "Telegram-канал {channel} подключ\u0451н!"
 CONN_TG_SUCCESS_TOPIC = "Telegram-форум {channel} подключ\u0451н! Тема: {topic}"
 CONN_TG_HINT = "Теперь можно публиковать посты в канал"
 CONN_TG_HINT_TOPIC = "Посты будут публиковаться в тему \u00ab{topic}\u00bb"
-CONN_TG_TOPIC_CREATED = "Тема \u00ab{name}\u00bb создана!"
-CONN_TG_TOPIC_CREATE_FAILED = "Не удалось создать тему. Проверьте что у бота есть право управлять темами."
 CONN_VK_NOT_ADMIN = (
     "Бот @{username} не является администратором канала {channel}.\n"
     "Добавьте бота в канал и назначьте администратором."

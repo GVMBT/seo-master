@@ -31,6 +31,7 @@ from bot.texts.connections import (
     _VK_AUTH_URL,
     TG_STEP1_CHANNEL,
     TG_STEP2_BOT_SETUP,
+    TG_STEP3_TOPIC,
     VK_PERSONAL_AUTH,
     VK_STEP1_GROUP_URL,
     VK_STEP2_AUTH,
@@ -194,6 +195,7 @@ class ConnectWordPressFSM(StatesGroup):
 class ConnectTelegramFSM(StatesGroup):
     channel = State()
     token = State()
+    topic = State()  # forum topic selection (if is_forum)
 
 
 class ConnectVKFSM(StatesGroup):
@@ -787,6 +789,14 @@ async def tg_process_token(
                 S.CONN_VK_NOT_ADMIN.format(username=bot_info.username or "", channel=channel_id),
             )
             return
+
+        # Detect forum (supergroup with topics enabled)
+        try:
+            chat_obj = await temp_bot.get_chat(channel_id)
+            is_forum = getattr(chat_obj, "is_forum", False) or False
+        except Exception:
+            log.warning("tg_forum_detect_failed", channel=channel_id)
+            is_forum = False
     finally:
         await temp_bot.session.close()
 
@@ -805,26 +815,93 @@ async def tg_process_token(
         log.warning("tg_global_duplicate_blocked", channel=channel_id, existing_conn=existing.id)
         return
 
+    # Save token for later use (topic step or direct creation)
+    await state.update_data(
+        tg_bot_token=text,
+        tg_bot_username=bot_info.username or "",
+        tg_is_forum=is_forum,
+    )
+
+    if is_forum:
+        # Forum detected — fetch topic list via MTProto and show selector
+        settings = get_settings()
+        from services.external.mtproto import get_forum_topics
+        topics = await get_forum_topics(
+            api_id=settings.telegram_api_id,
+            api_hash=settings.telegram_api_hash.get_secret_value(),
+            bot_token=text,
+            chat_id=channel_id,
+        )
+        await state.update_data(tg_topics=[{"id": t.thread_id, "name": t.name} for t in topics])
+        await state.set_state(ConnectTelegramFSM.topic)
+        await message.answer(
+            TG_STEP3_TOPIC,
+            reply_markup=_tg_topic_selector_kb(project_id, topics),
+        )
+        return
+
+    # Regular channel — create connection immediately
+    await _finalize_tg_connection(message, state, user, db, http_client)
+
+
+async def _finalize_tg_connection(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+    *,
+    topic_name: str | None = None,
+    thread_id: int | None = None,
+) -> None:
+    """Create Telegram connection with optional forum topic."""
+    data = await state.get_data()
+    channel_id = data["tg_channel"]
+    project_id = int(data["connect_project_id"])
+    token = data["tg_bot_token"]
+    bot_username = data.get("tg_bot_username", "")
+
     await state.clear()
 
+    raw_creds: dict[str, str | int] = {"bot_token": token, "channel_id": channel_id}
+    if thread_id is not None:
+        raw_creds["message_thread_id"] = thread_id
+
+    metadata: dict[str, str | int] = {"bot_username": bot_username}
+    if topic_name:
+        metadata["topic_name"] = topic_name
+
+    conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.create(
         PlatformConnectionCreate(
             project_id=project_id,
             platform_type="telegram",
             identifier=channel_id,
-            metadata={"bot_username": bot_info.username or ""},
+            metadata=metadata,
         ),
-        raw_credentials={"bot_token": text, "channel_id": channel_id},
+        raw_credentials=raw_creds,
     )
 
-    log.info("telegram_connected", conn_id=conn.id, project_id=project_id, channel=channel_id)
+    log.info(
+        "telegram_connected",
+        conn_id=conn.id, project_id=project_id,
+        channel=channel_id, thread_id=thread_id,
+    )
 
     connections = await conn_svc.get_by_project(project_id)
+
+    if topic_name:
+        success_text = S.CONN_TG_SUCCESS_TOPIC.format(channel=channel_id, topic=topic_name)
+        hint_text = S.CONN_TG_HINT_TOPIC.format(topic=topic_name)
+    else:
+        success_text = S.CONN_TG_SUCCESS.format(channel=channel_id)
+        hint_text = S.CONN_TG_HINT
+
     conn_text = (
         Screen(E.CHECK, S.CONN_CONNECTED_TITLE)
         .blank()
-        .line(S.CONN_TG_SUCCESS.format(channel=channel_id))
-        .hint(S.CONN_TG_HINT)
+        .line(success_text)
+        .hint(hint_text)
         .build()
     )
     await message.answer(
@@ -832,6 +909,72 @@ async def tg_process_token(
         reply_markup=connection_list_kb(connections, project_id),
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
+
+
+def _tg_topic_selector_kb(
+    project_id: int,
+    topics: Sequence[object] | None = None,
+) -> InlineKeyboardMarkup:
+    """Keyboard for forum topic selection: list of real topics + General + Cancel."""
+    from services.external.mtproto import TopicInfo
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if topics:
+        for t in topics:
+            if isinstance(t, TopicInfo):
+                rows.append([InlineKeyboardButton(
+                    text=f"\U0001f4cc {t.name}",
+                    callback_data=f"conn:{project_id}:tg_topic:{t.thread_id}",
+                )])
+    rows.append([InlineKeyboardButton(
+        text="\U0001f4ec \u0412 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0442",
+        callback_data=f"conn:{project_id}:tg_topic:0",
+    )])
+    rows.append([InlineKeyboardButton(
+        text="\u274c \u041e\u0442\u043c\u0435\u043d\u0430",
+        callback_data=f"conn:{project_id}:tg_cancel",
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(
+    ConnectTelegramFSM.topic,
+    F.data.regexp(r"^conn:\d+:tg_topic:\d+$"),
+)
+async def tg_topic_choice(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Handle forum topic selection — real topic ID or 0 for General."""
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    thread_id = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+
+    if thread_id == 0:
+        # General / no topic
+        await _finalize_tg_connection(msg, state, user, db, http_client)
+        await callback.answer()
+        return
+
+    # Find topic name from stored list
+    data = await state.get_data()
+    topics_data: list[dict[str, object]] = data.get("tg_topics", [])
+    topic_name = next(
+        (str(t["name"]) for t in topics_data if t.get("id") == thread_id),
+        f"Topic #{thread_id}",
+    )
+
+    await _finalize_tg_connection(
+        msg, state, user, db, http_client,
+        topic_name=topic_name, thread_id=thread_id,
+    )
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
