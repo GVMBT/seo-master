@@ -105,6 +105,15 @@ try:
 except ImportError:
     _NLP_AVAILABLE = False
 
+_MORPH_AVAILABLE = True
+try:
+    import pymorphy3  # type: ignore[import-untyped]
+
+    _MORPH = pymorphy3.MorphAnalyzer()
+except ImportError:
+    _MORPH_AVAILABLE = False
+    _MORPH = None  # type: ignore[assignment]
+
 
 def _count_syllables_ru(word: str) -> int:
     """Count Russian syllables by counting vowels."""
@@ -151,6 +160,33 @@ def _sentenize(text: str) -> list[str]:
         return [s.text for s in razdel.sentenize(text)]
     # Simple sentence splitting for fallback
     return [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+
+
+def _lemmatize(word: str) -> str:
+    """Return normal form of a Russian word, or lowercase original if unavailable."""
+    if _MORPH_AVAILABLE and _MORPH is not None:
+        return str(_MORPH.parse(word)[0].normal_form)
+    return word.lower()
+
+
+def _count_phrase_fuzzy(text: str, phrase: str) -> int:
+    """Count fuzzy (lemma-based) occurrences of a multi-word phrase in text.
+
+    Slides a window of len(phrase_words) over text_words, compares lemmas.
+    """
+    if not _MORPH_AVAILABLE:
+        return 0
+    phrase_lemmas = [_lemmatize(w) for w in phrase.lower().split() if w]
+    if not phrase_lemmas:
+        return 0
+    text_words = _tokenize_words(text.lower())
+    text_lemmas = [_lemmatize(w) for w in text_words]
+    window = len(phrase_lemmas)
+    count = 0
+    for i in range(len(text_lemmas) - window + 1):
+        if text_lemmas[i : i + window] == phrase_lemmas:
+            count += 1
+    return count
 
 
 # ---------------------------------------------------------------------------
@@ -227,8 +263,10 @@ class ContentQualityScorer:
         # keyword_density (max 8 points): ideal 1.5-2.5%
         if word_count > 0:
             main_words = main_lower.split()
-            # Count occurrences of the full main phrase in text
+            # Count exact occurrences first, then fuzzy (lemma-based) fallback
             phrase_count = lower_text.count(main_lower)
+            if phrase_count == 0:
+                phrase_count = _count_phrase_fuzzy(lower_text, main_lower)
             density = (phrase_count * len(main_words)) / word_count * 100 if word_count else 0.0
 
             if 1.5 <= density <= 2.5:
@@ -244,26 +282,39 @@ class ContentQualityScorer:
         # keyword_in_first_h2 (max 6 points)
         # Note: H1 = post title (set separately in WP). Content body starts with H2.
         h2_match = re.search(r"<h2[^>]*>(.*?)</h2>", lower_html, re.DOTALL)
-        if h2_match and main_lower in h2_match.group(1).lower():
-            points += 6
+        if h2_match:
+            h2_text = _strip_html(h2_match.group(0)).lower()
+            if main_lower in h2_text or _count_phrase_fuzzy(h2_text, main_lower) > 0:
+                points += 6
+            else:
+                self._issues.append("main_phrase not in first H2")
         else:
             self._issues.append("main_phrase not in first H2")
 
         # keyword_in_first_paragraph (max 5 points)
         first_p = re.search(r"<p[^>]*>(.*?)</p>", lower_html, re.DOTALL)
-        if first_p and main_lower in first_p.group(1).lower():
-            points += 5
+        if first_p:
+            p_text = first_p.group(1).lower()
+            if main_lower in p_text or _count_phrase_fuzzy(p_text, main_lower) > 0:
+                points += 5
+            else:
+                self._issues.append("main_phrase not in first paragraph")
         else:
             self._issues.append("main_phrase not in first paragraph")
 
         # keyword_in_conclusion (max 3 points) — last paragraph
         all_p = re.findall(r"<p[^>]*>(.*?)</p>", lower_html, re.DOTALL)
-        if all_p and main_lower in all_p[-1].lower():
-            points += 3
+        if all_p:
+            last_p = all_p[-1].lower()
+            if main_lower in last_p or _count_phrase_fuzzy(last_p, main_lower) > 0:
+                points += 3
 
         # secondary_phrases_coverage (max 8 points)
         if secondary_phrases:
-            covered = sum(1 for sp in secondary_phrases if sp.lower() in lower_text)
+            covered = sum(
+                1 for sp in secondary_phrases
+                if sp.lower() in lower_text or _count_phrase_fuzzy(lower_text, sp) > 0
+            )
             coverage = covered / len(secondary_phrases)
             seo_sec_points = min(8, int(coverage * 8))
             points += seo_sec_points
