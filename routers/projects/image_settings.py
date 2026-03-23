@@ -1,0 +1,741 @@
+"""Image-related content settings handlers.
+
+Callback format: psettings:{pid}:{target}:{action}
+Handles: image menu, preview format, article formats, image styles,
+count, text-on-image, camera, angle, quality, tone.
+"""
+
+import structlog
+from aiogram import F, Router
+from aiogram.types import CallbackQuery
+
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
+from bot.service_factory import ProjectServiceFactory
+from bot.texts import strings as S
+from bot.texts.content_options import (
+    ANGLES,
+    ASPECT_RATIOS,
+    CAMERAS,
+    IMAGE_STYLES,
+    QUALITY,
+    TEXT_ON_IMAGE,
+    TONES,
+)
+from bot.texts.emoji import E
+from bot.texts.screens import Screen
+from db.client import SupabaseClient
+from db.models import User
+from keyboards.inline import (
+    project_angle_kb,
+    project_article_format_kb,
+    project_camera_kb,
+    project_image_count_kb,
+    project_image_menu_kb,
+    project_image_style_kb,
+    project_preview_format_kb,
+    project_quality_kb,
+    project_text_on_image_kb,
+    project_tone_kb,
+)
+from routers.projects._settings_common import (
+    _PT_RE,
+    _load_is,
+    _load_project,
+    _save_is,
+)
+
+log = structlog.get_logger()
+router = Router()
+
+
+# ---------------------------------------------------------------------------
+# 8. Image sub-menu
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:images$"))
+async def show_image_menu(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    text = (
+        Screen(E.IMAGE, S.CONTENT_IMAGE_TITLE)
+        .blank()
+        .line(S.CONTENT_IMAGE_PROMPT)
+        .hint(S.CONTENT_IMAGE_MENU_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_image_menu_kb(pid, target),
+    )
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# 9-17. Image setting handlers
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:pfmt$"))
+async def show_preview_format(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_PREVIEW_TITLE)
+        .blank()
+        .line(S.CONTENT_PREVIEW_DESC)
+        .hint(S.CONTENT_PREVIEW_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_preview_format_kb(
+            pid, is_.get("preview_format"), target,
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:pf:\d+$"))
+async def select_preview_format(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, idx = int(parts[1]), parts[2], int(parts[4])
+    if idx < 0 or idx >= len(ASPECT_RATIOS):
+        await callback.answer("Неизвестный формат", show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    fmt = ASPECT_RATIOS[idx]
+    is_ = await _load_is(db, project, target, project_service_factory)
+    is_["preview_format"] = fmt
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    log.info("preview_format_updated", project_id=pid, target=target, fmt=fmt)
+    await safe_edit_text(
+        msg, f"{E.CHECK} Формат превью: <b>{fmt}</b>",
+        reply_markup=project_preview_format_kb(pid, fmt, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:afmts$"))
+async def show_article_formats(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    selected = set(is_.get("article_formats", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_ARTICLE_FMT_TITLE)
+        .blank()
+        .line(S.CONTENT_ARTICLE_FMT_DESC)
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_ARTICLE_FMT_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_article_format_kb(pid, selected, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:af:\d+$"))
+async def toggle_article_format(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, idx = int(parts[1]), parts[2], int(parts[4])
+    if idx < 0 or idx >= len(ASPECT_RATIOS):
+        await callback.answer("Неизвестный формат", show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    fmt = ASPECT_RATIOS[idx]
+    is_ = await _load_is(db, project, target, project_service_factory)
+    formats: list[str] = list(is_.get("article_formats", []))
+    if fmt in formats:
+        formats.remove(fmt)
+    else:
+        formats.append(fmt)
+    is_["article_formats"] = formats
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_ARTICLE_FMT_TITLE)
+        .blank()
+        .line(S.CONTENT_ARTICLE_FMT_DESC)
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_ARTICLE_FMT_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_article_format_kb(pid, set(formats), target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:istyle$"))
+async def show_image_styles(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    selected = set(is_.get("styles", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_IMAGE_STYLE_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_IMAGE_STYLE_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_image_style_kb(pid, selected, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:is:\d+$"))
+async def toggle_image_style(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, idx = int(parts[1]), parts[2], int(parts[4])
+    if idx < 0 or idx >= len(IMAGE_STYLES):
+        await callback.answer(S.CONTENT_UNKNOWN_STYLE, show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    style = IMAGE_STYLES[idx]
+    is_ = await _load_is(db, project, target, project_service_factory)
+    styles: list[str] = list(is_.get("styles", []))
+    if style in styles:
+        styles.remove(style)
+    else:
+        styles.append(style)
+    is_["styles"] = styles
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_IMAGE_STYLE_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_STYLE_MULTI)
+        .hint(S.CONTENT_IMAGE_STYLE_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_image_style_kb(pid, set(styles), target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:icount$"))
+async def show_image_count(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_IMAGE_COUNT_TITLE)
+        .blank()
+        .line(S.CONTENT_IMAGE_COUNT_DESC)
+        .hint(S.CONTENT_IMAGE_COUNT_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_image_count_kb(pid, is_.get("count"), target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:ic:\d+$"))
+async def select_image_count(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, count = int(parts[1]), parts[2], int(parts[4])
+    if count < 0 or count > 10:
+        await callback.answer("Допустимо: 0-10", show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    is_["count"] = count
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    log.info("image_count_updated", project_id=pid, target=target, count=count)
+    await safe_edit_text(
+        msg, f"{E.CHECK} Количество изображений: <b>{count}</b>",
+        reply_markup=project_image_count_kb(pid, count, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:tximg$"))
+async def show_text_on_image(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_TEXT_ON_IMAGE_TITLE)
+        .blank()
+        .line(S.CONTENT_TEXT_ON_IMAGE_DESC)
+        .hint(S.CONTENT_TEXT_ON_IMAGE_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_text_on_image_kb(
+            pid, is_.get("text_on_image"), target,
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:to:\d+$"))
+async def select_text_on_image(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, pct = int(parts[1]), parts[2], int(parts[4])
+    if pct not in TEXT_ON_IMAGE:
+        await callback.answer(S.CONTENT_INVALID_VALUE, show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    is_["text_on_image"] = pct
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    log.info("text_on_image_updated", project_id=pid, target=target, pct=pct)
+    await safe_edit_text(
+        msg, f"{E.CHECK} Текст на изображении: <b>{pct}%</b>",
+        reply_markup=project_text_on_image_kb(pid, pct, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:camera$"))
+async def show_cameras(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    selected = set(is_.get("cameras", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_CAMERA_TITLE)
+        .blank()
+        .line(S.CONTENT_CAMERA_DESC)
+        .hint(S.CONTENT_CAMERA_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_camera_kb(pid, selected, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:cm:\d+$"))
+async def toggle_camera(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, idx = int(parts[1]), parts[2], int(parts[4])
+    if idx < 0 or idx >= len(CAMERAS):
+        await callback.answer("Неизвестная камера", show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    cam = CAMERAS[idx]
+    is_ = await _load_is(db, project, target, project_service_factory)
+    cams: list[str] = list(is_.get("cameras", []))
+    if cam in cams:
+        cams.remove(cam)
+    else:
+        cams.append(cam)
+    is_["cameras"] = cams
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_CAMERA_TITLE)
+        .blank()
+        .line(S.CONTENT_CAMERA_DESC)
+        .hint(S.CONTENT_CAMERA_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_camera_kb(pid, set(cams), target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:angle$"))
+async def show_angles(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    selected = set(is_.get("angles", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_ANGLE_TITLE)
+        .blank()
+        .line(S.CONTENT_ANGLE_DESC)
+        .hint(S.CONTENT_ANGLE_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_angle_kb(pid, selected, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:an:\d+$"))
+async def toggle_angle(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, idx = int(parts[1]), parts[2], int(parts[4])
+    if idx < 0 or idx >= len(ANGLES):
+        await callback.answer("Неизвестный ракурс", show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    angle = ANGLES[idx]
+    is_ = await _load_is(db, project, target, project_service_factory)
+    angles: list[str] = list(is_.get("angles", []))
+    if angle in angles:
+        angles.remove(angle)
+    else:
+        angles.append(angle)
+    is_["angles"] = angles
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_ANGLE_TITLE)
+        .blank()
+        .line(S.CONTENT_ANGLE_DESC)
+        .hint(S.CONTENT_ANGLE_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_angle_kb(pid, set(angles), target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:quality$"))
+async def show_quality(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    selected = set(is_.get("quality", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_QUALITY_TITLE)
+        .blank()
+        .line(S.CONTENT_QUALITY_DESC)
+        .hint(S.CONTENT_QUALITY_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_quality_kb(pid, selected, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:ql:\d+$"))
+async def toggle_quality(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, idx = int(parts[1]), parts[2], int(parts[4])
+    if idx < 0 or idx >= len(QUALITY):
+        await callback.answer("Неизвестное значение", show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    q = QUALITY[idx]
+    is_ = await _load_is(db, project, target, project_service_factory)
+    quals: list[str] = list(is_.get("quality", []))
+    if q in quals:
+        quals.remove(q)
+    else:
+        quals.append(q)
+    is_["quality"] = quals
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_QUALITY_TITLE)
+        .blank()
+        .line(S.CONTENT_QUALITY_DESC)
+        .hint(S.CONTENT_QUALITY_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_quality_kb(pid, set(quals), target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:tone$"))
+async def show_tones(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target = int(parts[1]), parts[2]
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    is_ = await _load_is(db, project, target, project_service_factory)
+    selected = set(is_.get("tones", []))
+    text = (
+        Screen(E.IMAGE, S.CONTENT_TONE_TITLE)
+        .blank()
+        .line(S.CONTENT_TONE_DESC)
+        .hint(S.CONTENT_TONE_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_tone_kb(pid, selected, target),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(rf"^psettings:\d+:{_PT_RE}:tn:\d+$"))
+async def toggle_tone(
+    callback: CallbackQuery, user: User,
+    db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+) -> None:
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
+    pid, target, idx = int(parts[1]), parts[2], int(parts[4])
+    if idx < 0 or idx >= len(TONES):
+        await callback.answer("Неизвестная тональность", show_alert=True)
+        return
+    project = await _load_project(
+        callback, pid, user, db, project_service_factory,
+    )
+    if not project:
+        return
+    tone = TONES[idx]
+    is_ = await _load_is(db, project, target, project_service_factory)
+    tones: list[str] = list(is_.get("tones", []))
+    if tone in tones:
+        tones.remove(tone)
+    else:
+        tones.append(tone)
+    is_["tones"] = tones
+    await _save_is(db, pid, user.id, target, is_, project_service_factory)
+    text = (
+        Screen(E.IMAGE, S.CONTENT_TONE_TITLE)
+        .blank()
+        .line(S.CONTENT_TONE_DESC)
+        .hint(S.CONTENT_TONE_HINT)
+        .build()
+    )
+    await safe_edit_text(
+        msg, text,
+        reply_markup=project_tone_kb(pid, set(tones), target),
+    )
+    await callback.answer()
