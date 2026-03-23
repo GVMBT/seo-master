@@ -64,7 +64,7 @@ def make_token_refresh_cb(
 ) -> TokenRefreshCallback:
     """Build callback to persist refreshed OAuth credentials in DB."""
 
-    async def _cb(old_creds: dict[str, Any], new_creds: dict[str, Any]) -> None:
+    async def _cb(_old_creds: dict[str, Any], new_creds: dict[str, Any]) -> None:
         from db.credential_manager import CredentialManager
         from db.repositories.connections import ConnectionsRepository
 
