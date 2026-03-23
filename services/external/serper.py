@@ -64,7 +64,7 @@ def _empty_result() -> SerperResult:
 
 def _cache_key(query: str) -> str:
     """Build Redis cache key from query string."""
-    query_hash = hashlib.md5(query.encode()).hexdigest()  # noqa: S324  # nosec B324 — cache key, not security
+    query_hash = hashlib.md5(query.encode()).hexdigest()  # noqa: S324  # nosec B324
     return f"serper:{query_hash}"
 
 

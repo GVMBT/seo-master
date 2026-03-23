@@ -5,7 +5,8 @@
 ### Top-level
 | File | LOC | Purpose |
 |---|---|---|
-| start.py | 1069 | /start, /cancel, Dashboard, OAuth deep-links (Pinterest, VK), pipeline resume |
+| start.py | 691 | /start, /cancel, Dashboard, pipeline resume |
+| oauth_deeplinks.py | 410 | Pinterest OAuth callback, VK OAuth callback, `_return_to_pipeline()` |
 | profile.py | 349 | profile, notifications, referral, /privacy, /terms, /delete_account |
 | tariffs.py | 161 | token packages, payment method selection |
 | payments.py | 158 | pre_checkout_query, successful_payment (Stars + YooKassa) |
@@ -16,7 +17,10 @@
 | list.py | 89 | project list, pagination |
 | card.py | 202 | project card, delete confirm |
 | create.py | 457 | ProjectCreateFSM (name, url, description, branding) |
-| content_settings.py | 1263 | text/image settings per-platform (psettings:* callbacks) |
+| _settings_common.py | 317 | content settings helpers, main settings screen |
+| text_settings.py | 288 | 7 text option handlers (psettings:text:* callbacks) |
+| image_settings.py | 741 | 19 image option handlers (psettings:image:* callbacks) |
+| content_settings.py | 17 | Backward-compatible re-exports (facade) |
 
 ### routers/categories/
 | File | LOC | Purpose |
@@ -29,12 +33,12 @@
 ### routers/platforms/
 | File | LOC | Purpose |
 |---|---|---|
-| _shared.py | ~400 | Shared constants, helpers, CRUD handlers (list, manage, delete) |
-| wordpress.py | ~200 | ConnectWordPressFSM wizard (3 states: url, login, password) |
-| telegram.py | ~350 | ConnectTelegramFSM wizard (3 states: channel, token, topic) |
-| vk.py | ~380 | ConnectVKFSM wizard (3 states: select_type, enter_group_url, enter_token) |
-| pinterest.py | ~80 | ConnectPinterestFSM wizard (OAuth flow) |
-| connections.py | ~20 | Backward-compatible re-exports (facade) |
+| _shared.py | 461 | Shared constants, helpers, CRUD handlers (list, manage, delete) |
+| wordpress.py | 243 | ConnectWordPressFSM wizard (3 states: url, login, password) |
+| telegram.py | 388 | ConnectTelegramFSM wizard (3 states: channel, token, topic) |
+| vk.py | 462 | ConnectVKFSM wizard (3 states: select_type, enter_group_url, enter_token) |
+| pinterest.py | 108 | ConnectPinterestFSM wizard (OAuth flow) |
+| connections.py | 18 | Backward-compatible re-exports (facade) |
 
 ### routers/publishing/
 | File | LOC | Purpose |
@@ -56,7 +60,8 @@
 |---|---|---|
 | social.py | 704 | SocialPipelineFSM (project, category, connection) |
 | connection.py | 1238 | inline connection wizard within social pipeline (WP, TG, VK, Pinterest) |
-| generation.py | 1313 | social post generation, review, publish, crosspost |
+| generation.py | 983 | social post generation, review, publish |
+| crosspost.py | 330 | cross-post flow: select, toggle, execute (F6.4) |
 | readiness.py | 273 | readiness check for social pipeline |
 
 ### routers/shared/
@@ -75,7 +80,7 @@
 | `nav:*` | start.py |
 | `legal:*` | start.py (consent) |
 | `project:*` | projects/ (list, card, create), content_settings, scheduler |
-| `psettings:*` | projects/content_settings.py |
+| `psettings:*` | projects/content_settings.py (_settings_common, text_settings, image_settings) |
 | `page:projects:*` | projects/list.py |
 | `category:*` | categories/ (manage, keywords, description, prices) |
 | `page:categories:*` | categories/manage.py |
@@ -83,15 +88,15 @@
 | `page:clusters:*`, `page:del_clusters:*` | categories/keywords.py |
 | `desc:*` | categories/description.py |
 | `prices:*`, `price:*` | categories/prices.py |
-| `conn:*` | platforms/connections.py |
+| `conn:*` | platforms/_shared.py |
 | `scheduler:*`, `sched:*`, `sched_social:*`, `sched_xp:*` | publishing/scheduler.py |
 | `pipeline:article:*` | publishing/pipeline/article.py, generation.py |
 | `pipeline:readiness:*` | publishing/pipeline/readiness.py |
 | `pipeline:social:*` | publishing/pipeline/social/ |
-| `pipeline:crosspost:*` | publishing/pipeline/social/generation.py |
+| `pipeline:crosspost:*` | publishing/pipeline/social/crosspost.py |
 | `pipeline:cancel`, `pipeline:resume`, `pipeline:restart` | start.py |
 | `profile:*`, `account:*` | profile.py |
 | `tariff:*` | tariffs.py |
 | `admin:*`, `broadcast:*` | admin/dashboard.py |
-| `fsm:cancel` | shared cancel handler (keyboards/inline.py cancel_kb) |
+| `fsm:cancel` | shared cancel handler (keyboards/common.py cancel_kb) |
 | `noop` | no-op answer (various) |

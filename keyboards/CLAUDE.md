@@ -3,9 +3,17 @@
 ## Files
 | File | LOC | Purpose |
 |---|---|---|
-| inline.py | 1746 | all inline keyboards (Dashboard through Admin) |
-| pipeline.py | 1072 | Article/Social Pipeline keyboards + crosspost |
+| common.py | 77 | menu_kb, cancel_kb, consent_kb, format_connection_display |
+| dashboard.py | 70 | dashboard_kb, dashboard_resume_kb |
+| projects.py | 217 | project_list_kb, project_card_kb, project_edit_kb, etc. |
+| categories.py | 493 | category_*, connection_*, keywords_*, description_*, prices_* |
+| content_settings.py | 376 | project_content_settings_kb, text/image option keyboards |
+| profile_admin.py | 596 | profile_*, tariffs_*, payment_*, scheduler_*, admin_* |
+| pipeline_article.py | 590 | Article pipeline keyboards + readiness sub-flows |
+| pipeline_social.py | 480 | Social pipeline + crosspost keyboards |
+| pipeline.py | 4 | Backward-compatible re-exports (facade) |
 | pagination.py | 76 | PAGE_SIZE=8, paginate() helper, _safe_cb() (64-byte guard) |
+| inline.py | 21 | Backward-compatible re-exports (facade) |
 
 No reply.py exists -- all keyboards are inline.
 
@@ -30,9 +38,9 @@ No reply.py exists -- all keyboards are inline.
 | admin | admin_panel_kb, user_actions_kb, broadcast_audience_kb, broadcast_confirm_kb |
 
 ## Shared utilities
-- `cancel_kb(callback_data)` -- universal cancel button (default "fsm:cancel")
-- `format_connection_display(conn)` -- shared formatting for connection display
-- `paginate(items, page, item_cb, back_cb, page_cb)` -- generic pagination with PAGE_SIZE=8
+- `cancel_kb(callback_data)` in common.py -- universal cancel button (default "fsm:cancel")
+- `format_connection_display(conn)` in common.py -- shared formatting for connection display
+- `paginate(items, page, item_cb, back_cb, page_cb)` in pagination.py -- generic pagination with PAGE_SIZE=8
 
 ## Conventions
 - Naming: `{entity}_{action}_kb()` (e.g. `project_card_kb`, `category_list_kb`)
