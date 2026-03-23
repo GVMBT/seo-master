@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.texts.emoji import TOGGLE_ON
 from db.models import Category, Project
-from keyboards.pagination import paginate
+from keyboards.pagination import _safe_cb, paginate
 from services.readiness import ReadinessReport
 from services.tokens import COST_PER_IMAGE
 
@@ -55,7 +55,6 @@ def pipeline_projects_kb(
         cb_prefix=f"pipeline_{pipeline_type}_projects",
         item_text="name",
         item_cb=f"pipeline:{pipeline_type}:{{id}}:select",
-        item_style=ButtonStyle.PRIMARY,
     )[0]
 
 
@@ -133,7 +132,6 @@ def pipeline_categories_kb(
         cb_prefix=f"pipeline_{pipeline_type}_categories",
         item_text="name",
         item_cb=f"pipeline:{pipeline_type}:{project_id}:cat:{{id}}",
-        item_style=ButtonStyle.PRIMARY,
     )
     # Add back button to return to previous step
     back_cb = (
@@ -570,17 +568,17 @@ def pipeline_keywords_city_kb(prefix: str = "pipeline:readiness") -> InlineKeybo
             [
                 InlineKeyboardButton(
                     text="Москва",
-                    callback_data=f"{prefix}:keywords:city:Москва",
+                    callback_data=_safe_cb(f"{prefix}:keywords:city:Москва"),
                 ),
                 InlineKeyboardButton(
                     text="Санкт-Петербург",
-                    callback_data=f"{prefix}:keywords:city:СПб",
+                    callback_data=_safe_cb(f"{prefix}:keywords:city:СПб"),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Вся Россия",
-                    callback_data=f"{prefix}:keywords:city:Россия",
+                    callback_data=_safe_cb(f"{prefix}:keywords:city:Россия"),
                 ),
             ],
             [

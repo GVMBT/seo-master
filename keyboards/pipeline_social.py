@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.texts.emoji import TOGGLE_ON
 from db.models import PlatformConnection
 from keyboards.common import format_connection_display
+from keyboards.pagination import _safe_cb
 from services.readiness import ReadinessReport
 
 __all__ = [
@@ -46,7 +47,7 @@ def social_connections_kb(
             [
                 InlineKeyboardButton(
                     text=display,
-                    callback_data=f"pipeline:social:{project_id}:conn:{conn.id}",
+                    callback_data=_safe_cb(f"pipeline:social:{project_id}:conn:{conn.id}"),
                 ),
             ]
         )
@@ -372,7 +373,7 @@ def crosspost_select_kb(
             [
                 InlineKeyboardButton(
                     text=f"{check}{display}",
-                    callback_data=f"pipeline:crosspost:toggle:{conn.id}",
+                    callback_data=_safe_cb(f"pipeline:crosspost:toggle:{conn.id}"),
                 ),
             ]
         )

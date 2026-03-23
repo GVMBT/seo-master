@@ -308,32 +308,38 @@ async def _execute_crosspost(
                     results.append(f"\u274c {conn.platform_type.upper()}: {pub_result.error}")
                     continue
 
-                # Charge after successful publish
-                if not is_god:
-                    await token_svc.charge(
-                        user.id, cost, "cross_post",
-                        description=f"Cross-post: {keyword}",
-                    )
-                total_cost += cost
-
-                # Log publication
-                pub_repo = PublicationsRepository(db)
-                await pub_repo.create_log(
-                    PublicationLogCreate(
-                        user_id=user.id,
-                        project_id=project_id,
-                        category_id=category_id,
-                        platform_type=conn.platform_type,
-                        connection_id=conn.id,
-                        keyword=keyword,
-                        content_type="cross_post",
-                        tokens_spent=cost,
-                        post_url=pub_result.post_url or "",
-                    )
-                )
-
+                # Post is already live — charge and log best-effort
                 url_part = f": {pub_result.post_url}" if pub_result.post_url else ""
                 results.append(f"\u2705 {conn.platform_type.upper()}{url_part}")
+
+                try:
+                    if not is_god:
+                        await token_svc.charge(
+                            user.id, cost, "cross_post",
+                            description=f"Cross-post: {keyword}",
+                        )
+                    total_cost += cost
+
+                    pub_repo = PublicationsRepository(db)
+                    await pub_repo.create_log(
+                        PublicationLogCreate(
+                            user_id=user.id,
+                            project_id=project_id,
+                            category_id=category_id,
+                            platform_type=conn.platform_type,
+                            connection_id=conn.id,
+                            keyword=keyword,
+                            content_type="cross_post",
+                            tokens_spent=cost,
+                            post_url=pub_result.post_url or "",
+                        )
+                    )
+                except Exception:
+                    log.exception(
+                        "pipeline.crosspost.post_publish_bookkeeping_failed",
+                        conn_id=conn_id,
+                        platform=conn.platform_type,
+                    )
 
                 log.info(
                     "pipeline.crosspost.published",
