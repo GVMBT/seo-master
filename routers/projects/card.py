@@ -7,7 +7,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from bot.assets import edit_screen
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory, TokenServiceFactory
 from bot.texts import strings as S
 from bot.texts.emoji import E
@@ -70,7 +70,8 @@ async def show_project_card(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
 
     proj_svc = project_service_factory(db)
     card_data = await proj_svc.build_card_data(project_id, user.id)
@@ -130,7 +131,8 @@ async def confirm_delete(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
 
     proj_svc = project_service_factory(db)
     project = await proj_svc.get_owned_project(project_id, user.id)
@@ -174,7 +176,8 @@ async def execute_delete(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
 
     proj_svc = project_service_factory(db)
     token_service = token_service_factory(db)

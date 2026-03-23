@@ -24,7 +24,7 @@ from aiogram.types import (
 from bot.assets import edit_screen
 from bot.config import get_settings
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts import strings as S
 from bot.texts.connections import (
@@ -228,7 +228,8 @@ async def show_connections(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
 
     if not project:
@@ -263,7 +264,8 @@ async def connections_list_back(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
 
     if not project:
@@ -303,7 +305,8 @@ async def manage_connection(
         await callback.answer()
         return
 
-    conn_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    conn_id = int(cb_data.split(":")[1])
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.get_by_id(conn_id)
     if not conn:
@@ -363,7 +366,8 @@ async def confirm_connection_delete(
         await callback.answer()
         return
 
-    conn_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    conn_id = int(cb_data.split(":")[1])
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.get_by_id(conn_id)
     if not conn:
@@ -416,7 +420,8 @@ async def execute_connection_delete(
         await callback.answer()
         return
 
-    conn_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    conn_id = int(cb_data.split(":")[1])
     conn_svc = ConnectionService(db, http_client)
     conn = await conn_svc.get_by_id(conn_id)
     if not conn:
@@ -477,7 +482,8 @@ async def start_wp_connect(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
@@ -667,7 +673,8 @@ async def start_tg_connect(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
@@ -954,7 +961,8 @@ async def tg_topic_choice(
         await callback.answer()
         return
 
-    thread_id = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    thread_id = int(cb_data.split(":")[-1])
 
     if thread_id == 0:
         # General / no topic
@@ -1017,7 +1025,8 @@ async def start_vk_connect(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
@@ -1078,7 +1087,8 @@ async def vk_type_selected(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, vk_type = int(parts[1]), parts[3]
 
     project = await project_service_factory(db).get_owned_project(pid, user.id)
@@ -1397,7 +1407,8 @@ async def start_pinterest_connect(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     project = await project_service_factory(db).get_owned_project(project_id, user.id)
     if not project:
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
@@ -1474,7 +1485,8 @@ async def _cancel_connection_wizard(
 
     # Get project_id from callback_data (conn:{pid}:*_cancel) or FSM state
     project_id: int | None = None
-    parts = (callback.data or "").split(":")
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     if len(parts) >= 2 and parts[1].isdigit():
         project_id = int(parts[1])
 

@@ -353,7 +353,6 @@ async def vk_group_select_deeplink(
     if not callback.data:
         await callback.answer()
         return
-
     parts = callback.data.split(":")
     nonce = parts[1]
     group_id = int(parts[2])

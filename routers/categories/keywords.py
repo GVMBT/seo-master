@@ -26,7 +26,7 @@ from aiogram.types import (
 )
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
@@ -246,7 +246,8 @@ async def show_keywords(
         await callback.answer()
         return
 
-    category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    category_id = int(cb_data.split(":")[1])
     _, category, _ = await _check_category_ownership(category_id, user, db)
 
     if not category:
@@ -283,7 +284,8 @@ async def start_generation(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     _, category, project_id = await _check_category_ownership(cat_id, user, db)
 
     if not category:
@@ -370,7 +372,8 @@ async def start_upload(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     _, category, project_id = await _check_category_ownership(cat_id, user, db)
 
     if not category:
@@ -416,7 +419,8 @@ async def show_cluster_list(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     _, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
@@ -456,7 +460,8 @@ async def paginate_clusters(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[2])
     page = int(parts[3])
 
@@ -499,7 +504,8 @@ async def show_cluster_detail(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[2])
     idx = int(parts[3])
 
@@ -574,7 +580,8 @@ async def download_csv(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     _, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
@@ -638,7 +645,8 @@ async def show_delete_cluster_list(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     _, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
@@ -670,7 +678,8 @@ async def paginate_delete_clusters(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[2])
     page = int(parts[3])
 
@@ -700,7 +709,8 @@ async def delete_single_cluster(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     idx = int(parts[3])
 
@@ -754,7 +764,8 @@ async def delete_all_ask(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     _, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
@@ -791,7 +802,8 @@ async def delete_all_confirm(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     cats_repo, category, _ = await _check_category_ownership(cat_id, user, db)
 
     if not category:
@@ -836,7 +848,8 @@ async def cancel_generation_inline(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     await state.clear()
 
     _, category, _ = await _check_category_ownership(cat_id, user, db)
@@ -867,7 +880,8 @@ async def cancel_upload_inline(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     await state.clear()
 
     _, category, _ = await _check_category_ownership(cat_id, user, db)

@@ -32,7 +32,7 @@ from aiogram.types import (
     Message,
 )
 
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts import strings as S
 from bot.texts.emoji import E
@@ -321,7 +321,6 @@ async def pipeline_select_connection(
     if not callback.data:
         await callback.answer()
         return
-
     parts = callback.data.split(":")
     project_id = int(parts[2])
     conn_id = int(parts[4])
@@ -773,7 +772,8 @@ async def pipeline_tg_topic_choice(
         await callback.answer()
         return
 
-    thread_id = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    thread_id = int(cb_data.split(":")[-1])
 
     if thread_id == 0:
         # General / no topic
@@ -867,7 +867,6 @@ async def pipeline_vk_type_selected(
     if not callback.data:
         await callback.answer()
         return
-
     vk_type = callback.data.split(":")[-1]
     await state.update_data(vk_type=vk_type)
 

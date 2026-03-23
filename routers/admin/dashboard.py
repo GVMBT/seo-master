@@ -20,7 +20,7 @@ from bot.assets import edit_screen
 from bot.config import get_settings
 from bot.exceptions import AppError
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import AdminServiceFactory
 from bot.texts import strings as S
 from bot.texts.emoji import E
@@ -319,7 +319,8 @@ async def user_balance_start(callback: CallbackQuery, user: User, state: FSMCont
         await callback.answer()
         return
 
-    parts = str(callback.data).split(":")
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     target_id = int(parts[2])
     action = parts[3]  # "credit" or "debit"
 
@@ -419,7 +420,8 @@ async def user_block_toggle(
         await callback.answer()
         return
 
-    parts = str(callback.data).split(":")
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     target_id = int(parts[2])
     action = parts[3]
 
@@ -475,7 +477,8 @@ async def user_activity(
         await callback.answer()
         return
 
-    target_id = int(str(callback.data).split(":")[2])
+    cb_data = safe_callback_data(callback)
+    target_id = int(cb_data.split(":")[2])
     admin_svc = admin_service_factory(db)
     pubs = await admin_svc.get_recent_publications(target_id, limit=5)
 
@@ -531,7 +534,8 @@ async def user_card_reload(
         return
 
     await state.clear()
-    target_id = int(str(callback.data).split(":")[2])
+    cb_data = safe_callback_data(callback)
+    target_id = int(cb_data.split(":")[2])
     admin_svc = admin_service_factory(db)
     card = await admin_svc.lookup_user(user_id=target_id)
 
@@ -600,7 +604,8 @@ async def broadcast_audience(
         await callback.answer()
         return
 
-    audience_key = str(callback.data).split(":")[-1]
+    cb_data = safe_callback_data(callback)
+    audience_key = cb_data.split(":")[-1]
 
     # Count audience using service
     admin_svc = admin_service_factory(db)

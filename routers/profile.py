@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
 
 from bot.assets import edit_screen
 from bot.config import get_settings
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.legal import PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL
@@ -153,7 +153,8 @@ async def toggle_notification(
         await callback.answer()
         return
 
-    field = callback.data.split(":")[-1]  # type: ignore[union-attr]
+    data = safe_callback_data(callback)
+    field = data.split(":")[-1]
 
     # Determine current value for the field being toggled
     current_value = {"publications": user.notify_publications, "balance": user.notify_balance}.get(
