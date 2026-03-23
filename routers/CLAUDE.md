@@ -29,7 +29,12 @@
 ### routers/platforms/
 | File | LOC | Purpose |
 |---|---|---|
-| connections.py | 1551 | CRUD + 4 FSM wizards: ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM |
+| _shared.py | ~400 | Shared constants, helpers, CRUD handlers (list, manage, delete) |
+| wordpress.py | ~200 | ConnectWordPressFSM wizard (3 states: url, login, password) |
+| telegram.py | ~350 | ConnectTelegramFSM wizard (3 states: channel, token, topic) |
+| vk.py | ~380 | ConnectVKFSM wizard (3 states: select_type, enter_group_url, enter_token) |
+| pinterest.py | ~80 | ConnectPinterestFSM wizard (OAuth flow) |
+| connections.py | ~20 | Backward-compatible re-exports (facade) |
 
 ### routers/publishing/
 | File | LOC | Purpose |
