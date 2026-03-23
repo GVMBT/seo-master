@@ -62,7 +62,7 @@ def format_connection_display(conn: Any, *, with_status: bool = False) -> str:
     Social: Russian name (e.g. "ВКонтакте", "Пинтерест", "Телеграм")
     VK with group_name in metadata: "ВКонтакте: Group Name"
     """
-    label: str = _PLATFORM_LABELS_RU.get(conn.platform_type, conn.platform_type)
+    label = _PLATFORM_LABELS_RU.get(conn.platform_type) or str(conn.platform_type)
     if conn.platform_type == "wordpress":
         text = str(conn.identifier)
     elif conn.platform_type == "vk":
