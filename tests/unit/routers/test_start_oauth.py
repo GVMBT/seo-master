@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from cryptography.fernet import Fernet
 
-from routers.start import (
+from routers.oauth_deeplinks import (
     _handle_pinterest_deep_link,
     _handle_vk_deep_link,
     _return_to_pipeline,
@@ -26,7 +26,7 @@ from tests.unit.routers.conftest import make_project, make_user
 
 _FERNET_KEY = Fernet.generate_key().decode()
 
-_MODULE = "routers.start"
+_MODULE = "routers.oauth_deeplinks"
 
 
 # ---------------------------------------------------------------------------
