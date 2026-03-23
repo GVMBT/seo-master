@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
@@ -73,7 +73,8 @@ async def scheduler_entry(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     text = (
         Screen(E.SCHEDULE, S.SCHEDULER_TITLE)
         .blank()
@@ -97,7 +98,8 @@ async def scheduler_articles_entry(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     cats = await scheduler_service.get_project_categories(project_id, user.id)
     if cats is None:
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
@@ -129,7 +131,8 @@ async def scheduler_social_entry(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     social_conns = await scheduler_service.get_social_connections(project_id, user.id)
     if social_conns is None:
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
@@ -171,7 +174,8 @@ async def scheduler_category(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     project_id = int(parts[1])
     cat_id = int(parts[3])
 
@@ -214,7 +218,8 @@ async def scheduler_conn_list_back(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     ctx = await scheduler_service.verify_category_ownership(cat_id, user.id)
     if not ctx:
         await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
@@ -252,7 +257,8 @@ async def scheduler_connection(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     conn_id = int(parts[3])
 
@@ -308,7 +314,8 @@ async def scheduler_preset(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     conn_id = int(parts[2])
     preset_key = parts[4]
@@ -380,7 +387,8 @@ async def scheduler_disable(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     conn_id = int(parts[2])
 
@@ -426,7 +434,8 @@ async def scheduler_manual(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     conn_id = int(parts[2])
 
@@ -478,7 +487,8 @@ async def schedule_day_toggle(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.answer()
         return
 
-    day = callback.data.split(":")[-1]  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    day = cb_data.split(":")[-1]
     data = await state.get_data()
     selected: set[str] = set(data.get("sched_days", []))
 
@@ -537,7 +547,8 @@ async def schedule_count_select(callback: CallbackQuery, state: FSMContext) -> N
         await callback.answer()
         return
 
-    count = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    count = int(cb_data.split(":")[-1])
     await state.update_data(sched_count=count, sched_times=[])
     await state.set_state(ScheduleSetupFSM.select_times)
 
@@ -566,7 +577,8 @@ async def schedule_time_toggle(callback: CallbackQuery, state: FSMContext) -> No
         return
 
     # callback_data = "sched:time:10:00" -> extract "10:00"
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     time_str = f"{parts[2]}:{parts[3]}"
 
     data = await state.get_data()
@@ -686,7 +698,8 @@ async def scheduler_social_category(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     project_id = int(parts[1])
     cat_id = int(parts[3])
 
@@ -724,7 +737,8 @@ async def scheduler_social_conn_list_back(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     ctx = await scheduler_service.verify_category_ownership(cat_id, user.id)
     if not ctx:
         await callback.answer(S.CATEGORY_NOT_FOUND, show_alert=True)
@@ -762,7 +776,8 @@ async def scheduler_social_connection(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     conn_id = int(parts[3])
 
@@ -824,7 +839,8 @@ async def scheduler_crosspost_config(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     conn_id = int(parts[2])
 
@@ -869,7 +885,8 @@ async def scheduler_crosspost_toggle(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     conn_id = int(parts[2])
     target_conn_id = int(parts[3])
@@ -911,7 +928,8 @@ async def scheduler_crosspost_save(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     cat_id = int(parts[1])
     conn_id = int(parts[2])
 

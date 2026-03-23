@@ -21,7 +21,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, ProjectServiceFactory
 from bot.texts import strings as S
 from bot.texts.emoji import E
@@ -213,7 +213,8 @@ async def pipeline_projects_page(
         await callback.answer()
         return
 
-    page = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    page = int(cb_data.split(":")[-1])
     proj_svc = project_service_factory(db)
     projects = await proj_svc.list_by_user(user.id)
 
@@ -578,7 +579,8 @@ async def pipeline_select_category(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     category_id = int(parts[4])
 
     cat_svc = category_service_factory(db)
@@ -617,7 +619,8 @@ async def pipeline_categories_page(
         await callback.answer("Проект не выбран.", show_alert=True)
         return
 
-    page = int(callback.data.split(":")[-1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    page = int(cb_data.split(":")[-1])
     cat_svc = category_service_factory(db)
     categories = await cat_svc.list_by_project(project_id, user.id) or []
 

@@ -13,7 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory
 from bot.texts import strings as S
 from bot.texts.emoji import E
@@ -134,7 +134,8 @@ async def show_prices(
         await callback.answer()
         return
 
-    category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    category_id = int(cb_data.split(":")[1])
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(category_id, user.id)
 
@@ -165,7 +166,8 @@ async def start_text(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
@@ -262,7 +264,8 @@ async def start_excel(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
     if not category:
@@ -458,7 +461,8 @@ async def delete_prices(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(cat_id, user.id)
 
@@ -493,7 +497,8 @@ async def cancel_prices_inline(
         await callback.answer()
         return
 
-    cat_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    cat_id = int(cb_data.split(":")[1])
     await state.clear()
 
     cat_svc = category_service_factory(db)

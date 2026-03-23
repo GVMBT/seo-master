@@ -48,6 +48,19 @@ def safe_message(callback: CallbackQuery) -> Message | None:
     return callback.message
 
 
+def safe_callback_data(callback: CallbackQuery) -> str:
+    """Extract callback.data with type narrowing.
+
+    All handlers using F.data filters guarantee data is not None.
+    Raises AppError if called on a callback without data (should never happen).
+    """
+    if callback.data is None:
+        from bot.exceptions import AppError
+
+        raise AppError("callback.data is None — handler filter should prevent this")
+    return callback.data
+
+
 # ---------------------------------------------------------------------------
 # Photo→text transition helper
 # ---------------------------------------------------------------------------

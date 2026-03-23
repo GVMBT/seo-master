@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery
 
 from bot.assets import edit_screen
 from bot.config import get_settings
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.texts import strings as S
 from db.client import SupabaseClient
 from db.models import User
@@ -59,7 +59,8 @@ async def select_package(
         await callback.answer()
         return
 
-    raw_name = callback.data.split(":")[1]  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    raw_name = cb_data.split(":")[1]
     pkg = get_package(raw_name)
     if pkg is None:
         await callback.answer(S.TARIFF_PACKAGE_NOT_FOUND, show_alert=True)
@@ -90,7 +91,8 @@ async def pay_with_stars(
         await callback.answer()
         return
 
-    raw_name = callback.data.split(":")[1]  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    raw_name = cb_data.split(":")[1]
     pkg = get_package(raw_name)
     if pkg is None:
         await callback.answer(S.TARIFF_PACKAGE_NOT_FOUND, show_alert=True)
@@ -123,7 +125,8 @@ async def pay_with_yookassa(
         await callback.answer()
         return
 
-    raw_name = callback.data.split(":")[1]  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    raw_name = cb_data.split(":")[1]
     pkg = get_package(raw_name)
     if pkg is None:
         await callback.answer(S.TARIFF_PACKAGE_NOT_FOUND, show_alert=True)

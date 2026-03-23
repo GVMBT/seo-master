@@ -11,7 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts import strings as S
 from bot.texts.emoji import E
@@ -208,7 +208,8 @@ async def show_edit_screen(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
 
     proj_svc = project_service_factory(db)
     project = await proj_svc.get_owned_project(project_id, user.id)
@@ -298,7 +299,8 @@ async def start_field_edit(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     project_id = int(parts[1])
     field = parts[3]
 

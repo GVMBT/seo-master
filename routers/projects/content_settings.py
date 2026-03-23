@@ -11,7 +11,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
-from bot.helpers import safe_edit_text, safe_message
+from bot.helpers import safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts import strings as S
 from bot.texts.content_options import (
@@ -230,7 +230,8 @@ async def show_settings(
     if not msg:
         await callback.answer()
         return
-    pid = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    pid = int(cb_data.split(":")[1])
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
     )
@@ -256,7 +257,8 @@ async def back_to_settings(
     if not msg:
         await callback.answer()
         return
-    pid = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    pid = int(cb_data.split(":")[1])
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
     )
@@ -287,7 +289,8 @@ async def show_platform_card(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -320,7 +323,8 @@ async def reset_platform(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     if target == "d":
         await callback.answer()
@@ -355,7 +359,8 @@ async def show_text_menu(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -390,7 +395,8 @@ async def show_word_count(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -421,7 +427,8 @@ async def select_word_count(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, wc = int(parts[1]), parts[2], int(parts[4])
     if wc not in WORD_COUNTS:
         await callback.answer(S.CONTENT_INVALID_VALUE, show_alert=True)
@@ -456,7 +463,8 @@ async def show_html_style(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -488,7 +496,8 @@ async def select_html_style(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(HTML_STYLES):
         await callback.answer(S.CONTENT_UNKNOWN_STYLE, show_alert=True)
@@ -524,7 +533,8 @@ async def show_text_styles(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -556,7 +566,8 @@ async def toggle_text_style(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(TEXT_STYLES):
         await callback.answer(S.CONTENT_UNKNOWN_STYLE, show_alert=True)
@@ -603,7 +614,8 @@ async def show_image_menu(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -638,7 +650,8 @@ async def show_preview_format(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -671,7 +684,8 @@ async def select_preview_format(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(ASPECT_RATIOS):
         await callback.answer("Неизвестный формат", show_alert=True)
@@ -702,7 +716,8 @@ async def show_article_formats(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -735,7 +750,8 @@ async def toggle_article_format(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(ASPECT_RATIOS):
         await callback.answer("Неизвестный формат", show_alert=True)
@@ -778,7 +794,8 @@ async def show_image_styles(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -810,7 +827,8 @@ async def toggle_image_style(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(IMAGE_STYLES):
         await callback.answer(S.CONTENT_UNKNOWN_STYLE, show_alert=True)
@@ -852,7 +870,8 @@ async def show_image_count(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -883,7 +902,8 @@ async def select_image_count(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, count = int(parts[1]), parts[2], int(parts[4])
     if count < 0 or count > 10:
         await callback.answer("Допустимо: 0-10", show_alert=True)
@@ -913,7 +933,8 @@ async def show_text_on_image(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -946,7 +967,8 @@ async def select_text_on_image(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, pct = int(parts[1]), parts[2], int(parts[4])
     if pct not in TEXT_ON_IMAGE:
         await callback.answer(S.CONTENT_INVALID_VALUE, show_alert=True)
@@ -976,7 +998,8 @@ async def show_cameras(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -1008,7 +1031,8 @@ async def toggle_camera(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(CAMERAS):
         await callback.answer("Неизвестная камера", show_alert=True)
@@ -1050,7 +1074,8 @@ async def show_angles(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -1082,7 +1107,8 @@ async def toggle_angle(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(ANGLES):
         await callback.answer("Неизвестный ракурс", show_alert=True)
@@ -1124,7 +1150,8 @@ async def show_quality(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -1156,7 +1183,8 @@ async def toggle_quality(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(QUALITY):
         await callback.answer("Неизвестное значение", show_alert=True)
@@ -1198,7 +1226,8 @@ async def show_tones(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target = int(parts[1]), parts[2]
     project = await _load_project(
         callback, pid, user, db, project_service_factory,
@@ -1230,7 +1259,8 @@ async def toggle_tone(
     if not msg:
         await callback.answer()
         return
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     pid, target, idx = int(parts[1]), parts[2], int(parts[4])
     if idx < 0 or idx >= len(TONES):
         await callback.answer("Неизвестная тональность", show_alert=True)

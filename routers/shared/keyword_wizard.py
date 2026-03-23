@@ -749,7 +749,6 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
             if not callback.data:
                 await callback.answer()
                 return
-
             city = callback.data.split(":")[-1]
             data = await state.get_data()
             products = data.get("kw_products", "")

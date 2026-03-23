@@ -4,7 +4,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from bot.assets import edit_screen
-from bot.helpers import safe_message
+from bot.helpers import safe_callback_data, safe_message
 from bot.service_factory import ProjectServiceFactory
 from bot.texts import strings as S
 from bot.texts.emoji import E
@@ -35,7 +35,8 @@ async def project_list_page(
     project_service_factory: ProjectServiceFactory,
 ) -> None:
     """Handle pagination for project list."""
-    page_str = callback.data.split(":")[-1] if callback.data else "1"
+    data = safe_callback_data(callback)
+    page_str = data.split(":")[-1]
     try:
         page = int(page_str)
     except ValueError:

@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from bot.assets import edit_screen
 from bot.fsm_utils import ensure_no_active_fsm
-from bot.helpers import get_owned_project, safe_edit_text, safe_message
+from bot.helpers import get_owned_project, safe_callback_data, safe_edit_text, safe_message
 from bot.service_factory import CategoryServiceFactory, TokenServiceFactory
 from bot.texts import strings as S
 from bot.texts.emoji import E
@@ -61,7 +61,8 @@ async def show_category_list(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     project = await get_owned_project(db, project_id, user.id)
     if not project:
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
@@ -114,7 +115,8 @@ async def paginate_categories(
         await callback.answer()
         return
 
-    parts = callback.data.split(":")  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    parts = cb_data.split(":")
     project_id = int(parts[2])
     page = int(parts[3])
 
@@ -163,7 +165,8 @@ async def start_category_create(
         await callback.answer()
         return
 
-    project_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    project_id = int(cb_data.split(":")[1])
     project = await get_owned_project(db, project_id, user.id)
     if not project:
         await callback.answer(S.PROJECT_NOT_FOUND, show_alert=True)
@@ -270,7 +273,8 @@ async def show_category_card(
         await callback.answer()
         return
 
-    category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    category_id = int(cb_data.split(":")[1])
     cat_svc = category_service_factory(db)
     category = await cat_svc.get_owned_category(category_id, user.id)
     if not category:
@@ -342,7 +346,8 @@ async def confirm_category_delete(
         await callback.answer()
         return
 
-    category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    category_id = int(cb_data.split(":")[1])
     cat_svc = category_service_factory(db)
     result = await cat_svc.get_delete_impact(category_id, user.id)
     if not result:
@@ -381,7 +386,8 @@ async def execute_category_delete(
         await callback.answer()
         return
 
-    category_id = int(callback.data.split(":")[1])  # type: ignore[union-attr]
+    cb_data = safe_callback_data(callback)
+    category_id = int(cb_data.split(":")[1])
     cat_svc = category_service_factory(db)
     token_svc = token_service_factory(db)
 
