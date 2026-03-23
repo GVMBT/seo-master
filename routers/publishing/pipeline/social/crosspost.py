@@ -69,17 +69,18 @@ async def crosspost_start(
     all_conns = await conn_svc.get_by_project(project_id)
     targets = [
         c for c in all_conns
-        if c.id != connection_id and c.platform_type in _SOCIAL_TYPES
+        if c.id != connection_id and c.platform_type in _SOCIAL_TYPES and c.status == "active"
     ]
 
     if not targets:
         await callback.answer(S.POST_CROSSPOST_NO_TARGETS, show_alert=True)
         return
 
-    # Store targets and all selected by default
-    target_ids = {c.id for c in targets}
+    # Store targets (ordered) and all selected by default
+    target_ids = [c.id for c in targets]
+    target_id_set = set(target_ids)
     await state.update_data(
-        crosspost_target_ids=list(target_ids),
+        crosspost_target_ids=target_ids,
         crosspost_selected_ids=list(target_ids),
     )
 
@@ -96,7 +97,7 @@ async def crosspost_start(
         msg,
         S.POST_CROSSPOST_TITLE.format(keyword=html.escape(keyword)) + "\n\n"
         + S.POST_CROSSPOST_QUESTION,
-        reply_markup=crosspost_select_kb(targets, target_ids),
+        reply_markup=crosspost_select_kb(targets, target_id_set),
     )
     await state.set_state(SocialPipelineFSM.cross_post_select)
     await callback.answer()
@@ -130,21 +131,31 @@ async def crosspost_toggle(
         return
 
     data = await state.get_data()
-    selected: set[int] = set(data.get("crosspost_selected_ids", []))
     target_ids: list[int] = data.get("crosspost_target_ids", [])
+    target_id_set = set(target_ids)
+
+    # Validate toggle_id against whitelist (prevent stale callback_data injection)
+    if toggle_id not in target_id_set:
+        await callback.answer(S.PIPELINE_SESSION_EXPIRED, show_alert=True)
+        return
+
+    selected: set[int] = set(data.get("crosspost_selected_ids", [])) & target_id_set
 
     if toggle_id in selected:
         selected.discard(toggle_id)
     else:
         selected.add(toggle_id)
 
-    await state.update_data(crosspost_selected_ids=list(selected))
+    # Preserve target order in selected_ids
+    await state.update_data(
+        crosspost_selected_ids=[cid for cid in target_ids if cid in selected],
+    )
 
     # Rebuild keyboard with updated selection
     project_id: int = data.get("project_id", 0)
     conn_svc = ConnectionService(db, http_client)
     all_conns = await conn_svc.get_by_project(project_id)
-    targets = [c for c in all_conns if c.id in target_ids]
+    targets = [c for c in all_conns if c.id in target_id_set]
 
     from keyboards.pipeline import crosspost_select_kb
 
@@ -212,7 +223,11 @@ async def _execute_crosspost(
     from services.tokens import TokenService, estimate_cross_post_cost
 
     data = await state.get_data()
-    selected_ids: list[int] = data.get("crosspost_selected_ids", [])
+    allowed_ids = set(data.get("crosspost_target_ids", []))
+    selected_ids: list[int] = [
+        cid for cid in data.get("crosspost_selected_ids", [])
+        if cid in allowed_ids
+    ]
     project_id: int = data.get("project_id", 0)
     category_id: int = data.get("category_id", 0)
     generated_text: str = data.get("generated_text", "")
