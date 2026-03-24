@@ -59,7 +59,7 @@ log = structlog.get_logger()
 router = Router()
 
 def _get_image_count(category: object, project: object | None = None) -> int:
-    """Extract image count from project/category image_settings, default 4.
+    """Extract image count from project/category image_settings, default 0.
 
     Fallback: project.image_settings -> category.image_settings.
     """
