@@ -248,7 +248,7 @@ async def confirm_generate(
     # C25: re-read image_count from category on retry (user may have changed settings
     # between error and retry via another FSM or Toolbox)
     fresh_image_count = await _fresh_image_count(db, category_id)
-    image_count = fresh_image_count if fresh_image_count is not None else data.get("image_count", 4)
+    image_count = fresh_image_count if fresh_image_count is not None else data.get("image_count", 0)
 
     old_cost = data.get("_last_estimated_cost")
     cost = estimate_article_cost(images_count=image_count)
@@ -401,7 +401,7 @@ async def _run_generation(
     """Core generation logic — called from confirm and regenerate."""
     category_id = fsm_data.get("category_id")
     project_id = fsm_data.get("project_id")
-    image_count = fsm_data.get("image_count", 4)
+    image_count = fsm_data.get("image_count", 0)
     tokens_charged = fsm_data.get("tokens_charged") or 0
     connection_id = fsm_data.get("connection_id")
     preview_only = fsm_data.get("preview_only", False)

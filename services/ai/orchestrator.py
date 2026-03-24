@@ -668,12 +668,14 @@ class AIOrchestrator:
             aspect_ratio = "1:1"
             formats = image_settings.get("formats", [])
             if formats:
-                aspect_ratio = formats[0]
-            quality = image_settings.get("quality", "HD")
-            size_map = {"HD": "1K", "Ultra HD": "2K", "8K": "4K"}
+                aspect_ratio = formats[0] if isinstance(formats[0], str) else str(formats[0])
+            # quality is list[str] from UI (e.g. ["Ultra HD", "8K"])
+            raw_quality = image_settings.get("quality", [])
+            first_q = (raw_quality[0] if raw_quality else "") if isinstance(raw_quality, list) else str(raw_quality)
+            size_map = {"Ultra HD": "2K", "8K": "4K", "RAW": "2K"}
             extra_body["image_config"] = {
                 "aspect_ratio": aspect_ratio,
-                "image_size": size_map.get(quality, "1K"),
+                "image_size": size_map.get(first_q, "1K"),
             }
         elif task == "article_research":
             extra_body["search_context_size"] = "high"

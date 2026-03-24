@@ -138,7 +138,7 @@ async def show_readiness_check(
         await clear_checkpoint(redis, user.id)
         return
 
-    image_count = data.get("image_count", 4)
+    image_count = data.get("image_count", 0)
 
     settings = get_settings()
     token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
@@ -187,7 +187,7 @@ async def show_readiness_check_msg(
         await clear_checkpoint(redis, user.id)
         return
 
-    image_count = data.get("image_count", 4)
+    image_count = data.get("image_count", 0)
 
     settings = get_settings()
     token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
@@ -490,7 +490,7 @@ async def readiness_images_menu(callback: CallbackQuery, state: FSMContext) -> N
         return
 
     data = await state.get_data()
-    current_count = data.get("image_count", 4)
+    current_count = data.get("image_count", 0)
 
     await safe_edit_text(msg, 
         S.PIPELINE_IMAGES_CURRENT.format(count=current_count),
@@ -562,7 +562,7 @@ async def readiness_done(
         await callback.answer("Категория не найдена.", show_alert=True)
         return
 
-    image_count = data.get("image_count", 4)
+    image_count = data.get("image_count", 0)
     settings = get_settings()
     token_svc = TokenService(db=db, admin_ids=settings.admin_ids)
     balance = await token_svc.get_balance(user.id)

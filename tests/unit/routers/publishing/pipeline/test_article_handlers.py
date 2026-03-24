@@ -1239,7 +1239,7 @@ class TestPipelineSelectCategory:
         with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_select_category(mock_callback, mock_state, user, MagicMock(), mock_redis, _cf)
 
-        mock_state.update_data.assert_called_with(category_id=12, category_name="Content Marketing", image_count=4)
+        mock_state.update_data.assert_called_with(category_id=12, category_name="Content Marketing", image_count=0)
 
     async def test_category_not_found(
         self,
@@ -1301,7 +1301,7 @@ class TestPipelineCreateCategoryName:
         with patches["conn"], patches["cats"], patches["fsm_utils"], patches["proj_repo"]:
             await pipeline_create_category_name(mock_message, mock_state, user, MagicMock(), mock_redis, _cf)
 
-        mock_state.update_data.assert_called_with(category_id=20, category_name="New Category", image_count=4)
+        mock_state.update_data.assert_called_with(category_id=20, category_name="New Category", image_count=0)
 
     async def test_empty_name_rejected(
         self,

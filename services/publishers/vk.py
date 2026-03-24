@@ -399,6 +399,8 @@ class VKPublisher(BasePublisher):
         }
         if owner_id:
             post_params["owner_id"] = owner_id
+        if group_id:
+            post_params["from_group"] = "1"
 
         resp = await self._client.post(
             f"{VK_API_URL}/wall.post",

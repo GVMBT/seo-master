@@ -559,7 +559,7 @@ class PublishService:
                     )
 
         resolved_image = eff_image_settings or {}
-        image_count = resolved_image.get("count", 4)
+        image_count = resolved_image.get("count", 0)
         image_context: dict[str, Any] = {
             "keyword": keyword,
             "content_type": "article",

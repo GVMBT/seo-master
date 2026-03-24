@@ -647,7 +647,9 @@ class ArticleService:
             styles = [styles]
         if not styles:
             legacy = text_settings.get("style")
-            styles = [legacy] if legacy else ["Информативный"]
+            styles = [legacy] if legacy else []
+
+        html_style = text_settings.get("html_style", "")
 
         context: dict[str, Any] = {
             "keyword": keyword,
@@ -667,7 +669,8 @@ class ArticleService:
             "language": "ru",
             "words_min": words_min,
             "words_max": words_max,
-            "text_style": ", ".join(s for s in styles if s) or "Информативный",
+            "text_style": ", ".join(s for s in styles if s),
+            "html_style": html_style,
             "niche_type": niche_type,
             "current_date": datetime.now(tz=UTC).strftime("%B %Y"),
             "lsi_keywords": lsi_keywords,
@@ -676,7 +679,7 @@ class ArticleService:
             "serper_questions": serper_questions,
             "competitor_analysis": competitor_analysis,
             "competitor_gaps": competitor_gaps,
-            "images_count": image_count if image_count is not None else int(image_settings.get("count", 4)),
+            "images_count": image_count if image_count is not None else int(image_settings.get("count", 0)),
             "text_color": text_color,
             "accent_color": accent_color,
         }

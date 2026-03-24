@@ -119,7 +119,7 @@ class PreviewService:
 
         project = await ProjectsRepository(self._db).get_by_id(project_id)
         if image_count is None:
-            image_count = int(eff_image_settings.get("count", 4))
+            image_count = int(eff_image_settings.get("count", 0))
 
         # Phase 1: Gather websearch + research data (Serper PAA + Firecrawl + Sonar Pro)
         project_url = project.website_url if project else None

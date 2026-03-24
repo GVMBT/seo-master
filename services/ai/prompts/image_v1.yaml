@@ -18,7 +18,7 @@ user: |
   <% endif %>
 
   Компания: <<company_name>> (<<specialization>>).
-  Стиль: <<style>>. Тональность: <<tone>>.
+  <% if style %>Стиль: <<style>>.<% endif %> <% if tone %>Тональность: <<tone>>.<% endif %>
   <<camera_instruction>>
   <<angle_instruction>>
   <<quality_instruction>>
@@ -53,12 +53,12 @@ variables:
     required: true
   - name: style
     source: image_settings.styles[0]
-    required: true
-    default: "Фотореализм"
+    required: false
+    default: ""
   - name: tone
     source: image_settings.tones[0]
-    required: true
-    default: "Нейтральный"
+    required: false
+    default: ""
   - name: camera_instruction
     source: image_settings.cameras
     required: false

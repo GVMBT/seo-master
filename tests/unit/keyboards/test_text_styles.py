@@ -347,9 +347,7 @@ async def test_article_service_default_style_when_no_styles_key() -> None:
 
     article_call = mock_orch.generate.call_args_list[1]
     request = article_call.args[0]
-    assert request.context["text_style"] == (
-        "\u0418\u043d\u0444\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u043d\u044b\u0439"
-    )
+    assert request.context["text_style"] == ""
 
 
 async def test_social_post_service_default_style_when_no_styles_key() -> None:
