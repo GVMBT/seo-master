@@ -7,6 +7,7 @@ from bot.texts.emoji import TOGGLE_ON
 __all__ = [
     "project_angle_kb",
     "project_article_format_kb",
+    "project_brand_style_kb",
     "project_camera_kb",
     "project_content_settings_kb",
     "project_html_style_kb",
@@ -144,6 +145,7 @@ def project_text_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:
                 btn(text="Стиль", callback_data=f"{p}:tstyle"),
             ],
             [btn(text="HTML-верстка", callback_data=f"{p}:html")],
+            [btn(text="Шаблон стиля", callback_data=f"{p}:bstyle")],
             [btn(text="Назад", callback_data=f"{p}:card")],
         ]
     )
@@ -197,6 +199,19 @@ def project_text_style_kb(pid: int, selected: set[str], target: str = "d") -> In
         f"{p}:ts",
         f"{p}:text",
     )
+
+
+def project_brand_style_kb(
+    pid: int, has_style: bool, target: str = "d",
+) -> InlineKeyboardMarkup:
+    """Brand style template: [Clear] if exists, [Back]."""
+    p = f"psettings:{pid}:{target}"
+    btn = InlineKeyboardButton
+    rows: list[list[InlineKeyboardButton]] = []
+    if has_style:
+        rows.append([btn(text="Очистить", callback_data=f"{p}:bstyle_clear")])
+    rows.append([btn(text="Назад", callback_data=f"{p}:text")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def project_image_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:

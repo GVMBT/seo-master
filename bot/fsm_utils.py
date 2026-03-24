@@ -17,6 +17,7 @@ _FSM_NAMES: dict[str, str] = {
     "PriceInputFSM": "ввод цен",
     "DescriptionGenerateFSM": "генерация описания",
     "ContentSettingsFSM": "настройка контента",
+    "BrandStyleFSM": "шаблон стиля",
     "BroadcastFSM": "рассылка сообщений",
     "UserLookupFSM": "просмотр пользователя",
     "BalanceAdjustFSM": "корректировка баланса",

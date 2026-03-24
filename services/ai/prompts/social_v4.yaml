@@ -16,6 +16,13 @@ system: |
   <% if category_description %>Товар/услуга: <<category_description>>.<% endif %>
   <% if reviews_excerpt %>Отзывы клиентов: <<reviews_excerpt>>.<% endif %>
 
+  <% if brand_style %>
+  <BRAND_STYLE_TEMPLATE>
+  Ниже — образец стиля клиента. Адаптируй тон, подачу и оформление поста под этот шаблон. НЕ копируй текст — используй как стилистический ориентир.
+  <<brand_style>>
+  </BRAND_STYLE_TEMPLATE>
+  <% endif %>
+
   Ты пишешь от лица компании как свой сотрудник — не рекламный копирайтер, не маркетолог.
   Тон: экспертный, но живой. Как если бы мастер объяснял клиенту в переписке.
 
@@ -174,6 +181,9 @@ variables:
     source: text_settings.style
     required: true
     default: "Разговорный"
+  - name: brand_style
+    required: false
+    default: ""
   - name: words_min
     source: text_settings
     required: true
