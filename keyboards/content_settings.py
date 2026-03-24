@@ -36,33 +36,28 @@ def project_content_settings_kb(
     pid: int,
     connected_platforms: list[str] | None = None,
 ) -> InlineKeyboardMarkup:
-    """Main content settings screen with platform tabs (grid layout)."""
-    default_btn = InlineKeyboardButton(
-        text="По умолчанию",
-        callback_data=f"psettings:{pid}:d:card",
-    )
-    rows: list[list[InlineKeyboardButton]] = [[default_btn]]
-    # Add connected platforms in pairs
+    """Main content settings screen: [Text][Images] + platform tabs."""
+    p = f"psettings:{pid}:d"
+    btn = InlineKeyboardButton
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            btn(text="Текст", callback_data=f"{p}:text"),
+            btn(text="Изображения", callback_data=f"{p}:images"),
+        ],
+    ]
+    # Platform override tabs in pairs
     platforms = connected_platforms or []
-    pair: list[InlineKeyboardButton] = []
-    for pt in platforms:
-        name = _PLATFORM_NAMES.get(pt, pt.capitalize())
-        pair.append(
-            InlineKeyboardButton(
-                text=name,
-                callback_data=f"psettings:{pid}:{pt}:card",
-            )
-        )
-        if len(pair) == 2:
+    if platforms:
+        pair: list[InlineKeyboardButton] = []
+        for pt in platforms:
+            name = _PLATFORM_NAMES.get(pt, pt.capitalize())
+            pair.append(btn(text=name, callback_data=f"psettings:{pid}:{pt}:card"))
+            if len(pair) == 2:
+                rows.append(pair)
+                pair = []
+        if pair:
             rows.append(pair)
-            pair = []
-    if pair:
-        rows.append(pair)
-    back_btn = InlineKeyboardButton(
-        text="К проекту",
-        callback_data=f"project:{pid}:card",
-    )
-    rows.append([back_btn])
+    rows.append([btn(text="К проекту", callback_data=f"project:{pid}:card")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -78,22 +73,15 @@ def project_platform_card_kb(pid: int, target: str) -> InlineKeyboardMarkup:
         callback_data=f"{p}:images",
     )
     rows: list[list[InlineKeyboardButton]] = [[text_btn, img_btn]]
-    if target != "d":
-        reset_btn = InlineKeyboardButton(
-            text="Сбросить",
-            callback_data=f"{p}:reset",
-        )
-        back_btn = InlineKeyboardButton(
-            text="К платформам",
-            callback_data=back_cb,
-        )
-        rows.append([reset_btn, back_btn])
-    else:
-        back_btn = InlineKeyboardButton(
-            text="К платформам",
-            callback_data=back_cb,
-        )
-        rows.append([back_btn])
+    reset_btn = InlineKeyboardButton(
+        text="Сбросить",
+        callback_data=f"{p}:reset",
+    )
+    back_btn = InlineKeyboardButton(
+        text="Назад",
+        callback_data=back_cb,
+    )
+    rows.append([reset_btn, back_btn])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -154,8 +142,9 @@ def _single_select_grid(
 
 
 def project_text_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:
-    """Text settings sub-menu (2x2 grid)."""
+    """Text settings sub-menu."""
     p = f"psettings:{pid}:{target}"
+    back_cb = f"project:{pid}:content_settings" if target == "d" else f"{p}:card"
     btn = InlineKeyboardButton
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -163,10 +152,8 @@ def project_text_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:
                 btn(text="Длина", callback_data=f"{p}:words"),
                 btn(text="Стиль", callback_data=f"{p}:tstyle"),
             ],
-            [
-                btn(text="HTML-верстка", callback_data=f"{p}:html"),
-                btn(text="Назад", callback_data=f"{p}:card"),
-            ],
+            [btn(text="HTML-верстка", callback_data=f"{p}:html")],
+            [btn(text="Назад", callback_data=back_cb)],
         ]
     )
 
@@ -224,6 +211,7 @@ def project_text_style_kb(pid: int, selected: set[str], target: str = "d") -> In
 def project_image_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:
     """Image settings sub-menu (2x5 grid)."""
     p = f"psettings:{pid}:{target}"
+    back_cb = f"project:{pid}:content_settings" if target == "d" else f"{p}:card"
     btn = InlineKeyboardButton
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -236,7 +224,7 @@ def project_image_menu_kb(pid: int, target: str = "d") -> InlineKeyboardMarkup:
             [btn(text="Качество", callback_data=f"{p}:quality"),
              btn(text="Тональность", callback_data=f"{p}:tone")],
             [btn(text="Текст/фото", callback_data=f"{p}:tximg"),
-             btn(text="Назад", callback_data=f"{p}:card")],
+             btn(text="Назад", callback_data=back_cb)],
         ]
     )
 
