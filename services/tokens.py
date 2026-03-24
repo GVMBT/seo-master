@@ -37,7 +37,7 @@ def estimate_text_cost(word_count: int) -> int:
     return math.ceil(word_count / 100) * COST_PER_100_WORDS
 
 
-def estimate_article_cost(word_count: int = 2000, images_count: int = 4) -> int:
+def estimate_article_cost(word_count: int = 2000, images_count: int = 0) -> int:
     """Estimate cost for article + images (default ~320 tokens)."""
     return estimate_text_cost(word_count) + images_count * COST_PER_IMAGE
 

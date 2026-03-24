@@ -6,12 +6,14 @@ Adapts a published social post for other connected platforms using AI.
 from __future__ import annotations
 
 import base64 as b64mod
+import contextlib
 import html
 from typing import Any
 
 import httpx
 import structlog
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -382,4 +384,5 @@ async def _execute_crosspost(
 
     await safe_edit_text(msg, text, reply_markup=crosspost_result_kb())
     await state.set_state(SocialPipelineFSM.cross_post_result)
-    await callback.answer()
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.answer()

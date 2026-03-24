@@ -1185,10 +1185,10 @@ class TestImagesSubFlow:
         mock_callback: MagicMock,
         mock_state: MagicMock,
     ) -> None:
-        """Default image count is 4."""
+        """Default image count is 0 when not configured."""
         mock_state.get_data = AsyncMock(return_value={})
         await readiness_images_menu(mock_callback, mock_state)
-        assert "4" in mock_callback.message.edit_text.call_args[0][0]
+        assert "0" in mock_callback.message.edit_text.call_args[0][0]
 
     async def test_select_updates_state(
         self,

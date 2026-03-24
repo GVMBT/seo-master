@@ -51,6 +51,14 @@ log = structlog.get_logger()
 _PINTEREST_MIN_IMAGES = 1
 
 
+def _safe_int(value: Any, default: int) -> int:
+    """Parse value to int, returning default on failure."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _effective_social_image_count(image_settings: dict[str, Any] | None, platform_type: str) -> int:
     """Get image count for social posts, enforcing Pinterest minimum."""
     raw = (image_settings or {}).get("count", 1)
@@ -248,7 +256,8 @@ class PublishService:
 
         # 6. Estimate cost
         if content_type == "article":
-            estimated_cost = estimate_article_cost()
+            article_image_count = _safe_int((eff_image_settings or {}).get("count"), 0)
+            estimated_cost = estimate_article_cost(images_count=article_image_count)
         else:
             social_image_count = _effective_social_image_count(eff_image_settings, payload.platform_type)
             estimated_cost = estimate_social_post_cost(images_count=social_image_count)
@@ -559,7 +568,7 @@ class PublishService:
                     )
 
         resolved_image = eff_image_settings or {}
-        image_count = resolved_image.get("count", 4)
+        image_count = _safe_int(resolved_image.get("count"), 0)
         image_context: dict[str, Any] = {
             "keyword": keyword,
             "content_type": "article",

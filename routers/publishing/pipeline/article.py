@@ -59,15 +59,20 @@ log = structlog.get_logger()
 router = Router()
 
 def _get_image_count(category: object, project: object | None = None) -> int:
-    """Extract image count from project/category image_settings, default 4.
+    """Extract image count from project/category image_settings, default 0.
 
     Fallback: project.image_settings -> category.image_settings.
     """
     proj_settings = getattr(project, "image_settings", None) if project else None
     cat_settings = getattr(category, "image_settings", None)
     settings = proj_settings or cat_settings or {}
-    count = settings.get("count", 4) if isinstance(settings, dict) else 4
-    return int(count)
+    count = settings.get("count", 0) if isinstance(settings, dict) else 0
+    if isinstance(count, bool):
+        return 0
+    try:
+        return max(0, int(count))
+    except (TypeError, ValueError):
+        return 0
 
 
 # ---------------------------------------------------------------------------
