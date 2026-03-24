@@ -579,10 +579,10 @@ AUDIENCE_LABELS: dict[str, str] = {
 # Content Settings
 # -----------------------------------------------
 CONTENT_SETTINGS_TITLE = "НАСТРОЙКИ КОНТЕНТА"
-CONTENT_SETTINGS_DESC = "Общие настройки для всех площадок."
-CONTENT_SETTINGS_PLATFORMS_DESC = "Для отдельной площадки \u2014 выберите ниже."
+CONTENT_SETTINGS_DESC = "Выберите площадку для настройки:"
+CONTENT_SETTINGS_NO_PLATFORMS = "Сначала подключите площадку в разделе проекта."
 CONTENT_SETTINGS_HINT = "Настройки влияют на генерацию текста и изображений"
-CONTENT_PLATFORM_HINT = "Переопределяет общие настройки для этой площадки"
+CONTENT_PLATFORM_HINT = "Настройки контента для этой площадки"
 CONTENT_TEXT_TITLE = "НАСТРОЙКИ ТЕКСТА"
 CONTENT_TEXT_PROMPT = "Выберите параметр для настройки:"
 CONTENT_IMAGE_TITLE = "НАСТРОЙКИ ИЗОБРАЖЕНИЙ"
