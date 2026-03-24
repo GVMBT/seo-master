@@ -67,7 +67,10 @@ def _get_image_count(category: object, project: object | None = None) -> int:
     cat_settings = getattr(category, "image_settings", None)
     settings = proj_settings or cat_settings or {}
     count = settings.get("count", 0) if isinstance(settings, dict) else 0
-    return int(count)
+    try:
+        return max(0, int(count))
+    except (TypeError, ValueError):
+        return 0
 
 
 # ---------------------------------------------------------------------------

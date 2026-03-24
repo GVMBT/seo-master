@@ -225,9 +225,9 @@ async def test_cancel_for_project(mock_cat_cls: MagicMock) -> None:
 
 
 def test_estimate_weekly_cost_wordpress() -> None:
-    """WordPress uses article cost (default ~320 per post)."""
+    """WordPress uses article cost (text only, default ~200 per post)."""
     cost = SchedulerService.estimate_weekly_cost(days=3, posts_per_day=1, platform_type="wordpress")
-    assert cost == 3 * 320  # 3 days * 1 post * 320 tokens
+    assert cost == 3 * 200  # 3 days * 1 post * 200 tokens (no default images)
 
 
 def test_estimate_weekly_cost_telegram() -> None:

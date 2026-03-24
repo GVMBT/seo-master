@@ -51,8 +51,8 @@ class TestEstimateTextCost:
 
 class TestEstimateArticleCost:
     def test_default_article(self) -> None:
-        # 2000 words + 4 images = 200 + 120 = 320
-        assert estimate_article_cost() == 320
+        # 2000 words + 0 images = 200 + 0 = 200
+        assert estimate_article_cost() == 200
 
     def test_custom_article(self) -> None:
         # 1500 words + 2 images = 150 + 60 = 210

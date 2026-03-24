@@ -18,7 +18,8 @@ user: |
   <% endif %>
 
   Компания: <<company_name>> (<<specialization>>).
-  <% if style %>Стиль: <<style>>.<% endif %> <% if tone %>Тональность: <<tone>>.<% endif %>
+  <% if style %>Стиль: <<style>>.<% endif %>
+  <% if tone %>Тональность: <<tone>>.<% endif %>
   <<camera_instruction>>
   <<angle_instruction>>
   <<quality_instruction>>
