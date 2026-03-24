@@ -77,20 +77,15 @@ def _settings_text(ts: dict[str, Any], is_: dict[str, Any]) -> str:
     )
 
 
-def _main_screen_text(
-    ts: dict[str, Any], is_: dict[str, Any],
-    *, has_platforms: bool = False,
-) -> str:
-    body = _settings_text(ts, is_)
-    scr = (
+def _main_screen_text(*, has_platforms: bool = False) -> str:
+    desc = S.CONTENT_SETTINGS_DESC if has_platforms else S.CONTENT_SETTINGS_NO_PLATFORMS
+    return (
         Screen(E.SLIDERS, S.CONTENT_SETTINGS_TITLE)
         .blank()
-        .line(body)
+        .line(desc)
+        .hint(S.CONTENT_SETTINGS_HINT)
+        .build()
     )
-    if has_platforms:
-        scr.blank().line(S.CONTENT_SETTINGS_PLATFORMS_DESC)
-    scr.hint(S.CONTENT_SETTINGS_HINT)
-    return scr.build()
 
 
 def _platform_card_text(
@@ -187,18 +182,15 @@ async def _load_is(
 
 async def _render_main_screen(
     msg: Any,
-    project: Project,
     pid: int,
     db: SupabaseClient,
     psf: ProjectServiceFactory,
 ) -> None:
-    """Render main content settings screen with default settings summary."""
+    """Render main content settings screen with platform list."""
     svc = psf(db)
     platforms = await _get_platforms(db, svc.encryption_key, pid)
-    ts = dict(project.text_settings) if project.text_settings else {}
-    is_ = dict(project.image_settings) if project.image_settings else {}
     await safe_edit_text(
-        msg, _main_screen_text(ts, is_, has_platforms=bool(platforms)),
+        msg, _main_screen_text(has_platforms=bool(platforms)),
         reply_markup=project_content_settings_kb(pid, platforms),
     )
 
@@ -226,7 +218,7 @@ async def show_settings(
     )
     if not project:
         return
-    await _render_main_screen(msg, project, pid, db, project_service_factory)
+    await _render_main_screen(msg, pid, db, project_service_factory)
     await callback.answer()
 
 
@@ -248,7 +240,7 @@ async def back_to_settings(
     )
     if not project:
         return
-    await _render_main_screen(msg, project, pid, db, project_service_factory)
+    await _render_main_screen(msg, pid, db, project_service_factory)
     await callback.answer()
 
 
@@ -276,9 +268,9 @@ async def show_platform_card(
     )
     if not project:
         return
-    # target="d" → redirect to main settings screen (no separate "default" card)
+    # target="d" → redirect to main settings screen
     if target == "d":
-        await _render_main_screen(msg, project, pid, db, project_service_factory)
+        await _render_main_screen(msg, pid, db, project_service_factory)
         await callback.answer()
         return
     ts, is_ = await _load_settings(
@@ -320,10 +312,8 @@ async def reset_platform(
         return
     await svc.delete_platform_settings(pid, user.id, target)
     log.info("platform_settings_reset", project_id=pid, platform=target)
-    ts = dict(project.text_settings) if project.text_settings else {}
-    is_ = dict(project.image_settings) if project.image_settings else {}
     await safe_edit_text(
-        msg, _platform_card_text(target, ts, is_),
+        msg, _platform_card_text(target, {}, {}),
         reply_markup=project_platform_card_kb(pid, target),
     )
     await callback.answer(S.CONTENT_RESET_DONE)
