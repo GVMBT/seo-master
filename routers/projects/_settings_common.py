@@ -181,6 +181,29 @@ async def _load_is(
 
 
 # ---------------------------------------------------------------------------
+# Shared render helper (DRY for show_settings, back_to_settings, d:card)
+# ---------------------------------------------------------------------------
+
+
+async def _render_main_screen(
+    msg: Any,
+    project: Project,
+    pid: int,
+    db: SupabaseClient,
+    psf: ProjectServiceFactory,
+) -> None:
+    """Render main content settings screen with default settings summary."""
+    svc = psf(db)
+    platforms = await _get_platforms(db, svc.encryption_key, pid)
+    ts = dict(project.text_settings) if project.text_settings else {}
+    is_ = dict(project.image_settings) if project.image_settings else {}
+    await safe_edit_text(
+        msg, _main_screen_text(ts, is_, has_platforms=bool(platforms)),
+        reply_markup=project_content_settings_kb(pid, platforms),
+    )
+
+
+# ---------------------------------------------------------------------------
 # 1. Main settings screen
 # ---------------------------------------------------------------------------
 
@@ -203,14 +226,7 @@ async def show_settings(
     )
     if not project:
         return
-    svc = project_service_factory(db)
-    platforms = await _get_platforms(db, svc.encryption_key, pid)
-    ts = dict(project.text_settings) if project.text_settings else {}
-    is_ = dict(project.image_settings) if project.image_settings else {}
-    await safe_edit_text(
-        msg, _main_screen_text(ts, is_, has_platforms=bool(platforms)),
-        reply_markup=project_content_settings_kb(pid, platforms),
-    )
+    await _render_main_screen(msg, project, pid, db, project_service_factory)
     await callback.answer()
 
 
@@ -232,14 +248,7 @@ async def back_to_settings(
     )
     if not project:
         return
-    svc = project_service_factory(db)
-    platforms = await _get_platforms(db, svc.encryption_key, pid)
-    ts = dict(project.text_settings) if project.text_settings else {}
-    is_ = dict(project.image_settings) if project.image_settings else {}
-    await safe_edit_text(
-        msg, _main_screen_text(ts, is_, has_platforms=bool(platforms)),
-        reply_markup=project_content_settings_kb(pid, platforms),
-    )
+    await _render_main_screen(msg, project, pid, db, project_service_factory)
     await callback.answer()
 
 
@@ -269,14 +278,7 @@ async def show_platform_card(
         return
     # target="d" → redirect to main settings screen (no separate "default" card)
     if target == "d":
-        svc = project_service_factory(db)
-        platforms = await _get_platforms(db, svc.encryption_key, pid)
-        ts = dict(project.text_settings) if project.text_settings else {}
-        is_ = dict(project.image_settings) if project.image_settings else {}
-        await safe_edit_text(
-            msg, _main_screen_text(ts, is_, has_platforms=bool(platforms)),
-            reply_markup=project_content_settings_kb(pid, platforms),
-        )
+        await _render_main_screen(msg, project, pid, db, project_service_factory)
         await callback.answer()
         return
     ts, is_ = await _load_settings(
