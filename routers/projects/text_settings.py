@@ -410,6 +410,9 @@ async def brand_style_file(
     if ext not in ("md", "txt"):
         await message.answer(S.CONTENT_BRAND_STYLE_FILE_ERROR)
         return
+    if doc.file_size and doc.file_size > 50_000:
+        await message.answer(S.CONTENT_BRAND_STYLE_TOO_LONG)
+        return
     if not message.bot:
         await message.answer(S.CONTENT_BRAND_STYLE_FILE_ERROR)
         return
@@ -457,3 +460,9 @@ async def _save_brand_style(
     await state.clear()
     log.info("brand_style_saved", project_id=pid, target=target, length=len(content))
     await message.answer(f"{E.CHECK} {S.CONTENT_BRAND_STYLE_SAVED}")
+
+
+@router.message(BrandStyleFSM.waiting_input)
+async def brand_style_invalid(message: Message) -> None:
+    """Catch-all for unsupported input types (photo, sticker, voice, etc.)."""
+    await message.answer(S.CONTENT_BRAND_STYLE_FILE_ERROR)

@@ -63,8 +63,8 @@ def _build_platform_url(platform_type: str, identifier: str) -> str | None:
         proto = "" if ident.startswith(("http://", "https://")) else "https://"
         return f"{proto}{ident}"
     if platform_type == "vk":
-        # identifier is like "club141149920" or numeric group ID
-        slug = ident if ident.startswith("club") else f"club{ident}"
+        # identifier is like "club141149920", "id12345", or numeric group ID
+        slug = ident if ident.startswith(("club", "id", "public")) else f"club{ident}"
         return f"https://vk.com/{slug}"
     if platform_type == "telegram":
         # identifier is like "@channel" or "-100..." or "t.me/channel"
