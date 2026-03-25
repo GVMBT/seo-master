@@ -650,6 +650,7 @@ class ArticleService:
             styles = [legacy] if legacy else []
 
         html_style = text_settings.get("html_style", "")
+        brand_style = text_settings.get("brand_style", "")
 
         context: dict[str, Any] = {
             "keyword": keyword,
@@ -671,6 +672,7 @@ class ArticleService:
             "words_max": words_max,
             "text_style": ", ".join(s for s in styles if s),
             "html_style": html_style,
+            "brand_style": brand_style,
             "niche_type": niche_type,
             "current_date": datetime.now(tz=UTC).strftime("%B %Y"),
             "lsi_keywords": lsi_keywords,

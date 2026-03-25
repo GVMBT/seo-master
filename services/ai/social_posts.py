@@ -177,6 +177,7 @@ class SocialPostService:
             "social_link": social_link,
             "language": "ru",
             "text_style": ", ".join(s for s in styles if s) or "Разговорный",
+            "brand_style": text_settings.get("brand_style", ""),
             "words_min": words_min,
             "words_max": words_max,
             "prices_excerpt": (category.prices or "")[:300],
