@@ -1047,7 +1047,7 @@ async def pipeline_connect_vk_personal_token(
         )
         result = resp.json()
         if "error" in result:
-            err = result["error"].get("error_msg", "")
+            err = html.escape(result["error"].get("error_msg", ""))
             await message.answer(
                 f"Ошибка проверки токена: {err}\n\n"
                 "Попробуйте авторизоваться заново.",

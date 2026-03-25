@@ -231,8 +231,8 @@ async def test_publish_semaphore_timeout_503(api_client, app_services):
     # We cannot globally patch asyncio.timeout because aiohttp client uses it too.
     # Instead, mock PUBLISH_SEMAPHORE as an async context manager that raises TimeoutError.
     mock_semaphore = MagicMock()
-    mock_semaphore.__aenter__ = AsyncMock(side_effect=TimeoutError)
-    mock_semaphore.__aexit__ = AsyncMock()
+    mock_semaphore.acquire = AsyncMock(side_effect=TimeoutError)
+    mock_semaphore.release = MagicMock()
 
     with (
         patch("qstash.Receiver") as mock_receiver_cls,
