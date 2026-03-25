@@ -5,6 +5,8 @@ Handles: text menu, word count, HTML style, text styles (multi-select),
 brand style template (FSM: file upload or text input).
 """
 
+import html as html_mod
+
 import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -47,6 +49,7 @@ router = Router()
 async def show_text_menu(
     callback: CallbackQuery, user: User,
     db: SupabaseClient, project_service_factory: ProjectServiceFactory,
+    state: FSMContext,
 ) -> None:
     msg = safe_message(callback)
     if not msg:
@@ -60,6 +63,7 @@ async def show_text_menu(
     )
     if not project:
         return
+    await state.clear()
     text = (
         Screen(E.PEN, S.CONTENT_TEXT_TITLE)
         .blank()
@@ -333,7 +337,7 @@ async def show_brand_style(
         .build(),
     ]
     if current:
-        preview = current[:200] + ("..." if len(current) > 200 else "")
+        preview = html_mod.escape(current[:200]) + ("..." if len(current) > 200 else "")
         lines.append(
             f"\n{E.CHECK} <b>{S.CONTENT_BRAND_STYLE_CURRENT}:</b>\n"
             f"<pre>{preview}</pre>"
