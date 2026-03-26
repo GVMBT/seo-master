@@ -21,8 +21,8 @@ Telegram-бот для AI-powered SEO-контента. Пишем с нуля. 
 - docs/PRD.md — фичи F01-F46, токеномика, роадмап
 - docs/ARCHITECTURE.md — стек, middleware, 13 таблиц SQL, паттерны
 - docs/API_CONTRACTS.md — все API-контракты, MODEL_CHAINS, промпты
-- docs/FSM_SPEC.md — 14 FSM StatesGroup, валидация, переходы
-- docs/EDGE_CASES.md — E01-E53, обработка ошибок
+- docs/FSM_SPEC.md — 16 FSM StatesGroup, валидация, переходы
+- docs/EDGE_CASES.md — E01-E57, обработка ошибок
 - docs/UX_PIPELINE.md — Pipeline UX: Dashboard, статьи, соцсети, кросс-постинг
 - docs/UX_TOOLBOX.md — Toolbox UX: проекты, категории, подключения, профиль, токены
 
@@ -162,7 +162,7 @@ Phase N:
 - `python-style.md` → `**/*.py` (ruff, mypy, type hints)
 - `security.md` → `**/*.py` (Fernet, SQL injection, rate limits)
 - `testing.md` → `tests/**/*.py` (pytest-asyncio, httpx.MockTransport, naming)
-- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E52 чеклист)
+- `edge-cases.md` → `routers/`, `services/`, `api/` (E01-E57 чеклист)
 - `aiohttp-handlers.md` → `api/**/*.py` (thin handlers, shared http_client, Service Layer)
 - `pipeline.md` → `routers/publishing/pipeline/**/*.py` (inline handlers, checkpoint, ButtonStyle, exit protection)
 

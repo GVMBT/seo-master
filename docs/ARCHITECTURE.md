@@ -106,14 +106,14 @@ seo-master-bot-v2/
 │   │       ├── article_outline_v1.yaml  # v1: outline generation (DeepSeek, multi-step stage 1)
 │   │       ├── article_critique_v1.yaml # v1: conditional critique (DeepSeek, stage 3)
 │   │       ├── research_v1.yaml         # v1: web research (Perplexity Sonar Pro, JSON Schema)
-│   │       ├── social_v3.yaml           # v3: social posts for TG/VK/Pinterest
-│   │       ├── keywords_cluster_v3.yaml  # v3: data-first clustering
-│   │       ├── keywords_v2.yaml         # v2: legacy AI-only (fallback при E03)
-│   │       ├── image_director_v1.yaml    # v1: Image Director prompt (reasoning about visual composition)
-│   │       ├── image_v1.yaml            # v1: image generation prompts (+ niche styles, negatives)
+│   │       ├── social_v4.yaml           # v4: social posts for TG/VK/Pinterest
+│   │       ├── cross_post_v2.yaml       # v2: text adaptation between platforms
+│   │       ├── keywords_cluster_v3.yaml # v3: data-first clustering
+│   │       ├── seed_normalize.yaml      # seed keyword normalization
+│   │       ├── image_director_v1.yaml   # v1: Image Director prompt
+│   │       ├── image_v1.yaml            # v1: image generation prompts
 │   │       ├── review_v1.yaml           # v1: review generation
-│   │       ├── description_v1.yaml      # v1: category description generation
-│   │       └── cross_post_v1.yaml          # v1: text adaptation between platforms (Pipeline кросс-постинг)
+│   │       └── description_v1.yaml      # v1: category description generation
 │   ├── publishers/
 │   │   ├── base.py                 # BasePublisher (валидация -> публикация -> отчет)
 │   │   ├── wordpress.py            # WP REST API
@@ -376,7 +376,7 @@ CREATE TABLE platform_connections (
     metadata        JSONB DEFAULT '{}',        -- Доп. данные платформы
     identifier      VARCHAR(500) NOT NULL,     -- Идентификатор подключения (plaintext, для отображения/логов)
     created_at      TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(project_id, platform_type)
+    UNIQUE(project_id, platform_type, identifier)  -- Позволяет несколько подключений одной платформы
 );
 CREATE INDEX idx_connections_project ON platform_connections(project_id);
 ```
@@ -393,10 +393,11 @@ CREATE INDEX idx_connections_project ON platform_connections(project_id);
 {"channel_id": "-100123456", "channel_username": "@channel",
  "bot_token": "123:ABC...", "identifier": "-100123456"}
 
-// VK (OAuth 2.1 PKCE):
-{"access_token": "vk1.a.XXX", "refresh_token": "vk1.a.YYY",
- "expires_at": "2026-03-03T12:00:00+00:00", "device_id": "...",
+// VK (manual community API token):
+{"access_token": "vk1.a.XXX",
  "group_id": "123456", "identifier": "club123456"}
+// VK (personal page):
+{"access_token": "vk1.a.XXX", "identifier": "id123456"}
 
 // Pinterest:
 {"access_token": "pina_...", "refresh_token": "pinr_...", "expires_at": "2026-03-14T00:00:00Z",
