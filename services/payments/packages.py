@@ -29,7 +29,8 @@ class Package:
 
 # ---------------------------------------------------------------------------
 # Package catalogue (5 tariffs)
-# Stars ≈ price_rub / 15.38 (approximate, hardcoded per PRD)
+# Stars: 1 Star ≈ 1.10 RUB developer revenue ($0.013/Star, ToS §6.2)
+# Target: ~77-86% margin on Stars, ~35% of RUB price for user
 # ---------------------------------------------------------------------------
 
 PACKAGES: dict[str, Package] = {
@@ -40,7 +41,7 @@ PACKAGES: dict[str, Package] = {
         bonus=0,
         price_rub=1000,
         discount="",
-        stars=65,
+        stars=260,
     ),
     "start": Package(
         name="start",
@@ -49,7 +50,7 @@ PACKAGES: dict[str, Package] = {
         bonus=500,
         price_rub=3000,
         discount="+500 бонус",
-        stars=195,
+        stars=780,
     ),
     "profi": Package(
         name="profi",
@@ -58,7 +59,7 @@ PACKAGES: dict[str, Package] = {
         bonus=1200,
         price_rub=6000,
         discount="+1 200 бонус",
-        stars=390,
+        stars=1560,
     ),
     "business": Package(
         name="business",
@@ -67,7 +68,7 @@ PACKAGES: dict[str, Package] = {
         bonus=3000,
         price_rub=15000,
         discount="+3 000 бонус",
-        stars=975,
+        stars=3900,
     ),
     "maximum": Package(
         name="maximum",
@@ -76,7 +77,7 @@ PACKAGES: dict[str, Package] = {
         bonus=10000,
         price_rub=40000,
         discount="+10 000 бонус",
-        stars=2601,
+        stars=10400,
     ),
 }
 
