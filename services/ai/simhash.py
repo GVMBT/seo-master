@@ -65,12 +65,16 @@ def compute_simhash(text: str, hashbits: int = 64) -> int:
         if v[i] > 0:
             fingerprint |= 1 << i
 
+    # Convert to signed 64-bit for PostgreSQL BIGINT compatibility
+    if fingerprint >= (1 << 63):
+        fingerprint -= 1 << 64
+
     return fingerprint
 
 
 def hamming_distance(hash1: int, hash2: int) -> int:
-    """Count differing bits between two 64-bit hashes."""
-    return bin(hash1 ^ hash2).count("1")
+    """Count differing bits between two 64-bit hashes (signed or unsigned)."""
+    return bin((hash1 ^ hash2) & ((1 << 64) - 1)).count("1")
 
 
 def check_uniqueness(
