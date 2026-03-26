@@ -10,6 +10,8 @@ Renders as premium custom emoji via <tg-emoji> HTML tags.
 Works in edit_text / send_message / photo captions with parse_mode="HTML".
 """
 
+from typing import ClassVar
+
 
 def _e(eid: str, fb: str) -> str:
     """Return <tg-emoji> HTML tag with custom emoji from PVNDORA 2 sticker pack."""
@@ -106,6 +108,16 @@ class E:
     N3 = _e("5305563909518825468", "3\ufe0f\u20e3")
     N4 = _e("5305799131992730110", "4\ufe0f\u20e3")
     N5 = _e("5307500080775863670", "5\ufe0f\u20e3")
+
+    # Number list (up to 5)
+    _NUMBERS: ClassVar[list[str]] = [N1, N2, N3, N4, N5]
+
+    @classmethod
+    def num(cls, i: int) -> str:
+        """Return custom emoji number for 1-5, plain digit for >5."""
+        if 1 <= i <= 5:
+            return cls._NUMBERS[i - 1]
+        return f"{i}."
 
     # Misc
     LINK = _e("5305560855797077870", "\U0001f517")
