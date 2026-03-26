@@ -23,7 +23,7 @@ class TestPackageCatalogue:
         assert p.bonus == 0
         assert p.total_tokens == 1000
         assert p.price_rub == 1000
-        assert p.stars == 65
+        assert p.stars == 260
         assert p.discount == ""
         assert p.label == "Мини"
 
@@ -33,7 +33,7 @@ class TestPackageCatalogue:
         assert p.bonus == 500
         assert p.total_tokens == 3500
         assert p.price_rub == 3000
-        assert p.stars == 195
+        assert p.stars == 780
         assert p.discount == "+500 бонус"
         assert p.label == "Старт"
 
@@ -43,7 +43,7 @@ class TestPackageCatalogue:
         assert p.bonus == 1200
         assert p.total_tokens == 7200
         assert p.price_rub == 6000
-        assert p.stars == 390
+        assert p.stars == 1560
         assert p.discount == "+1 200 бонус"
         assert p.label == "Профи"
 
@@ -53,7 +53,7 @@ class TestPackageCatalogue:
         assert p.bonus == 3000
         assert p.total_tokens == 18000
         assert p.price_rub == 15000
-        assert p.stars == 975
+        assert p.stars == 3900
         assert p.label == "Бизнес"
 
     def test_maximum_package(self) -> None:
@@ -62,7 +62,7 @@ class TestPackageCatalogue:
         assert p.bonus == 10000
         assert p.total_tokens == 50000
         assert p.price_rub == 40000
-        assert p.stars == 2601
+        assert p.stars == 10400
         assert p.label == "Максимум"
 
     def test_packages_are_frozen(self) -> None:
