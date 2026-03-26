@@ -45,7 +45,6 @@ from keyboards.pipeline import (
 )
 from routers.oauth_deeplinks import (
     _handle_pinterest_deep_link,
-    _handle_vk_deep_link,
     oauth_router,
 )
 from routers.publishing.pipeline._common import ArticlePipelineFSM
@@ -153,11 +152,6 @@ async def cmd_start(
         nonce = args.removeprefix("pinterest_auth_")
         await _handle_pinterest_deep_link(message, state, user, db, redis, http_client, nonce)
         return
-    if args.startswith("vk_auth_"):
-        nonce = args.removeprefix("vk_auth_")
-        await _handle_vk_deep_link(message, state, user, db, redis, http_client, nonce)
-        return
-
     # For all other cases: clear FSM as before
     await ensure_no_active_fsm(state)
 
