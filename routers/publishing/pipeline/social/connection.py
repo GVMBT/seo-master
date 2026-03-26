@@ -927,6 +927,8 @@ async def pipeline_connect_vk_group_url(
 
     settings = get_settings()
 
+    # Only resolve_group() is used (scraping + vk_service_key fallback).
+    # OAuth params are placeholders — Kate OAuth is client-side (blank.html).
     vk_svc = VKOAuthService(
         http_client=http_client,
         redis=redis,
@@ -1039,6 +1041,15 @@ async def pipeline_connect_vk_group_token(
 
     conn_svc = ConnectionService(db, http_client)
     identifier = f"club{group_id}"
+
+    # Check duplicate before DB constraint error
+    existing = await conn_svc.get_by_project_and_platform(project_id, "vk")
+    if any(getattr(c, "identifier", None) == identifier for c in existing):
+        await message.answer(
+            f"VK-группа {html.escape(group_name)} уже подключена к этому проекту.",
+            reply_markup=cancel_kb("pipeline:social:cancel"),
+        )
+        return
 
     conn = await conn_svc.create(
         PlatformConnectionCreate(

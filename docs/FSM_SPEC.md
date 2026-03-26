@@ -124,7 +124,7 @@ class SocialPipelineFSM(StatesGroup):
     connect_tg_topic = State()     # Inline: подключение Telegram — выбор forum topic
     connect_vk_type = State()      # Inline: подключение VK — выбор типа (группа/личная)
     connect_vk_group_url = State() # Inline: подключение VK — URL группы
-    connect_vk_oauth = State()     # Inline: подключение VK — OAuth (legacy, unused)
+    connect_vk_oauth = State()     # Inline: подключение VK — ожидание blank.html URL с токеном (Kate OAuth)
     connect_vk_personal_token = State()  # Inline: подключение VK — токен для личной страницы
     connect_pinterest_oauth = State()    # Inline: подключение Pinterest — OAuth редирект
     select_category = State()      # Шаг 3: выбор категории
