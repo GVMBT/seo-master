@@ -22,9 +22,9 @@ class TestComputeSimhash:
         result = compute_simhash("some text for hashing purposes here")
         assert isinstance(result, int)
 
-    def test_fits_64_bits(self) -> None:
+    def test_fits_signed_64_bits(self) -> None:
         result = compute_simhash("a fairly long text about SEO and marketing strategies")
-        assert 0 <= result < (1 << 64)
+        assert -(1 << 63) <= result <= (1 << 63) - 1
 
     def test_similar_texts_produce_close_hashes(self) -> None:
         t1 = "How to choose PVC windows for your home expert advice on installation and replacement"
@@ -54,7 +54,7 @@ class TestHammingDistance:
         assert hamming_distance(0xDEADBEEF, 0xDEADBEEF) == 0
 
     def test_all_bits_different(self) -> None:
-        assert hamming_distance(0, (1 << 64) - 1) == 64
+        assert hamming_distance(0, -1) == 64
 
     def test_one_bit_different(self) -> None:
         assert hamming_distance(0b1000, 0b1001) == 1
