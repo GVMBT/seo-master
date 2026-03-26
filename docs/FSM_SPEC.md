@@ -4,9 +4,9 @@
 
 Все FSM-мастера используют Aiogram 3 StatesGroup с хранением в Redis (Upstash).
 
-**Итого: 16 StatesGroup** (ProjectCreateFSM, CategoryCreateFSM, ProjectEditFSM, KeywordGenerationFSM, KeywordUploadFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, DescriptionGenerateFSM, ContentSettingsFSM, ArticlePipelineFSM, SocialPipelineFSM, BroadcastFSM)
+**Итого: 16 StatesGroup** (ProjectCreateFSM, ProjectEditFSM, CategoryCreateFSM, KeywordGenerationFSM, ScheduleSetupFSM, ConnectWordPressFSM, ConnectTelegramFSM, ConnectVKFSM, ConnectPinterestFSM, PriceInputFSM, DescriptionGenerateFSM, ArticlePipelineFSM, SocialPipelineFSM, BroadcastFSM, UserLookupFSM, BalanceAdjustFSM)
 
-> **Убраны в v2:** ArticlePublishFSM, SocialPostPublishFSM (заменены Pipeline FSM), ReviewGenerationFSM (F17 deferred to v3), CompetitorAnalysisFSM (F39 deferred to v3).
+> **Убраны в v2:** ArticlePublishFSM, SocialPostPublishFSM (заменены Pipeline FSM), ReviewGenerationFSM (F17 deferred to v3), CompetitorAnalysisFSM (F39 deferred to v3), ContentSettingsFSM (callback-based), KeywordUploadFSM (не реализован).
 
 ---
 
@@ -45,12 +45,14 @@ class ConnectWordPressFSM(StatesGroup):
     password = State()       # Application Password
 
 class ConnectTelegramFSM(StatesGroup):
-    channel = State()        # Ссылка на канал
+    channel = State()        # Ссылка на канал (@channel / t.me/)
     token = State()          # Токен бота
+    topic = State()          # Forum topic selection (для каналов с форумом)
 
 class ConnectVKFSM(StatesGroup):
-    oauth_callback = State() # Ожидание OAuth 2.1 PKCE (id.vk.com)
-    select_group = State()   # Handled by deep-link callback in routers/start.py (NOT by FSM handler)
+    select_type = State()    # Выбор типа: группа / личная страница
+    enter_group_url = State() # URL группы (парсинг screen_name → group_id)
+    enter_token = State()    # Community API token (ручной ввод)
 
 class ConnectPinterestFSM(StatesGroup):
     oauth_callback = State() # Ожидание OAuth
@@ -111,18 +113,20 @@ class ArticlePipelineFSM(StatesGroup):
     result = State()               # Шаг 8: результат (URL, "ещё статью", автопубликация)
     regenerating = State()         # Перегенерация
 
-# routers/publishing/pipeline/social.py (Goal-Oriented Pipeline: соц. посты, 24 состояния)
+# routers/publishing/pipeline/_common.py (Goal-Oriented Pipeline: соц. посты, 27 состояний)
 class SocialPipelineFSM(StatesGroup):
     select_project = State()       # Шаг 1: выбор проекта
     create_project_name = State()  # Inline: создание проекта — только название (1 шаг)
     select_connection = State()    # Шаг 2: выбор подключения (конкретный канал/группа, НЕ платформа)
-    connect_tg_channel = State()   # Inline: подключение Telegram — ссылка на канал (@channel / t.me/)
+    connect_tg_channel = State()   # Inline: подключение Telegram — ссылка на канал
     connect_tg_token = State()     # Inline: подключение Telegram — токен бота
-    connect_tg_verify = State()    # Inline: подключение Telegram — верификация (бот = админ канала)
-    connect_vk_oauth = State()     # Inline: подключение VK — OAuth 2.1 PKCE
-    connect_vk_group = State()     # Inline: подключение VK — выбор группы
-    connect_pinterest_oauth = State()  # Inline: подключение Pinterest — OAuth редирект
-    connect_pinterest_board = State()  # Inline: подключение Pinterest — выбор доски
+    connect_tg_verify = State()    # Inline: подключение Telegram — верификация
+    connect_tg_topic = State()     # Inline: подключение Telegram — выбор forum topic
+    connect_vk_type = State()      # Inline: подключение VK — выбор типа (группа/личная)
+    connect_vk_group_url = State() # Inline: подключение VK — URL группы
+    connect_vk_oauth = State()     # Inline: подключение VK — ожидание blank.html URL с токеном (Kate OAuth)
+    connect_vk_personal_token = State()  # Inline: подключение VK — токен для личной страницы
+    connect_pinterest_oauth = State()    # Inline: подключение Pinterest — OAuth редирект
     select_category = State()      # Шаг 3: выбор категории
     create_category_name = State() # Inline: создание категории — название
     readiness_check = State()      # Шаг 4: чеклист готовности (сокращённый: ключевики + описание)
@@ -132,11 +136,12 @@ class SocialPipelineFSM(StatesGroup):
     readiness_description = State()        # Inline: описание категории
     confirm_cost = State()         # Шаг 5: подтверждение стоимости
     generating = State()           # Шаг 6: генерация
-    review = State()               # Шаг 6→7: ревью сгенерированного поста
-    publishing = State()           # Шаг 7: публикация → результат + кросс-постинг
-    regenerating = State()         # Перегенерация (аналогично ArticlePipeline)
-    cross_post_review = State()    # Кросс-постинг: ревью адаптации (E52)
-    cross_post_publishing = State() # Кросс-постинг: публикация
+    review = State()               # Ревью сгенерированного поста (текст в чате)
+    publishing = State()           # Публикация
+    regenerating = State()         # Перегенерация
+    cross_post_select = State()    # Кросс-постинг: выбор платформ
+    cross_post_running = State()   # Кросс-постинг: AI-адаптация + публикация
+    cross_post_result = State()    # Кросс-постинг: результат
 
 # routers/categories/keywords.py
 class KeywordUploadFSM(StatesGroup):

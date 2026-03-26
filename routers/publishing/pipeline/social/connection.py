@@ -905,7 +905,7 @@ async def pipeline_connect_vk_group_url(
     redis: RedisClient,
     http_client: httpx.AsyncClient,
 ) -> None:
-    """VK inline: parse group URL → resolve → redirect to OAuth with group_ids."""
+    """VK inline: parse group URL → resolve → Kate OAuth (blank.html) for token."""
     text = (message.text or "").strip()
 
     group_id, screen_name = parse_vk_group_input(text)
@@ -926,19 +926,16 @@ async def pipeline_connect_vk_group_url(
     from bot.config import get_settings
 
     settings = get_settings()
-    base_url = (settings.railway_public_url or "").rstrip("/")
-    if not base_url:
-        log.error("vk_oauth_base_url_missing")
-        await message.answer(S.ERROR_SERVER_CONFIG)
-        return
 
+    # Only resolve_group() is used (scraping + vk_service_key fallback).
+    # OAuth params are placeholders — Kate OAuth is client-side (blank.html).
     vk_svc = VKOAuthService(
         http_client=http_client,
         redis=redis,
         encryption_key=settings.encryption_key.get_secret_value(),
-        vk_app_id=settings.vk_app_id,
-        vk_app_secret=settings.vk_secure_key.get_secret_value(),
-        redirect_uri=f"{base_url}/api/auth/vk/callback",
+        vk_app_id=0,
+        vk_app_secret="",
+        redirect_uri="",
         vk_service_key=settings.vk_service_key.get_secret_value(),
     )
 
@@ -953,34 +950,147 @@ async def pipeline_connect_vk_group_url(
         )
         return
 
-    # Generate nonce, store auth session for community token
-    nonce = vk_svc.generate_nonce()
-    await vk_svc.store_meta(nonce, project_id, extra={"user_id": user.id, "from_pipeline": True})
-    await vk_svc.store_auth(
-        nonce, user.id, step="community", group_id=resolved_id, group_name=group_name,
-    )
-
-    oauth_url = vk_svc.build_oauth_url(user.id, nonce, group_ids=resolved_id)
-
     safe_name = html.escape(group_name or f"Группа {resolved_id}")
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Подтвердить доступ к группе", url=oauth_url)],
-            [InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")],
-        ]
-    )
+
+    # Same flow as toolbox: Kate OAuth + user pastes blank.html URL
+    from bot.texts.connections import _VK_AUTH_URL, VK_STEP2_AUTH
 
     await state.set_state(SocialPipelineFSM.connect_vk_oauth)
-    await state.update_data(vk_nonce=nonce)
+    await state.update_data(
+        vk_group_id=resolved_id,
+        vk_group_name=group_name or f"Группа {resolved_id}",
+    )
     await message.answer(
-        S.POST_CONNECTION_VK_FOUND.format(name=safe_name) + "\n\n"
-        + S.POST_CONNECTION_VK_OAUTH_HINT,
-        reply_markup=kb,
+        VK_STEP2_AUTH.format(group_name=safe_name),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Авторизоваться", url=_VK_AUTH_URL)],
+                [InlineKeyboardButton(text="Отмена", callback_data="pipeline:social:cancel")],
+            ]
+        ),
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
-    # NOTE: After OAuth, user returns via deep-link /start vk_auth_{nonce},
-    # which is handled in routers/start.py.
+
+# ---------------------------------------------------------------------------
+# VK Group: user pastes blank.html URL with community token (Kate OAuth flow)
+# ---------------------------------------------------------------------------
+
+
+@router.message(SocialPipelineFSM.connect_vk_oauth, F.text)
+async def pipeline_connect_vk_group_token(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """VK group: parse blank.html URL with community token, validate, create connection."""
+    text = (message.text or "").strip()
+
+    token = _extract_vk_token(text)
+    if not token:
+        await message.answer(
+            "Не удалось извлечь токен.\n\n"
+            "Скопируйте <b>всю ссылку</b> из адресной строки\n"
+            "после нажатия \u00abРазрешить\u00bb.\n\n"
+            "<i>Она начинается с:\n"
+            "https://oauth.vk.com/blank.html#access_token=...</i>",
+            reply_markup=cancel_kb("pipeline:social:cancel"),
+        )
+        return
+
+    # Delete message with token for security
+    try:
+        await message.delete()
+    except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound) as exc:
+        log.warning("pipeline.failed_to_delete_vk_token", reason=str(exc))
+
+    data = await state.get_data()
+    project_id = data.get("project_id")
+    if not project_id:
+        await message.answer(S.PIPELINE_SESSION_EXPIRED, reply_markup=menu_kb())
+        return
+
+    group_id = data.get("vk_group_id")
+    group_name = data.get("vk_group_name", f"Группа {group_id}")
+
+    # Validate token via wall.get (check wall access)
+    try:
+        resp = await http_client.post(
+            "https://api.vk.ru/method/groups.getById",
+            data={"access_token": token, "group_id": str(group_id), "v": "5.199"},
+            timeout=10,
+        )
+        result = resp.json()
+        if "error" in result:
+            err = html.escape(result["error"].get("error_msg", ""))
+            await message.answer(
+                f"Ошибка проверки токена: {err}\n\n"
+                "Попробуйте авторизоваться заново.",
+                reply_markup=cancel_kb("pipeline:social:cancel"),
+            )
+            return
+    except httpx.HTTPError:
+        await message.answer(
+            "Не удалось связаться с VK.\nПопробуйте позже.",
+            reply_markup=cancel_kb("pipeline:social:cancel"),
+        )
+        return
+
+    conn_svc = ConnectionService(db, http_client)
+    identifier = f"club{group_id}"
+
+    # Check duplicate before DB constraint error
+    existing = await conn_svc.get_by_project_and_platform(project_id, "vk")
+    if any(getattr(c, "identifier", None) == identifier for c in existing):
+        await message.answer(
+            f"VK-группа {html.escape(group_name)} уже подключена к этому проекту.",
+            reply_markup=cancel_kb("pipeline:social:cancel"),
+        )
+        return
+
+    conn = await conn_svc.create(
+        PlatformConnectionCreate(
+            project_id=project_id,
+            platform_type="vk",
+            identifier=identifier,
+            metadata={"group_name": group_name},
+        ),
+        raw_credentials={
+            "access_token": token,
+            "group_id": str(group_id),
+        },
+    )
+
+    log.info(
+        "pipeline.social.vk_group_connected",
+        connection_id=conn.id,
+        group_id=group_id,
+        user_id=user.id,
+    )
+
+    await state.update_data(
+        connection_id=conn.id, platform_type="vk",
+        connection_identifier=identifier,
+    )
+
+    project_name = data.get("project_name", "")
+    safe_name = html.escape(group_name)
+    await message.answer(f"\u2705 VK-группа подключена: {safe_name}")
+
+    from routers.publishing.pipeline.social.social import _show_category_step_msg
+
+    await _show_category_step_msg(
+        message,
+        state,
+        user,
+        db,
+        redis,
+        project_id,
+        project_name,
+    )
 
 
 # ---------------------------------------------------------------------------
