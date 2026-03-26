@@ -115,14 +115,14 @@ def _build_connections_text(
             url = _build_platform_url(pt, ident)
             linked = f'<a href="{url}">{ident}</a>' if url else ident
             display = f"{html.escape(gn)} ({linked})" if gn else linked
-            s.line(f"  {i}. {display}")
+            s.line(f"  {E.num(i)} {display}")
         s.blank()
 
     # Remaining unknown platforms (if any)
     for pt, items in grouped.items():
         s.line(f"{pt.capitalize()} ({len(items)}):")
         for i, (ident, _gn) in enumerate(items, 1):
-            s.line(f"  {i}. {ident}")
+            s.line(f"  {E.num(i)} {ident}")
         s.blank()
 
     s.hint(S.CONNECTIONS_HINT)
