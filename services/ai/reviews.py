@@ -78,6 +78,9 @@ class ReviewService:
             "quantity": str(quantity),
             "company_name": project.company_name,
             "specialization": project.specialization,
+            "company_description": project.description or "",
+            "advantages": project.advantages or "",
+            "city": project.company_city or "",
             "language": "ru",
             "prices_excerpt": (category.prices or "")[:300],
         }

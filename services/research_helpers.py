@@ -193,7 +193,10 @@ async def fetch_research(
 
     # Fetch from Sonar Pro (E53: graceful degradation on failure)
     try:
+        from datetime import UTC, datetime
+
         context = {
+            "current_date": datetime.now(tz=UTC).strftime("%B %Y"),
             "main_phrase": main_phrase,
             "specialization": specialization,
             "company_name": company_name,

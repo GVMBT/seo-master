@@ -3,10 +3,13 @@ meta:
   version: v1
   model_tier: budget
   max_tokens: 2000
-  temperature: 0.9
+  temperature: 0.7
 
 system: |
   Ты — копирайтер. Пиши реалистичные отзывы на <<language>>.
+  <% if company_description %>О компании: <<company_description>>.<% endif %>
+  <% if advantages %>Преимущества компании: <<advantages>>.<% endif %>
+  <% if city %>Город: <<city>>. Используй локальные детали (районы, улицы, местные особенности) для реалистичности.<% endif %>
 
 user: |
   Сгенерируй <<quantity>> отзывов для компании "<<company_name>>" (<<specialization>>).
@@ -16,6 +19,7 @@ user: |
   - Каждый отзыв: имя автора, дата (последние 6 месяцев), рейтинг (1-5), текст, плюсы, минусы
   - Стиль: разговорный, как реальный покупатель
   - Упомяни товары из прайса: <<prices_excerpt>>
+  - Используй контекст компании для релевантных деталей в отзывах
 
   Формат ответа — JSON:
   {"reviews": [{"author": "...", "date": "2026-01-15", "rating": 5, "text": "...", "pros": "...", "cons": "..."}]}
@@ -34,6 +38,18 @@ variables:
     source: users.language
     required: true
     default: "ru"
+  - name: company_description
+    source: projects.description
+    required: false
+    default: ""
+  - name: advantages
+    source: projects.advantages
+    required: false
+    default: ""
+  - name: city
+    source: projects.company_city
+    required: false
+    default: ""
   - name: prices_excerpt
     source: categories.prices
     required: false
