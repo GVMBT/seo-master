@@ -41,6 +41,8 @@ dependencies = [
     "structlog>=25.0",
     "sentry-sdk[httpx]>=2.50",
     "pyrogram>=2.0.106",
+    # Performance: faster event loop on Linux (Railway); optional on Windows
+    "uvloop>=0.21; sys_platform != 'win32'",
 ]
 
 [dependency-groups]

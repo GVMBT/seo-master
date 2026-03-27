@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 from dataclasses import dataclass
 
 import structlog
@@ -107,7 +108,10 @@ class SchedulerService:
 
         for time_slot in schedule.schedule_times:
             hour, minute = time_slot.split(":")
-            cron = f"CRON_TZ={timezone} {int(minute)} {int(hour)} * * {days_cron}"
+            # Add jitter +-5 min to spread QStash triggers and avoid thundering herd
+            jitter = random.randint(-5, 5)  # noqa: S311
+            actual_minute = (int(minute) + jitter) % 60
+            cron = f"CRON_TZ={timezone} {actual_minute} {int(hour)} * * {days_cron}"
 
             body = {
                 "schedule_id": schedule.id,

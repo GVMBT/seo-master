@@ -86,11 +86,20 @@ async def health_handler(request: web.Request) -> web.Response:
         if overall != "down":
             overall = "degraded"
 
+    # Semaphore availability (publish backpressure)
+    from bot.main import PUBLISH_SEMAPHORE
+
+    semaphore_info: dict[str, Any] = {
+        "available": PUBLISH_SEMAPHORE._value,
+        "total": 10,
+    }
+
     return web.json_response(
         {
             "status": overall,
             "version": _VERSION,
             "uptime_seconds": round(time.monotonic() - _START_TIME),
             "checks": checks,
+            "publish_semaphore": semaphore_info,
         }
     )

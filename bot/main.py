@@ -1,5 +1,12 @@
 """Bot startup: webhook, middleware chain, client lifecycle."""
 
+try:
+    import uvloop  # type: ignore[import-not-found]
+
+    uvloop.install()
+except ImportError:
+    pass  # uvloop optional, fallback to default event loop (e.g. Windows)
+
 import asyncio
 import logging
 
@@ -56,7 +63,7 @@ def create_bot(settings: Settings) -> Bot:
 def create_http_client() -> httpx.AsyncClient:
     """Create shared httpx client (ARCHITECTURE.md §2.2)."""
     return httpx.AsyncClient(
-        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        limits=httpx.Limits(max_connections=50, max_keepalive_connections=30),
         timeout=httpx.Timeout(30.0, connect=5.0),
     )
 

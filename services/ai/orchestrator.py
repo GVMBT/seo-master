@@ -286,7 +286,7 @@ class AIOrchestrator:
         )
         self._prompt_engine = prompt_engine
         self._rate_limiter = rate_limiter
-        self._semaphore = asyncio.Semaphore(10)  # Backpressure (ARCHITECTURE.md §5.6)
+        self._semaphore = asyncio.Semaphore(30)  # Backpressure (ARCHITECTURE.md §5.6)
         self._site_url = site_url
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
