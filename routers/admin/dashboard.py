@@ -30,6 +30,7 @@ from db.client import SupabaseClient
 from db.models import User
 from keyboards.inline import (
     admin_panel_kb,
+    admin_portals_kb,
     broadcast_audience_kb,
     broadcast_confirm_kb,
     user_actions_kb,
@@ -211,6 +212,48 @@ async def admin_api_costs(
     )
 
     await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Portals & services
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "admin:portals")
+async def admin_portals(
+    callback: CallbackQuery,
+    user: User,
+) -> None:
+    """Show all external service portals with direct links."""
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    text = (
+        Screen(E.LINK, S.ADMIN_PORTALS_TITLE)
+        .section(E.DATABASE, "Инфраструктура")
+        .line("Railway, Supabase, Upstash, Sentry")
+        .section(E.AI_BRAIN, "AI-провайдеры")
+        .line("OpenRouter, Anthropic (BYOK), Google AI (BYOK)")
+        .section(E.SEARCH_CHECK, "SEO и данные")
+        .line("DataForSEO, Serper, Firecrawl")
+        .section(E.TELEGRAM, "Платформы")
+        .line("BotFather, Pinterest")
+        .section(E.CREDIT_CARD, "Платежи")
+        .line("YooKassa")
+        .hint(
+            "Пополнение: OpenRouter, Anthropic, Google AI, "
+            "DataForSEO, Serper, Firecrawl"
+        )
+        .build()
+    )
+
+    await safe_edit_text(msg, text, reply_markup=admin_portals_kb())
     await callback.answer()
 
 

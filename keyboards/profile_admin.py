@@ -11,6 +11,7 @@ from keyboards.common import format_connection_display
 
 __all__ = [
     "admin_panel_kb",
+    "admin_portals_kb",
     "broadcast_audience_kb",
     "broadcast_confirm_kb",
     "delete_account_cancelled_kb",
@@ -545,7 +546,35 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Просмотр пользователя", callback_data="admin:user_lookup")],
         [InlineKeyboardButton(text="Рассылка", callback_data="admin:broadcast")],
         [InlineKeyboardButton(text="Затраты API", callback_data="admin:api_costs")],
+        [InlineKeyboardButton(text="Порталы и сервисы", callback_data="admin:portals")],
         [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_portals_kb() -> InlineKeyboardMarkup:
+    """Admin portals & services keyboard with direct links to all external dashboards."""
+    rows = [
+        # --- Инфраструктура ---
+        [InlineKeyboardButton(text="Railway — хостинг", url="https://railway.com/dashboard")],
+        [InlineKeyboardButton(text="Supabase — база данных", url="https://supabase.com/dashboard")],
+        [InlineKeyboardButton(text="Upstash — Redis / QStash", url="https://console.upstash.com")],
+        [InlineKeyboardButton(text="Sentry — мониторинг", url="https://sentry.io")],
+        # --- AI-провайдеры ---
+        [InlineKeyboardButton(text="OpenRouter — AI модели", url="https://openrouter.ai/settings/credits")],
+        [InlineKeyboardButton(text="Anthropic — Claude (BYOK)", url="https://console.anthropic.com/settings/billing")],
+        [InlineKeyboardButton(text="Google AI Studio — Gemini (BYOK)", url="https://aistudio.google.com/apikey")],
+        # --- SEO и данные ---
+        [InlineKeyboardButton(text="DataForSEO — SEO-данные", url="https://app.dataforseo.com/api-dashboard")],
+        [InlineKeyboardButton(text="Serper — поиск Google", url="https://serper.dev/dashboard")],
+        [InlineKeyboardButton(text="Firecrawl — парсинг", url="https://www.firecrawl.dev/app")],
+        # --- Платформы ---
+        [InlineKeyboardButton(text="BotFather — Telegram-бот", url="https://t.me/BotFather")],
+        [InlineKeyboardButton(text="Pinterest — разработчик", url="https://developers.pinterest.com/apps/")],
+        # --- Платежи ---
+        [InlineKeyboardButton(text="YooKassa — платежи", url="https://yookassa.ru/my")],
+        # --- Назад ---
+        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

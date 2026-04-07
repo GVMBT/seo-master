@@ -97,6 +97,6 @@
 | `pipeline:cancel`, `pipeline:resume`, `pipeline:restart` | start.py |
 | `profile:*`, `account:*` | profile.py |
 | `tariff:*` | tariffs.py |
-| `admin:*`, `broadcast:*` | admin/dashboard.py |
+| `admin:*`, `broadcast:*` | admin/dashboard.py (panel, api_status, api_costs, portals, user_lookup, broadcast) |
 | `fsm:cancel` | shared cancel handler (keyboards/common.py cancel_kb) |
 | `noop` | no-op answer (various) |
