@@ -1,5 +1,6 @@
 """Dashboard, /start, /cancel, navigation callbacks, reply text dispatch."""
 
+import asyncio
 import contextlib
 import html
 import json
@@ -162,6 +163,12 @@ async def cmd_start(
             await users_svc.link_referrer(user.id, referrer_id, redis)
         else:
             log.info("deep_link_referral_ignored", referrer_arg=args, is_new_user=is_new_user)
+
+    # Notify admins about new user registration
+    if is_new_user and message.bot:
+        from routers.admin.users import notify_admin_new_user
+
+        asyncio.ensure_future(notify_admin_new_user(message.bot, user))
 
     # Consent gate: must accept terms before accessing dashboard (C7/H30)
     if user.accepted_terms_at is None:

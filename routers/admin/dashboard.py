@@ -288,33 +288,6 @@ def _format_user_card(card: UserCard) -> str:
     )
 
 
-@router.callback_query(F.data == "admin:user_lookup")
-async def user_lookup_start(callback: CallbackQuery, user: User, state: FSMContext) -> None:
-    """Start user lookup flow: ask for user_id or @username."""
-    if not _is_admin(user):
-        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
-        return
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    interrupted = await ensure_no_active_fsm(state)
-    if interrupted:
-        await msg.answer(f"Предыдущий процесс ({interrupted}) прерван.")
-
-    await state.set_state(UserLookupFSM.waiting_input)
-    text = (
-        Screen(E.USER, S.ADMIN_USER_LOOKUP_TITLE)
-        .blank()
-        .line(S.ADMIN_USER_LOOKUP_PROMPT)
-        .hint("Поиск по Telegram ID или @username")
-        .build()
-    )
-    await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
-    await callback.answer()
-
-
 @router.message(UserLookupFSM.waiting_input)
 async def user_lookup_input(
     message: Message,
