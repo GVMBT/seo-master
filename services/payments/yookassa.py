@@ -99,6 +99,19 @@ class YooKassaPaymentService:
                 "type": "redirect",
                 "return_url": self._return_url,
             },
+            "receipt": {
+                "customer": {"email": "pay@designservice.group"},
+                "items": [
+                    {
+                        "description": description[:128],
+                        "quantity": "1.00",
+                        "amount": {"value": f"{amount}.00", "currency": "RUB"},
+                        "vat_code": 1,
+                        "payment_subject": "service",
+                        "payment_mode": "full_payment",
+                    }
+                ],
+            },
             "metadata": {
                 "user_id": str(user_id),
                 "package_name": package_name,
