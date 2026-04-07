@@ -177,45 +177,6 @@ async def admin_api_status(
 
 
 # ---------------------------------------------------------------------------
-# API costs
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(F.data == "admin:api_costs")
-async def admin_api_costs(
-    callback: CallbackQuery, user: User, db: SupabaseClient, admin_service_factory: AdminServiceFactory
-) -> None:
-    """Show API cost summary for 7/30/90 days."""
-    if not _is_admin(user):
-        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
-        return
-    msg = safe_message(callback)
-    if not msg:
-        await callback.answer()
-        return
-
-    admin_svc = admin_service_factory(db)
-    cost_7d, cost_30d, cost_90d = await asyncio.gather(
-        admin_svc.get_api_costs(7),
-        admin_svc.get_api_costs(30),
-        admin_svc.get_api_costs(90),
-    )
-
-    text = (
-        Screen(E.WALLET, S.API_COSTS_TITLE)
-        .blank()
-        .line(f"7 дней: ${cost_7d:.2f}")
-        .line(f"30 дней: ${cost_30d:.2f}")
-        .line(f"90 дней: ${cost_90d:.2f}")
-        .hint("Суммы указаны в долларах США")
-        .build()
-    )
-
-    await safe_edit_text(msg, text, reply_markup=_BACK_TO_PANEL_KB)
-    await callback.answer()
-
-
-# ---------------------------------------------------------------------------
 # Portals & services
 # ---------------------------------------------------------------------------
 

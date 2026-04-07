@@ -72,7 +72,8 @@
 ### routers/admin/
 | File | LOC | Purpose |
 |---|---|---|
-| dashboard.py | 707 | admin panel, user lookup, broadcast, API status |
+| dashboard.py | ~670 | admin panel, user lookup, broadcast, API status, portals |
+| costs.py | ~235 | real API costs from OpenRouter Activity + external balances |
 
 ## callback_data prefix -> file
 | Prefix | File(s) |
