@@ -28,6 +28,8 @@ from bot.texts.screens import Screen
 from cache.client import RedisClient
 from db.client import SupabaseClient
 from db.models import User
+from db.repositories.payments import PaymentsRepository
+from db.repositories.users import UsersRepository
 from keyboards.inline import (
     admin_panel_kb,
     admin_portals_kb,
@@ -84,10 +86,12 @@ async def admin_panel(
     callback: CallbackQuery,
     user: User,
     db: SupabaseClient,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
     admin_service_factory: AdminServiceFactory,
     state: FSMContext,
 ) -> None:
-    """Show admin panel with aggregated stats."""
+    """Show enriched admin panel with all stats on one screen."""
     if not _is_admin(user):
         await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
@@ -99,17 +103,55 @@ async def admin_panel(
     # Clear any active FSM (like broadcast or user lookup)
     await state.clear()
 
+    settings = get_settings()
     admin_svc = admin_service_factory(db)
-    stats = await admin_svc.get_panel_stats()
+
+    # Gather all data in parallel
+    stats, api_status, active_users_7d, revenue_30d = await asyncio.gather(
+        admin_svc.get_panel_stats(),
+        admin_svc.get_api_status(
+            redis=redis,
+            http_client=http_client,
+            openrouter_api_key=settings.openrouter_api_key.get_secret_value(),
+            qstash_token=settings.qstash_token.get_secret_value(),
+        ),
+        UsersRepository(db).count_active(7),
+        PaymentsRepository(db).sum_revenue(30),
+    )
+
+    # AI services status
+    or_icon = E.CHECK if api_status.openrouter_ok else E.CLOSE
+    credits_str = f"${api_status.openrouter_credits:.2f}" if api_status.openrouter_credits is not None else "\u2014"
+
+    # Infrastructure
+    db_icon = E.CHECK if api_status.db_ok else E.CLOSE
+    redis_icon = E.CHECK if api_status.redis_ok else E.CLOSE
+    qs_icon = E.CHECK if api_status.qstash_ok else E.CLOSE
+
+    # Format revenue
+    revenue_str = f"{revenue_30d:,}\u00a0\u20bd".replace(",", " ") if revenue_30d else "0\u00a0\u20bd"
 
     text = (
         Screen(E.CROWN, S.ADMIN_TITLE)
-        .blank()
-        .line(f"Пользователей: {stats.total_users}")
-        .line(f"Оплативших: {stats.paid_users}")
-        .line(f"Проектов: {stats.total_projects}")
-        .line(f"Публикаций (7д): {stats.publications_7d}")
-        .line(f"Затраты API (30д): ${stats.revenue_30d:.2f}")
+        .section(E.AI_BRAIN, "AI сервисы")
+        .line(f"{or_icon} OpenRouter (кредиты: {credits_str})")
+        .line(f"{E.CHECK} Claude Sonnet 4.5 (BYOK)")
+        .line(f"{E.CHECK} Gemini Flash (BYOK)")
+        .line(f"{E.CHECK} DeepSeek V3.2")
+        .section(E.USER, "Пользователи")
+        .line(f"  Всего: {stats.total_users}")
+        .line(f"  Активных (7д): {active_users_7d}")
+        .line(f"  Оплативших: {stats.paid_users}")
+        .section(E.CHART, "Контент")
+        .line(f"  Проектов: {stats.total_projects}")
+        .line(f"  Публикаций (7д): {stats.publications_7d}")
+        .line(f"  Расписаний: {api_status.active_schedules}")
+        .section(E.WALLET, "Финансы (30д)")
+        .line(f"  Выручка: {revenue_str}")
+        .line(f"  Затраты API: ${stats.revenue_30d:.2f}")
+        .section(E.DATABASE, "Инфраструктура")
+        .line(f"  {db_icon} БД ({api_status.db_latency_ms}ms)  {redis_icon} Redis ({api_status.redis_latency_ms}ms)")
+        .line(f"  {qs_icon} QStash  {E.CHECK} Webhook")
         .hint("Обновляется в реальном времени")
         .build()
     )

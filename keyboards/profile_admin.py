@@ -542,10 +542,9 @@ def schedule_times_kb(selected: set[str], required: int) -> InlineKeyboardMarkup
 def admin_panel_kb() -> InlineKeyboardMarkup:
     """Admin panel main keyboard."""
     rows = [
-        [InlineKeyboardButton(text="Статус API", callback_data="admin:api_status")],
+        [InlineKeyboardButton(text="Затраты API (детально)", callback_data="admin:api_costs")],
         [InlineKeyboardButton(text="Просмотр пользователя", callback_data="admin:user_lookup")],
         [InlineKeyboardButton(text="Рассылка", callback_data="admin:broadcast")],
-        [InlineKeyboardButton(text="Затраты API", callback_data="admin:api_costs")],
         [InlineKeyboardButton(text="Порталы и сервисы", callback_data="admin:portals")],
         [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
     ]
