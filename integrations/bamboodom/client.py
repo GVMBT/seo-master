@@ -30,6 +30,7 @@ from integrations.bamboodom.models import (
     ArticleCodesResponse,
     ContextResponse,
     KeyTestResponse,
+    PublishResponse,
 )
 
 log = structlog.get_logger()
@@ -221,3 +222,43 @@ class BamboodomClient:
         """Read blog_article_codes from Redis without hitting API. Returns None if no cache."""
         cached = await self._cache_get(_CODES_CACHE_KEY)
         return ArticleCodesResponse.model_validate(cached) if cached else None
+
+    async def publish(
+        self,
+        payload: dict[str, Any],
+        *,
+        sandbox: bool = True,
+    ) -> PublishResponse:
+        """POST blog_publish — submit article blocks to bamboodom.ru.
+
+        Parameters
+        ----------
+        payload : dict
+            Article body. Must contain at minimum ``title`` and ``blocks``.
+            Optional: ``excerpt``, ``draft``, ``slug`` (auto-generated from title if absent),
+            ``published_at``. Server generates slug from title if not provided.
+        sandbox : bool, default True
+            When True → ``?sandbox=1``, writes to isolated blog_sandbox.json (auto-expires 7d).
+            When False → production, visible to side B moderators.
+
+        Returns
+        -------
+        PublishResponse
+            Always contains ``ok``, ``slug``, ``url`` (client should display as-is — URL
+            already embeds ``&sandbox=1`` when applicable).
+
+        Timeout set to 30s — publish is heavier than smoke-test, especially with many
+        product-blocks (server validates each article code against article_index.json).
+
+        Rate-limited server-side: 1 request per 3 seconds. Callers SHOULD hold a client-side
+        lock to avoid 429 from quick double-clicks.
+        """
+        params = {"sandbox": "1"} if sandbox else {}
+        data = await self._request(
+            "POST",
+            "blog_publish",
+            params=params,
+            json_body=payload,
+            timeout=30.0,
+        )
+        return PublishResponse.model_validate(data)

@@ -22,15 +22,19 @@ import httpx
 import sentry_sdk
 import structlog
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, Message
 
 from bot.config import get_settings
+from bot.fsm_utils import ensure_no_active_fsm
 from bot.helpers import safe_edit_text, safe_message
 from bot.texts import bamboodom as TXT
 from bot.texts import strings as S
 from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from cache.client import RedisClient
+from cache.keys import BAMBOODOM_PUBLISH_HISTORY_TTL, BAMBOODOM_PUBLISH_LOCK_TTL
 from db.models import User
 from integrations.bamboodom import (
     ArticleCodesResponse,
@@ -40,11 +44,16 @@ from integrations.bamboodom import (
     BamboodomRateLimitError,
     ContextResponse,
     KeyTestResponse,
+    PublishResponse,
 )
 from keyboards.bamboodom import (
     bamboodom_codes_kb,
     bamboodom_context_kb,
     bamboodom_entry_kb,
+    bamboodom_history_kb,
+    bamboodom_publish_confirm_kb,
+    bamboodom_publish_input_kb,
+    bamboodom_publish_result_kb,
     bamboodom_settings_kb,
     bamboodom_smoke_result_kb,
 )
@@ -60,6 +69,111 @@ _HISTORY_TTL = 7 * 24 * 3600  # 7 days
 _FORBIDDEN_CLAIMS_PREVIEW = 4  # show first N forbidden claims in UI (rest: +M more)
 _TYPICAL_CONTEXTS_PREVIEW = 5
 _SMOKE_ENDPOINTS_VISIBLE = 6
+
+
+# FSM for manual publishing (Session 3A)
+class PublishFSM(StatesGroup):
+    input_json = State()
+    confirm = State()
+
+
+# Redis keys for publish lock + history
+_PUBLISH_LOCK_KEY = "bamboodom:publish_lock:{user_id}"
+_PUBLISH_HISTORY_KEY = "bamboodom:publish_history"
+_HISTORY_MAX_ENTRIES = 10
+_MAX_JSON_FILE_BYTES = 100_000
+_MAX_INLINE_JSON_CHARS = 4000
+_REQUIRED_PUBLISH_FIELDS = ("title", "blocks")
+
+
+def _normalize_smart_quotes(text: str) -> str:
+    """Replace iOS/macOS smart quotes with ASCII variants.
+
+    Telegram auto-formatting on some clients breaks JSON parse. Side B specifically
+    requested this normalization in SESSION_3A_ANSWERS.md §А2.
+    """
+    return (
+        text.replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u00ab", '"')
+        .replace("\u00bb", '"')
+    )
+
+
+def _validate_payload_shape(payload: dict) -> list[str]:
+    """Return list of missing required fields in a publish payload."""
+    missing = []
+    if not isinstance(payload, dict):
+        return ["payload must be a JSON object"]
+    for field in _REQUIRED_PUBLISH_FIELDS:
+        if field not in payload or not payload[field]:
+            missing.append(field)
+    if "blocks" in payload and not isinstance(payload["blocks"], list):
+        missing.append("blocks (must be a list)")
+    return missing
+
+
+async def _try_acquire_publish_lock(redis: RedisClient, user_id: int) -> bool:
+    """Try to acquire a 3-second lock to prevent double-publishes.
+
+    Returns True if acquired (caller may proceed), False if another publish is in flight.
+    """
+    key = _PUBLISH_LOCK_KEY.format(user_id=user_id)
+    try:
+        result = await redis.set(key, "1", ex=BAMBOODOM_PUBLISH_LOCK_TTL, nx=True)
+    except Exception:
+        log.warning("bamboodom_publish_lock_error", exc_info=True)
+        return True  # fail-open: degraded without lock rather than block user
+    return bool(result)
+
+
+async def _append_history(redis: RedisClient, entry: dict) -> None:
+    """Prepend an entry to the publish history list (max _HISTORY_MAX_ENTRIES, TTL 7 days).
+
+    Uses a single Redis string holding a JSON array. RedisClient lacks LPUSH/LTRIM —
+    we emulate via read-modify-write. Fine for single-operator usage.
+    """
+    try:
+        raw = await redis.get(_PUBLISH_HISTORY_KEY)
+    except Exception:
+        log.warning("bamboodom_history_read_error", exc_info=True)
+        raw = None
+
+    try:
+        history = json.loads(raw) if raw else []
+        if not isinstance(history, list):
+            history = []
+    except ValueError:
+        history = []
+
+    history.insert(0, entry)
+    history = history[:_HISTORY_MAX_ENTRIES]
+
+    try:
+        await redis.set(
+            _PUBLISH_HISTORY_KEY,
+            json.dumps(history, ensure_ascii=False),
+            ex=BAMBOODOM_PUBLISH_HISTORY_TTL,
+        )
+    except Exception:
+        log.warning("bamboodom_history_write_error", exc_info=True)
+
+
+async def _read_history(redis: RedisClient) -> list[dict]:
+    try:
+        raw = await redis.get(_PUBLISH_HISTORY_KEY)
+    except Exception:
+        log.warning("bamboodom_history_read_error", exc_info=True)
+        return []
+    if not raw:
+        return []
+    try:
+        history = json.loads(raw)
+    except ValueError:
+        return []
+    return history if isinstance(history, list) else []
 
 
 # ---------------------------------------------------------------------------
@@ -748,4 +862,385 @@ async def bamboodom_settings(
 
     text = Screen(E.GEAR, TXT.BAMBOODOM_SETTINGS_TITLE).blank().line(TXT.BAMBOODOM_SETTINGS_STUB).build()
     await safe_edit_text(msg, text, reply_markup=bamboodom_settings_kb())
+    await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Handlers: manual sandbox publish (Session 3A)
+# ---------------------------------------------------------------------------
+
+
+def _build_publish_entry_text() -> str:
+    return (
+        Screen(E.UPLOAD, TXT.BAMBOODOM_PUBLISH_ENTRY_TITLE)
+        .blank()
+        .line(TXT.BAMBOODOM_PUBLISH_SANDBOX_NOTE)
+        .blank()
+        .line(TXT.BAMBOODOM_PUBLISH_ENTRY_HINT)
+        .build()
+    )
+
+
+def _build_publish_confirm_text(payload: dict) -> str:
+    title = str(payload.get("title") or "—")
+    excerpt = str(payload.get("excerpt") or "—")
+    blocks = payload.get("blocks") or []
+    return (
+        Screen(E.PEN, TXT.BAMBOODOM_PUBLISH_CONFIRM_TITLE)
+        .blank()
+        .line(
+            TXT.BAMBOODOM_PUBLISH_CONFIRM_TEXT.format(
+                title=title[:120],
+                excerpt=excerpt[:200],
+                blocks_count=len(blocks) if isinstance(blocks, list) else "?",
+                mode=TXT.BAMBOODOM_PUBLISH_MODE_SANDBOX,
+            )
+        )
+        .build()
+    )
+
+
+def _build_publish_result_text(
+    resp: PublishResponse,
+    *,
+    submitted_title: str,
+) -> str:
+    action_label = (
+        TXT.BAMBOODOM_PUBLISH_ACTION_CREATED if resp.action_type == "created" else TXT.BAMBOODOM_PUBLISH_ACTION_UPDATED
+    )
+    screen = (
+        Screen(E.CHECK, TXT.BAMBOODOM_PUBLISH_RESULT_TITLE)
+        .blank()
+        .line(f"{E.CHECK} {TXT.BAMBOODOM_PUBLISH_SUCCESS}")
+        .blank()
+        .line(f"<i>{TXT.BAMBOODOM_PUBLISH_BADGE_SANDBOX}</i>")
+        .section(E.INFO, "Детали")
+        .field(E.PEN, "Заголовок", submitted_title[:120])
+        .field(E.DOC, "Slug", resp.slug or "—")
+        .field(E.SYNC, "Действие", action_label)
+        .field(E.CHART, "Блоков принято", resp.blocks_parsed if resp.blocks_parsed is not None else "—")
+    )
+
+    if resp.blocks_dropped:
+        screen = screen.blank().line(
+            f"{E.WARNING} {TXT.BAMBOODOM_PUBLISH_BLOCKS_DROPPED.format(count=len(resp.blocks_dropped))}"
+        )
+        for drop in resp.blocks_dropped[:5]:
+            parts = [f"#{drop.index}" if drop.index is not None else "#?"]
+            if drop.type:
+                parts.append(drop.type)
+            if drop.reason:
+                parts.append(drop.reason)
+            if drop.article:
+                parts.append(drop.article)
+            elif drop.raw_type:
+                parts.append(f"raw={drop.raw_type}")
+            screen = screen.line(f"  — {' '.join(parts)}")
+        if len(resp.blocks_dropped) > 5:
+            screen = screen.line(f"  …ещё {len(resp.blocks_dropped) - 5}")
+
+    screen = screen.hint(TXT.BAMBOODOM_PUBLISH_HINT)
+    return screen.build()
+
+
+def _resolve_article_url(resp: PublishResponse) -> str | None:
+    """Convert server-provided relative URL to full HTTP link for inline button."""
+    if not resp.url:
+        return None
+    url = resp.url
+    if url.startswith(("http://", "https://")):
+        return url
+    # relative — prepend host
+    host = TXT.BAMBOODOM_URL_HOST.rstrip("/")
+    return f"{host}{url if url.startswith('/') else '/' + url}"
+
+
+@router.callback_query(F.data == "bamboodom:publish")
+async def bamboodom_publish_entry(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """Open publish FSM — prompt for JSON input."""
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    settings = get_settings()
+    if not settings.bamboodom_blog_key.get_secret_value():
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(TXT.BAMBOODOM_PUBLISH_ENTRY_TITLE, TXT.BAMBOODOM_SMOKE_KEY_MISSING),
+            reply_markup=bamboodom_publish_input_kb(),
+        )
+        await callback.answer()
+        return
+
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        log.info("bamboodom_publish_interrupted_other_fsm", previous=interrupted)
+
+    await state.set_state(PublishFSM.input_json)
+    await safe_edit_text(msg, _build_publish_entry_text(), reply_markup=bamboodom_publish_input_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "bamboodom:publish:example")
+async def bamboodom_publish_example(callback: CallbackQuery, user: User) -> None:
+    """Send the example JSON as a separate message so the user can copy it easily."""
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    # Send raw JSON inside a code-block for easy copy.
+    bot = callback.bot
+    if bot is not None and callback.from_user is not None:
+        await bot.send_message(
+            callback.from_user.id,
+            f"<pre>{TXT.BAMBOODOM_PUBLISH_EXAMPLE_JSON}</pre>",
+        )
+    await callback.answer("Пример отправлен — скопируйте, поправьте, пришлите в чат")
+
+
+@router.message(PublishFSM.input_json, F.text)
+async def bamboodom_publish_input_text(
+    message: Message,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """Parse JSON from a text message."""
+    if not _is_admin(user):
+        return
+    text = message.text or ""
+    if len(text) > _MAX_INLINE_JSON_CHARS:
+        await message.answer(
+            TXT.BAMBOODOM_PUBLISH_TEXT_TOO_LONG.format(length=len(text)),
+            reply_markup=bamboodom_publish_input_kb(),
+        )
+        return
+    await _handle_publish_input(message, state, text)
+
+
+@router.message(PublishFSM.input_json, F.document)
+async def bamboodom_publish_input_document(
+    message: Message,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """Parse JSON from an uploaded .json document (fallback for long payloads)."""
+    if not _is_admin(user):
+        return
+    doc = message.document
+    if doc is None:
+        return
+    if doc.file_size and doc.file_size > _MAX_JSON_FILE_BYTES:
+        await message.answer(
+            TXT.BAMBOODOM_PUBLISH_FILE_TOO_LARGE.format(size=doc.file_size),
+            reply_markup=bamboodom_publish_input_kb(),
+        )
+        return
+
+    bot = message.bot
+    if bot is None:
+        return
+    try:
+        file_obj = await bot.get_file(doc.file_id)
+        binary = await bot.download_file(file_obj.file_path) if file_obj.file_path else None
+        if binary is None:
+            raise ValueError("empty file")
+        raw = binary.read() if hasattr(binary, "read") else bytes(binary)
+        text = raw.decode("utf-8")
+    except Exception as exc:
+        log.warning("bamboodom_publish_file_read_failed", exc_info=True)
+        await message.answer(
+            TXT.BAMBOODOM_PUBLISH_FILE_READ_ERROR.format(detail=str(exc)[:200]),
+            reply_markup=bamboodom_publish_input_kb(),
+        )
+        return
+
+    await _handle_publish_input(message, state, text)
+
+
+async def _handle_publish_input(message: Message, state: FSMContext, text: str) -> None:
+    """Common JSON parse + shape validation + transition to confirm state."""
+    normalized = _normalize_smart_quotes(text)
+    try:
+        payload = json.loads(normalized)
+    except json.JSONDecodeError as exc:
+        await message.answer(
+            TXT.BAMBOODOM_PUBLISH_JSON_PARSE_ERROR.format(detail=str(exc)),
+            reply_markup=bamboodom_publish_input_kb(),
+        )
+        return
+
+    missing = _validate_payload_shape(payload)
+    if missing:
+        await message.answer(
+            TXT.BAMBOODOM_PUBLISH_MISSING_FIELDS.format(fields=", ".join(missing)),
+            reply_markup=bamboodom_publish_input_kb(),
+        )
+        return
+
+    await state.update_data(publish_payload=payload)
+    await state.set_state(PublishFSM.confirm)
+    await message.answer(
+        _build_publish_confirm_text(payload),
+        reply_markup=bamboodom_publish_confirm_kb(),
+    )
+
+
+@router.callback_query(F.data == "bamboodom:publish:submit", PublishFSM.confirm)
+async def bamboodom_publish_submit(
+    callback: CallbackQuery,
+    user: User,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+    state: FSMContext,
+) -> None:
+    """Send the pre-approved payload to blog_publish?sandbox=1."""
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    # Rate-limit guard (1 publish / 3 sec server-side).
+    acquired = await _try_acquire_publish_lock(redis, user.id)
+    if not acquired:
+        await callback.answer(TXT.BAMBOODOM_PUBLISH_LOCKED, show_alert=True)
+        return
+
+    data = await state.get_data()
+    payload = data.get("publish_payload")
+    if not isinstance(payload, dict):
+        log.warning("bamboodom_publish_no_payload_in_state")
+        await state.clear()
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(
+                TXT.BAMBOODOM_PUBLISH_RESULT_TITLE,
+                TXT.BAMBOODOM_PUBLISH_JSON_PARSE_ERROR.format(detail="no payload"),
+            ),
+            reply_markup=bamboodom_publish_result_kb(None),
+        )
+        await callback.answer()
+        return
+
+    await callback.answer(TXT.BAMBOODOM_PUBLISH_PROGRESS)
+    client = BamboodomClient(http_client=http_client, redis=redis)
+
+    try:
+        resp = await client.publish(payload, sandbox=True)
+    except BamboodomAuthError:
+        log.info("bamboodom_publish_failed", reason="auth")
+        await state.clear()
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(TXT.BAMBOODOM_PUBLISH_RESULT_TITLE, TXT.BAMBOODOM_SMOKE_KEY_INVALID),
+            reply_markup=bamboodom_publish_result_kb(None),
+        )
+        return
+    except BamboodomRateLimitError as exc:
+        log.info("bamboodom_publish_failed", reason="rate_limit", retry_after=exc.retry_after)
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(
+                TXT.BAMBOODOM_PUBLISH_RESULT_TITLE,
+                TXT.BAMBOODOM_SMOKE_RATE_LIMIT.format(retry_after=exc.retry_after),
+            ),
+            reply_markup=bamboodom_publish_confirm_kb(),
+        )
+        return
+    except BamboodomAPIError as exc:
+        message_text, is_transient = _classify_api_error(exc)
+        log.warning("bamboodom_publish_failed", reason="server" if is_transient else "api", detail=str(exc))
+        if is_transient:
+            sentry_sdk.capture_exception(exc)
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(TXT.BAMBOODOM_PUBLISH_RESULT_TITLE, message_text),
+            reply_markup=bamboodom_publish_confirm_kb(),
+        )
+        return
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        log.exception("bamboodom_publish_unexpected")
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(
+                TXT.BAMBOODOM_PUBLISH_RESULT_TITLE,
+                TXT.BAMBOODOM_SMOKE_UNEXPECTED.format(detail=str(exc)[:200]),
+            ),
+            reply_markup=bamboodom_publish_confirm_kb(),
+        )
+        return
+
+    # Success path.
+    submitted_title = str(payload.get("title") or "")
+    article_url = _resolve_article_url(resp)
+    log.info(
+        "bamboodom_publish_ok",
+        slug=resp.slug,
+        action_type=resp.action_type,
+        blocks_parsed=resp.blocks_parsed,
+        blocks_dropped_count=len(resp.blocks_dropped),
+    )
+
+    history_entry = {
+        "slug": resp.slug,
+        "title": submitted_title[:200],
+        "action_type": resp.action_type,
+        "url": article_url,
+        "created_at": _now_iso(),
+    }
+    await _append_history(redis, history_entry)
+
+    await state.clear()
+    await safe_edit_text(
+        msg,
+        _build_publish_result_text(resp, submitted_title=submitted_title),
+        reply_markup=bamboodom_publish_result_kb(article_url),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Handlers: history
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "bamboodom:history")
+async def bamboodom_history(
+    callback: CallbackQuery,
+    user: User,
+    redis: RedisClient,
+) -> None:
+    """Show recent publish history (last 10, TTL 7 days)."""
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    history = await _read_history(redis)
+
+    screen = Screen(E.SCHEDULE, TXT.BAMBOODOM_HISTORY_TITLE).blank()
+    if not history:
+        screen = screen.line(TXT.BAMBOODOM_HISTORY_EMPTY)
+    else:
+        for entry in history:
+            ts = _fmt_moscow(entry.get("created_at")) if entry.get("created_at") else "—"
+            title = (entry.get("title") or "—")[:80]
+            action = entry.get("action_type") or "—"
+            screen = screen.line(f"— <b>{title}</b>")
+            screen = screen.line(f"  {ts} · {action} · <code>{entry.get('slug') or '—'}</code>")
+    screen = screen.hint(TXT.BAMBOODOM_HISTORY_HINT)
+
+    await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_history_kb())
     await callback.answer()

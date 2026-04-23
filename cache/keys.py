@@ -17,6 +17,8 @@ PIPELINE_CHECKPOINT_TTL = 86400  # 24 hours (§12.3)
 RESEARCH_CACHE_TTL = 604800  # 7 days (API_CONTRACTS.md §7a.4)
 BAMBOODOM_CONTEXT_TTL = 3600  # 1 hour (blog_context from bamboodom.ru)
 BAMBOODOM_CODES_TTL = 3600  # 1 hour (blog_article_codes from bamboodom.ru)
+BAMBOODOM_PUBLISH_LOCK_TTL = 3  # 3 sec (matches server rate limit: 1 publish / 3 sec)
+BAMBOODOM_PUBLISH_HISTORY_TTL = 604800  # 7 days (sandbox articles auto-expire after 7 days)
 
 
 class CacheKeys:

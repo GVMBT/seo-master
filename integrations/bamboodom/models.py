@@ -95,3 +95,33 @@ class ArticleCodesResponse(BaseModel):
             if isinstance(v, list) and all(isinstance(x, str) for x in v):
                 known[k] = len(v)
         return known
+
+
+class BlockDropped(BaseModel):
+    """Entry in `blog_publish.blocks_dropped` — explains why a block was filtered out.
+
+    Server-side validation rejects:
+    - product blocks with unknown article code → reason='article_not_found'
+    - blocks with invalid type (not in the 15-type allowlist) → reason='invalid_type'
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    index: int | None = None
+    type: str | None = None
+    reason: str | None = None
+    article: str | None = None
+    raw_type: str | None = None
+
+
+class PublishResponse(BaseModel):
+    """Response shape of `blog_publish` endpoint (v1.1)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool
+    slug: str | None = None
+    url: str | None = None
+    action_type: str | None = None  # "created" or "updated"
+    blocks_parsed: int | None = None
+    blocks_dropped: list[BlockDropped] = []

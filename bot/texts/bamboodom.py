@@ -76,3 +76,71 @@ BAMBOODOM_SMOKE_PRIORITY_ENDPOINTS = (
     "blog_get",
 )
 BAMBOODOM_SMOKE_ENDPOINTS_MORE = "…+{count} ещё"
+
+
+# ---------------------------------------------------------------------------
+# Publish (Session 3A) — manual sandbox publishing via FSM
+# ---------------------------------------------------------------------------
+
+BAMBOODOM_PUBLISH_BUTTON = "Публикация в sandbox"
+
+# Entry screen (first FSM state)
+BAMBOODOM_PUBLISH_ENTRY_TITLE = "ПУБЛИКАЦИЯ В SANDBOX"
+BAMBOODOM_PUBLISH_ENTRY_HINT = (
+    "Отправьте JSON статьи одним сообщением, либо прикрепите как .json файл (если превышает 4096 символов)."
+)
+BAMBOODOM_PUBLISH_SANDBOX_NOTE = "Режим: sandbox. Статьи живут 7 дней и не видны на публичном /blog.html."
+
+# Example JSON: uses TK001A (stable WPC article) + draft:false (instant preview in sandbox).
+BAMBOODOM_PUBLISH_EXAMPLE_JSON = """{
+  "title": "Sandbox test — название статьи",
+  "excerpt": "Короткое описание 1-2 предложения ← правьте",
+  "draft": false,
+  "blocks": [
+    {"type": "h2", "text": "Заголовок раздела"},
+    {"type": "p", "text": "Первый абзац. Разрешены inline-теги: <b>жирный</b>, <i>курсив</i>."},
+    {"type": "product", "article": "TK001A"},
+    {"type": "callout", "style": "info", "title": "Полезно знать",
+     "text": "Текст выноски."}
+  ]
+}"""
+
+# Errors
+BAMBOODOM_PUBLISH_JSON_PARSE_ERROR = "Неверный JSON: {detail}\n\nПроверьте кавычки и скобки, отправьте ещё раз."
+BAMBOODOM_PUBLISH_MISSING_FIELDS = "В JSON отсутствуют обязательные поля: {fields}."
+BAMBOODOM_PUBLISH_TEXT_TOO_LONG = (
+    "Сообщение слишком длинное ({length} симв.). Отправьте JSON как .json файл (прикрепите документ к сообщению)."
+)
+BAMBOODOM_PUBLISH_FILE_TOO_LARGE = "Файл слишком большой ({size} байт). Лимит 100 KB."
+BAMBOODOM_PUBLISH_FILE_READ_ERROR = "Не удалось прочитать файл: {detail}"
+
+# Confirm state
+BAMBOODOM_PUBLISH_CONFIRM_TITLE = "ПРЕДПРОСМОТР"
+BAMBOODOM_PUBLISH_CONFIRM_TEXT = (
+    "Перед отправкой проверьте:\n— Заголовок: {title}\n— Excerpt: {excerpt}\n— Блоков: {blocks_count}\n— Режим: {mode}"
+)
+BAMBOODOM_PUBLISH_MODE_SANDBOX = "sandbox (7 дней)"
+
+# Rate limit / lock
+BAMBOODOM_PUBLISH_LOCKED = "Подождите 3 секунды между публикациями."
+BAMBOODOM_PUBLISH_PROGRESS = "Отправляю статью…"
+
+# Result screen
+BAMBOODOM_PUBLISH_RESULT_TITLE = "РЕЗУЛЬТАТ ПУБЛИКАЦИИ"
+BAMBOODOM_PUBLISH_SUCCESS = "Статья отправлена в sandbox."
+BAMBOODOM_PUBLISH_BADGE_SANDBOX = "SANDBOX · автоудаление через 7 дней"
+BAMBOODOM_PUBLISH_ACTION_CREATED = "создана"
+BAMBOODOM_PUBLISH_ACTION_UPDATED = "обновлена"
+BAMBOODOM_PUBLISH_BLOCKS_DROPPED = "Блоков отфильтровано сервером: {count}"
+BAMBOODOM_PUBLISH_HINT = "Откройте ссылку для предпросмотра."
+BAMBOODOM_PUBLISH_CANCELLED = "Публикация отменена."
+
+# History screen
+BAMBOODOM_HISTORY_BUTTON = "История"
+BAMBOODOM_HISTORY_TITLE = "ИСТОРИЯ ПУБЛИКАЦИЙ"
+BAMBOODOM_HISTORY_EMPTY = "Публикаций пока не было."
+BAMBOODOM_HISTORY_HINT = "Хранится до 10 последних записей, максимум 7 дней."
+
+# URL prefix for sandbox preview — use response.url from server if available,
+# only fall back to this when URL is missing for some reason.
+BAMBOODOM_URL_HOST = "https://bamboodom.ru"
