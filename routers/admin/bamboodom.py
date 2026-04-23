@@ -129,21 +129,32 @@ async def _try_acquire_publish_lock(redis: RedisClient, user_id: int) -> bool:
     return bool(result)
 
 
-def _deep_json_decode(raw, *, max_depth: int = 3) -> object:
-    """Decode a potentially double-JSON-encoded value.
+def _deep_json_decode(raw, *, max_depth: int = 4) -> object:
+    """Decode a value that might be multi-layer JSON-encoded (Upstash quirks).
 
-    Some Upstash deployments appear to wrap values in an extra JSON layer
-    (i.e. a JSON array gets stored as a JSON-encoded string). We iteratively
-    json.loads() while the result is still a string, up to max_depth times.
+    Handles three cases observed empirically:
+    1. Plain JSON string → `json.loads()` once yields native Python value.
+    2. Double-encoded string → two iterations of `json.loads()` required.
+    3. A LIST whose elements are themselves JSON-strings → unwrap each element.
+
+    Iterates up to `max_depth` times; stops on the first shape that is neither
+    a string nor a list-of-strings.
     """
     value = raw
     for _ in range(max_depth):
-        if not isinstance(value, str):
-            break
-        try:
-            value = json.loads(value)
-        except ValueError, TypeError:
-            break
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+                continue
+            except ValueError, TypeError:
+                break
+        if isinstance(value, list) and value and all(isinstance(e, str) for e in value):
+            try:
+                value = [json.loads(e) for e in value]
+                continue
+            except ValueError, TypeError:
+                break
+        break
     return value
 
 
@@ -175,7 +186,9 @@ async def _append_history(redis: RedisClient, entry: dict) -> None:
 
 
 async def _read_history(redis: RedisClient) -> list[dict]:
-    """Read publish history. Tolerates both plain JSON-arrays and Upstash double-encoding."""
+    """Read publish history. Tolerates plain JSON-arrays, Upstash double-encoding,
+    and lists where every element was stored as a JSON-string separately.
+    """
     try:
         raw = await redis.get(_PUBLISH_HISTORY_KEY)
     except Exception:
@@ -184,11 +197,16 @@ async def _read_history(redis: RedisClient) -> list[dict]:
     if raw is None:
         return []
     decoded = _deep_json_decode(raw)
+    # Diagnostic — one line per read, helps confirm the Upstash storage shape.
+    log.info(
+        "bamboodom_history_read",
+        raw_type=type(raw).__name__,
+        raw_preview=str(raw)[:150],
+        decoded_type=type(decoded).__name__,
+        decoded_len=len(decoded) if hasattr(decoded, "__len__") else None,
+    )
     if not isinstance(decoded, list):
-        log.warning(
-            "bamboodom_history_unexpected_shape",
-            shape=type(decoded).__name__,
-        )
+        log.warning("bamboodom_history_unexpected_shape", shape=type(decoded).__name__)
         return []
     return [e for e in decoded if isinstance(e, dict)]
 
