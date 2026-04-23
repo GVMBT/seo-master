@@ -144,3 +144,55 @@ BAMBOODOM_HISTORY_HINT = "Хранится до 10 последних запис
 # URL prefix for sandbox preview — use response.url from server if available,
 # only fall back to this when URL is missing for some reason.
 BAMBOODOM_URL_HOST = "https://bamboodom.ru"
+
+
+# ---------------------------------------------------------------------------
+# AI publish (Session 4A) — AI-generated article submitted to sandbox
+# ---------------------------------------------------------------------------
+
+BAMBOODOM_AI_BUTTON = "AI-публикация"
+
+# Entry / material selection
+BAMBOODOM_AI_TITLE = "AI-ПУБЛИКАЦИЯ"
+BAMBOODOM_AI_CHOOSE_MATERIAL_HINT = "Выберите категорию материала для статьи."
+BAMBOODOM_AI_MATERIAL_WPC = "WPC панели"
+BAMBOODOM_AI_MATERIAL_FLEX = "Гибкая керамика"
+BAMBOODOM_AI_MATERIAL_REIKI = "Реечные панели"
+BAMBOODOM_AI_MATERIAL_PROFILES = "Алюминиевые профили"
+
+# Keyword input
+BAMBOODOM_AI_KEYWORD_TITLE = "ТЕМА СТАТЬИ"
+BAMBOODOM_AI_KEYWORD_PROMPT = (
+    "Отправьте тему или ключевое слово одним сообщением.\n\n"
+    "Примеры: «как выбрать WPC для ванной», «реечные панели в гостиной», "
+    "«монтаж гибкой керамики на колонны»."
+)
+BAMBOODOM_AI_KEYWORD_EMPTY = "Тема не должна быть пустой. Попробуйте ещё раз."
+BAMBOODOM_AI_KEYWORD_TOO_LONG = "Тема слишком длинная (максимум 300 символов)."
+
+# Generating
+BAMBOODOM_AI_GENERATING_TITLE = "ГЕНЕРАЦИЯ"
+BAMBOODOM_AI_GENERATING_HINT = "Claude пишет статью, это займёт 30-90 секунд. Пожалуйста, подождите."
+BAMBOODOM_AI_GENERATING_PROGRESS = "Генерирую статью…"
+BAMBOODOM_AI_GENERATION_FAILED = "Не удалось сгенерировать статью: {detail}"
+
+# Preview
+BAMBOODOM_AI_PREVIEW_TITLE = "ПРЕДПРОСМОТР (AI)"
+BAMBOODOM_AI_PREVIEW_SUMMARY = (
+    "— Заголовок: {title}\n— Excerpt: {excerpt}\n— Блоков: {blocks_count}\n— Категория: {material}"
+)
+BAMBOODOM_AI_PREVIEW_FIRST_PARAGRAPHS = "\n\n<b>Первые абзацы:</b>\n{paragraphs}"
+BAMBOODOM_AI_PREVIEW_VALIDATION_WARN = "\n\n⚠ Валидатор нашёл {count} замечаний (auto-retry не помог):"
+
+# Submit / publish
+BAMBOODOM_AI_PUBLISHING_PROGRESS = "Публикую в sandbox…"
+BAMBOODOM_AI_SANDBOX_NOTE = (
+    "Первые 5-10 AI-статей идут в sandbox — сторона B проверяет их у себя, после апрува перейдём на production."
+)
+
+# Result
+BAMBOODOM_AI_RESULT_TITLE = "AI-СТАТЬЯ ОПУБЛИКОВАНА"
+BAMBOODOM_AI_RESULT_SUCCESS = "Статья сгенерирована AI и отправлена в sandbox."
+
+# Cancel
+BAMBOODOM_AI_CANCELLED = "Публикация отменена."

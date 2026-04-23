@@ -11,6 +11,7 @@ def bamboodom_entry_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Smoke-test", callback_data="bamboodom:smoke")],
         [InlineKeyboardButton(text="Контекст сайта", callback_data="bamboodom:context")],
         [InlineKeyboardButton(text="Артикулы", callback_data="bamboodom:codes")],
+        [InlineKeyboardButton(text="AI-публикация", callback_data="bamboodom:ai:start")],
         [InlineKeyboardButton(text="Публикация в sandbox", callback_data="bamboodom:publish")],
         [InlineKeyboardButton(text="История публикаций", callback_data="bamboodom:history")],
         [InlineKeyboardButton(text="Настройки", callback_data="bamboodom:settings")],
@@ -89,4 +90,44 @@ def bamboodom_settings_kb() -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
     ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_ai_material_kb() -> InlineKeyboardMarkup:
+    """AI FSM — step 1: choose material category."""
+    rows = [
+        [InlineKeyboardButton(text="WPC панели", callback_data="bamboodom:ai:mat:wpc")],
+        [InlineKeyboardButton(text="Гибкая керамика", callback_data="bamboodom:ai:mat:flex")],
+        [InlineKeyboardButton(text="Реечные панели", callback_data="bamboodom:ai:mat:reiki")],
+        [InlineKeyboardButton(text="Алюминиевые профили", callback_data="bamboodom:ai:mat:profiles")],
+        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:entry")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_ai_keyword_kb() -> InlineKeyboardMarkup:
+    """AI FSM — step 2: waiting for keyword. Only cancel button."""
+    rows = [
+        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:entry")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_ai_preview_kb() -> InlineKeyboardMarkup:
+    """AI FSM — step 4: preview with publish / regenerate / cancel."""
+    rows = [
+        [InlineKeyboardButton(text="Опубликовать", callback_data="bamboodom:ai:publish")],
+        [InlineKeyboardButton(text="Перегенерировать", callback_data="bamboodom:ai:regenerate")],
+        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:entry")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_ai_result_kb(article_url: str | None) -> InlineKeyboardMarkup:
+    """AI FSM — step 5: result screen."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if article_url:
+        rows.append([InlineKeyboardButton(text="Открыть статью", url=article_url)])
+    rows.append([InlineKeyboardButton(text="Ещё статью", callback_data="bamboodom:ai:start")])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

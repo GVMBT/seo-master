@@ -47,6 +47,10 @@ from integrations.bamboodom import (
     PublishResponse,
 )
 from keyboards.bamboodom import (
+    bamboodom_ai_keyword_kb,
+    bamboodom_ai_material_kb,
+    bamboodom_ai_preview_kb,
+    bamboodom_ai_result_kb,
     bamboodom_codes_kb,
     bamboodom_context_kb,
     bamboodom_entry_kb,
@@ -56,6 +60,10 @@ from keyboards.bamboodom import (
     bamboodom_publish_result_kb,
     bamboodom_settings_kb,
     bamboodom_smoke_result_kb,
+)
+from services.ai.bamboodom import (
+    BamboodomArticleService,
+    BamboodomGenerationError,
 )
 
 log = structlog.get_logger()
@@ -1283,3 +1291,438 @@ async def bamboodom_history(
 
     await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_history_kb())
     await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# AI publish FSM (Session 4A) — generate article via Claude, publish to sandbox
+# ---------------------------------------------------------------------------
+
+
+class AIPublishFSM(StatesGroup):
+    choose_material = State()
+    enter_keyword = State()
+    preview = State()
+
+
+_MATERIAL_LABELS: dict[str, str] = {
+    "wpc": TXT.BAMBOODOM_AI_MATERIAL_WPC,
+    "flex": TXT.BAMBOODOM_AI_MATERIAL_FLEX,
+    "reiki": TXT.BAMBOODOM_AI_MATERIAL_REIKI,
+    "profiles": TXT.BAMBOODOM_AI_MATERIAL_PROFILES,
+}
+
+_MAX_KEYWORD_LENGTH = 300
+_PREVIEW_PARAGRAPHS = 2
+
+
+def _build_ai_entry_text() -> str:
+    return (
+        Screen(E.AI_BRAIN, TXT.BAMBOODOM_AI_TITLE)
+        .blank()
+        .line(TXT.BAMBOODOM_AI_CHOOSE_MATERIAL_HINT)
+        .blank()
+        .line(f"<i>{TXT.BAMBOODOM_AI_SANDBOX_NOTE}</i>")
+        .build()
+    )
+
+
+def _build_ai_keyword_text(material: str) -> str:
+    label = _MATERIAL_LABELS.get(material, material)
+    return (
+        Screen(E.PEN, TXT.BAMBOODOM_AI_KEYWORD_TITLE)
+        .blank()
+        .field(E.FOLDER, "Категория", label)
+        .blank()
+        .line(TXT.BAMBOODOM_AI_KEYWORD_PROMPT)
+        .build()
+    )
+
+
+def _build_ai_generating_text(material: str, keyword: str) -> str:
+    label = _MATERIAL_LABELS.get(material, material)
+    return (
+        Screen(E.AI_BRAIN, TXT.BAMBOODOM_AI_GENERATING_TITLE)
+        .blank()
+        .field(E.FOLDER, "Категория", label)
+        .field(E.PEN, "Тема", keyword[:120])
+        .blank()
+        .line(TXT.BAMBOODOM_AI_GENERATING_HINT)
+        .build()
+    )
+
+
+def _extract_first_paragraphs(blocks: list[dict], limit: int) -> str:
+    """Pull first `limit` paragraph blocks' text for preview display."""
+    paragraphs = []
+    for block in blocks:
+        if block.get("type") == "p" and isinstance(block.get("text"), str):
+            paragraphs.append(block["text"])
+            if len(paragraphs) >= limit:
+                break
+    return "\n\n".join(p[:400] for p in paragraphs)
+
+
+def _build_ai_preview_text(
+    *,
+    material: str,
+    draft,
+    validation_issues: list[str],
+) -> str:
+    label = _MATERIAL_LABELS.get(material, material)
+    summary = TXT.BAMBOODOM_AI_PREVIEW_SUMMARY.format(
+        title=draft.title[:120],
+        excerpt=draft.excerpt[:200],
+        blocks_count=len(draft.blocks),
+        material=label,
+    )
+    paragraphs = _extract_first_paragraphs(draft.blocks, _PREVIEW_PARAGRAPHS)
+    screen = Screen(E.EDIT_DOC, TXT.BAMBOODOM_AI_PREVIEW_TITLE).blank().line(summary)
+    if paragraphs:
+        screen = screen.line(TXT.BAMBOODOM_AI_PREVIEW_FIRST_PARAGRAPHS.format(paragraphs=paragraphs))
+    if validation_issues:
+        screen = screen.line(TXT.BAMBOODOM_AI_PREVIEW_VALIDATION_WARN.format(count=len(validation_issues)))
+        for issue in validation_issues[:4]:
+            screen = screen.line(f"  — {issue[:180]}")
+        if len(validation_issues) > 4:
+            screen = screen.line(f"  …ещё {len(validation_issues) - 4}")
+    return screen.build()
+
+
+def _build_ai_result_text(submitted_title: str, resp) -> str:
+    action_label = (
+        TXT.BAMBOODOM_PUBLISH_ACTION_CREATED if resp.action_type == "created" else TXT.BAMBOODOM_PUBLISH_ACTION_UPDATED
+    )
+    screen = (
+        Screen(E.CHECK, TXT.BAMBOODOM_AI_RESULT_TITLE)
+        .blank()
+        .line(f"{E.CHECK} {TXT.BAMBOODOM_AI_RESULT_SUCCESS}")
+        .blank()
+        .line(f"<i>{TXT.BAMBOODOM_PUBLISH_BADGE_SANDBOX}</i>")
+        .section(E.INFO, "Детали")
+        .field(E.PEN, "Заголовок", submitted_title[:120])
+        .field(E.DOC, "Slug", resp.slug or "—")
+        .field(E.SYNC, "Действие", action_label)
+        .field(E.CHART, "Блоков принято", resp.blocks_parsed if resp.blocks_parsed is not None else "—")
+    )
+    if resp.blocks_dropped:
+        screen = screen.blank().line(
+            f"{E.WARNING} {TXT.BAMBOODOM_PUBLISH_BLOCKS_DROPPED.format(count=len(resp.blocks_dropped))}"
+        )
+    screen = screen.hint(TXT.BAMBOODOM_PUBLISH_HINT)
+    return screen.build()
+
+
+# --- Entry / material selection ----------------------------------------
+
+
+@router.callback_query(F.data == "bamboodom:ai:start")
+async def ai_start(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    settings = get_settings()
+    if not settings.bamboodom_blog_key.get_secret_value():
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(TXT.BAMBOODOM_AI_TITLE, TXT.BAMBOODOM_SMOKE_KEY_MISSING),
+            reply_markup=bamboodom_entry_kb(),
+        )
+        await callback.answer()
+        return
+
+    interrupted = await ensure_no_active_fsm(state)
+    if interrupted:
+        log.info("bamboodom_ai_interrupted_other_fsm", previous=interrupted)
+
+    await state.set_state(AIPublishFSM.choose_material)
+    await safe_edit_text(msg, _build_ai_entry_text(), reply_markup=bamboodom_ai_material_kb())
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.regexp(r"^bamboodom:ai:mat:(wpc|flex|reiki|profiles)$"),
+    AIPublishFSM.choose_material,
+)
+async def ai_choose_material(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    cb_data = callback.data or ""
+    material = cb_data.split(":")[-1]
+    await state.update_data(ai_material=material)
+    await state.set_state(AIPublishFSM.enter_keyword)
+    await safe_edit_text(msg, _build_ai_keyword_text(material), reply_markup=bamboodom_ai_keyword_kb())
+    await callback.answer()
+
+
+# --- Keyword entry -----------------------------------------------------
+
+
+@router.message(AIPublishFSM.enter_keyword, F.text)
+async def ai_receive_keyword(
+    message: Message,
+    user: User,
+    state: FSMContext,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    if not _is_admin(user):
+        return
+    keyword = (message.text or "").strip()
+    if not keyword:
+        await message.answer(TXT.BAMBOODOM_AI_KEYWORD_EMPTY, reply_markup=bamboodom_ai_keyword_kb())
+        return
+    if len(keyword) > _MAX_KEYWORD_LENGTH:
+        await message.answer(TXT.BAMBOODOM_AI_KEYWORD_TOO_LONG, reply_markup=bamboodom_ai_keyword_kb())
+        return
+
+    data = await state.get_data()
+    material = data.get("ai_material", "wpc")
+
+    # Show "generating" screen immediately so operator sees progress
+    progress_msg = await message.answer(_build_ai_generating_text(material, keyword))
+    await _run_ai_generation(
+        bot_msg=progress_msg,
+        state=state,
+        user_id=user.id,
+        material=material,
+        keyword=keyword,
+        redis=redis,
+        http_client=http_client,
+    )
+
+
+async def _run_ai_generation(
+    *,
+    bot_msg,
+    state: FSMContext,
+    user_id: int,
+    material: str,
+    keyword: str,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Shared: call BamboodomArticleService, render preview or error."""
+    settings = get_settings()
+    bamboodom_client = BamboodomClient(http_client=http_client, redis=redis)
+    ai_service = BamboodomArticleService(
+        http_client=http_client,
+        openrouter_api_key=settings.openrouter_api_key.get_secret_value(),
+        bamboodom_client=bamboodom_client,
+    )
+
+    current_date_iso = _now_iso()
+
+    try:
+        draft, validation = await ai_service.generate_and_validate(
+            material=material,
+            keyword=keyword,
+            current_date_iso=current_date_iso,
+        )
+    except BamboodomGenerationError as exc:
+        log.warning("bamboodom_ai_generation_error", detail=str(exc))
+        sentry_sdk.capture_exception(exc)
+        await safe_edit_text(
+            bot_msg,
+            _build_simple_error_text(
+                TXT.BAMBOODOM_AI_TITLE,
+                TXT.BAMBOODOM_AI_GENERATION_FAILED.format(detail=str(exc)[:250]),
+            ),
+            reply_markup=bamboodom_entry_kb(),
+        )
+        await state.clear()
+        return
+    except Exception as exc:
+        log.exception("bamboodom_ai_generation_unexpected")
+        sentry_sdk.capture_exception(exc)
+        await safe_edit_text(
+            bot_msg,
+            _build_simple_error_text(
+                TXT.BAMBOODOM_AI_TITLE,
+                TXT.BAMBOODOM_AI_GENERATION_FAILED.format(detail=str(exc)[:250]),
+            ),
+            reply_markup=bamboodom_entry_kb(),
+        )
+        await state.clear()
+        return
+
+    # Stash draft in FSM for the publish step
+    await state.update_data(
+        ai_material=material,
+        ai_keyword=keyword,
+        ai_draft_title=draft.title,
+        ai_draft_excerpt=draft.excerpt,
+        ai_draft_blocks=draft.blocks,
+    )
+    await state.set_state(AIPublishFSM.preview)
+
+    issues_text = [i.detail for i in validation.issues]
+    await safe_edit_text(
+        bot_msg,
+        _build_ai_preview_text(material=material, draft=draft, validation_issues=issues_text),
+        reply_markup=bamboodom_ai_preview_kb(),
+    )
+    _ = user_id  # reserved for future rate-limit logging
+
+
+@router.callback_query(F.data == "bamboodom:ai:regenerate", AIPublishFSM.preview)
+async def ai_regenerate(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    material = data.get("ai_material", "wpc")
+    keyword = data.get("ai_keyword", "")
+
+    await callback.answer(TXT.BAMBOODOM_AI_GENERATING_PROGRESS)
+    await safe_edit_text(msg, _build_ai_generating_text(material, keyword))
+    await _run_ai_generation(
+        bot_msg=msg,
+        state=state,
+        user_id=user.id,
+        material=material,
+        keyword=keyword,
+        redis=redis,
+        http_client=http_client,
+    )
+
+
+@router.callback_query(F.data == "bamboodom:ai:publish", AIPublishFSM.preview)
+async def ai_publish_submit(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    # Rate-limit guard (shared with manual publish: bamboodom:publish_lock)
+    acquired = await _try_acquire_publish_lock(redis, user.id)
+    if not acquired:
+        await callback.answer(TXT.BAMBOODOM_PUBLISH_LOCKED, show_alert=True)
+        return
+
+    data = await state.get_data()
+    title = data.get("ai_draft_title")
+    excerpt = data.get("ai_draft_excerpt")
+    blocks = data.get("ai_draft_blocks")
+    if not title or not blocks or not isinstance(blocks, list):
+        await callback.answer(TXT.BAMBOODOM_AI_GENERATION_FAILED.format(detail="state lost"), show_alert=True)
+        await state.clear()
+        return
+
+    await callback.answer(TXT.BAMBOODOM_AI_PUBLISHING_PROGRESS)
+    payload = {
+        "title": title,
+        "excerpt": excerpt or "",
+        "draft": False,
+        "blocks": blocks,
+    }
+
+    client = BamboodomClient(http_client=http_client, redis=redis)
+    try:
+        resp = await client.publish(payload, sandbox=True)
+    except BamboodomAuthError:
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(TXT.BAMBOODOM_AI_RESULT_TITLE, TXT.BAMBOODOM_SMOKE_KEY_INVALID),
+            reply_markup=bamboodom_ai_result_kb(None),
+        )
+        await state.clear()
+        return
+    except BamboodomRateLimitError as exc:
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(
+                TXT.BAMBOODOM_AI_RESULT_TITLE,
+                TXT.BAMBOODOM_SMOKE_RATE_LIMIT.format(retry_after=exc.retry_after),
+            ),
+            reply_markup=bamboodom_ai_preview_kb(),
+        )
+        return
+    except BamboodomAPIError as exc:
+        message_text, is_transient = _classify_api_error(exc)
+        if is_transient:
+            sentry_sdk.capture_exception(exc)
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(TXT.BAMBOODOM_AI_RESULT_TITLE, message_text),
+            reply_markup=bamboodom_ai_preview_kb(),
+        )
+        return
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        log.exception("bamboodom_ai_publish_unexpected")
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(
+                TXT.BAMBOODOM_AI_RESULT_TITLE,
+                TXT.BAMBOODOM_SMOKE_UNEXPECTED.format(detail=str(exc)[:200]),
+            ),
+            reply_markup=bamboodom_ai_preview_kb(),
+        )
+        return
+
+    # Success
+    log.info(
+        "bamboodom_ai_publish_ok",
+        slug=resp.slug,
+        action_type=resp.action_type,
+        blocks_parsed=resp.blocks_parsed,
+        blocks_dropped_count=len(resp.blocks_dropped),
+    )
+
+    article_url = _resolve_article_url(resp)
+    # Record in history with AI-marker
+    history_entry = {
+        "slug": resp.slug,
+        "title": title[:200],
+        "action_type": resp.action_type,
+        "url": article_url,
+        "source": "ai",
+        "created_at": _now_iso(),
+    }
+    await _append_history(redis, history_entry)
+
+    await state.clear()
+    await safe_edit_text(
+        msg,
+        _build_ai_result_text(title, resp),
+        reply_markup=bamboodom_ai_result_kb(article_url),
+    )
