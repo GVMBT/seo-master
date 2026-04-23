@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     telegram_api_hash: SecretStr = SecretStr("")  # from https://my.telegram.org
     usd_rub_rate: float = 92.5
 
+    # --- Bamboodom.ru blog API (Session 1 skeleton) ---
+    bamboodom_blog_key: SecretStr = SecretStr("")
+    bamboodom_api_base: str = "https://bamboodom.ru/api.php"
+    bamboodom_enabled: bool = False
+
     # === Server ===
     port: int = 8080
 

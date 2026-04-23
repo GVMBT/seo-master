@@ -541,13 +541,17 @@ def schedule_times_kb(selected: set[str], required: int) -> InlineKeyboardMarkup
 
 def admin_panel_kb() -> InlineKeyboardMarkup:
     """Admin panel main keyboard."""
+    from bot.config import get_settings
+
     rows = [
         [InlineKeyboardButton(text="Затраты API (детально)", callback_data="admin:api_costs")],
         [InlineKeyboardButton(text="Просмотр пользователя", callback_data="admin:user_lookup")],
         [InlineKeyboardButton(text="Рассылка", callback_data="admin:broadcast")],
         [InlineKeyboardButton(text="Порталы и сервисы", callback_data="admin:portals")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")],
     ]
+    if get_settings().bamboodom_enabled:
+        rows.append([InlineKeyboardButton(text="Bamboodom.ru", callback_data="bamboodom:entry")])
+    rows.append([InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
