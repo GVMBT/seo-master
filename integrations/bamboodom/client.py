@@ -1,17 +1,18 @@
 """Async HTTP client for bamboodom.ru blog API (v1.1).
 
-Session 1 surface: only `key_test()` — smoke-test endpoint used by the
-admin panel. Other endpoints (blog_context, blog_article_codes, blog_publish,
-blog_upload_image) arrive in subsequent sessions.
+Session 1 surface: `key_test()` — smoke-test endpoint.
+Session 2A adds: `get_context()`, `get_article_codes()` with Redis caching.
+Other endpoints (blog_publish, blog_upload_image, blog_article_info) — Sessions 3+.
 
 Design notes:
 - Stateless HTTP calls via shared/one-off httpx.AsyncClient.
-- No caching here (deferred to Session 2 when it actually matters).
+- Caching for context / codes is done here (mirrors `services/external/serper.py`).
 - Exceptions map to user-facing screen messages; logs are structured.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,30 +20,41 @@ import httpx
 import structlog
 
 from bot.config import get_settings
+from cache.keys import BAMBOODOM_CODES_TTL, BAMBOODOM_CONTEXT_TTL
 from integrations.bamboodom.exceptions import (
     BamboodomAPIError,
     BamboodomAuthError,
     BamboodomRateLimitError,
 )
-from integrations.bamboodom.models import KeyTestResponse
+from integrations.bamboodom.models import (
+    ArticleCodesResponse,
+    ContextResponse,
+    KeyTestResponse,
+)
 
 log = structlog.get_logger()
 
 _DEFAULT_TIMEOUT = 10.0
 _MAX_ERROR_BODY = 500
 
+# Redis key namespaces (see cache/keys.py for TTLs)
+_CTX_CACHE_KEY = "bamboodom:context:data"
+_CODES_CACHE_KEY = "bamboodom:codes:data"
+
 
 @dataclass
 class BamboodomClient:
-    """Thin async wrapper over bamboodom.ru blog API.
+    """Thin async wrapper over bamboodom.ru blog API with optional Redis caching.
 
     Parameters are optional — defaults fall back to `Settings` singleton.
-    Pass explicit values in tests.
+    Pass explicit values in tests. `redis` is optional: if absent, cache is
+    bypassed (every fetch hits the API).
     """
 
     api_base: str = ""
     api_key: str = ""
     http_client: httpx.AsyncClient | None = None
+    redis: Any = None  # RedisClient; typed as Any to avoid circular import
     timeout: float = _DEFAULT_TIMEOUT
 
     def __post_init__(self) -> None:
@@ -126,9 +138,86 @@ class BamboodomClient:
             raise BamboodomAPIError(f"API returned ok=false on {action}: {str(data)[:_MAX_ERROR_BODY]}")
         return data
 
+    # ---- cache helpers ------------------------------------------------
+
+    async def _cache_get(self, key: str) -> dict[str, Any] | None:
+        if self.redis is None:
+            return None
+        try:
+            raw = await self.redis.get(key)
+        except Exception:
+            log.warning("bamboodom_cache_read_failed", key=key, exc_info=True)
+            return None
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except ValueError:
+            log.warning("bamboodom_cache_bad_json", key=key)
+            return None
+
+    async def _cache_set(self, key: str, data: dict[str, Any], ttl: int) -> None:
+        if self.redis is None:
+            return
+        try:
+            await self.redis.set(key, json.dumps(data, ensure_ascii=False), ex=ttl)
+        except Exception:
+            log.warning("bamboodom_cache_write_failed", key=key, exc_info=True)
+
     # ---- public API ---------------------------------------------------
 
     async def key_test(self) -> KeyTestResponse:
         """GET blog_key_test — smoke-test endpoint (no rate limit, no sandbox needed)."""
         data = await self._request("GET", "blog_key_test", timeout=_DEFAULT_TIMEOUT)
         return KeyTestResponse.model_validate(data)
+
+    async def get_context(
+        self,
+        *,
+        force_refresh: bool = False,
+    ) -> tuple[ContextResponse, bool]:
+        """GET blog_context with Redis-backed caching.
+
+        Returns (response, was_fresh_fetch). `was_fresh_fetch=False` means data
+        came from cache; `True` means we hit the network.
+
+        TTL: BAMBOODOM_CONTEXT_TTL (1h). Pass `force_refresh=True` to bypass
+        cache but still write result back.
+        """
+        if not force_refresh:
+            cached = await self._cache_get(_CTX_CACHE_KEY)
+            if cached is not None:
+                return ContextResponse.model_validate(cached), False
+
+        data = await self._request("GET", "blog_context", timeout=_DEFAULT_TIMEOUT)
+        await self._cache_set(_CTX_CACHE_KEY, data, BAMBOODOM_CONTEXT_TTL)
+        return ContextResponse.model_validate(data), True
+
+    async def get_article_codes(
+        self,
+        *,
+        force_refresh: bool = False,
+    ) -> tuple[ArticleCodesResponse, bool]:
+        """GET blog_article_codes with Redis-backed caching.
+
+        Returns (response, was_fresh_fetch).
+        TTL: BAMBOODOM_CODES_TTL (1h).
+        """
+        if not force_refresh:
+            cached = await self._cache_get(_CODES_CACHE_KEY)
+            if cached is not None:
+                return ArticleCodesResponse.model_validate(cached), False
+
+        data = await self._request("GET", "blog_article_codes", timeout=_DEFAULT_TIMEOUT)
+        await self._cache_set(_CODES_CACHE_KEY, data, BAMBOODOM_CODES_TTL)
+        return ArticleCodesResponse.model_validate(data), True
+
+    async def peek_cached_context(self) -> ContextResponse | None:
+        """Read blog_context from Redis without hitting API. Returns None if no cache."""
+        cached = await self._cache_get(_CTX_CACHE_KEY)
+        return ContextResponse.model_validate(cached) if cached else None
+
+    async def peek_cached_codes(self) -> ArticleCodesResponse | None:
+        """Read blog_article_codes from Redis without hitting API. Returns None if no cache."""
+        cached = await self._cache_get(_CODES_CACHE_KEY)
+        return ArticleCodesResponse.model_validate(cached) if cached else None

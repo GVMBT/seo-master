@@ -15,6 +15,8 @@ PROMPT_CACHE_TTL = 3600  # 1 hour (prompts change only on sync_prompts CLI)
 USER_CACHE_TTL = 300  # 5 minutes (AuthMiddleware user cache)
 PIPELINE_CHECKPOINT_TTL = 86400  # 24 hours (§12.3)
 RESEARCH_CACHE_TTL = 604800  # 7 days (API_CONTRACTS.md §7a.4)
+BAMBOODOM_CONTEXT_TTL = 3600  # 1 hour (blog_context from bamboodom.ru)
+BAMBOODOM_CODES_TTL = 3600  # 1 hour (blog_article_codes from bamboodom.ru)
 
 
 class CacheKeys:
