@@ -129,24 +129,37 @@ async def _try_acquire_publish_lock(redis: RedisClient, user_id: int) -> bool:
     return bool(result)
 
 
-async def _append_history(redis: RedisClient, entry: dict) -> None:
-    """Prepend an entry to the publish history list (max _HISTORY_MAX_ENTRIES, TTL 7 days).
+def _deep_json_decode(raw, *, max_depth: int = 3) -> object:
+    """Decode a potentially double-JSON-encoded value.
 
-    Uses a single Redis string holding a JSON array. RedisClient lacks LPUSH/LTRIM —
-    we emulate via read-modify-write. Fine for single-operator usage.
+    Some Upstash deployments appear to wrap values in an extra JSON layer
+    (i.e. a JSON array gets stored as a JSON-encoded string). We iteratively
+    json.loads() while the result is still a string, up to max_depth times.
     """
+    value = raw
+    for _ in range(max_depth):
+        if not isinstance(value, str):
+            break
+        try:
+            value = json.loads(value)
+        except ValueError, TypeError:
+            break
+    return value
+
+
+async def _append_history(redis: RedisClient, entry: dict) -> None:
+    """Prepend an entry to the publish history list (max _HISTORY_MAX_ENTRIES, TTL 7 days)."""
     try:
         raw = await redis.get(_PUBLISH_HISTORY_KEY)
     except Exception:
         log.warning("bamboodom_history_read_error", exc_info=True)
         raw = None
 
-    try:
-        history = json.loads(raw) if raw else []
-        if not isinstance(history, list):
-            history = []
-    except ValueError:
-        history = []
+    decoded = _deep_json_decode(raw) if raw is not None else []
+    if not isinstance(decoded, list):
+        decoded = []
+    # Defensive: drop any non-dict leftovers from previous buggy writes.
+    history: list[dict] = [e for e in decoded if isinstance(e, dict)]
 
     history.insert(0, entry)
     history = history[:_HISTORY_MAX_ENTRIES]
@@ -162,18 +175,22 @@ async def _append_history(redis: RedisClient, entry: dict) -> None:
 
 
 async def _read_history(redis: RedisClient) -> list[dict]:
+    """Read publish history. Tolerates both plain JSON-arrays and Upstash double-encoding."""
     try:
         raw = await redis.get(_PUBLISH_HISTORY_KEY)
     except Exception:
         log.warning("bamboodom_history_read_error", exc_info=True)
         return []
-    if not raw:
+    if raw is None:
         return []
-    try:
-        history = json.loads(raw)
-    except ValueError:
+    decoded = _deep_json_decode(raw)
+    if not isinstance(decoded, list):
+        log.warning(
+            "bamboodom_history_unexpected_shape",
+            shape=type(decoded).__name__,
+        )
         return []
-    return history if isinstance(history, list) else []
+    return [e for e in decoded if isinstance(e, dict)]
 
 
 # ---------------------------------------------------------------------------
@@ -1231,15 +1248,19 @@ async def bamboodom_history(
     history = await _read_history(redis)
 
     screen = Screen(E.SCHEDULE, TXT.BAMBOODOM_HISTORY_TITLE).blank()
-    if not history:
+    rendered = 0
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        ts = _fmt_moscow(entry.get("created_at")) if entry.get("created_at") else "—"
+        title = (entry.get("title") or "—")[:80]
+        action = entry.get("action_type") or "—"
+        slug = entry.get("slug") or "—"
+        screen = screen.line(f"— <b>{title}</b>")
+        screen = screen.line(f"  {ts} · {action} · <code>{slug}</code>")
+        rendered += 1
+    if rendered == 0:
         screen = screen.line(TXT.BAMBOODOM_HISTORY_EMPTY)
-    else:
-        for entry in history:
-            ts = _fmt_moscow(entry.get("created_at")) if entry.get("created_at") else "—"
-            title = (entry.get("title") or "—")[:80]
-            action = entry.get("action_type") or "—"
-            screen = screen.line(f"— <b>{title}</b>")
-            screen = screen.line(f"  {ts} · {action} · <code>{entry.get('slug') or '—'}</code>")
     screen = screen.hint(TXT.BAMBOODOM_HISTORY_HINT)
 
     await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_history_kb())
