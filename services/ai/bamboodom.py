@@ -60,7 +60,7 @@ _KNOWLEDGE_BASE_PATH = Path(__file__).parent.parent.parent / "docs" / "bamboodom
 MaterialCategory = Literal["wpc", "flex", "reiki", "profiles"]
 
 # Block types the server accepts (we use a safe subset in 4A).
-_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "p", "list", "product", "callout"})
+_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "p", "list", "product", "callout", "cta"})
 
 # How many article codes to show the model per material. Too few — model
 # picks wrong article; too many — prompt bloats. 30 per material works.
@@ -79,10 +79,11 @@ class BamboodomArticleDraft:
     title: str
     excerpt: str
     blocks: list[dict[str, Any]]
+    seo: dict[str, str] = field(default_factory=dict)
 
     def to_publish_payload(self) -> dict[str, Any]:
         """Shape the draft for blog_publish."""
-        return {
+        payload: dict[str, Any] = {
             "title": self.title,
             "excerpt": self.excerpt,
             # In sandbox mode we want instant preview (no draft gate). When we
@@ -90,6 +91,9 @@ class BamboodomArticleDraft:
             "draft": False,
             "blocks": self.blocks,
         }
+        if self.seo:
+            payload["seo"] = self.seo
+        return payload
 
 
 @dataclass(slots=True)
@@ -128,7 +132,7 @@ class BamboodomValidator:
         # Normalize all forbidden claims to lowercase for case-insensitive match.
         self._forbidden = [c.strip().lower() for c in forbidden_claims if c and c.strip()]
 
-    def validate(
+    def validate(  # noqa: C901  — tight regex-by-block check; splitting up harms readability
         self,
         draft: BamboodomArticleDraft,
         *,
@@ -163,6 +167,18 @@ class BamboodomValidator:
                         )
                     )
                 continue  # don't check text content on product blocks
+
+            # CTA-block: href is required
+            if btype == "cta":
+                href = str(block.get("href", "")).strip()
+                if not href:
+                    result.issues.append(
+                        ValidationIssue(
+                            kind="bad_block_type",
+                            detail=f"CTA block #{idx} missing href",
+                            block_index=idx,
+                        )
+                    )
 
             # Gather text content from block (may be in text/title/items).
             text_parts: list[str] = []
@@ -547,8 +563,20 @@ def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:
             raise BamboodomGenerationError(f"block #{idx} is not a dict or missing 'type': {block!r}")
         cleaned_blocks.append(block)
 
+    # Optional: seo block (meta_title / meta_description)
+    seo_raw = parsed.get("seo")
+    seo: dict[str, str] = {}
+    if isinstance(seo_raw, dict):
+        meta_title = seo_raw.get("meta_title")
+        meta_description = seo_raw.get("meta_description")
+        if isinstance(meta_title, str) and meta_title.strip():
+            seo["meta_title"] = meta_title.strip()[:80]
+        if isinstance(meta_description, str) and meta_description.strip():
+            seo["meta_description"] = meta_description.strip()[:200]
+
     return BamboodomArticleDraft(
         title=title.strip(),
         excerpt=excerpt.strip(),
         blocks=cleaned_blocks,
+        seo=seo,
     )

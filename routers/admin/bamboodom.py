@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from typing import Any
 
 import httpx
 import sentry_sdk
@@ -1571,6 +1572,7 @@ async def _run_ai_generation(
         ai_draft_title=draft.title,
         ai_draft_excerpt=draft.excerpt,
         ai_draft_blocks=draft.blocks,
+        ai_draft_seo=draft.seo,
     )
     await state.set_state(AIPublishFSM.preview)
 
@@ -1642,18 +1644,21 @@ async def ai_publish_submit(
     title = data.get("ai_draft_title")
     excerpt = data.get("ai_draft_excerpt")
     blocks = data.get("ai_draft_blocks")
+    seo = data.get("ai_draft_seo") or {}
     if not title or not blocks or not isinstance(blocks, list):
         await callback.answer(TXT.BAMBOODOM_AI_GENERATION_FAILED.format(detail="state lost"), show_alert=True)
         await state.clear()
         return
 
     await callback.answer(TXT.BAMBOODOM_AI_PUBLISHING_PROGRESS)
-    payload = {
+    payload: dict[str, Any] = {
         "title": title,
         "excerpt": excerpt or "",
         "draft": False,
         "blocks": blocks,
     }
+    if isinstance(seo, dict) and seo:
+        payload["seo"] = seo
 
     client = BamboodomClient(http_client=http_client, redis=redis)
     try:
