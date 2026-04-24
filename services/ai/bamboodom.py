@@ -53,6 +53,13 @@ _GENERATION_TIMEOUT = 120.0  # seconds — article generation can take ~30-60s
 _MAX_JSON_RETRIES = 1  # strict JSON parse retry budget (per side B §Б1)
 _MAX_VALIDATION_RETRIES = 1  # auto-retry on regex violation (per §В2)
 
+# Word-count policy from ARTICLE_LENGTH_POLICY.md (v5 prompt)
+_MIN_WORDS_HARD = 1500
+_MAX_WORDS_HARD = 2200
+_TARGET_WORDS_MIN = 1700
+_TARGET_WORDS_MAX = 1900
+_MAX_LENGTH_RETRIES = 1  # if draft is below _MIN_WORDS_HARD, retry once
+
 # Prompt template file — loaded once into module-level cache.
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "bamboodom_article_v1.yaml"
 _KNOWLEDGE_BASE_PATH = Path(__file__).parent.parent.parent / "docs" / "bamboodom" / "knowledge_base.md"
@@ -60,7 +67,7 @@ _KNOWLEDGE_BASE_PATH = Path(__file__).parent.parent.parent / "docs" / "bamboodom
 MaterialCategory = Literal["wpc", "flex", "reiki", "profiles"]
 
 # Block types the server accepts (we use a safe subset in 4A).
-_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "p", "list", "product", "callout", "cta", "table"})
+_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "h3", "p", "list", "product", "callout", "cta", "table"})
 
 # How many article codes to show the model per material. Too few — model
 # picks wrong article; too many — prompt bloats. 30 per material works.
@@ -80,6 +87,8 @@ class BamboodomArticleDraft:
     excerpt: str
     blocks: list[dict[str, Any]]
     seo: dict[str, str] = field(default_factory=dict)
+    format: int | None = None  # 1-7 from 7-formats library, v5+
+    word_count: int = 0  # server-side word count (not the model's self-report)
 
     def to_publish_payload(self) -> dict[str, Any]:
         """Shape the draft for blog_publish."""
@@ -98,7 +107,7 @@ class BamboodomArticleDraft:
 
 @dataclass(slots=True)
 class ValidationIssue:
-    kind: Literal["forbidden_claim", "price_in_text", "bad_block_type", "bad_article"]
+    kind: Literal["forbidden_claim", "price_in_text", "bad_block_type", "bad_article", "too_short", "list_of_two"]
     detail: str
     block_index: int | None = None
 
@@ -230,6 +239,22 @@ class BamboodomValidator:
                     )
                 )
 
+        # RULE 1 (post-review): list with <=3 items should be a table.
+        for idx, block in enumerate(draft.blocks):
+            if block.get("type") == "list":
+                items = block.get("items") or []
+                if isinstance(items, list) and len(items) < 4:
+                    result.issues.append(
+                        ValidationIssue(
+                            kind="list_of_two",
+                            detail=(
+                                f"list block #{idx} has only {len(items)} items; "
+                                f"for 2-3 parallel positions use type=table"
+                            ),
+                            block_index=idx,
+                        )
+                    )
+
         return result
 
 
@@ -289,19 +314,59 @@ class BamboodomArticleService:
 
         draft: BamboodomArticleDraft | None = None
         validation_issues: list[str] = []
+        length_retry_used = False
 
         for attempt in range(_MAX_VALIDATION_RETRIES + 1):
             messages = self._augment_messages_after_validation(system, user, validation_issues)
             raw_reply = await self._call_with_json_retry(messages)
             draft = _parse_draft(raw_reply)
 
+            # Overwrite model's self-reported word_count with our honest count.
+            draft.word_count = count_words(draft)
+
             result = validator.validate(draft, valid_article_codes=valid_codes)
+
+            # Length check (v5) — treat under-minimum as an auto-retry trigger
+            # on the first pass only. Report as an advisory issue afterwards.
+            if draft.word_count < _MIN_WORDS_HARD:
+                if not length_retry_used and attempt == 0:
+                    length_retry_used = True
+                    length_feedback = (
+                        f"Твой ответ слишком короткий — {draft.word_count} слов, "
+                        f"минимум {_MIN_WORDS_HARD}. Расширь самый короткий "
+                        "раздел ФАКТИЧЕСКИМ содержанием из KNOWLEDGE_BASE "
+                        "(примеры, технические детали, сценарии). НЕ добавляй воды."
+                    )
+                    validation_issues.append(length_feedback)
+                    log.info(
+                        "bamboodom_ai_length_retry_scheduled",
+                        word_count=draft.word_count,
+                        target_min=_MIN_WORDS_HARD,
+                    )
+                    continue  # retry with length nudge
+                # No more length retries — add advisory issue and fall through.
+                result.issues.append(
+                    ValidationIssue(
+                        kind="too_short",
+                        detail=(f"Draft is {draft.word_count} words; below hard min {_MIN_WORDS_HARD}"),
+                    )
+                )
+            elif draft.word_count > _MAX_WORDS_HARD:
+                # Going over max is less critical — operator can trim in moderation.
+                log.info(
+                    "bamboodom_ai_over_max_length",
+                    word_count=draft.word_count,
+                    target_max=_MAX_WORDS_HARD,
+                )
+
             if result.ok:
                 log.info(
                     "bamboodom_ai_generate_ok",
                     material=material,
                     keyword=keyword,
                     blocks=len(draft.blocks),
+                    word_count=draft.word_count,
+                    format=draft.format,
                     attempt=attempt,
                 )
                 return draft, result
@@ -312,6 +377,7 @@ class BamboodomArticleService:
                 material=material,
                 keyword=keyword,
                 attempt=attempt,
+                word_count=draft.word_count,
                 issues=[i.detail for i in result.issues],
             )
             sentry_sdk.capture_message(
@@ -321,6 +387,7 @@ class BamboodomArticleService:
                     "material": material,
                     "keyword": keyword,
                     "attempt": attempt,
+                    "word_count": draft.word_count,
                     "issues": [i.detail for i in result.issues],
                 },
             )
@@ -528,7 +595,7 @@ def _format_codes_sample(codes_obj: Any, material: MaterialCategory) -> str:
     return "\n".join(lines) if lines else "(список временно недоступен)"
 
 
-def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:
+def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:  # noqa: C901 — strict JSON parse + field extraction
     """Strict JSON parse + shape validation. Raises BamboodomGenerationError."""
     # Models sometimes wrap JSON in ```json ... ``` or add a prose preamble.
     # Try to recover the first {...} block as a last resort.
@@ -577,9 +644,60 @@ def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:
         if isinstance(meta_description, str) and meta_description.strip():
             seo["meta_description"] = meta_description.strip()[:200]
 
-    return BamboodomArticleDraft(
+    # Optional: format (int 1-7) and word_count (model self-report)
+    fmt_raw = parsed.get("format")
+    fmt_val: int | None = None
+    if isinstance(fmt_raw, int) and 1 <= fmt_raw <= 7:
+        fmt_val = fmt_raw
+    elif isinstance(fmt_raw, str) and fmt_raw.strip().isdigit():
+        try:
+            candidate = int(fmt_raw.strip())
+            if 1 <= candidate <= 7:
+                fmt_val = candidate
+        except ValueError:
+            pass
+
+    wc_raw = parsed.get("word_count")
+    wc_val = 0
+    if isinstance(wc_raw, int) and wc_raw > 0:
+        wc_val = wc_raw
+
+    draft = BamboodomArticleDraft(
         title=title.strip(),
         excerpt=excerpt.strip(),
         blocks=cleaned_blocks,
         seo=seo,
+        format=fmt_val,
     )
+    # Always override with our own count — models underreport.
+    draft.word_count = wc_val  # temporary (model's own) — overwritten later
+    return draft
+
+
+# ---------------------------------------------------------------------------
+# Word-count helpers (v5)
+# ---------------------------------------------------------------------------
+
+
+_WORD_RE = re.compile(r"[\w\-]+", flags=re.UNICODE)
+
+
+def count_words(draft: BamboodomArticleDraft) -> int:
+    """Sum words across text-bearing blocks (p/h2/h3/list/callout).
+
+    Excludes product/cta/image/table headers+rows per ARTICLE_LENGTH_POLICY.md.
+    """
+    total = 0
+    for block in draft.blocks:
+        btype = block.get("type")
+        if btype in ("p", "h2", "h3"):
+            text = block.get("text") or ""
+            total += len(_WORD_RE.findall(text))
+        elif btype == "list":
+            for item in block.get("items") or []:
+                if isinstance(item, str):
+                    total += len(_WORD_RE.findall(item))
+        elif btype == "callout":
+            total += len(_WORD_RE.findall(block.get("text") or ""))
+            total += len(_WORD_RE.findall(block.get("title") or ""))
+    return total
