@@ -18,6 +18,11 @@ Flow:
     draft = _parse_draft(raw)                          # strict validation
     issues = validator.validate(draft, forbidden)      # regex layers 1+2
     if issues: retry once (auto). still issues → manual.
+
+4B.1.1 hotfix (after FEEDBACK_ITERATION_4B_1 from side B, 2026-04-24):
+- regex layer 1+2 now scans article codes in ALL text-bearing blocks
+  (p/h2/h3/list/callout) + title + excerpt, not only product-blocks.
+  Fixes a hole where AI mentioned TK042A in prose and validator passed.
 """
 
 from __future__ import annotations
@@ -137,6 +142,16 @@ class BamboodomValidator:
         flags=re.IGNORECASE,
     )
 
+    # Article codes in prose (4B.1.1 hotfix). AI sometimes mentions articles in
+    # paragraph text without a product-block (e.g. "На проекте TK042A..."). The
+    # product-block path already checks .article field; this regex catches the
+    # prose path. WPC series are 1–3 uppercase letters (BJL is 3); flex=F###;
+    # reiki=R###; profiles=XHS-*. We deliberately avoid BJ?\d{2} — BJ/BJL suffixes
+    # are handled by the generic [A-Z]{1,3} tail after TK\d{3}.
+    _ARTICLE_CODE_RE = re.compile(
+        r"\b(?:TK\d{3}[A-Z]{1,3}|F\d{3}|R\d{3}|XHS-[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)\b",
+    )
+
     def __init__(self, forbidden_claims: list[str]) -> None:
         # Normalize all forbidden claims to lowercase for case-insensitive match.
         self._forbidden = [c.strip().lower() for c in forbidden_claims if c and c.strip()]
@@ -227,6 +242,26 @@ class BamboodomValidator:
                     )
                 )
 
+            # Check article codes mentioned in prose (4B.1.1 hotfix).
+            # Deduplicate per block — one nag per unknown code, not per occurrence.
+            if valid_article_codes is not None:
+                seen_unknown_in_block: set[str] = set()
+                for m in self._ARTICLE_CODE_RE.finditer(combined):
+                    code = m.group(0)
+                    if code in valid_article_codes or code in seen_unknown_in_block:
+                        continue
+                    seen_unknown_in_block.add(code)
+                    result.issues.append(
+                        ValidationIssue(
+                            kind="bad_article",
+                            detail=(
+                                f"Unknown article code {code!r} mentioned in block #{idx} text "
+                                f"(not a product-block — check the paragraph)"
+                            ),
+                            block_index=idx,
+                        )
+                    )
+
         # Sanity-check title/excerpt against forbidden claims too
         title_low = draft.title.lower()
         excerpt_low = draft.excerpt.lower()
@@ -238,6 +273,22 @@ class BamboodomValidator:
                         detail=f"Forbidden phrase {claim!r} in title/excerpt",
                     )
                 )
+
+        # …and article codes in title/excerpt (4B.1.1).
+        if valid_article_codes is not None:
+            seen_unknown_meta: set[str] = set()
+            for text_src, where in ((draft.title, "title"), (draft.excerpt, "excerpt")):
+                for m in self._ARTICLE_CODE_RE.finditer(text_src):
+                    code = m.group(0)
+                    if code in valid_article_codes or code in seen_unknown_meta:
+                        continue
+                    seen_unknown_meta.add(code)
+                    result.issues.append(
+                        ValidationIssue(
+                            kind="bad_article",
+                            detail=f"Unknown article code {code!r} mentioned in {where}",
+                        )
+                    )
 
         # RULE 1 (post-review): list with <=3 items should be a table.
         for idx, block in enumerate(draft.blocks):
