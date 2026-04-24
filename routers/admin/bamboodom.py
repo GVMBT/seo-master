@@ -198,9 +198,14 @@ async def _append_history(redis: RedisClient, entry: dict) -> None:
         log.warning("bamboodom_history_write_error", exc_info=True)
 
 
-async def _read_history(redis: RedisClient) -> list[dict]:
+async def _read_publish_history(redis: RedisClient) -> list[dict]:
     """Read publish history. Tolerates plain JSON-arrays, Upstash double-encoding,
     and lists where every element was stored as a JSON-string separately.
+
+    Renamed from `_read_history` in 4B.4 — the file had TWO `_read_history`
+    functions with different signatures (one for publish history, one for
+    smoke-test last_ok/last_fail). Python loaded the second one and silently
+    overwrote the first, breaking the History button since 3A.
     """
     try:
         raw = await redis.get(_PUBLISH_HISTORY_KEY)
@@ -293,8 +298,11 @@ async def _record_fail(redis: RedisClient, detail: str) -> None:
         log.warning("bamboodom_record_fail_failed", exc_info=True)
 
 
-async def _read_history(redis: RedisClient) -> tuple[str, str]:
-    """Return formatted (last_ok, last_fail) strings for display."""
+async def _read_smoke_status(redis: RedisClient) -> tuple[str, str]:
+    """Return formatted (last_ok, last_fail) strings for smoke-test entry screen.
+
+    Renamed from `_read_history` in 4B.4 — see rename note on _read_publish_history.
+    """
     try:
         raw_ok = await redis.get(_LAST_OK_KEY)
         raw_fail = await redis.get(_LAST_FAIL_KEY)
@@ -526,7 +534,7 @@ async def bamboodom_entry(
 
     settings = get_settings()
     key_present = bool(settings.bamboodom_blog_key.get_secret_value())
-    last_ok, last_fail = await _read_history(redis)
+    last_ok, last_fail = await _read_smoke_status(redis)
 
     text = _build_entry_text(
         enabled=settings.bamboodom_enabled,
@@ -1322,7 +1330,7 @@ async def bamboodom_history(
         await callback.answer()
         return
 
-    history = await _read_history(redis)
+    history = await _read_publish_history(redis)
 
     screen = Screen(E.SCHEDULE, TXT.BAMBOODOM_HISTORY_TITLE).blank()
     rendered = 0
