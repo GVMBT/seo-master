@@ -60,7 +60,7 @@ _KNOWLEDGE_BASE_PATH = Path(__file__).parent.parent.parent / "docs" / "bamboodom
 MaterialCategory = Literal["wpc", "flex", "reiki", "profiles"]
 
 # Block types the server accepts (we use a safe subset in 4A).
-_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "p", "list", "product", "callout", "cta"})
+_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "p", "list", "product", "callout", "cta", "table"})
 
 # How many article codes to show the model per material. Too few — model
 # picks wrong article; too many — prompt bloats. 30 per material works.
