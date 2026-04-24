@@ -216,3 +216,32 @@ BAMBOODOM_AI_PROGRESS_ELAPSED = "Прошло: {elapsed} сек."
 BAMBOODOM_AI_CANCELLED_BY_USER = "Генерация отменена по запросу."
 BAMBOODOM_AI_TIMEOUT = "Генерация превысила лимит 5 минут и прервана. Попробуйте перегенерировать."
 BAMBOODOM_AI_CMD_CANCEL_NO_TASK = "Сейчас нет активной генерации."
+
+
+# ---------------------------------------------------------------------------
+# API v1.2 defensive layer — warnings/draft_forced surfacing (Session 4B.1.5)
+# ---------------------------------------------------------------------------
+
+BAMBOODOM_PUBLISH_DRAFT_FORCED = (
+    "Сервер перевёл статью в DRAFT (bot-key не может публиковать сразу). "
+    "Откройте админку сайта bamboodom.ru, проверьте статью и вручную "
+    "переведите её из черновика в опубликованные."
+)
+BAMBOODOM_PUBLISH_WARNINGS_HEADER = "Предупреждения сервера ({count}):"
+BAMBOODOM_PUBLISH_WARNING_LINE = "— [{code}] {hint}"
+BAMBOODOM_PUBLISH_WARNING_ITEMS_MORE = "  …ещё {count} деталей"
+BAMBOODOM_PUBLISH_SIZE = "Размер статьи: {kb} КБ"
+
+# Friendly labels for common warning codes (fallback: raw code string)
+BAMBOODOM_WARNING_LABELS = {
+    "draft_forced": "Статья переведена в черновик",
+    "unknown_articles_in_text": "В тексте упомянуты неизвестные артикулы",
+    "denylist_matches": "Сработал семантический denylist",
+    "seo_title_missing": "meta_title не задан",
+    "seo_title_too_long": "meta_title длиннее 60 символов",
+    "seo_description_missing": "meta_description не задан",
+    "seo_description_too_long": "meta_description длиннее 160 символов",
+    "seo_issues": "Есть замечания по SEO-мете",
+    "resized": "Картинка была уменьшена",
+    "conversion_gd_missing": "Сервер не смог конвертировать картинку",
+}
