@@ -15,14 +15,17 @@ Dependencies pattern follows `routers/admin/dashboard.py`:
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
+import time
 from typing import Any
 
 import httpx
 import sentry_sdk
 import structlog
 from aiogram import F, Router
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -48,6 +51,7 @@ from integrations.bamboodom import (
     PublishResponse,
 )
 from keyboards.bamboodom import (
+    bamboodom_ai_generating_kb,
     bamboodom_ai_keyword_kb,
     bamboodom_ai_material_kb,
     bamboodom_ai_preview_kb,
@@ -155,13 +159,13 @@ def _deep_json_decode(raw, *, max_depth: int = 4) -> object:
             try:
                 value = json.loads(value)
                 continue
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 break
         if isinstance(value, list) and value and all(isinstance(e, str) for e in value):
             try:
                 value = [json.loads(e) for e in value]
                 continue
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 break
         break
     return value
@@ -303,7 +307,7 @@ async def _read_history(redis: RedisClient) -> tuple[str, str]:
         try:
             data = json.loads(raw_fail)
             last_fail = f"{_fmt_moscow(data.get('ts'))} — {data.get('detail', '')}"
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             last_fail = raw_fail
     else:
         last_fail = TXT.BAMBOODOM_LAST_FAIL_NONE
@@ -1315,6 +1319,20 @@ _MATERIAL_LABELS: dict[str, str] = {
 _MAX_KEYWORD_LENGTH = 300
 _PREVIEW_PARAGRAPHS = 2
 
+# 4B.1.4: progress bar + cancel support. Hard timeout caps the worst case
+# where OpenRouter hangs without returning (observed once in 4B.1.3 smoke).
+_AI_HARD_TIMEOUT_SEC = 300.0  # 5 minutes — generous but bounded
+_AI_PROGRESS_TICK_SEC = 3.0
+
+# user_id -> asyncio.Task (the generate_and_validate task, cancellable)
+_active_ai_tasks: dict[int, asyncio.Task] = {}
+# user_id -> {"stage": str, "attempt": int, "started": float}
+_progress_states: dict[int, dict[str, Any]] = {}
+
+# Stage -> (percent, label_template). Used by the progress loop to
+# render a consistent bar regardless of order of emit() calls.
+_STAGE_LABELS: dict[str, tuple[int, str]] = {}
+
 
 def _build_ai_entry_text() -> str:
     return (
@@ -1350,6 +1368,79 @@ def _build_ai_generating_text(material: str, keyword: str) -> str:
         .line(TXT.BAMBOODOM_AI_GENERATING_HINT)
         .build()
     )
+
+
+def _stage_labels() -> dict[str, tuple[int, str]]:
+    """Lazy — texts are imported at module load but some constants may be
+    freshly added in a hotfix deployment. Build once and cache (4B.1.4)."""
+    if _STAGE_LABELS:
+        return _STAGE_LABELS
+    _STAGE_LABELS.update({
+        "init":              (5,  TXT.BAMBOODOM_AI_STAGE_INIT),
+        "context":           (15, TXT.BAMBOODOM_AI_STAGE_CONTEXT),
+        "build":             (25, TXT.BAMBOODOM_AI_STAGE_BUILD),
+        "call_primary":      (45, TXT.BAMBOODOM_AI_STAGE_CALL_PRIMARY),
+        "call_fallback":     (60, TXT.BAMBOODOM_AI_STAGE_CALL_FALLBACK),
+        "parse":             (75, TXT.BAMBOODOM_AI_STAGE_PARSE),
+        "validate":          (85, TXT.BAMBOODOM_AI_STAGE_VALIDATE),
+        "length_retry":      (70, TXT.BAMBOODOM_AI_STAGE_LENGTH_RETRY),
+        "validation_retry":  (65, TXT.BAMBOODOM_AI_STAGE_VALIDATION_RETRY),
+        "done":              (100, TXT.BAMBOODOM_AI_STAGE_DONE),
+    })
+    return _STAGE_LABELS
+
+
+def _render_progress_bar(pct: int, width: int = 12) -> str:
+    filled = int(round(width * max(0, min(100, pct)) / 100))
+    return "█" * filled + "░" * (width - filled)
+
+
+def _build_ai_progress_text(material: str, keyword: str, info: dict[str, Any]) -> str:
+    label_name = _MATERIAL_LABELS.get(material, material)
+    stage = info.get("stage", "init")
+    attempt = info.get("attempt", 1)
+    started = info.get("started", time.time())
+    elapsed = max(0, int(time.time() - started))
+    pct, template = _stage_labels().get(stage, (5, TXT.BAMBOODOM_AI_STAGE_INIT))
+    try:
+        line = template.format(attempt=attempt)
+    except (KeyError, IndexError):
+        line = template
+    bar = _render_progress_bar(pct)
+    return (
+        Screen(E.AI_BRAIN, TXT.BAMBOODOM_AI_GENERATING_TITLE)
+        .blank()
+        .field(E.FOLDER, "Категория", label_name)
+        .field(E.PEN, "Тема", keyword[:120])
+        .blank()
+        .line(f"⏳ [{bar}] {pct}%")
+        .line(line)
+        .blank()
+        .line(f"<i>{TXT.BAMBOODOM_AI_PROGRESS_ELAPSED.format(elapsed=elapsed)}</i>")
+        .build()
+    )
+
+
+async def _ai_progress_loop(user_id: int, bot_msg: Message, material: str, keyword: str) -> None:
+    """Periodically re-render the progress-bar message. Cancelled when the
+    generation task completes or the user clicks Cancel (4B.1.4)."""
+    try:
+        while True:
+            await asyncio.sleep(_AI_PROGRESS_TICK_SEC)
+            info = _progress_states.get(user_id)
+            if not info:
+                return
+            try:
+                await safe_edit_text(
+                    bot_msg,
+                    _build_ai_progress_text(material, keyword, info),
+                    reply_markup=bamboodom_ai_generating_kb(),
+                )
+            except Exception as exc:  # noqa: BLE001 — keep loop alive
+                log.debug("bamboodom_ai_progress_tick_failed", error=str(exc))
+    except asyncio.CancelledError:
+        return
+
 
 
 def _extract_first_paragraphs(blocks: list[dict], limit: int) -> str:
@@ -1521,7 +1612,19 @@ async def _run_ai_generation(
     redis: RedisClient,
     http_client: httpx.AsyncClient,
 ) -> None:
-    """Shared: call BamboodomArticleService, render preview or error."""
+    """Call BamboodomArticleService with live progress bar + cancel support (4B.1.4).
+
+    Flow:
+      1. Initialise shared progress dict keyed by user_id.
+      2. Start the generate_and_validate call as an asyncio.Task and register
+         it in _active_ai_tasks so the cancel button can .cancel() it.
+      3. Start a parallel progress loop that re-renders the bot_msg every
+         _AI_PROGRESS_TICK_SEC seconds using the latest stage from the dict.
+      4. await asyncio.wait_for(gen_task, _AI_HARD_TIMEOUT_SEC) — bounds the
+         worst case (hang in OpenRouter) cleanly.
+      5. On any exit (success/error/cancel/timeout) — cancel the progress
+         loop, drop task from registry, clear the progress dict.
+    """
     settings = get_settings()
     bamboodom_client = BamboodomClient(http_client=http_client, redis=redis)
     ai_service = BamboodomArticleService(
@@ -1529,36 +1632,116 @@ async def _run_ai_generation(
         openrouter_api_key=settings.openrouter_api_key.get_secret_value(),
         bamboodom_client=bamboodom_client,
     )
-
     current_date_iso = _now_iso()
 
-    try:
-        draft, validation = await ai_service.generate_and_validate(
-            material=material,
-            keyword=keyword,
-            current_date_iso=current_date_iso,
-        )
-    except BamboodomGenerationError as exc:
-        log.warning("bamboodom_ai_generation_error", detail=str(exc))
-        sentry_sdk.capture_exception(exc)
+    # If somehow a prior task is still registered (shouldn't happen but safe),
+    # refuse to overwrite — that would orphan the previous task.
+    if user_id in _active_ai_tasks and not _active_ai_tasks[user_id].done():
+        log.warning("bamboodom_ai_concurrent_request_blocked", user_id=user_id)
         await safe_edit_text(
             bot_msg,
             _build_simple_error_text(
                 TXT.BAMBOODOM_AI_TITLE,
-                TXT.BAMBOODOM_AI_GENERATION_FAILED.format(detail=str(exc)[:250]),
+                "Уже идёт генерация — дождитесь её завершения или нажмите Отменить.",
             ),
+            reply_markup=bamboodom_ai_generating_kb(),
+        )
+        return
+
+    _progress_states[user_id] = {"stage": "init", "attempt": 1, "started": time.time()}
+
+    async def _on_stage(stage: str, attempt: int) -> None:
+        info = _progress_states.get(user_id)
+        if info is None:
+            return
+        info["stage"] = stage
+        if attempt:
+            info["attempt"] = attempt
+
+    # Initial render — show 5% progress right away (no wait for first tick)
+    try:
+        await safe_edit_text(
+            bot_msg,
+            _build_ai_progress_text(material, keyword, _progress_states[user_id]),
+            reply_markup=bamboodom_ai_generating_kb(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.debug("bamboodom_ai_initial_render_failed", error=str(exc))
+
+    gen_task = asyncio.create_task(
+        ai_service.generate_and_validate(
+            material=material,
+            keyword=keyword,
+            current_date_iso=current_date_iso,
+            progress_cb=_on_stage,
+        )
+    )
+    _active_ai_tasks[user_id] = gen_task
+    progress_task = asyncio.create_task(_ai_progress_loop(user_id, bot_msg, material, keyword))
+
+    draft = None
+    validation = None
+    exit_reason: str | None = None  # "ok" | "cancelled" | "timeout" | "error"
+    error_detail: str | None = None
+
+    try:
+        draft, validation = await asyncio.wait_for(gen_task, timeout=_AI_HARD_TIMEOUT_SEC)
+        exit_reason = "ok"
+    except asyncio.CancelledError:
+        exit_reason = "cancelled"
+        log.info("bamboodom_ai_cancelled_by_user", user_id=user_id)
+    except asyncio.TimeoutError:
+        exit_reason = "timeout"
+        log.warning("bamboodom_ai_hard_timeout", user_id=user_id, timeout=_AI_HARD_TIMEOUT_SEC)
+        if not gen_task.done():
+            gen_task.cancel()
+            try:
+                await gen_task
+            except BaseException:  # noqa: BLE001
+                pass
+    except BamboodomGenerationError as exc:
+        exit_reason = "error"
+        error_detail = str(exc)
+        log.warning("bamboodom_ai_generation_error", detail=error_detail)
+        sentry_sdk.capture_exception(exc)
+    except Exception as exc:  # noqa: BLE001
+        exit_reason = "error"
+        error_detail = str(exc)
+        log.exception("bamboodom_ai_generation_unexpected")
+        sentry_sdk.capture_exception(exc)
+    finally:
+        progress_task.cancel()
+        try:
+            await progress_task
+        except BaseException:  # noqa: BLE001
+            pass
+        _active_ai_tasks.pop(user_id, None)
+        _progress_states.pop(user_id, None)
+
+    if exit_reason == "cancelled":
+        await safe_edit_text(
+            bot_msg,
+            _build_simple_error_text(TXT.BAMBOODOM_AI_TITLE, TXT.BAMBOODOM_AI_CANCELLED_BY_USER),
             reply_markup=bamboodom_entry_kb(),
         )
         await state.clear()
         return
-    except Exception as exc:
-        log.exception("bamboodom_ai_generation_unexpected")
-        sentry_sdk.capture_exception(exc)
+
+    if exit_reason == "timeout":
+        await safe_edit_text(
+            bot_msg,
+            _build_simple_error_text(TXT.BAMBOODOM_AI_TITLE, TXT.BAMBOODOM_AI_TIMEOUT),
+            reply_markup=bamboodom_entry_kb(),
+        )
+        await state.clear()
+        return
+
+    if exit_reason == "error" or draft is None or validation is None:
         await safe_edit_text(
             bot_msg,
             _build_simple_error_text(
                 TXT.BAMBOODOM_AI_TITLE,
-                TXT.BAMBOODOM_AI_GENERATION_FAILED.format(detail=str(exc)[:250]),
+                TXT.BAMBOODOM_AI_GENERATION_FAILED.format(detail=(error_detail or "unknown")[:250]),
             ),
             reply_markup=bamboodom_entry_kb(),
         )
@@ -1582,7 +1765,55 @@ async def _run_ai_generation(
         _build_ai_preview_text(material=material, draft=draft, validation_issues=issues_text),
         reply_markup=bamboodom_ai_preview_kb(),
     )
-    _ = user_id  # reserved for future rate-limit logging
+
+
+@router.callback_query(F.data == "bamboodom:ai:cancel")
+async def ai_cancel(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """Cancel a running generation (4B.1.4). Works in any AIPublishFSM state
+    that has an active generate_and_validate task in the registry."""
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    task = _active_ai_tasks.get(user.id)
+    if task and not task.done():
+        task.cancel()
+        # The generator loop will observe CancelledError and surface the
+        # "cancelled" exit_reason which renders the error screen + clears state.
+        await callback.answer("Отмена запрошена…")
+        return
+    # No active task — just clear state and bounce to entry.
+    await state.clear()
+    if msg:
+        await safe_edit_text(
+            msg,
+            _build_simple_error_text(TXT.BAMBOODOM_AI_TITLE, TXT.BAMBOODOM_AI_CANCELLED_BY_USER),
+            reply_markup=bamboodom_entry_kb(),
+        )
+    await callback.answer()
+
+
+@router.message(Command("cancel"))
+async def ai_cancel_command(
+    message: Message,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """/cancel — same as the inline button, but works when the user typed it
+    as a command instead of clicking (4B.1.4)."""
+    if not _is_admin(user):
+        return
+    task = _active_ai_tasks.get(user.id)
+    if task and not task.done():
+        task.cancel()
+        await message.answer("Отмена запрошена…")
+        return
+    await state.clear()
+    await message.answer(TXT.BAMBOODOM_AI_CMD_CANCEL_NO_TASK)
 
 
 @router.callback_query(F.data == "bamboodom:ai:regenerate", AIPublishFSM.preview)
