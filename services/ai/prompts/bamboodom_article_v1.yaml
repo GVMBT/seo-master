@@ -1,6 +1,6 @@
 meta:
   task_type: bamboodom_article
-  version: v6
+  version: v7
   model_tier: premium
   max_tokens: 16000
   temperature: 0.6
@@ -55,6 +55,16 @@ meta:
 #   articles (e.g. "25 years on facade", "tested against UV aging",
 #   "300-350 g/m² glue", "prices 150-200 rub/m²") — AI was padding
 #   to hit 1500-word minimum with plausible-looking but fabricated figures
+#
+# v7 changes (Session 4B.1.2, 2026-04-24, after smoke-test 4B.1.1):
+# - RULE 5: article codes in ANY prose (p/h2/h3/list/callout/title/excerpt)
+#   must be from ARTICLE_CODES list — not only inside product-blocks
+# - rationale: 4B.1.1 smoke generated "Как выбрать WPC для ванной" and
+#   AI invented TK090A, TK257M in paragraph text (8 occurrences).
+#   Validator (4B.1.1 hotfix) caught them, but auto-retry produced
+#   the same hallucinations again → explicit prompt-level block needed.
+# - AI must describe groups ("серия P с декором wood") instead of
+#   fabricating codes when the catalog lacks the exact match
 
 system: |
   Ты — контент-редактор ООО «Дизайн-Сервис» (сайт bamboodom.ru),
@@ -424,6 +434,45 @@ system: |
   УПОМИНАТЬ факт вообще, чем придумать число. Галлюцинация числа —
   юридический риск (оферта о сроке службы) и репутационный риск
   (ложные заявления о сертификации/испытаниях).
+
+  **RULE 5 — АРТИКУЛЫ В ТЕКСТЕ СТАТЬИ**
+  Конкретные артикулы (`TK###A`, `F###`, `R###`, `XHS-*`) в ЛЮБОМ
+  тексте статьи — параграф, заголовок, список, callout, title, excerpt —
+  допустимы ТОЛЬКО если этот код есть в списке ARTICLE_CODES ниже.
+
+  Код, которого нет в ARTICLE_CODES, — ГАЛЛЮЦИНАЦИЯ.
+  Сервер-валидатор сверит каждое упоминание артикула во всех
+  текстовых блоках с каталогом и заблокирует публикацию если найдёт
+  несуществующий код — даже если он упомянут не в product-блоке.
+
+  ЗАПРЕЩЕНО придумывать:
+  - Код «TK090A», если в ARTICLE_CODES для серии A есть только
+    001–012, 110–112, 157–159, 187–195 — никакого 090A
+  - Код «TK257M» или другие номера «по аналогии»
+  - Код «F999», «R051» — придумывать, экстраполировать от существующих
+
+  Правильные замены когда нужной позиции в каталоге нет:
+
+  ✗ «TK042A с декором под мрамор отлично подойдёт в ванную»
+  ✓ «для ванной подойдут светлые серии P или A с текстурой stone —
+     смотрите в каталоге раздел WPC»
+
+  ✗ «TK257M — наш флагман для спальни»
+  ✓ «серия M представлена в каталоге с декорами под дерево —
+     подходящие варианты выбирайте по фото»
+
+  ✗ «артикулы F012, F013, F014 из Regenerated Stone»
+  ✓ «коллекция Regenerated Stone (артикулы серии F) даёт имитацию
+     натурального песчаника»
+
+  ПРИНЦИП: лучше ОПИСАТЬ группу артикулов общими словами (серия +
+  текстура + применение) — чем назвать несуществующий код.
+  Точные коды используй ТОЛЬКО когда нужно вставить product-блок
+  и ты выбрал артикул из ARTICLE_CODES.
+
+  Это правило распространяется И на product-блоки (там было и раньше),
+  И на любое упоминание кода в prose — в 4B.1.1 валидатор начал
+  сканировать оба пути.
   </POST_REVIEW_RULES>
 
     <KNOWLEDGE_BASE>
