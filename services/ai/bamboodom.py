@@ -79,9 +79,12 @@ ProgressCallback = Callable[[str, int], Awaitable[None]]
 # Block types the server accepts (we use a safe subset in 4A).
 _ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "h3", "p", "list", "product", "callout", "cta", "table"})
 
-# How many article codes to show the model per material. Too few — model
-# picks wrong article; too many — prompt bloats. 30 per material works.
-_CODES_SAMPLE_SIZE = 30
+# 4B.1.7: changed from 30-code sample → full list across ALL categories.
+# Reason: in 4B.1.5/6 smoke tests AI extrapolated intermediate codes
+# (TK042A from TK029P+TK110A, F001 from F003+F012, TK234M, XHS-20, etc).
+# Full list closes the extrapolation door — every code AI references must
+# now literally match a string in this list. ~4-5 KB extra in the prompt;
+# Sonnet 4.5 has 200K context, so well within budget.
 
 
 # ---------------------------------------------------------------------------
@@ -669,28 +672,55 @@ def _collect_valid_codes(codes_obj: Any) -> frozenset[str]:
     return frozenset(out)
 
 
+_CODES_PER_LINE = 12  # codes per line for readability in the prompt
+
+
 def _format_codes_sample(codes_obj: Any, material: MaterialCategory) -> str:
-    """Format a trimmed list of codes for the material category into prompt text."""
-    lines: list[str] = []
-    # Always include the chosen material's codes prominently.
-    own_codes = getattr(codes_obj, material, None) or []
-    if not isinstance(own_codes, list):
-        extras = getattr(codes_obj, "__pydantic_extra__", None) or {}
-        own_codes = extras.get(material, []) if isinstance(extras, dict) else []
-    if isinstance(own_codes, list) and own_codes:
-        sample = own_codes[:_CODES_SAMPLE_SIZE]
-        lines.append(f"Основная категория ({material}): {', '.join(sample)}")
-        if len(own_codes) > len(sample):
-            lines.append(f"…всего {len(own_codes)} артикулов этой категории")
+    """Format the full article-code catalog into the prompt text (4B.1.7).
 
-    # If material is accessory (profiles/reiki), also include some WPC codes
-    # — per prompt guidance they should not appear alone.
-    if material in ("profiles", "reiki"):
-        wpc = getattr(codes_obj, "wpc", None) or []
-        if isinstance(wpc, list) and wpc:
-            lines.append(f"Сопутствующие WPC: {', '.join(wpc[:10])}…")
+    Shows ALL codes from ALL categories, sorted, in chunks of _CODES_PER_LINE
+    per line. The chosen material category is shown first as "Основная",
+    others go below as "Сопутствующая" so AI knows what auxiliary materials
+    (profiles / reiki) are available without having to extrapolate.
 
-    return "\n".join(lines) if lines else "(список временно недоступен)"
+    Total expected size: ~4-5 KB (282 wpc + 77 flex + 50 reiki + 146 profiles).
+    Sonnet 4.5 context: 200K. Comfortable budget — gives AI exhaustive
+    visibility, kills the extrapolation hallucination pattern.
+    """
+    def _list(name: str) -> list[str]:
+        v = getattr(codes_obj, name, None) or []
+        if not isinstance(v, list):
+            extras = getattr(codes_obj, "__pydantic_extra__", None) or {}
+            v = extras.get(name, []) if isinstance(extras, dict) else []
+        return [str(c) for c in v if isinstance(c, str)]
+
+    def _format_block(name: str, codes: list[str], primary: bool = False) -> str:
+        if not codes:
+            return ""
+        sorted_codes = sorted(codes)
+        chunks = [
+            ", ".join(sorted_codes[i:i + _CODES_PER_LINE])
+            for i in range(0, len(sorted_codes), _CODES_PER_LINE)
+        ]
+        kind = "Основная" if primary else "Сопутствующая"
+        prefix = f"{kind} категория ({name}, всего {len(codes)} артикулов):"
+        return prefix + "\n  " + "\n  ".join(chunks)
+
+    blocks: list[str] = []
+    primary_block = _format_block(material, _list(material), primary=True)
+    if primary_block:
+        blocks.append(primary_block)
+
+    # Auxiliary categories — full list of each so AI sees real XHS profile
+    # codes, real reiki codes, real cross-material codes.
+    for aux in ("wpc", "flex", "reiki", "profiles"):
+        if aux == material:
+            continue
+        aux_block = _format_block(aux, _list(aux), primary=False)
+        if aux_block:
+            blocks.append(aux_block)
+
+    return "\n\n".join(blocks) if blocks else "(список временно недоступен)"
 
 
 def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:  # noqa: C901 — strict JSON parse + field extraction
