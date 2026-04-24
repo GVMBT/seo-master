@@ -31,7 +31,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 
 import httpx
 import sentry_sdk
@@ -70,6 +70,11 @@ _PROMPT_PATH = Path(__file__).parent / "prompts" / "bamboodom_article_v1.yaml"
 _KNOWLEDGE_BASE_PATH = Path(__file__).parent.parent.parent / "docs" / "bamboodom" / "knowledge_base.md"
 
 MaterialCategory = Literal["wpc", "flex", "reiki", "profiles"]
+
+# 4B.1.4: progress callback signature. Router passes a coroutine that writes
+# the current stage into a shared dict; the router's background loop reads
+# that dict every ~3s and re-renders the progress-bar message in Telegram.
+ProgressCallback = Callable[[str, int], Awaitable[None]]
 
 # Block types the server accepts (we use a safe subset in 4A).
 _ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "h3", "p", "list", "product", "callout", "cta", "table"})
@@ -334,6 +339,17 @@ class BamboodomArticleService:
         self._http = http_client
         self._api_key = openrouter_api_key
         self._bamboodom = bamboodom_client
+        self._progress_cb: ProgressCallback | None = None
+
+    async def _emit(self, stage: str, attempt: int = 1) -> None:
+        """Fire progress callback if one is registered (4B.1.4). Best-effort."""
+        cb = self._progress_cb
+        if cb is None:
+            return
+        try:
+            await cb(stage, attempt)
+        except Exception as exc:  # noqa: BLE001 — progress is best-effort; never abort generation
+            log.debug("bamboodom_ai_progress_cb_failed", stage=stage, error=str(exc))
 
     # ----- public API -------------------------------------------------
 
@@ -343,14 +359,36 @@ class BamboodomArticleService:
         material: MaterialCategory,
         keyword: str,
         current_date_iso: str,
+        progress_cb: ProgressCallback | None = None,
     ) -> tuple[BamboodomArticleDraft, ValidationResult]:
         """High-level: fetch context → generate draft → validate → (auto-retry once).
 
         Returns the final draft + validation result. Caller decides what to do
         with residual issues (show to operator, publish anyway, etc).
         """
+        self._progress_cb = progress_cb
+        try:
+            return await self._generate_and_validate_impl(
+                material=material,
+                keyword=keyword,
+                current_date_iso=current_date_iso,
+            )
+        finally:
+            self._progress_cb = None
+
+    async def _generate_and_validate_impl(
+        self,
+        *,
+        material: MaterialCategory,
+        keyword: str,
+        current_date_iso: str,
+    ) -> tuple[BamboodomArticleDraft, ValidationResult]:
+        """Inner implementation — kept separate so generate_and_validate can
+        manage self._progress_cb lifecycle cleanly via try/finally (4B.1.4)."""
         # 1. Load cached context (falls back to fresh fetch if cache is cold)
+        await self._emit("context", 1)
         context, codes = await self._load_context()
+        await self._emit("build", 1)
         valid_codes = _collect_valid_codes(codes)
         forbidden = list(getattr(context, "forbidden_claims", None) or [])
 
@@ -369,12 +407,15 @@ class BamboodomArticleService:
 
         for attempt in range(_MAX_VALIDATION_RETRIES + 1):
             messages = self._augment_messages_after_validation(system, user, validation_issues)
+            await self._emit("call_primary", attempt + 1)
             raw_reply = await self._call_with_json_retry(messages)
+            await self._emit("parse", attempt + 1)
             draft = _parse_draft(raw_reply)
 
             # Overwrite model's self-reported word_count with our honest count.
             draft.word_count = count_words(draft)
 
+            await self._emit("validate", attempt + 1)
             result = validator.validate(draft, valid_article_codes=valid_codes)
 
             # Length check (v5) — treat under-minimum as an auto-retry trigger
@@ -394,6 +435,7 @@ class BamboodomArticleService:
                         word_count=draft.word_count,
                         target_min=_MIN_WORDS_HARD,
                     )
+                    await self._emit("length_retry", attempt + 2)
                     continue  # retry with length nudge
                 # No more length retries — add advisory issue and fall through.
                 result.issues.append(
@@ -449,6 +491,7 @@ class BamboodomArticleService:
 
             # Accumulate issues for next attempt's prompt augmentation.
             validation_issues.extend(i.detail for i in result.issues)
+            await self._emit("validation_retry", attempt + 2)
 
         # Unreachable (loop always returns), but keep type-checker happy.
         if draft is None:  # pragma: no cover
@@ -545,7 +588,11 @@ class BamboodomArticleService:
     ) -> str:
         """POST /chat/completions with fallback across the model chain."""
         last_exc: Exception | None = None
+        primary = True
         for model in model_chain:
+            if not primary:
+                await self._emit("call_fallback", 1)
+            primary = False
             try:
                 resp = await self._http.post(
                     _OPENROUTER_URL,
