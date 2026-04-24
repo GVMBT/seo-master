@@ -168,14 +168,17 @@ class BamboodomValidator:
                     )
                 continue  # don't check text content on product blocks
 
-            # CTA-block: href is required
+            # CTA-block: `link` is required (per side B blog_publish schema).
+            # We also auto-normalize `href` -> `link` if the model forgot.
             if btype == "cta":
-                href = str(block.get("href", "")).strip()
-                if not href:
+                if "href" in block and "link" not in block:
+                    block["link"] = block.pop("href")  # normalize in-place
+                link = str(block.get("link", "")).strip()
+                if not link:
                     result.issues.append(
                         ValidationIssue(
                             kind="bad_block_type",
-                            detail=f"CTA block #{idx} missing href",
+                            detail=f"CTA block #{idx} missing link",
                             block_index=idx,
                         )
                     )
