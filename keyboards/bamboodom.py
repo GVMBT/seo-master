@@ -113,6 +113,14 @@ def bamboodom_ai_keyword_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def bamboodom_ai_generating_kb() -> InlineKeyboardMarkup:
+    """AI FSM — step 3: generating. Only cancel button (4B.1.4)."""
+    rows = [
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="bamboodom:ai:cancel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def bamboodom_ai_preview_kb() -> InlineKeyboardMarkup:
     """AI FSM — step 4: preview with publish / regenerate / cancel."""
     rows = [
