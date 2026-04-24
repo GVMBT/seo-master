@@ -987,8 +987,54 @@ def _build_publish_result_text(
         if len(resp.blocks_dropped) > 5:
             screen = screen.line(f"  …ещё {len(resp.blocks_dropped) - 5}")
 
+    # 4B.1.5: surface v1.2 server warnings + draft_forced + size
+    screen = _append_v1_2_notes(screen, resp)
+
     screen = screen.hint(TXT.BAMBOODOM_PUBLISH_HINT)
     return screen.build()
+
+
+def _append_v1_2_notes(screen, resp) -> object:
+    """Append draft_forced warning + warnings list + size line to any result screen.
+
+    Uses getattr with defaults so it works cleanly with pre-v1.2 server responses
+    (all new fields default to None / []). Added 2026-04-24 per 4B.1.5.
+    """
+    draft_forced = getattr(resp, "draft_forced", None)
+    warnings = getattr(resp, "warnings", []) or []
+    size_kb = getattr(resp, "size_kb", None)
+
+    if draft_forced:
+        screen = screen.blank().line(f"{E.WARNING} {TXT.BAMBOODOM_PUBLISH_DRAFT_FORCED}")
+
+    if warnings:
+        screen = screen.blank().line(
+            f"{E.WARNING} {TXT.BAMBOODOM_PUBLISH_WARNINGS_HEADER.format(count=len(warnings))}"
+        )
+        for w in warnings[:5]:
+            code = getattr(w, "code", None) or "warning"
+            hint = getattr(w, "hint", None) or TXT.BAMBOODOM_WARNING_LABELS.get(code, code)
+            category = getattr(w, "category", None)
+            label = f"{code}" + (f"/{category}" if category else "")
+            screen = screen.line(
+                TXT.BAMBOODOM_PUBLISH_WARNING_LINE.format(code=label, hint=hint[:140])
+            )
+            items = getattr(w, "items", None) or []
+            # Show first 2 items inline (if any) — helps debug which text/article triggered
+            for it in items[:2]:
+                if isinstance(it, dict):
+                    summary = it.get("match") or it.get("code") or it.get("where") or ""
+                    if summary:
+                        screen = screen.line(f"    · {str(summary)[:100]}")
+            if len(items) > 2:
+                screen = screen.line(TXT.BAMBOODOM_PUBLISH_WARNING_ITEMS_MORE.format(count=len(items) - 2))
+        if len(warnings) > 5:
+            screen = screen.line(f"  …ещё {len(warnings) - 5}")
+
+    if size_kb is not None:
+        screen = screen.blank().line(f"<i>{TXT.BAMBOODOM_PUBLISH_SIZE.format(kb=size_kb)}</i>")
+
+    return screen
 
 
 def _resolve_article_url(resp: PublishResponse) -> str | None:
@@ -1500,6 +1546,10 @@ def _build_ai_result_text(submitted_title: str, resp) -> str:
         screen = screen.blank().line(
             f"{E.WARNING} {TXT.BAMBOODOM_PUBLISH_BLOCKS_DROPPED.format(count=len(resp.blocks_dropped))}"
         )
+
+    # 4B.1.5: surface v1.2 server warnings + draft_forced + size
+    screen = _append_v1_2_notes(screen, resp)
+
     screen = screen.hint(TXT.BAMBOODOM_PUBLISH_HINT)
     return screen.build()
 
