@@ -1,4 +1,4 @@
-"""Bamboodom rich-catalog client (Session 4B.1.8).
+"""Bamboodom rich-catalog client (Session 4B.1.8 + v11 compact-aux mode).
 
 Wraps `GET /api.php?action=blog_article_index_full` — endpoint shipped by side B
 on 2026-04-25 specifically to give us a full description-bearing catalog so AI
@@ -15,6 +15,15 @@ Why a separate module (not in `integrations/bamboodom/`):
 Lighting category (466 ERDU items) is fetched and cached but **filtered out**
 of the prompt-facing payload. We are not writing articles about lighting yet
 (per Alex, 2026-04-25). When we do, drop the `_PROMPT_CATEGORIES` filter.
+
+v11 (2026-04-25, after smoke-test 1+2 of v10): compact-aux render mode. The
+v10 prompt with all 555 articles fully described pushed input to ~65k tokens;
+Sonnet 4.5 then "tired out" on the long context and consistently produced
+1100-1200 word articles instead of the 1500-2200 target. v11 keeps the primary
+material category fully rich (descriptions, series, texture_type) but renders
+non-primary categories as bare code lists with a one-line metadata hint
+(texture types for wpc, thickness range for flex, profile families for
+profiles). Drop is ~50-65% in prompt size, primary attention budget restored.
 """
 
 from __future__ import annotations
@@ -268,7 +277,6 @@ async def fetch_catalog(
             )
             return payload, False
         except CatalogFetchError as exc:
-            # Fall back to stale cache if we have any — better stale than dead.
             stale = _cache.get(slot_key)
             if stale is not None:
                 log.warning(
@@ -292,16 +300,26 @@ def format_catalog_for_prompt(
     *,
     primary_material: str,
     max_items_per_category: int | None = None,
+    compact_aux: bool = True,
 ) -> str:
     """Render the catalog as a structured markdown block for AI consumption.
 
     Layout: primary_material first ("Основная категория"), the rest alphabetical
     ("Сопутствующие"). Within each category, items are grouped by series/texture
-    where that helps; otherwise sorted by code. Each line is short and machine-
-    parseable so AI can scan visually without needing prose.
+    where that helps; otherwise sorted by code.
 
-    `max_items_per_category` is a safety knob — None = unlimited. Set to e.g.
-    300 if a future deploy explodes the catalog past Sonnet's context budget.
+    `max_items_per_category` is a safety knob — None = unlimited.
+
+    v11 default `compact_aux=True`: non-primary categories rendered as bare
+    code lists (12/line) with a one-line metadata hint. Saves ~50-65% prompt
+    size vs full rendering. AI cites aux articles by code in product-blocks
+    (validator allowlist still covers all categories), and writes aux mentions
+    in prose generically ("XHS-профили для стыков") rather than fabricating
+    pseudo-specific phrases from a flood of descriptions.
+
+    Pass `compact_aux=False` to restore v10-style full rendering for all
+    categories — useful for debugging or for comparison-articles where AI
+    really needs full data on both sides.
     """
     grouped = payload.items_by_category(prompt_only=True)
     if not grouped:
@@ -319,18 +337,27 @@ def format_catalog_for_prompt(
         items = grouped[cat]
         if max_items_per_category is not None and len(items) > max_items_per_category:
             items = items[:max_items_per_category]
-        rendered = _render_category_block(cat, items, primary=(cat == primary_material))
+        is_primary = cat == primary_material
+        rendered = _render_category_block(
+            cat, items, primary=is_primary, compact=(compact_aux and not is_primary)
+        )
         if rendered:
             out_blocks.append(rendered)
 
     return "\n\n".join(out_blocks)
 
 
-def _render_category_block(category: str, items: list[CatalogItem], *, primary: bool) -> str:
+def _render_category_block(
+    category: str, items: list[CatalogItem], *, primary: bool, compact: bool = False
+) -> str:
     if not items:
         return ""
     label = "Основная" if primary else "Сопутствующая"
     header = f"### {label} категория: {category} (всего {len(items)} артикулов)"
+
+    if compact:
+        body = _render_compact(category, items)
+        return f"{header}\n{body}"
 
     if category == "wpc":
         body = _render_wpc(items)
@@ -346,7 +373,60 @@ def _render_category_block(category: str, items: list[CatalogItem], *, primary: 
     return f"{header}\n{body}"
 
 
-# ---------- per-category renderers ----------
+# ---------- compact aux renderer (v11) ----------
+
+
+_COMPACT_CODES_PER_LINE = 12
+
+
+def _render_compact(category: str, items: list[CatalogItem]) -> str:
+    """Bare code list + one-line metadata hint. Used for non-primary categories.
+
+    Output is ~5-10% the size of the rich render. AI can still pick a code
+    for product-blocks (validator allowlist covers all 1021 codes), and the
+    hint keeps prose mentions grounded ("гибкая керамика — толщины 2-17 мм,
+    серия Travertine для стен", not "серия XYZ-Plus которой не существует").
+    """
+    sorted_codes = sorted(it.code for it in items if it.code)
+    chunks = [
+        ", ".join(sorted_codes[i:i + _COMPACT_CODES_PER_LINE])
+        for i in range(0, len(sorted_codes), _COMPACT_CODES_PER_LINE)
+    ]
+    hint = _compact_hint_for_category(category, items)
+    body_lines: list[str] = []
+    if hint:
+        body_lines.append(f"  _{hint}_")
+    body_lines.append("  " + "\n  ".join(chunks))
+    return "\n".join(body_lines)
+
+
+def _compact_hint_for_category(category: str, items: list[CatalogItem]) -> str:
+    """Short metadata summary so aux mentions in prose stay grounded."""
+    if category == "wpc":
+        textures = sorted({str(it.extra.get("texture_type") or "") for it in items if it.extra.get("texture_type")})
+        textures = [t for t in textures if t]
+        series = sorted({str(it.extra.get("series") or "") for it in items if it.extra.get("series")})
+        series = [s for s in series if s]
+        bits: list[str] = []
+        if series:
+            bits.append(f"серии: {', '.join(series)}")
+        if textures:
+            bits.append(f"текстуры: {', '.join(textures)}")
+        return "; ".join(bits)
+    if category == "flex":
+        thicks = sorted({int(it.extra["thick_mm"]) for it in items if isinstance(it.extra.get("thick_mm"), (int, float))})
+        return f"толщины: {min(thicks)}-{max(thicks)} мм" if thicks else ""
+    if category == "reiki":
+        widths = sorted({int(round(float(it.extra["width_mm"]))) for it in items if isinstance(it.extra.get("width_mm"), (int, float))})
+        return f"ширина: {min(widths)}-{max(widths)} мм" if widths else ""
+    if category == "profiles":
+        cats = sorted({str(it.extra.get("category_name") or "") for it in items if it.extra.get("category_name")})
+        cats = [c for c in cats if c]
+        return f"типы: {', '.join(cats)}" if cats else ""
+    return ""
+
+
+# ---------- per-category rich renderers (used for primary) ----------
 
 
 def _render_wpc(items: list[CatalogItem]) -> str:
@@ -357,7 +437,6 @@ def _render_wpc(items: list[CatalogItem]) -> str:
         by_series.setdefault(series, []).append(it)
 
     chunks: list[str] = []
-    # Stable series order: P, A, B, C, D, M, S, Y, G, BJL, BJ, then alphabetical rest.
     preferred = ["P", "A", "B", "C", "D", "M", "S", "Y", "G", "BJL", "BJ"]
     series_keys = [s for s in preferred if s in by_series]
     series_keys.extend(sorted(s for s in by_series if s not in preferred))
@@ -378,7 +457,7 @@ def _render_wpc(items: list[CatalogItem]) -> str:
 
 
 def _render_flex(items: list[CatalogItem]) -> str:
-    """Flex — code, name, толщина, размер (берём первый из sizes), цена в юанях."""
+    """Flex — code, name, толщина, размер, цена."""
     items = sorted(items, key=lambda x: x.code)
     lines: list[str] = []
     for it in items:
@@ -386,11 +465,11 @@ def _render_flex(items: list[CatalogItem]) -> str:
         sizes = it.extra.get("sizes") or []
         first_size = ""
         if isinstance(sizes, list) and sizes and isinstance(sizes[0], list) and len(sizes[0]) == 2:
-            first_size = f"{sizes[0][0]}×{sizes[0][1]}мм"
+            first_size = f"{sizes[0][0]}x{sizes[0][1]}мм"
         thick_part = f", {thick}мм" if thick else ""
         size_part = f", {first_size}" if first_size else ""
         price = it.extra.get("price_yuan")
-        price_part = f", {price}¥/м²" if price else ""
+        price_part = f", {price}Y/м2" if price else ""
         new_part = " [NEW]" if it.extra.get("is_new") else ""
         desc_part = f" / {it.description}" if it.description else ""
         lines.append(f"  {it.code} — {it.name}{thick_part}{size_part}{price_part}{new_part}{desc_part}")
@@ -398,7 +477,7 @@ def _render_flex(items: list[CatalogItem]) -> str:
 
 
 def _render_reiki(items: list[CatalogItem]) -> str:
-    """Reiki — code, name, ширина (главное для подбора), длина, цена."""
+    """Reiki — code, name, ширина, длина, цена."""
     items = sorted(items, key=lambda x: x.code)
     lines: list[str] = []
     for it in items:
@@ -407,14 +486,14 @@ def _render_reiki(items: list[CatalogItem]) -> str:
         width_part = f", ширина ~{round(float(width))}мм" if isinstance(width, (int, float)) else ""
         length_part = f", длина {length}мм" if isinstance(length, (int, float)) else ""
         price = it.extra.get("price_yuan")
-        price_part = f", {round(float(price), 1)}¥" if isinstance(price, (int, float)) else ""
+        price_part = f", {round(float(price), 1)}Y" if isinstance(price, (int, float)) else ""
         desc_part = f" / {it.description}" if it.description else ""
         lines.append(f"  {it.code} — {it.name}{width_part}{length_part}{price_part}{desc_part}")
     return "\n".join(lines)
 
 
 def _render_profiles(items: list[CatalogItem]) -> str:
-    """Profiles — group by category_name (Т-профиль, U-профиль и т.д.)."""
+    """Profiles — group by category_name."""
     by_cat: dict[str, list[CatalogItem]] = {}
     for it in items:
         cat_name = str(it.extra.get("category_name") or "Прочее")
@@ -428,7 +507,7 @@ def _render_profiles(items: list[CatalogItem]) -> str:
             size = str(it.extra.get("size") or "")
             size_part = f" {size}" if size else ""
             price = it.extra.get("price_yuan")
-            price_part = f" ({price}¥)" if price else ""
+            price_part = f" ({price}Y)" if price else ""
             desc_part = f" / {it.description}" if it.description else ""
             lines.append(f"    {it.code}{size_part}{price_part}{desc_part}")
         chunks.append("\n".join(lines))
@@ -447,6 +526,8 @@ def collect_codes_for_validator(payload: CatalogPayload) -> frozenset[str]:
 
     Includes ALL categories — including lighting — because the validator scans
     AI prose for any article-like token, and we'd rather accept a lighting code
-    that AI somehow surfaced than reject it as `bad_article` and force a retry.
+    that AI somehow surfaced than reject it as bad_article and force a retry.
+    """
+    return frozenset(it.code for it in payload.items if it.code)
     """
     return frozenset(it.code for it in payload.items if it.code)
