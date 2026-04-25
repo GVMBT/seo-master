@@ -527,5 +527,19 @@ def collect_codes_for_validator(payload: CatalogPayload) -> frozenset[str]:
     Includes ALL categories — including lighting — because the validator scans
     AI prose for any article-like token, and we'd rather accept a lighting code
     that AI somehow surfaced than reject it as bad_article and force a retry.
+
+    v12 (2026-04-25): for codes containing whitespace (e.g. XHS-QBDD901 with
+    its description), we ALSO add the prefix-up-to-first-whitespace as an
+    alias. Side B confirmed ProductCard accepts either form, so AI writing
+    the bare prefix should not trip the validator.
     """
-    return frozenset(it.code for it in payload.items if it.code)
+    out: set[str] = set()
+    for it in payload.items:
+        code = it.code
+        if not code:
+            continue
+        out.add(code)
+        prefix = code.split(None, 1)[0]
+        if prefix and prefix != code:
+            out.add(prefix)
+    return frozenset(out)
