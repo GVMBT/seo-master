@@ -529,5 +529,3 @@ def collect_codes_for_validator(payload: CatalogPayload) -> frozenset[str]:
     that AI somehow surfaced than reject it as bad_article and force a retry.
     """
     return frozenset(it.code for it in payload.items if it.code)
-    """
-    return frozenset(it.code for it in payload.items if it.code)
