@@ -1,9 +1,5 @@
 # Dev/test — not needed in production container
 tests/
-docs/
-!docs/bamboodom/
-docs/bamboodom/*
-!docs/bamboodom/knowledge_base.md
 # scripts/ — kept in context for seed_prompts.py (used in startCommand)
 .claude/
 .progress/
