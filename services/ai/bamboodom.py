@@ -1,90 +1,44 @@
-"""AI article generation for bamboodom.ru blog (Session 4A).
+"""Bamboodom rich-catalog client (Session 4B.1.8).
 
-Architecture rationale:
-- Bypasses `PromptEngine` (DB-backed) — bamboodom uses a self-contained YAML
-  loaded directly from disk, because our prompt shape (JSON blocks, not
-  Markdown/HTML) is incompatible with the existing prompt contract.
-- Bypasses `AIOrchestrator` — we use a minimal httpx-based OpenRouter client
-  because we need tight control over JSON parsing + retry on malformed output.
-  Reusing the orchestrator would require a prompt registered in DB + a
-  retry strategy that doesn't match our needs.
-- Keeps `ArticleService`, `PromptEngine`, `ContentValidator` untouched (per
-  side B directive in SESSION_4A_ANSWERS.md).
+Wraps `GET /api.php?action=blog_article_index_full` — endpoint shipped by side B
+on 2026-04-25 specifically to give us a full description-bearing catalog so AI
+stops extrapolating intermediate article codes and writes meaningful product
+mentions tied to series/texture_type/name.
 
-Flow:
-    context = await _load_context(redis)              # blog_context + codes
-    prompt = _build_messages(material, keyword, ctx)
-    raw = await _call_openrouter(prompt, MODEL_CHAIN)  # with 1 JSON-retry
-    draft = _parse_draft(raw)                          # strict validation
-    issues = validator.validate(draft, forbidden)      # regex layers 1+2
-    if issues: retry once (auto). still issues → manual.
+Why a separate module (not in `integrations/bamboodom/`):
+- Keeps `integrations/bamboodom/` (restricted zone, Session 1A) untouched.
+- Module-level cache is enough — the bot runs as a single Railway dyno, and
+  side B asked for a 1-hour refresh cadence. No Redis needed for this surface.
+- Self-contained httpx GET; no dependence on `BamboodomClient._request` private
+  internals or its caching layout.
 
-4B.1.1 hotfix (after FEEDBACK_ITERATION_4B_1 from side B, 2026-04-24):
-- regex layer 1+2 now scans article codes in ALL text-bearing blocks
-  (p/h2/h3/list/callout) + title + excerpt, not only product-blocks.
-  Fixes a hole where AI mentioned TK042A in prose and validator passed.
+Lighting category (466 ERDU items) is fetched and cached but **filtered out**
+of the prompt-facing payload. We are not writing articles about lighting yet
+(per Alex, 2026-04-25). When we do, drop the `_PROMPT_CATEGORIES` filter.
 """
 
 from __future__ import annotations
 
-import json
-import re
+import asyncio
+import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Iterable
 
 import httpx
-import sentry_sdk
 import structlog
-import yaml
 
-from integrations.bamboodom import BamboodomClient
+from bot.config import get_settings
 
 log = structlog.get_logger()
 
-# Model chains for bamboodom pipeline. Production pays premium for quality
-# (article) and uses Haiku for cheap validation checks (layer 3 in 4B).
-_MODEL_CHAIN_ARTICLE: tuple[str, ...] = (
-    "anthropic/claude-sonnet-4.5",
-    "anthropic/claude-opus-4-6",
-)
-_MODEL_CHAIN_VALIDATE: tuple[str, ...] = (
-    "anthropic/claude-haiku-4-5",
-    "deepseek/deepseek-v3.2",
-)
+_ENDPOINT_ACTION = "blog_article_index_full"
+_DEFAULT_TIMEOUT = 30.0  # ~1 MB JSON; generous timeout for first cold fetch
+_CACHE_TTL = 3600.0  # 1 hour, per side B directive
 
-_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-_GENERATION_TIMEOUT = 120.0  # seconds — article generation can take ~30-60s
-_MAX_JSON_RETRIES = 1  # strict JSON parse retry budget (per side B §Б1)
-_MAX_VALIDATION_RETRIES = 1  # auto-retry on regex violation (per §В2)
-
-# Word-count policy from ARTICLE_LENGTH_POLICY.md (v5 prompt)
-_MIN_WORDS_HARD = 1500
-_MAX_WORDS_HARD = 2200
-_TARGET_WORDS_MIN = 1700
-_TARGET_WORDS_MAX = 1900
-_MAX_LENGTH_RETRIES = 1  # if draft is below _MIN_WORDS_HARD, retry once
-
-# Prompt template file — loaded once into module-level cache.
-_PROMPT_PATH = Path(__file__).parent / "prompts" / "bamboodom_article_v1.yaml"
-_KNOWLEDGE_BASE_PATH = Path(__file__).parent.parent.parent / "docs" / "bamboodom" / "knowledge_base.md"
-
-MaterialCategory = Literal["wpc", "flex", "reiki", "profiles"]
-
-# 4B.1.4: progress callback signature. Router passes a coroutine that writes
-# the current stage into a shared dict; the router's background loop reads
-# that dict every ~3s and re-renders the progress-bar message in Telegram.
-ProgressCallback = Callable[[str, int], Awaitable[None]]
-
-# Block types the server accepts (we use a safe subset in 4A).
-_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "h3", "p", "list", "product", "callout", "cta", "table"})
-
-# 4B.1.7: changed from 30-code sample → full list across ALL categories.
-# Reason: in 4B.1.5/6 smoke tests AI extrapolated intermediate codes
-# (TK042A from TK029P+TK110A, F001 from F003+F012, TK234M, XHS-20, etc).
-# Full list closes the extrapolation door — every code AI references must
-# now literally match a string in this list. ~4-5 KB extra in the prompt;
-# Sonnet 4.5 has 200K context, so well within budget.
+# Categories shown to AI in the prompt. `lighting` is fetched and cached but
+# excluded here — Alex confirmed (2026-04-25) we are not writing articles about
+# ERDU lighting yet, and the 466 items would just bloat the prompt by ~50 KB.
+_PROMPT_CATEGORIES: tuple[str, ...] = ("wpc", "flex", "reiki", "profiles")
 
 
 # ---------------------------------------------------------------------------
@@ -93,739 +47,406 @@ _ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "h3", "p", "list", "prod
 
 
 @dataclass(slots=True)
-class BamboodomArticleDraft:
-    """Validated draft — what gets shown in FSM preview and published via API."""
+class CatalogItem:
+    """One article record — preserves all category-specific extras as `extra`."""
 
-    title: str
-    excerpt: str
-    blocks: list[dict[str, Any]]
-    seo: dict[str, str] = field(default_factory=dict)
-    format: int | None = None  # 1-7 from 7-formats library, v5+
-    word_count: int = 0  # server-side word count (not the model's self-report)
+    code: str
+    category: str  # wpc | flex | reiki | profiles | lighting
+    name: str
+    url: str
+    cover_img: str
+    description: str
+    suitable_for: list[str]
+    extra: dict[str, Any] = field(default_factory=dict)
 
-    def to_publish_payload(self) -> dict[str, Any]:
-        """Shape the draft for blog_publish."""
-        payload: dict[str, Any] = {
-            "title": self.title,
-            "excerpt": self.excerpt,
-            # In sandbox mode we want instant preview (no draft gate). When we
-            # move to production in 4B this flag flips back to True.
-            "draft": False,
-            "blocks": self.blocks,
-        }
-        if self.seo:
-            payload["seo"] = self.seo
-        return payload
+    @classmethod
+    def from_payload(cls, raw: dict[str, Any]) -> CatalogItem:
+        """Coerce one server item dict into a CatalogItem.
 
-
-@dataclass(slots=True)
-class ValidationIssue:
-    kind: Literal["forbidden_claim", "price_in_text", "bad_block_type", "bad_article", "too_short", "list_of_two"]
-    detail: str
-    block_index: int | None = None
-
-
-@dataclass(slots=True)
-class ValidationResult:
-    issues: list[ValidationIssue] = field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        return not self.issues
-
-
-# ---------------------------------------------------------------------------
-# Validator — regex layers 1 (forbidden_claims) + 2 (prices). Layer 3 in 4B.
-# ---------------------------------------------------------------------------
-
-
-class BamboodomValidator:
-    """Regex-based content checks. Mirrors side B expectations from SESSION_4A_ANSWERS."""
-
-    # Prices: "2500 руб", "от 1000 ₽", "около 500 р.", "~750 RUB". Any integer
-    # close to a currency marker is suspect — product-block is the only legal
-    # way to mention prices.
-    _PRICE_RE = re.compile(
-        r"\b\d{2,6}\s*(?:руб\.?|₽|RUB|р\.)\b",
-        flags=re.IGNORECASE,
-    )
-
-    # Article codes in prose (4B.1.1 hotfix). AI sometimes mentions articles in
-    # paragraph text without a product-block (e.g. "На проекте TK042A..."). The
-    # product-block path already checks .article field; this regex catches the
-    # prose path. WPC series are 1–3 uppercase letters (BJL is 3); flex=F###;
-    # reiki=R###; profiles=XHS-*. We deliberately avoid BJ?\d{2} — BJ/BJL suffixes
-    # are handled by the generic [A-Z]{1,3} tail after TK\d{3}.
-    _ARTICLE_CODE_RE = re.compile(
-        r"\b(?:TK\d{3}[A-Z]{1,3}|F\d{3}|R\d{3}|XHS-[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)\b",
-    )
-
-    def __init__(self, forbidden_claims: list[str]) -> None:
-        # Normalize all forbidden claims to lowercase for case-insensitive match.
-        self._forbidden = [c.strip().lower() for c in forbidden_claims if c and c.strip()]
-
-    def validate(  # noqa: C901  — tight regex-by-block check; splitting up harms readability
-        self,
-        draft: BamboodomArticleDraft,
-        *,
-        valid_article_codes: frozenset[str] | None = None,
-    ) -> ValidationResult:
-        """Run all regex checks on a draft. Returns a list of issues."""
-        result = ValidationResult()
-
-        for idx, block in enumerate(draft.blocks):
-            btype = block.get("type")
-
-            # Block type whitelist
-            if btype not in _ALLOWED_BLOCK_TYPES:
-                result.issues.append(
-                    ValidationIssue(
-                        kind="bad_block_type",
-                        detail=f"Block #{idx} has type={btype!r}, allowed: {sorted(_ALLOWED_BLOCK_TYPES)}",
-                        block_index=idx,
-                    )
-                )
-                continue
-
-            # Product-block: article must be in known codes
-            if btype == "product":
-                article = str(block.get("article", "")).strip()
-                if valid_article_codes is not None and article and article not in valid_article_codes:
-                    result.issues.append(
-                        ValidationIssue(
-                            kind="bad_article",
-                            detail=f"Unknown article code {article!r} in block #{idx}",
-                            block_index=idx,
-                        )
-                    )
-                continue  # don't check text content on product blocks
-
-            # CTA-block: `link` is required (per side B blog_publish schema).
-            # We also auto-normalize `href` -> `link` if the model forgot.
-            if btype == "cta":
-                if "href" in block and "link" not in block:
-                    block["link"] = block.pop("href")  # normalize in-place
-                link = str(block.get("link", "")).strip()
-                if not link:
-                    result.issues.append(
-                        ValidationIssue(
-                            kind="bad_block_type",
-                            detail=f"CTA block #{idx} missing link",
-                            block_index=idx,
-                        )
-                    )
-
-            # Gather text content from block (may be in text/title/items).
-            text_parts: list[str] = []
-            for field_name in ("text", "title"):
-                v = block.get(field_name)
-                if isinstance(v, str):
-                    text_parts.append(v)
-            items = block.get("items")
-            if isinstance(items, list):
-                text_parts.extend(str(i) for i in items if isinstance(i, (str, int)))
-            combined = "\n".join(text_parts).strip()
-            if not combined:
-                continue
-
-            # Check forbidden claims (case-insensitive substring match)
-            lowered = combined.lower()
-            for claim in self._forbidden:
-                if claim and claim in lowered:
-                    result.issues.append(
-                        ValidationIssue(
-                            kind="forbidden_claim",
-                            detail=f"Forbidden phrase {claim!r} in block #{idx}",
-                            block_index=idx,
-                        )
-                    )
-
-            # Check price-like patterns
-            for m in self._PRICE_RE.finditer(combined):
-                result.issues.append(
-                    ValidationIssue(
-                        kind="price_in_text",
-                        detail=f"Price-like token {m.group(0)!r} in block #{idx} — use product-block",
-                        block_index=idx,
-                    )
-                )
-
-            # Check article codes mentioned in prose (4B.1.1 hotfix).
-            # Deduplicate per block — one nag per unknown code, not per occurrence.
-            if valid_article_codes is not None:
-                seen_unknown_in_block: set[str] = set()
-                for m in self._ARTICLE_CODE_RE.finditer(combined):
-                    code = m.group(0)
-                    if code in valid_article_codes or code in seen_unknown_in_block:
-                        continue
-                    seen_unknown_in_block.add(code)
-                    result.issues.append(
-                        ValidationIssue(
-                            kind="bad_article",
-                            detail=(
-                                f"Unknown article code {code!r} mentioned in block #{idx} text "
-                                f"(not a product-block — check the paragraph)"
-                            ),
-                            block_index=idx,
-                        )
-                    )
-
-        # Sanity-check title/excerpt against forbidden claims too
-        title_low = draft.title.lower()
-        excerpt_low = draft.excerpt.lower()
-        for claim in self._forbidden:
-            if claim and (claim in title_low or claim in excerpt_low):
-                result.issues.append(
-                    ValidationIssue(
-                        kind="forbidden_claim",
-                        detail=f"Forbidden phrase {claim!r} in title/excerpt",
-                    )
-                )
-
-        # …and article codes in title/excerpt (4B.1.1).
-        if valid_article_codes is not None:
-            seen_unknown_meta: set[str] = set()
-            for text_src, where in ((draft.title, "title"), (draft.excerpt, "excerpt")):
-                for m in self._ARTICLE_CODE_RE.finditer(text_src):
-                    code = m.group(0)
-                    if code in valid_article_codes or code in seen_unknown_meta:
-                        continue
-                    seen_unknown_meta.add(code)
-                    result.issues.append(
-                        ValidationIssue(
-                            kind="bad_article",
-                            detail=f"Unknown article code {code!r} mentioned in {where}",
-                        )
-                    )
-
-        # RULE 1 (post-review): list with <=3 items should be a table.
-        for idx, block in enumerate(draft.blocks):
-            if block.get("type") == "list":
-                items = block.get("items") or []
-                if isinstance(items, list) and len(items) < 4:
-                    result.issues.append(
-                        ValidationIssue(
-                            kind="list_of_two",
-                            detail=(
-                                f"list block #{idx} has only {len(items)} items; "
-                                f"for 2-3 parallel positions use type=table"
-                            ),
-                            block_index=idx,
-                        )
-                    )
-
-        return result
-
-
-# ---------------------------------------------------------------------------
-# Service
-# ---------------------------------------------------------------------------
-
-
-class BamboodomGenerationError(Exception):
-    """Raised when AI generation fails after all retries / fallbacks."""
-
-
-class BamboodomArticleService:
-    """Generates blog articles for bamboodom.ru using Claude Sonnet via OpenRouter.
-
-    NOT thread-safe (holds no mutable state). Cheap to construct per-call.
-    """
-
-    def __init__(
-        self,
-        *,
-        http_client: httpx.AsyncClient,
-        openrouter_api_key: str,
-        bamboodom_client: BamboodomClient,
-    ) -> None:
-        self._http = http_client
-        self._api_key = openrouter_api_key
-        self._bamboodom = bamboodom_client
-        self._progress_cb: ProgressCallback | None = None
-
-    async def _emit(self, stage: str, attempt: int = 1) -> None:
-        """Fire progress callback if one is registered (4B.1.4). Best-effort."""
-        cb = self._progress_cb
-        if cb is None:
-            return
-        try:
-            await cb(stage, attempt)
-        except Exception as exc:  # noqa: BLE001 — progress is best-effort; never abort generation
-            log.debug("bamboodom_ai_progress_cb_failed", stage=stage, error=str(exc))
-
-    # ----- public API -------------------------------------------------
-
-    async def generate_and_validate(
-        self,
-        *,
-        material: MaterialCategory,
-        keyword: str,
-        current_date_iso: str,
-        progress_cb: ProgressCallback | None = None,
-    ) -> tuple[BamboodomArticleDraft, ValidationResult]:
-        """High-level: fetch context → generate draft → validate → (auto-retry once).
-
-        Returns the final draft + validation result. Caller decides what to do
-        with residual issues (show to operator, publish anyway, etc).
+        Unknown / new fields are stored verbatim in `extra` so we forward-comp
+        with whatever side B adds later (a new `tags` or `swatch_color` field
+        will not crash us).
         """
-        self._progress_cb = progress_cb
-        try:
-            return await self._generate_and_validate_impl(
-                material=material,
-                keyword=keyword,
-                current_date_iso=current_date_iso,
-            )
-        finally:
-            self._progress_cb = None
-
-    async def _generate_and_validate_impl(
-        self,
-        *,
-        material: MaterialCategory,
-        keyword: str,
-        current_date_iso: str,
-    ) -> tuple[BamboodomArticleDraft, ValidationResult]:
-        """Inner implementation — kept separate so generate_and_validate can
-        manage self._progress_cb lifecycle cleanly via try/finally (4B.1.4)."""
-        # 1. Load cached context (falls back to fresh fetch if cache is cold)
-        await self._emit("context", 1)
-        context, codes = await self._load_context()
-        await self._emit("build", 1)
-        valid_codes = _collect_valid_codes(codes)
-        forbidden = list(getattr(context, "forbidden_claims", None) or [])
-
-        validator = BamboodomValidator(forbidden)
-        system, user = self._build_messages(
-            material=material,
-            keyword=keyword,
-            current_date=current_date_iso,
-            context_obj=context,
-            codes_obj=codes,
+        known = {"code", "category", "name", "url", "cover_img", "description", "suitable_for"}
+        extras = {k: v for k, v in raw.items() if k not in known}
+        return cls(
+            code=str(raw.get("code", "")).strip(),
+            category=str(raw.get("category", "")).strip(),
+            name=str(raw.get("name", "")).strip(),
+            url=str(raw.get("url", "")).strip(),
+            cover_img=str(raw.get("cover_img", "")).strip(),
+            description=str(raw.get("description", "")).strip(),
+            suitable_for=[str(s) for s in (raw.get("suitable_for") or []) if isinstance(s, (str, int))],
+            extra=extras,
         )
 
-        draft: BamboodomArticleDraft | None = None
-        validation_issues: list[str] = []
-        length_retry_used = False
 
-        for attempt in range(_MAX_VALIDATION_RETRIES + 1):
-            messages = self._augment_messages_after_validation(system, user, validation_issues)
-            await self._emit("call_primary", attempt + 1)
-            raw_reply = await self._call_with_json_retry(messages)
-            await self._emit("parse", attempt + 1)
-            draft = _parse_draft(raw_reply)
+@dataclass(slots=True)
+class CatalogPayload:
+    """Full server response, parsed into our shapes."""
 
-            # Overwrite model's self-reported word_count with our honest count.
-            draft.word_count = count_words(draft)
+    version: str
+    cache_key: str
+    total: int
+    by_category: dict[str, int]
+    items: list[CatalogItem]
+    updated_at: str | None = None
+    fetched_at: str | None = None
 
-            await self._emit("validate", attempt + 1)
-            result = validator.validate(draft, valid_article_codes=valid_codes)
+    def items_for_prompt(self) -> list[CatalogItem]:
+        """Items AI sees in the prompt (lighting filtered out per 4B.1.8 scope)."""
+        return [it for it in self.items if it.category in _PROMPT_CATEGORIES]
 
-            # Length check (v5) — treat under-minimum as an auto-retry trigger
-            # on the first pass only. Report as an advisory issue afterwards.
-            if draft.word_count < _MIN_WORDS_HARD:
-                if not length_retry_used and attempt == 0:
-                    length_retry_used = True
-                    length_feedback = (
-                        f"Твой ответ слишком короткий — {draft.word_count} слов, "
-                        f"минимум {_MIN_WORDS_HARD}. Расширь самый короткий "
-                        "раздел ФАКТИЧЕСКИМ содержанием из KNOWLEDGE_BASE "
-                        "(примеры, технические детали, сценарии). НЕ добавляй воды."
-                    )
-                    validation_issues.append(length_feedback)
-                    log.info(
-                        "bamboodom_ai_length_retry_scheduled",
-                        word_count=draft.word_count,
-                        target_min=_MIN_WORDS_HARD,
-                    )
-                    await self._emit("length_retry", attempt + 2)
-                    continue  # retry with length nudge
-                # No more length retries — add advisory issue and fall through.
-                result.issues.append(
-                    ValidationIssue(
-                        kind="too_short",
-                        detail=(f"Draft is {draft.word_count} words; below hard min {_MIN_WORDS_HARD}"),
-                    )
-                )
-            elif draft.word_count > _MAX_WORDS_HARD:
-                # Going over max is less critical — operator can trim in moderation.
-                log.info(
-                    "bamboodom_ai_over_max_length",
-                    word_count=draft.word_count,
-                    target_max=_MAX_WORDS_HARD,
-                )
-
-            if result.ok:
-                log.info(
-                    "bamboodom_ai_generate_ok",
-                    material=material,
-                    keyword=keyword,
-                    blocks=len(draft.blocks),
-                    word_count=draft.word_count,
-                    format=draft.format,
-                    attempt=attempt,
-                )
-                return draft, result
-
-            # Failed validation — log every attempt (per §В2 guidance).
-            log.warning(
-                "bamboodom_ai_validation_failed",
-                material=material,
-                keyword=keyword,
-                attempt=attempt,
-                word_count=draft.word_count,
-                issues=[i.detail for i in result.issues],
-            )
-            sentry_sdk.capture_message(
-                "bamboodom AI validation failed",
-                level="warning",
-                extras={
-                    "material": material,
-                    "keyword": keyword,
-                    "attempt": attempt,
-                    "word_count": draft.word_count,
-                    "issues": [i.detail for i in result.issues],
-                },
-            )
-
-            if attempt >= _MAX_VALIDATION_RETRIES:
-                # Give up — return last draft + issues; operator decides.
-                return draft, result
-
-            # Accumulate issues for next attempt's prompt augmentation.
-            validation_issues.extend(i.detail for i in result.issues)
-            await self._emit("validation_retry", attempt + 2)
-
-        # Unreachable (loop always returns), but keep type-checker happy.
-        if draft is None:  # pragma: no cover
-            raise BamboodomGenerationError("no draft produced")
-        return draft, validator.validate(draft, valid_article_codes=valid_codes)
-
-    # ----- internals --------------------------------------------------
-
-    async def _load_context(self):
-        """Fetch blog_context + blog_article_codes (uses Session 2A cache)."""
-        ctx_resp, _ = await self._bamboodom.get_context(force_refresh=False)
-        codes_resp, _ = await self._bamboodom.get_article_codes(force_refresh=False)
-        return ctx_resp, codes_resp
-
-    def _build_messages(
-        self,
-        *,
-        material: MaterialCategory,
-        keyword: str,
-        current_date: str,
-        context_obj: Any,
-        codes_obj: Any,
-    ) -> tuple[str, str]:
-        """Render the YAML prompt template with live context."""
-        template = _load_prompt_template()
-        kb_text = _load_knowledge_base()
-        forbidden_lines = (
-            "\n".join(f"- {c}" for c in (getattr(context_obj, "forbidden_claims", None) or [])) or "(из knowledge base)"
-        )
-        codes_sample = _format_codes_sample(codes_obj, material)
-
-        def _fill(text: str) -> str:
-            return (
-                text.replace("<<knowledge_base>>", kb_text)
-                .replace("<<forbidden_claims_list>>", forbidden_lines)
-                .replace("<<material_category>>", material)
-                .replace("<<keyword>>", keyword)
-                .replace("<<current_date>>", current_date)
-                .replace("<<article_codes_sample>>", codes_sample)
-            )
-
-        return _fill(template["system"]), _fill(template["user"])
-
-    @staticmethod
-    def _augment_messages_after_validation(
-        system: str,
-        user: str,
-        prior_issues: list[str],
-    ) -> list[dict[str, str]]:
-        """Inject previous validation feedback into the user turn."""
-        if not prior_issues:
-            return [{"role": "system", "content": system}, {"role": "user", "content": user}]
-
-        feedback = (
-            "\n\nПРЕДЫДУЩИЙ ОТВЕТ НЕ ПРОШЁЛ ВАЛИДАЦИЮ:\n"
-            + "\n".join(f"- {issue}" for issue in prior_issues)
-            + "\n\nИсправь и верни новую версию строго в формате JSON без обёрток."
-        )
-        return [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user + feedback},
-        ]
-
-    async def _call_with_json_retry(self, messages: list[dict[str, str]]) -> str:
-        """Call OpenRouter; on invalid JSON reply — retry once with strict prompt."""
-        raw = await self._call_openrouter(messages, _MODEL_CHAIN_ARTICLE)
-        try:
-            _parse_draft(raw)  # purely validates the JSON; discard result
-            return raw
-        except BamboodomGenerationError:
-            log.warning("bamboodom_ai_json_invalid_first_try", reply_preview=raw[:300])
-            # Retry with a stricter nudge.
-            strict_messages = [
-                *messages,
-                {
-                    "role": "assistant",
-                    "content": raw[:4000],  # truncate very long replies for the history
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        "Твой ответ не был валидным JSON. Верни ТОЛЬКО JSON-объект "
-                        '{"title":...,"excerpt":...,"blocks":[...]}, без markdown, '
-                        "без обёрток ``` и без пояснений до или после."
-                    ),
-                },
-            ]
-            return await self._call_openrouter(strict_messages, _MODEL_CHAIN_ARTICLE)
-
-    async def _call_openrouter(
-        self,
-        messages: list[dict[str, str]],
-        model_chain: tuple[str, ...],
-    ) -> str:
-        """POST /chat/completions with fallback across the model chain."""
-        last_exc: Exception | None = None
-        primary = True
-        for model in model_chain:
-            if not primary:
-                await self._emit("call_fallback", 1)
-            primary = False
-            try:
-                resp = await self._http.post(
-                    _OPENROUTER_URL,
-                    headers={
-                        "Authorization": f"Bearer {self._api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "https://bamboodom.ru",
-                        "X-Title": "SEO Master Bamboodom",
-                    },
-                    json={
-                        "model": model,
-                        "messages": messages,
-                        "max_tokens": 8000,
-                        "temperature": 0.6,
-                    },
-                    timeout=_GENERATION_TIMEOUT,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                log.info(
-                    "bamboodom_ai_call_ok",
-                    model=model,
-                    usage=data.get("usage"),
-                )
-                return content  # type: ignore[no-any-return]
-            except (httpx.HTTPError, KeyError, IndexError) as exc:
-                log.warning("bamboodom_ai_call_failed", model=model, error=str(exc))
-                last_exc = exc
-                continue
-
-        raise BamboodomGenerationError(f"All models failed: {[m for m in model_chain]}; last: {last_exc}")
+    def items_by_category(self, *, prompt_only: bool = True) -> dict[str, list[CatalogItem]]:
+        pool: Iterable[CatalogItem] = self.items_for_prompt() if prompt_only else self.items
+        out: dict[str, list[CatalogItem]] = {}
+        for it in pool:
+            out.setdefault(it.category, []).append(it)
+        return out
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Cache (module-level — single-process bot, fine to keep in memory)
 # ---------------------------------------------------------------------------
 
 
-def _load_prompt_template() -> dict[str, str]:
-    """Load the YAML prompt. Raises on missing file or malformed YAML."""
-    if not _PROMPT_PATH.exists():
-        raise BamboodomGenerationError(f"prompt template not found: {_PROMPT_PATH}")
-    with _PROMPT_PATH.open(encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
-    if not isinstance(raw, dict) or "system" not in raw or "user" not in raw:
-        raise BamboodomGenerationError(f"prompt template has unexpected shape: {_PROMPT_PATH}")
-    return {"system": raw["system"], "user": raw["user"]}
+@dataclass(slots=True)
+class _CacheSlot:
+    payload: CatalogPayload
+    fetched_at_ts: float
 
 
-def _load_knowledge_base() -> str:
-    """Load the markdown knowledge base for inline injection into the prompt."""
-    if not _KNOWLEDGE_BASE_PATH.exists():
-        # Non-fatal — we can still generate, just without company context.
-        log.warning("bamboodom_kb_missing", path=str(_KNOWLEDGE_BASE_PATH))
-        return "(knowledge base not available)"
-    return _KNOWLEDGE_BASE_PATH.read_text(encoding="utf-8")
+_cache: dict[str, _CacheSlot] = {}
+_cache_lock = asyncio.Lock()
 
 
-def _collect_valid_codes(codes_obj: Any) -> frozenset[str]:
-    """Flatten category-wise code lists into a single lookup set."""
-    out: set[str] = set()
-    for category_name, count in codes_obj.categories().items():
-        # categories() returns only counts; access the raw list via getattr/extras
-        raw_list = getattr(codes_obj, category_name, None)
-        if isinstance(raw_list, list):
-            out.update(str(c) for c in raw_list if isinstance(c, str))
-        else:
-            extras = getattr(codes_obj, "__pydantic_extra__", None) or {}
-            extra_list = extras.get(category_name)
-            if isinstance(extra_list, list):
-                out.update(str(c) for c in extra_list if isinstance(c, str))
-        _ = count  # unused, kept for clarity
-    return frozenset(out)
+def _cache_key(category: str | None, has_description: bool) -> str:
+    cat = category or "_all"
+    flag = "1" if has_description else "0"
+    return f"{cat}:hd={flag}"
 
 
-_CODES_PER_LINE = 12  # codes per line for readability in the prompt
+# ---------------------------------------------------------------------------
+# HTTP fetch
+# ---------------------------------------------------------------------------
 
 
-def _format_codes_sample(codes_obj: Any, material: MaterialCategory) -> str:
-    """Format the full article-code catalog into the prompt text (4B.1.7).
-
-    Shows ALL codes from ALL categories, sorted, in chunks of _CODES_PER_LINE
-    per line. The chosen material category is shown first as "Основная",
-    others go below as "Сопутствующая" so AI knows what auxiliary materials
-    (profiles / reiki) are available without having to extrapolate.
-
-    Total expected size: ~4-5 KB (282 wpc + 77 flex + 50 reiki + 146 profiles).
-    Sonnet 4.5 context: 200K. Comfortable budget — gives AI exhaustive
-    visibility, kills the extrapolation hallucination pattern.
-    """
-    def _list(name: str) -> list[str]:
-        v = getattr(codes_obj, name, None) or []
-        if not isinstance(v, list):
-            extras = getattr(codes_obj, "__pydantic_extra__", None) or {}
-            v = extras.get(name, []) if isinstance(extras, dict) else []
-        return [str(c) for c in v if isinstance(c, str)]
-
-    def _format_block(name: str, codes: list[str], primary: bool = False) -> str:
-        if not codes:
-            return ""
-        sorted_codes = sorted(codes)
-        chunks = [
-            ", ".join(sorted_codes[i:i + _CODES_PER_LINE])
-            for i in range(0, len(sorted_codes), _CODES_PER_LINE)
-        ]
-        kind = "Основная" if primary else "Сопутствующая"
-        prefix = f"{kind} категория ({name}, всего {len(codes)} артикулов):"
-        return prefix + "\n  " + "\n  ".join(chunks)
-
-    blocks: list[str] = []
-    primary_block = _format_block(material, _list(material), primary=True)
-    if primary_block:
-        blocks.append(primary_block)
-
-    # Auxiliary categories — full list of each so AI sees real XHS profile
-    # codes, real reiki codes, real cross-material codes.
-    for aux in ("wpc", "flex", "reiki", "profiles"):
-        if aux == material:
-            continue
-        aux_block = _format_block(aux, _list(aux), primary=False)
-        if aux_block:
-            blocks.append(aux_block)
-
-    return "\n\n".join(blocks) if blocks else "(список временно недоступен)"
+class CatalogFetchError(Exception):
+    """Raised when we can't load the catalog and have no usable cache."""
 
 
-def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:  # noqa: C901 — strict JSON parse + field extraction
-    """Strict JSON parse + shape validation. Raises BamboodomGenerationError."""
-    # Models sometimes wrap JSON in ```json ... ``` or add a prose preamble.
-    # Try to recover the first {...} block as a last resort.
-    candidate = raw_reply.strip()
-    if candidate.startswith("```"):
-        # Strip fenced code block header + trailing fence
-        candidate = re.sub(r"^```(?:json)?\s*", "", candidate)
-        candidate = re.sub(r"\s*```\s*$", "", candidate)
-    # Find first top-level {...}
-    first_brace = candidate.find("{")
-    last_brace = candidate.rfind("}")
-    if first_brace != -1 and last_brace > first_brace:
-        candidate = candidate[first_brace : last_brace + 1]
+async def _http_fetch(
+    *,
+    api_base: str,
+    api_key: str,
+    category: str | None,
+    has_description: bool,
+    http_client: httpx.AsyncClient | None,
+    timeout: float,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"action": _ENDPOINT_ACTION}
+    if category:
+        params["category"] = category
+    if has_description:
+        params["has_description"] = "1"
+
+    headers = {
+        "X-Blog-Key": api_key,
+        "Accept": "application/json",
+    }
+
+    async def _do(client: httpx.AsyncClient) -> httpx.Response:
+        return await client.get(api_base, params=params, headers=headers, timeout=timeout)
 
     try:
-        parsed = json.loads(candidate)
-    except json.JSONDecodeError as exc:
-        raise BamboodomGenerationError(f"invalid JSON from model: {exc}") from exc
+        if http_client is not None:
+            resp = await _do(http_client)
+        else:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await _do(client)
+    except httpx.TimeoutException as exc:
+        raise CatalogFetchError(f"timeout fetching catalog: {exc}") from exc
+    except httpx.RequestError as exc:
+        raise CatalogFetchError(f"network error fetching catalog: {exc}") from exc
 
-    if not isinstance(parsed, dict):
-        raise BamboodomGenerationError(f"model returned {type(parsed).__name__}, expected object")
-    title = parsed.get("title")
-    excerpt = parsed.get("excerpt")
-    blocks = parsed.get("blocks")
-    if not isinstance(title, str) or not title.strip():
-        raise BamboodomGenerationError("missing/empty title in model response")
-    if not isinstance(excerpt, str) or not excerpt.strip():
-        raise BamboodomGenerationError("missing/empty excerpt in model response")
-    if not isinstance(blocks, list) or not blocks:
-        raise BamboodomGenerationError("missing/empty blocks in model response")
-    # Coerce blocks to list[dict]
-    cleaned_blocks: list[dict[str, Any]] = []
-    for idx, block in enumerate(blocks):
-        if not isinstance(block, dict) or "type" not in block:
-            raise BamboodomGenerationError(f"block #{idx} is not a dict or missing 'type': {block!r}")
-        cleaned_blocks.append(block)
+    if resp.status_code >= 400:
+        raise CatalogFetchError(f"HTTP {resp.status_code} on catalog: {resp.text[:300]}")
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise CatalogFetchError(f"non-JSON catalog response: {resp.text[:300]}") from exc
+    if not isinstance(data, dict) or not data.get("ok"):
+        raise CatalogFetchError(f"unexpected catalog shape: {str(data)[:300]}")
+    return data
 
-    # Optional: seo block (meta_title / meta_description)
-    seo_raw = parsed.get("seo")
-    seo: dict[str, str] = {}
-    if isinstance(seo_raw, dict):
-        meta_title = seo_raw.get("meta_title")
-        meta_description = seo_raw.get("meta_description")
-        if isinstance(meta_title, str) and meta_title.strip():
-            seo["meta_title"] = meta_title.strip()[:80]
-        if isinstance(meta_description, str) and meta_description.strip():
-            seo["meta_description"] = meta_description.strip()[:200]
 
-    # Optional: format (int 1-7) and word_count (model self-report)
-    fmt_raw = parsed.get("format")
-    fmt_val: int | None = None
-    if isinstance(fmt_raw, int) and 1 <= fmt_raw <= 7:
-        fmt_val = fmt_raw
-    elif isinstance(fmt_raw, str) and fmt_raw.strip().isdigit():
-        try:
-            candidate = int(fmt_raw.strip())
-            if 1 <= candidate <= 7:
-                fmt_val = candidate
-        except ValueError:
-            pass
+def _parse_payload(raw: dict[str, Any]) -> CatalogPayload:
+    items_raw = raw.get("items") or []
+    if not isinstance(items_raw, list):
+        raise CatalogFetchError(f"items is {type(items_raw).__name__}, expected list")
 
-    wc_raw = parsed.get("word_count")
-    wc_val = 0
-    if isinstance(wc_raw, int) and wc_raw > 0:
-        wc_val = wc_raw
+    items = [CatalogItem.from_payload(it) for it in items_raw if isinstance(it, dict)]
+    by_cat = raw.get("by_category") or {}
+    if not isinstance(by_cat, dict):
+        by_cat = {}
 
-    draft = BamboodomArticleDraft(
-        title=title.strip(),
-        excerpt=excerpt.strip(),
-        blocks=cleaned_blocks,
-        seo=seo,
-        format=fmt_val,
+    return CatalogPayload(
+        version=str(raw.get("version", "")),
+        cache_key=str(raw.get("cache_key", "")),
+        total=int(raw.get("total", len(items))),
+        by_category={str(k): int(v) for k, v in by_cat.items() if isinstance(v, (int, float))},
+        items=items,
+        updated_at=raw.get("updated_at"),
+        fetched_at=raw.get("fetched_at"),
     )
-    # Always override with our own count — models underreport.
-    draft.word_count = wc_val  # temporary (model's own) — overwritten later
-    return draft
 
 
 # ---------------------------------------------------------------------------
-# Word-count helpers (v5)
+# Public API
 # ---------------------------------------------------------------------------
 
 
-_WORD_RE = re.compile(r"[\w\-]+", flags=re.UNICODE)
+async def fetch_catalog(
+    *,
+    category: str | None = None,
+    has_description: bool = False,
+    force_refresh: bool = False,
+    http_client: httpx.AsyncClient | None = None,
+    api_base: str | None = None,
+    api_key: str | None = None,
+    timeout: float = _DEFAULT_TIMEOUT,
+) -> tuple[CatalogPayload, bool]:
+    """Get the full bamboodom article catalog. Returns (payload, was_cache_hit).
 
-
-def count_words(draft: BamboodomArticleDraft) -> int:
-    """Sum words across text-bearing blocks (p/h2/h3/list/callout).
-
-    Excludes product/cta/image/table headers+rows per ARTICLE_LENGTH_POLICY.md.
+    Cache: module-level dict keyed by `(category, has_description)`. TTL 1 hour
+    (server refreshes hourly; our cadence matches). On fetch failure, returns
+    stale cache if available; only raises CatalogFetchError on cold-start
+    network errors.
     """
-    total = 0
-    for block in draft.blocks:
-        btype = block.get("type")
-        if btype in ("p", "h2", "h3"):
-            text = block.get("text") or ""
-            total += len(_WORD_RE.findall(text))
-        elif btype == "list":
-            for item in block.get("items") or []:
-                if isinstance(item, str):
-                    total += len(_WORD_RE.findall(item))
-        elif btype == "callout":
-            total += len(_WORD_RE.findall(block.get("text") or ""))
-            total += len(_WORD_RE.findall(block.get("title") or ""))
-    return total
+    settings = get_settings()
+    base = api_base or settings.bamboodom_api_base
+    key = api_key or settings.bamboodom_blog_key.get_secret_value()
+    slot_key = _cache_key(category, has_description)
+
+    if not force_refresh:
+        slot = _cache.get(slot_key)
+        if slot is not None and (time.monotonic() - slot.fetched_at_ts) < _CACHE_TTL:
+            log.debug(
+                "bamboodom_catalog_cache_hit",
+                slot=slot_key,
+                age_s=round(time.monotonic() - slot.fetched_at_ts, 1),
+                cache_key=slot.payload.cache_key,
+                items=len(slot.payload.items),
+            )
+            return slot.payload, True
+
+    async with _cache_lock:
+        # Re-check after acquiring lock — another coroutine may have refreshed.
+        if not force_refresh:
+            slot = _cache.get(slot_key)
+            if slot is not None and (time.monotonic() - slot.fetched_at_ts) < _CACHE_TTL:
+                return slot.payload, True
+
+        try:
+            raw = await _http_fetch(
+                api_base=base,
+                api_key=key,
+                category=category,
+                has_description=has_description,
+                http_client=http_client,
+                timeout=timeout,
+            )
+            payload = _parse_payload(raw)
+            _cache[slot_key] = _CacheSlot(payload=payload, fetched_at_ts=time.monotonic())
+            log.info(
+                "bamboodom_catalog_refreshed",
+                slot=slot_key,
+                cache_key=payload.cache_key,
+                total=payload.total,
+                items_loaded=len(payload.items),
+                by_category=payload.by_category,
+            )
+            return payload, False
+        except CatalogFetchError as exc:
+            # Fall back to stale cache if we have any — better stale than dead.
+            stale = _cache.get(slot_key)
+            if stale is not None:
+                log.warning(
+                    "bamboodom_catalog_fetch_failed_using_stale",
+                    slot=slot_key,
+                    age_s=round(time.monotonic() - stale.fetched_at_ts, 1),
+                    error=str(exc),
+                )
+                return stale.payload, True
+            raise
+
+
+# ---------------------------------------------------------------------------
+# Prompt formatting — turns CatalogPayload into the markdown chunk the prompt
+# template injects via <<articles_catalog>>.
+# ---------------------------------------------------------------------------
+
+
+def format_catalog_for_prompt(
+    payload: CatalogPayload,
+    *,
+    primary_material: str,
+    max_items_per_category: int | None = None,
+) -> str:
+    """Render the catalog as a structured markdown block for AI consumption.
+
+    Layout: primary_material first ("Основная категория"), the rest alphabetical
+    ("Сопутствующие"). Within each category, items are grouped by series/texture
+    where that helps; otherwise sorted by code. Each line is short and machine-
+    parseable so AI can scan visually without needing prose.
+
+    `max_items_per_category` is a safety knob — None = unlimited. Set to e.g.
+    300 if a future deploy explodes the catalog past Sonnet's context budget.
+    """
+    grouped = payload.items_by_category(prompt_only=True)
+    if not grouped:
+        return "(каталог временно недоступен)"
+
+    order: list[str] = []
+    if primary_material in grouped:
+        order.append(primary_material)
+    for cat in _PROMPT_CATEGORIES:
+        if cat != primary_material and cat in grouped:
+            order.append(cat)
+
+    out_blocks: list[str] = []
+    for cat in order:
+        items = grouped[cat]
+        if max_items_per_category is not None and len(items) > max_items_per_category:
+            items = items[:max_items_per_category]
+        rendered = _render_category_block(cat, items, primary=(cat == primary_material))
+        if rendered:
+            out_blocks.append(rendered)
+
+    return "\n\n".join(out_blocks)
+
+
+def _render_category_block(category: str, items: list[CatalogItem], *, primary: bool) -> str:
+    if not items:
+        return ""
+    label = "Основная" if primary else "Сопутствующая"
+    header = f"### {label} категория: {category} (всего {len(items)} артикулов)"
+
+    if category == "wpc":
+        body = _render_wpc(items)
+    elif category == "flex":
+        body = _render_flex(items)
+    elif category == "reiki":
+        body = _render_reiki(items)
+    elif category == "profiles":
+        body = _render_profiles(items)
+    else:  # pragma: no cover — lighting filtered upstream
+        body = _render_generic(items)
+
+    return f"{header}\n{body}"
+
+
+# ---------- per-category renderers ----------
+
+
+def _render_wpc(items: list[CatalogItem]) -> str:
+    """WPC — group by series, then by texture_type. Show name if non-default."""
+    by_series: dict[str, list[CatalogItem]] = {}
+    for it in items:
+        series = str(it.extra.get("series") or "?")
+        by_series.setdefault(series, []).append(it)
+
+    chunks: list[str] = []
+    # Stable series order: P, A, B, C, D, M, S, Y, G, BJL, BJ, then alphabetical rest.
+    preferred = ["P", "A", "B", "C", "D", "M", "S", "Y", "G", "BJL", "BJ"]
+    series_keys = [s for s in preferred if s in by_series]
+    series_keys.extend(sorted(s for s in by_series if s not in preferred))
+
+    for series in series_keys:
+        block_items = sorted(by_series[series], key=lambda x: x.code)
+        lines = [f"  Серия {series}:"]
+        for it in block_items:
+            tex = str(it.extra.get("texture_type") or "")
+            tex_part = f" [{tex}]" if tex else ""
+            name_part = ""
+            if it.name and it.name != it.code:
+                name_part = f" — {it.name}"
+            desc_part = f" / {it.description}" if it.description else ""
+            lines.append(f"    {it.code}{tex_part}{name_part}{desc_part}")
+        chunks.append("\n".join(lines))
+    return "\n".join(chunks)
+
+
+def _render_flex(items: list[CatalogItem]) -> str:
+    """Flex — code, name, толщина, размер (берём первый из sizes), цена в юанях."""
+    items = sorted(items, key=lambda x: x.code)
+    lines: list[str] = []
+    for it in items:
+        thick = it.extra.get("thick_mm")
+        sizes = it.extra.get("sizes") or []
+        first_size = ""
+        if isinstance(sizes, list) and sizes and isinstance(sizes[0], list) and len(sizes[0]) == 2:
+            first_size = f"{sizes[0][0]}×{sizes[0][1]}мм"
+        thick_part = f", {thick}мм" if thick else ""
+        size_part = f", {first_size}" if first_size else ""
+        price = it.extra.get("price_yuan")
+        price_part = f", {price}¥/м²" if price else ""
+        new_part = " [NEW]" if it.extra.get("is_new") else ""
+        desc_part = f" / {it.description}" if it.description else ""
+        lines.append(f"  {it.code} — {it.name}{thick_part}{size_part}{price_part}{new_part}{desc_part}")
+    return "\n".join(lines)
+
+
+def _render_reiki(items: list[CatalogItem]) -> str:
+    """Reiki — code, name, ширина (главное для подбора), длина, цена."""
+    items = sorted(items, key=lambda x: x.code)
+    lines: list[str] = []
+    for it in items:
+        width = it.extra.get("width_mm")
+        length = it.extra.get("length_mm")
+        width_part = f", ширина ~{round(float(width))}мм" if isinstance(width, (int, float)) else ""
+        length_part = f", длина {length}мм" if isinstance(length, (int, float)) else ""
+        price = it.extra.get("price_yuan")
+        price_part = f", {round(float(price), 1)}¥" if isinstance(price, (int, float)) else ""
+        desc_part = f" / {it.description}" if it.description else ""
+        lines.append(f"  {it.code} — {it.name}{width_part}{length_part}{price_part}{desc_part}")
+    return "\n".join(lines)
+
+
+def _render_profiles(items: list[CatalogItem]) -> str:
+    """Profiles — group by category_name (Т-профиль, U-профиль и т.д.)."""
+    by_cat: dict[str, list[CatalogItem]] = {}
+    for it in items:
+        cat_name = str(it.extra.get("category_name") or "Прочее")
+        by_cat.setdefault(cat_name, []).append(it)
+
+    chunks: list[str] = []
+    for cat_name in sorted(by_cat.keys()):
+        sorted_items = sorted(by_cat[cat_name], key=lambda x: x.code)
+        lines = [f"  {cat_name}:"]
+        for it in sorted_items:
+            size = str(it.extra.get("size") or "")
+            size_part = f" {size}" if size else ""
+            price = it.extra.get("price_yuan")
+            price_part = f" ({price}¥)" if price else ""
+            desc_part = f" / {it.description}" if it.description else ""
+            lines.append(f"    {it.code}{size_part}{price_part}{desc_part}")
+        chunks.append("\n".join(lines))
+    return "\n".join(chunks)
+
+
+def _render_generic(items: list[CatalogItem]) -> str:
+    """Fallback (used only if a new category appears)."""
+    items = sorted(items, key=lambda x: x.code)
+    lines = [f"  {it.code} — {it.name}" + (f" / {it.description}" if it.description else "") for it in items]
+    return "\n".join(lines)
+
+
+def collect_codes_for_validator(payload: CatalogPayload) -> frozenset[str]:
+    """Build a code-set for the regex validator.
+
+    Includes ALL categories — including lighting — because the validator scans
+    AI prose for any article-like token, and we'd rather accept a lighting code
+    that AI somehow surfaced than reject it as `bad_article` and force a retry.
+    """
+    return frozenset(it.code for it in payload.items if it.code)
