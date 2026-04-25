@@ -170,9 +170,27 @@ class BamboodomValidator:
         r"\b(?:TK\d{3}[A-Z]{1,3}|F\d{3}|R\d{3}|XHS-[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)\b",
     )
 
+    # 4B.1.9 v12 hotfix: F\d{3} also matches frost-resistance grades for
+    # ceramic/granite (F200 = 200 freeze cycles, F300 = 300 cycles). When a
+    # frost/grade keyword appears immediately before the code, treat it as a
+    # technical grade, not an article code. Russian declensions covered with
+    # \w* suffix (морозостойкость / морозостойкости / морозостойкостью / ...).
+    _FROST_GRADE_CONTEXT_RE = re.compile(
+        r"(?:морозостойкост\w*|класс\w*|марк\w*|grade)[\s\-:,]+(?:F\d{3})\b",
+        flags=re.IGNORECASE,
+    )
+
     def __init__(self, forbidden_claims: list[str]) -> None:
         # Normalize all forbidden claims to lowercase for case-insensitive match.
         self._forbidden = [c.strip().lower() for c in forbidden_claims if c and c.strip()]
+
+    def _is_frost_grade(self, text: str, match_start: int, code: str) -> bool:
+        """v12 hotfix: F\\d{3} preceded by frost/grade keyword is NOT an article."""
+        if not code.startswith("F") or len(code) != 4 or not code[1:].isdigit():
+            return False
+        # Look back ~40 chars in the same text for the keyword pattern.
+        window = text[max(0, match_start - 40):match_start + len(code)]
+        return bool(self._FROST_GRADE_CONTEXT_RE.search(window))
 
     def validate(  # noqa: C901  — tight regex-by-block check; splitting up harms readability
         self,
@@ -262,11 +280,15 @@ class BamboodomValidator:
 
             # Check article codes mentioned in prose (4B.1.1 hotfix).
             # Deduplicate per block — one nag per unknown code, not per occurrence.
+            # 4B.1.9 v12: skip F\d{3} hits that are clearly frost-resistance
+            # grades ("морозостойкость F300", "класс F200"), not article codes.
             if valid_article_codes is not None:
                 seen_unknown_in_block: set[str] = set()
                 for m in self._ARTICLE_CODE_RE.finditer(combined):
                     code = m.group(0)
                     if code in valid_article_codes or code in seen_unknown_in_block:
+                        continue
+                    if self._is_frost_grade(combined, m.start(), code):
                         continue
                     seen_unknown_in_block.add(code)
                     result.issues.append(
@@ -293,12 +315,15 @@ class BamboodomValidator:
                 )
 
         # …and article codes in title/excerpt (4B.1.1).
+        # v12: same frost-grade exception as in body blocks.
         if valid_article_codes is not None:
             seen_unknown_meta: set[str] = set()
             for text_src, where in ((draft.title, "title"), (draft.excerpt, "excerpt")):
                 for m in self._ARTICLE_CODE_RE.finditer(text_src):
                     code = m.group(0)
                     if code in valid_article_codes or code in seen_unknown_meta:
+                        continue
+                    if self._is_frost_grade(text_src, m.start(), code):
                         continue
                     seen_unknown_meta.add(code)
                     result.issues.append(
