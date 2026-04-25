@@ -4,9 +4,28 @@ from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+# ---------------------------------------------------------------------------
+# Root entry — три кнопки: Статьи / Администрирование / К панели
+# ---------------------------------------------------------------------------
 
-def bamboodom_entry_kb() -> InlineKeyboardMarkup:
-    """Entry-screen keyboard."""
+
+def bamboodom_root_kb() -> InlineKeyboardMarkup:
+    """Корневой экран Bamboodom."""
+    rows = [
+        [InlineKeyboardButton(text="📝 Статьи", callback_data="bamboodom:articles")],
+        [InlineKeyboardButton(text="⚙️ Администрирование", callback_data="bamboodom:admin")],
+        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# «Статьи» — то, что раньше было entry-экраном
+# ---------------------------------------------------------------------------
+
+
+def bamboodom_articles_kb() -> InlineKeyboardMarkup:
+    """Подменю «Статьи» — все ранее существовавшие кнопки."""
     rows = [
         [InlineKeyboardButton(text="Smoke-test", callback_data="bamboodom:smoke")],
         [InlineKeyboardButton(text="Контекст сайта", callback_data="bamboodom:context")],
@@ -15,16 +34,66 @@ def bamboodom_entry_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Публикация в sandbox", callback_data="bamboodom:publish")],
         [InlineKeyboardButton(text="История публикаций", callback_data="bamboodom:history")],
         [InlineKeyboardButton(text="Настройки", callback_data="bamboodom:settings")],
-        [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# Старое имя оставляем как алиас — некоторые legacy-вызовы используют bamboodom_entry_kb()
+def bamboodom_entry_kb() -> InlineKeyboardMarkup:
+    """Алиас для bamboodom_articles_kb (legacy-имя)."""
+    return bamboodom_articles_kb()
+
+
+# ---------------------------------------------------------------------------
+# «Администрирование»
+# ---------------------------------------------------------------------------
+
+
+def bamboodom_admin_kb() -> InlineKeyboardMarkup:
+    """Подменю «Администрирование»."""
+    rows = [
+        [InlineKeyboardButton(text="🔄 Переобход в Яндекс Вебмастер", callback_data="bamboodom:admin:recrawl")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_recrawl_preview_kb() -> InlineKeyboardMarkup:
+    """Экран после краула: показал что нашёл, спрашивает подтвердить отправку."""
+    rows = [
+        [InlineKeyboardButton(text="📨 Отправить в Я.Вебмастер", callback_data="bamboodom:admin:recrawl:run")],
+        [InlineKeyboardButton(text="🔁 Перепроверить", callback_data="bamboodom:admin:recrawl")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:admin")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_recrawl_progress_kb() -> InlineKeyboardMarkup:
+    """Во время отправки — пустая клавиатура (можно добавить cancel позже)."""
+    return InlineKeyboardMarkup(inline_keyboard=[])
+
+
+def bamboodom_recrawl_result_kb() -> InlineKeyboardMarkup:
+    """Финальный экран отправки."""
+    rows = [
+        [InlineKeyboardButton(text="🔁 Запустить ещё раз", callback_data="bamboodom:admin:recrawl")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:admin")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# Существующие подэкраны раздела «Статьи» — без изменений по составу,
+# только Назад теперь ведёт на bamboodom:articles (а не на bamboodom:entry).
+# ---------------------------------------------------------------------------
 
 
 def bamboodom_smoke_result_kb() -> InlineKeyboardMarkup:
     """Smoke-test result screen."""
     rows = [
         [InlineKeyboardButton(text="Повторить", callback_data="bamboodom:smoke")],
-        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -33,7 +102,7 @@ def bamboodom_context_kb() -> InlineKeyboardMarkup:
     """Context-screen: refresh + back."""
     rows = [
         [InlineKeyboardButton(text="Обновить", callback_data="bamboodom:context:refresh")],
-        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -42,7 +111,7 @@ def bamboodom_codes_kb() -> InlineKeyboardMarkup:
     """Codes-screen: refresh + back."""
     rows = [
         [InlineKeyboardButton(text="Обновить", callback_data="bamboodom:codes:refresh")],
-        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -51,7 +120,7 @@ def bamboodom_publish_input_kb() -> InlineKeyboardMarkup:
     """Publish — entry FSM state: example + cancel."""
     rows = [
         [InlineKeyboardButton(text="Вставить пример JSON", callback_data="bamboodom:publish:example")],
-        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -61,7 +130,7 @@ def bamboodom_publish_confirm_kb() -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="Отправить", callback_data="bamboodom:publish:submit")],
         [InlineKeyboardButton(text="Вернуться к редактированию", callback_data="bamboodom:publish")],
-        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -72,7 +141,7 @@ def bamboodom_publish_result_kb(article_url: str | None) -> InlineKeyboardMarkup
     if article_url:
         rows.append([InlineKeyboardButton(text="Открыть статью", url=article_url)])
     rows.append([InlineKeyboardButton(text="Опубликовать ещё", callback_data="bamboodom:publish")])
-    rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:articles")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -80,7 +149,7 @@ def bamboodom_history_kb() -> InlineKeyboardMarkup:
     """History-screen keyboard."""
     rows = [
         [InlineKeyboardButton(text="Опубликовать ещё", callback_data="bamboodom:publish")],
-        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -88,7 +157,7 @@ def bamboodom_history_kb() -> InlineKeyboardMarkup:
 def bamboodom_settings_kb() -> InlineKeyboardMarkup:
     """Settings stub: only back button."""
     rows = [
-        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -100,7 +169,7 @@ def bamboodom_ai_material_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Гибкая керамика", callback_data="bamboodom:ai:mat:flex")],
         [InlineKeyboardButton(text="Реечные панели", callback_data="bamboodom:ai:mat:reiki")],
         [InlineKeyboardButton(text="Алюминиевые профили", callback_data="bamboodom:ai:mat:profiles")],
-        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -108,7 +177,7 @@ def bamboodom_ai_material_kb() -> InlineKeyboardMarkup:
 def bamboodom_ai_keyword_kb() -> InlineKeyboardMarkup:
     """AI FSM — step 2: waiting for keyword. Only cancel button."""
     rows = [
-        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -126,7 +195,7 @@ def bamboodom_ai_preview_kb() -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="Опубликовать", callback_data="bamboodom:ai:publish")],
         [InlineKeyboardButton(text="Перегенерировать", callback_data="bamboodom:ai:regenerate")],
-        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:entry")],
+        [InlineKeyboardButton(text="Отмена", callback_data="bamboodom:articles")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -137,5 +206,5 @@ def bamboodom_ai_result_kb(article_url: str | None) -> InlineKeyboardMarkup:
     if article_url:
         rows.append([InlineKeyboardButton(text="Открыть статью", url=article_url)])
     rows.append([InlineKeyboardButton(text="Ещё статью", callback_data="bamboodom:ai:start")])
-    rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:articles")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

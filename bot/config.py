@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     bamboodom_api_base: str = "https://bamboodom.ru/api.php"
     bamboodom_enabled: bool = False
 
+    # --- Yandex Webmaster (Bamboodom recrawl, 4D) ---
+    # OAuth-токен с правом webmaster:hosts.
+    # Если user_id / host_id оставить пустыми — клиент попросит API сам определить
+    # их по списку хостов пользователя при первом вызове.
+    yandex_webmaster_token: SecretStr = SecretStr("")
+    yandex_webmaster_user_id: str = ""
+    yandex_webmaster_host_id: str = ""
+    yandex_webmaster_site: str = "https://bamboodom.ru"
+
     # === Server ===
     port: int = 8080
 

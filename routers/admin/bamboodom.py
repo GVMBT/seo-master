@@ -517,7 +517,7 @@ def _classify_api_error(exc: BamboodomAPIError) -> tuple[str, bool]:
 # ---------------------------------------------------------------------------
 
 
-@router.callback_query(F.data == "bamboodom:entry")
+@router.callback_query(F.data == "bamboodom:articles")
 async def bamboodom_entry(
     callback: CallbackQuery,
     user: User,

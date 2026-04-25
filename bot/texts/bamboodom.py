@@ -245,3 +245,73 @@ BAMBOODOM_WARNING_LABELS = {
     "resized": "Картинка была уменьшена",
     "conversion_gd_missing": "Сервер не смог конвертировать картинку",
 }
+# =====================================================================
+# pkg_4D_yandex_recrawl additions to bot/texts/bamboodom.py
+# Просто скопировать всё ниже и вставить в КОНЕЦ файла
+# bot/texts/bamboodom.py
+# =====================================================================
+
+# --- Root entry (4D) ---
+BAMBOODOM_ROOT_TITLE = "BAMBOODOM.RU"
+BAMBOODOM_ROOT_SUBTITLE = "Раздел Bamboodom"
+BAMBOODOM_ROOT_HINT = "Выберите раздел: статьи или администрирование сайта."
+
+# --- «Статьи» подзаголовок (4D) — старый entry-экран теперь так называется ---
+BAMBOODOM_ARTICLES_TITLE = "СТАТЬИ"
+BAMBOODOM_ARTICLES_SUBTITLE = "Smoke-test, контекст, артикулы и публикация"
+
+# --- «Администрирование» (4D) ---
+BAMBOODOM_ADMIN_TITLE = "АДМИНИСТРИРОВАНИЕ"
+BAMBOODOM_ADMIN_SUBTITLE = "Управление сайтом bamboodom.ru"
+BAMBOODOM_ADMIN_HINT = "Здесь будут собираться действия по сайту в целом."
+
+# --- Переобход в Я.Вебмастер (4D) ---
+BAMBOODOM_RECRAWL_TITLE = "ПЕРЕОБХОД В ЯНДЕКС ВЕБМАСТЕР"
+BAMBOODOM_RECRAWL_INTRO = (
+    "Бот соберёт sitemap.xml сайта bamboodom.ru, найдёт страницы, "
+    "которых не было при прошлом запуске, и отправит их в очередь переобхода."
+)
+BAMBOODOM_RECRAWL_PROGRESS_CRAWL = "Сканирую sitemap.xml и главную страницу…"
+BAMBOODOM_RECRAWL_PROGRESS_SEND = "Отправляю URL'ы в Яндекс Вебмастер ({i}/{total})…"
+BAMBOODOM_RECRAWL_NO_AUTH = (
+    "Не настроен YANDEX_WEBMASTER_TOKEN. Добавьте OAuth-токен с правом "
+    "webmaster:hosts в переменные окружения Railway и перезапустите сервис."
+)
+BAMBOODOM_RECRAWL_HOST_NOT_FOUND = (
+    "Сайт bamboodom.ru не найден среди подтверждённых хостов в кабинете "
+    "Яндекс Вебмастера. Откройте https://webmaster.yandex.ru/sites/ и "
+    "подтвердите права на сайт."
+)
+BAMBOODOM_RECRAWL_FOUND = (
+    "Найдено всего на сайте: {total}\n"
+    "Из них новых (не было в прошлом запуске): {new}"
+)
+BAMBOODOM_RECRAWL_FIRST_RUN = (
+    "Это первый запуск. Бот зафиксировал текущие {total} URL'ов как стартовый "
+    "снимок и больше ничего не отправил — иначе пришлось бы лить в очередь "
+    "весь сайт. На следующем запуске будут отправлены только новые страницы."
+)
+BAMBOODOM_RECRAWL_NOTHING_NEW = "Новых страниц нет. Очередь Я.Вебмастера не трогаем."
+BAMBOODOM_RECRAWL_PREVIEW_HINT = (
+    "Если согласны — нажмите «Отправить в Я.Вебмастер»."
+)
+BAMBOODOM_RECRAWL_RESULT_TITLE = "ОТПРАВЛЕНО"
+BAMBOODOM_RECRAWL_RESULT_LINE_OK = "Успешно отправлено: {count}"
+BAMBOODOM_RECRAWL_RESULT_LINE_FAIL = "С ошибками: {count}"
+BAMBOODOM_RECRAWL_RESULT_FAIL_HEADER = "Первые ошибки:"
+BAMBOODOM_RECRAWL_RESULT_FAIL_LINE = "— {url}: {err}"
+BAMBOODOM_RECRAWL_RESULT_FAIL_MORE = "  …ещё {count}"
+BAMBOODOM_RECRAWL_PREVIEW_URL_LINE = "— {url}"
+BAMBOODOM_RECRAWL_PREVIEW_URL_MORE = "  …ещё {count}"
+BAMBOODOM_RECRAWL_AUTH_FAIL = (
+    "OAuth-токен Яндекс Вебмастера невалиден или просрочен. "
+    "Сгенерируйте новый: https://oauth.yandex.ru/authorize?response_type=token&client_id=<ID>"
+)
+BAMBOODOM_RECRAWL_QUOTA_FAIL = (
+    "Превышена дневная квота переобхода. Попробуйте завтра."
+)
+BAMBOODOM_RECRAWL_NETWORK_FAIL = "Не удалось обратиться к API: {detail}"
+BAMBOODOM_RECRAWL_CRAWL_FAIL = (
+    "Не удалось обойти сайт: {detail}\n"
+    "Проверьте https://bamboodom.ru/sitemap.xml — возможно, сайт временно недоступен."
+)
