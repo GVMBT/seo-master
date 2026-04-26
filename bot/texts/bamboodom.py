@@ -214,7 +214,7 @@ BAMBOODOM_AI_STAGE_DONE = "Готово — открываю превью"
 
 BAMBOODOM_AI_PROGRESS_ELAPSED = "Прошло: {elapsed} сек."
 BAMBOODOM_AI_CANCELLED_BY_USER = "Генерация отменена по запросу."
-BAMBOODOM_AI_TIMEOUT = "Генерация превысила лимит 5 минут и прервана. Попробуйте перегенерировать."
+BAMBOODOM_AI_TIMEOUT = "Генерация превысила лимит 10 минут и прервана. Попробуйте перегенерировать."
 BAMBOODOM_AI_CMD_CANCEL_NO_TASK = "Сейчас нет активной генерации."
 
 

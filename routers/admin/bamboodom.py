@@ -1375,7 +1375,7 @@ _PREVIEW_PARAGRAPHS = 2
 
 # 4B.1.4: progress bar + cancel support. Hard timeout caps the worst case
 # where OpenRouter hangs without returning (observed once in 4B.1.3 smoke).
-_AI_HARD_TIMEOUT_SEC = 300.0  # 5 minutes — generous but bounded
+_AI_HARD_TIMEOUT_SEC = 600.0  # 10 minutes — bumped 2026-04-27 (3-attempt v14 checklist + image pipeline)
 _AI_PROGRESS_TICK_SEC = 3.0
 
 # user_id -> asyncio.Task (the generate_and_validate task, cancellable)
