@@ -677,3 +677,196 @@ async def bamboodom_schedule_off(callback: CallbackQuery, user: User, redis) -> 
     text = Screen(E.SCHEDULE, TXT.BAMBOODOM_SCHEDULE_TITLE).blank().line(head).build()
     await safe_edit_text(msg, text, reply_markup=bamboodom_digest_schedule_kb(st.get("active", False)))
     await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# 4G: Google Search Console
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "bamboodom:analytics:gsc")
+async def bamboodom_gsc_root(callback: CallbackQuery, user: User, redis) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    s = get_settings()
+    if not s.google_oauth_client_id or not s.google_oauth_client_secret.get_secret_value():
+        text, kb = _wrap_error(TXT.BAMBOODOM_GSC_NO_CONFIG)
+        await safe_edit_text(msg, text, reply_markup=kb)
+        await callback.answer()
+        return
+
+    from integrations.google_search_console.client import GSC_REFRESH_REDIS_KEY
+    from keyboards.bamboodom import bamboodom_gsc_kb
+
+    try:
+        rt = await redis.get(GSC_REFRESH_REDIS_KEY)
+    except Exception:
+        rt = None
+
+    authorized = bool(rt)
+    if authorized:
+        text = Screen(E.SEARCH_CHECK, TXT.BAMBOODOM_GSC_TITLE).blank().line(f"{E.CHECK} Подключено").build()
+    else:
+        text = Screen(E.WARNING, TXT.BAMBOODOM_GSC_TITLE).blank().line(TXT.BAMBOODOM_GSC_HINT_AUTH).build()
+    await safe_edit_text(msg, text, reply_markup=bamboodom_gsc_kb(authorized))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "bamboodom:gsc:auth")
+async def bamboodom_gsc_auth(callback: CallbackQuery, user: User) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    s = get_settings()
+    base = (s.railway_public_url or "").rstrip("/")
+    if not base:
+        text, kb = _wrap_error("RAILWAY_PUBLIC_URL не настроен.")
+        await safe_edit_text(msg, text, reply_markup=kb)
+        await callback.answer()
+        return
+    auth_url = f"{base}/api/auth/google/redirect"
+    text = (
+        Screen(E.KEY, TXT.BAMBOODOM_GSC_TITLE)
+        .blank()
+        .line(TXT.BAMBOODOM_GSC_NOT_AUTH.format(auth_url=auth_url))
+        .build()
+    )
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    auth_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 Открыть Google authorize", url=auth_url)],
+            [InlineKeyboardButton(text="🔁 Я авторизовался", callback_data="bamboodom:analytics:gsc")],
+            [InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics")],
+        ]
+    )
+    await safe_edit_text(msg, text, reply_markup=auth_kb)
+    await callback.answer()
+
+
+def _build_gsc_totals_text(t) -> str:
+    return (
+        Screen(E.CHART, TXT.BAMBOODOM_GSC_TOTAL_TITLE)
+        .blank()
+        .field(E.CHECK, TXT.BAMBOODOM_GSC_LABEL_CLICKS, str(t.clicks))
+        .field(E.SEARCH_CHECK, TXT.BAMBOODOM_GSC_LABEL_IMPRESSIONS, str(t.impressions))
+        .field(E.PULSE, TXT.BAMBOODOM_GSC_LABEL_CTR, f"{t.ctr * 100:.2f}%")
+        .field(E.CHART_UP, TXT.BAMBOODOM_GSC_LABEL_POS, f"{t.position:.1f}")
+        .build()
+    )
+
+
+@router.callback_query(F.data == "bamboodom:gsc:totals")
+async def bamboodom_gsc_totals(callback: CallbackQuery, user: User, redis) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    from integrations.google_search_console import GoogleSearchConsoleClient
+    from keyboards.bamboodom import bamboodom_gsc_back_kb
+
+    await safe_edit_text(
+        msg,
+        Screen(E.SYNC, TXT.BAMBOODOM_GSC_TOTAL_TITLE).blank().line(TXT.BAMBOODOM_GSC_PROGRESS).build(),
+        reply_markup=bamboodom_gsc_back_kb(),
+    )
+    await callback.answer()
+    try:
+        client = GoogleSearchConsoleClient(redis=redis)
+        t = await client.totals(days=28)
+    except Exception as exc:
+        log.warning("gsc_totals_failed", exc_info=True)
+        text, _kb = _wrap_error(TXT.BAMBOODOM_GSC_FAIL.format(detail=str(exc)[:200]))
+        await safe_edit_text(msg, text, reply_markup=bamboodom_gsc_back_kb())
+        return
+    await safe_edit_text(msg, _build_gsc_totals_text(t), reply_markup=bamboodom_gsc_back_kb())
+
+
+@router.callback_query(F.data == "bamboodom:gsc:queries")
+async def bamboodom_gsc_queries(callback: CallbackQuery, user: User, redis) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    from integrations.google_search_console import GoogleSearchConsoleClient
+    from keyboards.bamboodom import bamboodom_gsc_back_kb
+
+    await safe_edit_text(
+        msg,
+        Screen(E.SYNC, TXT.BAMBOODOM_GSC_QUERIES_TITLE).blank().line(TXT.BAMBOODOM_GSC_PROGRESS).build(),
+        reply_markup=bamboodom_gsc_back_kb(),
+    )
+    await callback.answer()
+    try:
+        client = GoogleSearchConsoleClient(redis=redis)
+        rows = await client.top_queries(days=28, limit=15)
+    except Exception as exc:
+        log.warning("gsc_queries_failed", exc_info=True)
+        text, _kb = _wrap_error(TXT.BAMBOODOM_GSC_FAIL.format(detail=str(exc)[:200]))
+        await safe_edit_text(msg, text, reply_markup=bamboodom_gsc_back_kb())
+        return
+    screen = Screen(E.SEARCH_CHECK, TXT.BAMBOODOM_GSC_QUERIES_TITLE).blank()
+    if not rows:
+        screen = screen.line(TXT.BAMBOODOM_GSC_EMPTY)
+    else:
+        for i, r in enumerate(rows, start=1):
+            q = (r.keys[0] if r.keys else "—")[:60]
+            screen = screen.line(
+                TXT.BAMBOODOM_GSC_QUERIES_LINE.format(i=i, q=q, clicks=r.clicks, impr=r.impressions, pos=r.position)
+            )
+    await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_gsc_back_kb())
+
+
+@router.callback_query(F.data == "bamboodom:gsc:pages")
+async def bamboodom_gsc_pages(callback: CallbackQuery, user: User, redis) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    from integrations.google_search_console import GoogleSearchConsoleClient
+    from keyboards.bamboodom import bamboodom_gsc_back_kb
+    from services.analytics.metrika_summary import shorten_url
+
+    await safe_edit_text(
+        msg,
+        Screen(E.SYNC, TXT.BAMBOODOM_GSC_PAGES_TITLE).blank().line(TXT.BAMBOODOM_GSC_PROGRESS).build(),
+        reply_markup=bamboodom_gsc_back_kb(),
+    )
+    await callback.answer()
+    try:
+        client = GoogleSearchConsoleClient(redis=redis)
+        rows = await client.top_pages(days=28, limit=15)
+    except Exception as exc:
+        log.warning("gsc_pages_failed", exc_info=True)
+        text, _kb = _wrap_error(TXT.BAMBOODOM_GSC_FAIL.format(detail=str(exc)[:200]))
+        await safe_edit_text(msg, text, reply_markup=bamboodom_gsc_back_kb())
+        return
+    screen = Screen(E.SEARCH_CHECK, TXT.BAMBOODOM_GSC_PAGES_TITLE).blank()
+    if not rows:
+        screen = screen.line(TXT.BAMBOODOM_GSC_EMPTY)
+    else:
+        for i, r in enumerate(rows, start=1):
+            url = shorten_url((r.keys[0] if r.keys else "—"), 50)
+            screen = screen.line(
+                TXT.BAMBOODOM_GSC_QUERIES_LINE.format(i=i, q=url, clicks=r.clicks, impr=r.impressions, pos=r.position)
+            )
+    await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_gsc_back_kb())

@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     yandex_metrika_token: SecretStr = SecretStr("")
     yandex_metrika_counter_id: str = ""
 
+    # --- Bamboodom TG-канал анонсов (4G.tg) ---
+    # @username или числовой -100xxxxxxxxxx. Бот должен быть админом с правом постинга.
+    bamboodom_tg_channel: str = ""
+
+    # --- Google Search Console (4G) ---
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: SecretStr = SecretStr("")
+
     # === Server ===
     port: int = 8080
 

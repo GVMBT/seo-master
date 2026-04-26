@@ -16,6 +16,7 @@ Dependencies pattern follows `routers/admin/dashboard.py`:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as dt
 import json
 import time
@@ -1445,7 +1446,7 @@ def _stage_labels() -> dict[str, tuple[int, str]]:
 
 
 def _render_progress_bar(pct: int, width: int = 12) -> str:
-    filled = int(round(width * max(0, min(100, pct)) / 100))
+    filled = round(width * max(0, min(100, pct)) / 100)
     return "█" * filled + "░" * (width - filled)
 
 
@@ -1490,7 +1491,7 @@ async def _ai_progress_loop(user_id: int, bot_msg: Message, material: str, keywo
                     _build_ai_progress_text(material, keyword, info),
                     reply_markup=bamboodom_ai_generating_kb(),
                 )
-            except Exception as exc:  # noqa: BLE001 — keep loop alive
+            except Exception as exc:
                 log.debug("bamboodom_ai_progress_tick_failed", error=str(exc))
     except asyncio.CancelledError:
         return
@@ -1723,7 +1724,7 @@ async def _run_ai_generation(
             _build_ai_progress_text(material, keyword, _progress_states[user_id]),
             reply_markup=bamboodom_ai_generating_kb(),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.debug("bamboodom_ai_initial_render_failed", error=str(exc))
 
     gen_task = asyncio.create_task(
@@ -1748,31 +1749,27 @@ async def _run_ai_generation(
     except asyncio.CancelledError:
         exit_reason = "cancelled"
         log.info("bamboodom_ai_cancelled_by_user", user_id=user_id)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         exit_reason = "timeout"
         log.warning("bamboodom_ai_hard_timeout", user_id=user_id, timeout=_AI_HARD_TIMEOUT_SEC)
         if not gen_task.done():
             gen_task.cancel()
-            try:
+            with contextlib.suppress(BaseException):
                 await gen_task
-            except BaseException:  # noqa: BLE001
-                pass
     except BamboodomGenerationError as exc:
         exit_reason = "error"
         error_detail = str(exc)
         log.warning("bamboodom_ai_generation_error", detail=error_detail)
         sentry_sdk.capture_exception(exc)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         exit_reason = "error"
         error_detail = str(exc)
         log.exception("bamboodom_ai_generation_unexpected")
         sentry_sdk.capture_exception(exc)
     finally:
         progress_task.cancel()
-        try:
+        with contextlib.suppress(BaseException):
             await progress_task
-        except BaseException:  # noqa: BLE001
-            pass
         _active_ai_tasks.pop(user_id, None)
         _progress_states.pop(user_id, None)
 
@@ -2003,6 +2000,21 @@ async def ai_publish_submit(
     )
 
     article_url = _resolve_article_url(resp)
+
+    # 4G.tg: анонс в TG-канал (только production, не sandbox/draft)
+    # Сейчас sandbox=True жёстко (см. v1.2 default_draft_mode), при переключении
+    # на production анонс активируется автоматически.
+    if resp.action_type in ("created", "published") and not getattr(resp, "draft_forced", False):
+        try:
+            from services.announce import announce_article
+
+            excerpt = ""
+            if isinstance(payload, dict):
+                excerpt = str(payload.get("excerpt") or "")
+            await announce_article(callback.bot, title, article_url, excerpt=excerpt)
+        except Exception:
+            log.warning("bamboodom_announce_call_failed", exc_info=True)
+
     # Record in history with AI-marker
     history_entry = {
         "slug": resp.slug,

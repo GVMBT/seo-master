@@ -417,3 +417,24 @@ BAMBOODOM_SCHEDULE_NO_PUBLIC_URL = (
 BAMBOODOM_SCHEDULE_CREATED = "✅ Расписание создано: {sid}"
 BAMBOODOM_SCHEDULE_DELETED = "❌ Расписание удалено."
 BAMBOODOM_SCHEDULE_FAIL = "Не удалось: {detail}"
+
+# --- 4G: Google Search Console ---
+BAMBOODOM_GSC_TITLE = "GOOGLE SEARCH CONSOLE"
+BAMBOODOM_GSC_NOT_AUTH = (
+    "GSC не подключён. Откройте {auth_url} → авторизуйтесь под "
+    "designservice3@gmail.com → дайте доступ webmasters.readonly. "
+    "Сторона B должна предварительно добавить ваш email как пользователя в GSC property bamboodom.ru."
+)
+BAMBOODOM_GSC_NO_CONFIG = "GOOGLE_OAUTH_CLIENT_ID/SECRET не настроены."
+BAMBOODOM_GSC_PROGRESS = "Запрашиваю Google Search Console…"
+BAMBOODOM_GSC_FAIL = "GSC ошибка: {detail}"
+BAMBOODOM_GSC_TOTAL_TITLE = "ИТОГИ GSC ЗА 28 ДНЕЙ"
+BAMBOODOM_GSC_LABEL_CLICKS = "Клики"
+BAMBOODOM_GSC_LABEL_IMPRESSIONS = "Показы"
+BAMBOODOM_GSC_LABEL_CTR = "CTR"
+BAMBOODOM_GSC_LABEL_POS = "Средняя позиция"
+BAMBOODOM_GSC_QUERIES_TITLE = "ТОП ЗАПРОСОВ В GOOGLE (28 ДНЕЙ)"
+BAMBOODOM_GSC_PAGES_TITLE = "ТОП СТРАНИЦ В GOOGLE (28 ДНЕЙ)"
+BAMBOODOM_GSC_QUERIES_LINE = "{i}. {q} — {clicks}/{impr} (поз. {pos:.1f})"
+BAMBOODOM_GSC_EMPTY = "Нет данных за период."
+BAMBOODOM_GSC_HINT_AUTH = "Нажмите «🔑 Авторизовать GSC» чтобы подключить Google."

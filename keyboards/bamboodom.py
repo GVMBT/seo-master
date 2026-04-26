@@ -31,6 +31,7 @@ def bamboodom_analytics_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🌐 Источники трафика", callback_data="bamboodom:analytics:sources")],
         [InlineKeyboardButton(text="🔎 Запросы из Яндекса", callback_data="bamboodom:analytics:queries")],
         [InlineKeyboardButton(text="🎯 Позиции в Яндексе", callback_data="bamboodom:analytics:ranks")],
+        [InlineKeyboardButton(text="🌐 Google Search Console", callback_data="bamboodom:analytics:gsc")],
         [InlineKeyboardButton(text="📉 Просевшие статьи", callback_data="bamboodom:analytics:declining")],
         [InlineKeyboardButton(text="💡 Подобрать темы статей", callback_data="bamboodom:analytics:research")],
         [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
@@ -56,6 +57,28 @@ def bamboodom_digest_schedule_kb(active: bool) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📰 Прислать сейчас", callback_data="bamboodom:analytics:digest")],
             [InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics")],
         ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_gsc_kb(authorized: bool) -> InlineKeyboardMarkup:
+    """Подменю GSC (4G)."""
+    if authorized:
+        rows = [
+            [InlineKeyboardButton(text="📊 Сводка за 28 дней", callback_data="bamboodom:gsc:totals")],
+            [InlineKeyboardButton(text="🔍 Топ запросов", callback_data="bamboodom:gsc:queries")],
+            [InlineKeyboardButton(text="📄 Топ страниц", callback_data="bamboodom:gsc:pages")],
+            [InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics")],
+        ]
+    else:
+        rows = [
+            [InlineKeyboardButton(text="🔑 Авторизовать GSC", callback_data="bamboodom:gsc:auth")],
+            [InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics")],
+        ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_gsc_back_kb() -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics:gsc")]]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
