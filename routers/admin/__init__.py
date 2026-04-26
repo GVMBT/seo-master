@@ -2,7 +2,15 @@
 
 from aiogram import Router
 
-from routers.admin import bamboodom, bamboodom_admin, bamboodom_analytics, costs, dashboard, users
+from routers.admin import (
+    bamboodom,
+    bamboodom_admin,
+    bamboodom_analytics,
+    costs,
+    dashboard,
+    debug_project_id,
+    users,
+)
 
 router = Router()
 router.include_router(users.router)
@@ -15,3 +23,6 @@ router.include_router(dashboard.router)
 router.include_router(bamboodom_admin.router)
 router.include_router(bamboodom_analytics.router)
 router.include_router(bamboodom.router)
+# Debug: /myprojectid (admin-only) — показать project_id всех проектов
+# админа. Нужен для настройки BAMBOODOM_ANNOUNCE_PROJECT_ID в Railway env.
+router.include_router(debug_project_id.router)
