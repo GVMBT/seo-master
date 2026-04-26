@@ -315,3 +315,21 @@ BAMBOODOM_RECRAWL_CRAWL_FAIL = (
     "Не удалось обойти сайт: {detail}\n"
     "Проверьте https://bamboodom.ru/sitemap.xml — возможно, сайт временно недоступен."
 )
+
+# --- 4E дашборд + регенерация sitemap ---
+BAMBOODOM_RECRAWL_DASHBOARD_TITLE = "ПЕРЕОБХОД В Я.ВЕБМАСТЕР"
+BAMBOODOM_RECRAWL_LABEL_BLOG_TOTAL = "Статей блога на сайте"
+BAMBOODOM_RECRAWL_LABEL_IN_INDEX = "В поиске Яндекса"
+BAMBOODOM_RECRAWL_LABEL_QUEUE = "Отправлено за 30 дней"
+BAMBOODOM_RECRAWL_LABEL_NEW = "Новых для отправки"
+BAMBOODOM_RECRAWL_LABEL_QUOTA = "Квота сегодня"
+BAMBOODOM_RECRAWL_DASHBOARD_PROGRESS = "Собираю статистику…"
+BAMBOODOM_RECRAWL_DASHBOARD_HOSTINFO_FAIL = (
+    "Не удалось получить инфо о хосте. Возможно, токену не хватает прав webmaster:hostinfo. "
+    "Дашборд показывает только данные краулера."
+)
+BAMBOODOM_REGEN_TITLE = "РЕГЕНЕРАЦИЯ SITEMAP"
+BAMBOODOM_REGEN_PROGRESS = "Прошу сервер пересобрать sitemap_blog.xml…"
+BAMBOODOM_REGEN_OK = "Готово. В sitemap_blog.xml сейчас {count} статей."
+BAMBOODOM_REGEN_CACHED = "Кэш сервера: предыдущий результат от {ts}, {count} статей."
+BAMBOODOM_REGEN_FAIL = "Не удалось: {detail}"

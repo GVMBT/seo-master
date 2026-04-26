@@ -262,3 +262,25 @@ class BamboodomClient:
             timeout=30.0,
         )
         return PublishResponse.model_validate(data)
+
+    async def regenerate_sitemap(self) -> dict[str, Any]:
+        """POST blog_regenerate_sitemap (4E) — попросить сервер пересобрать sitemap_blog.xml.
+
+        Сторона B сама вызывает этот helper после каждой production-публикации, так что
+        отдельный явный вызов нужен только если оператор подозревает что sitemap отстал.
+        Endpoint идемпотентен: повторный вызов в течение 60 секунд возвращает кэш.
+
+        Возвращаемый dict (ключи как в спеке):
+            ok: bool
+            count: int            — сколько статей попало в sitemap
+            generated_at: ISO ts
+            sandbox_excluded: bool
+            file: str             — имя файла на сервере ('sitemap_blog.xml')
+            url: str              — публичный URL sitemap'а
+            cached: bool          — True если сервер вернул кэш (повторный вызов)
+        """
+        return await self._request(
+            "POST",
+            "blog_regenerate_sitemap",
+            timeout=15.0,
+        )

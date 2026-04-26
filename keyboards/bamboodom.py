@@ -54,6 +54,7 @@ def bamboodom_admin_kb() -> InlineKeyboardMarkup:
     """Подменю «Администрирование»."""
     rows = [
         [InlineKeyboardButton(text="🔄 Переобход в Яндекс Вебмастер", callback_data="bamboodom:admin:recrawl")],
+        [InlineKeyboardButton(text="🗺 Регенерировать sitemap_blog.xml", callback_data="bamboodom:admin:regen")],
         [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)

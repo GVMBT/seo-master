@@ -34,6 +34,10 @@ from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from cache.client import RedisClient
 from db.models import User
+from integrations.bamboodom import (
+    BamboodomAPIError,
+    BamboodomClient,
+)
 from integrations.yandex_webmaster import (
     YandexWebmasterAuthError,
     YandexWebmasterClient,
@@ -117,9 +121,94 @@ def _build_admin_text() -> str:
     )
 
 
+async def _build_admin_dashboard_text(redis: RedisClient) -> str:
+    """4E дашборд: считает свежую статистику для экрана Администрирование.
+
+    Источники данных:
+    - blog_list API (всего статей, актуально мгновенно)
+    - Snapshot бота (сколько мы знаем = сколько отправили в очередь)
+    - Я.Вебмастер summary (страниц в поиске) + recrawl/quota (квота на день)
+    """
+
+    # 1) Сколько всего блог-статей
+    blog_total: int | None = None
+    blog_list_err: str | None = None
+    try:
+        BamboodomClient(redis=redis)
+        # Используем краулер чтобы переиспользовать логику blog_list+sitemap
+        from services.site_crawler import crawl_bamboodom
+
+        result = await crawl_bamboodom(redis)
+        blog_total = result.total_in_blog if result.total_in_blog is not None else len(result.all_urls)
+        new_count = len(result.new_urls)
+        all_count = len(result.all_urls)
+    except Exception as exc:
+        blog_list_err = str(exc)[:120]
+        new_count = 0
+        all_count = 0
+
+    # 2) Quota и summary из Я.Вебмастера
+    quota_text = "—"
+    in_search_text = "—"
+    queue_text = "—"
+    yw_err: str | None = None
+    settings = get_settings()
+    if settings.yandex_webmaster_token.get_secret_value():
+        try:
+            yw = YandexWebmasterClient()
+            try:
+                summary = await yw.get_host_summary()
+                searchable = (summary.get("indexing_indicators") or {}).get("searchable_pages_count") or summary.get(
+                    "searchable_pages_count"
+                )
+                if searchable is not None:
+                    in_search_text = str(searchable)
+            except YandexWebmasterError:
+                pass  # hostinfo может быть недоступен — игнорируем тихо
+            try:
+                quota = await yw.get_recrawl_quota_info()
+                if quota:
+                    daily = quota.get("daily_quota")
+                    used = quota.get("used")
+                    rem = quota.get("quota_remainder")
+                    if daily is not None:
+                        if used is None and rem is not None:
+                            used = int(daily) - int(rem)
+                        quota_text = f"{used or 0} / {daily}"
+            except YandexWebmasterError:
+                pass
+            try:
+                history = await yw.get_recrawl_quota()
+                tasks = history.get("tasks") or []
+                queue_text = str(len(tasks))
+            except YandexWebmasterError:
+                pass
+        except YandexWebmasterError as exc:
+            yw_err = str(exc)[:120]
+
+    screen = (
+        Screen(E.GEAR, TXT.BAMBOODOM_RECRAWL_DASHBOARD_TITLE)
+        .blank()
+        .field(E.DOC, TXT.BAMBOODOM_RECRAWL_LABEL_BLOG_TOTAL, blog_total or all_count)
+        .field(E.SEARCH_CHECK, TXT.BAMBOODOM_RECRAWL_LABEL_IN_INDEX, in_search_text)
+        .field(E.SYNC, TXT.BAMBOODOM_RECRAWL_LABEL_QUEUE, queue_text)
+        .field(E.UPLOAD, TXT.BAMBOODOM_RECRAWL_LABEL_NEW, new_count)
+        .field(E.LIGHTNING, TXT.BAMBOODOM_RECRAWL_LABEL_QUOTA, quota_text)
+    )
+    if blog_list_err:
+        screen = screen.blank().line(f"{E.WARNING} blog_list: {blog_list_err}")
+    if yw_err:
+        screen = screen.line(f"{E.WARNING} Я.Вебмастер: {yw_err}")
+    return screen.build()
+
+
 @router.callback_query(F.data == "bamboodom:admin")
-async def bamboodom_admin(callback: CallbackQuery, user: User) -> None:
-    """Подменю «Администрирование»."""
+async def bamboodom_admin(
+    callback: CallbackQuery,
+    user: User,
+    redis: RedisClient,
+) -> None:
+    """Подменю «Администрирование» — экран 4E с дашбордом статуса."""
     if not _is_admin(user):
         await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
@@ -127,8 +216,29 @@ async def bamboodom_admin(callback: CallbackQuery, user: User) -> None:
     if not msg:
         await callback.answer()
         return
-    await safe_edit_text(msg, _build_admin_text(), reply_markup=bamboodom_admin_kb())
+    # Промежуточный экран пока идёт сбор статистики (blog_list + Я.Вебмастер)
+    await safe_edit_text(
+        msg,
+        Screen(E.GEAR, TXT.BAMBOODOM_RECRAWL_DASHBOARD_TITLE)
+        .blank()
+        .line(TXT.BAMBOODOM_RECRAWL_DASHBOARD_PROGRESS)
+        .build(),
+        reply_markup=bamboodom_admin_kb(),
+    )
     await callback.answer()
+    try:
+        text = await _build_admin_dashboard_text(redis)
+    except Exception as exc:
+        log.warning("bamboodom_admin_dashboard_failed", exc_info=True)
+        text = (
+            Screen(E.GEAR, TXT.BAMBOODOM_RECRAWL_DASHBOARD_TITLE)
+            .blank()
+            .line(_build_admin_text())  # резервный простой текст
+            .blank()
+            .line(f"{E.WARNING} {repr(exc)[:200]}")
+            .build()
+        )
+    await safe_edit_text(msg, text, reply_markup=bamboodom_admin_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -472,3 +582,76 @@ async def bamboodom_admin_recrawl_run(
     finally:
         with contextlib.suppress(Exception):
             await redis.delete(lock_key)
+
+
+# ---------------------------------------------------------------------------
+# bamboodom:admin:regen — попросить сервер пересобрать sitemap_blog.xml (4E)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "bamboodom:admin:regen")
+async def bamboodom_admin_regen_sitemap(
+    callback: CallbackQuery,
+    user: User,
+) -> None:
+    """Кнопка «Регенерировать sitemap_blog.xml» (4E).
+
+    Сторона B автоматически перерегенерит sitemap при каждой production-публикации,
+    эта кнопка — на случай рассинхронизации (или при ручном изменении статей).
+    Endpoint идемпотентен (кэш 60с на стороне сервера).
+    """
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    # Промежуточный экран
+    await safe_edit_text(
+        msg,
+        Screen(E.SYNC, TXT.BAMBOODOM_REGEN_TITLE).blank().line(TXT.BAMBOODOM_REGEN_PROGRESS).build(),
+        reply_markup=bamboodom_recrawl_progress_kb(),
+    )
+    await callback.answer()
+
+    try:
+        client = BamboodomClient()
+        data = await client.regenerate_sitemap()
+    except BamboodomAPIError as exc:
+        await safe_edit_text(
+            msg,
+            Screen(E.WARNING, TXT.BAMBOODOM_REGEN_TITLE)
+            .blank()
+            .line(f"{E.CLOSE} {TXT.BAMBOODOM_REGEN_FAIL.format(detail=str(exc)[:200])}")
+            .build(),
+            reply_markup=bamboodom_admin_kb(),
+        )
+        return
+    except Exception as exc:
+        log.warning("bamboodom_regen_failed", exc_info=True)
+        await safe_edit_text(
+            msg,
+            Screen(E.WARNING, TXT.BAMBOODOM_REGEN_TITLE)
+            .blank()
+            .line(f"{E.CLOSE} {TXT.BAMBOODOM_REGEN_FAIL.format(detail=repr(exc)[:200])}")
+            .build(),
+            reply_markup=bamboodom_admin_kb(),
+        )
+        return
+
+    count = int(data.get("count") or 0)
+    cached = bool(data.get("cached"))
+    generated_at = str(data.get("generated_at") or "")
+    sitemap_url = str(data.get("url") or "")
+
+    if cached:
+        line = TXT.BAMBOODOM_REGEN_CACHED.format(ts=generated_at[:19], count=count)
+    else:
+        line = TXT.BAMBOODOM_REGEN_OK.format(count=count)
+
+    screen = Screen(E.CHECK, TXT.BAMBOODOM_REGEN_TITLE).blank().line(line)
+    if sitemap_url:
+        screen = screen.field(E.LINK, "URL", sitemap_url)
+    await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_admin_kb())

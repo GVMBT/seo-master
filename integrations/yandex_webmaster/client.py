@@ -212,9 +212,12 @@ class YandexWebmasterClient:
         return YWRecrawlAddResponse.model_validate(data) if data else YWRecrawlAddResponse()
 
     async def get_recrawl_quota(self) -> dict[str, Any]:
-        """GET /v4/user/{uid}/hosts/{hid}/recrawl/queue — посмотреть квоту/историю.
+        """GET /v4/user/{uid}/hosts/{hid}/recrawl/queue — история переобхода.
 
-        Возвращаем сырой dict — у API много полей, отрисует UI как нужно.
+        Возвращает dict с полями:
+            tasks: list[{task_id, url, state, added_at, ...}] — последние ~30 дней.
+        Из этого извлекается «отправлено сегодня», «в очереди», «обошёл робот».
+        Дневную квоту читаем отдельно через `get_recrawl_quota_info`.
         """
         if not self.user_id:
             user = await self.get_user()
@@ -223,6 +226,57 @@ class YandexWebmasterClient:
         return await self._request(
             "GET",
             f"/user/{self.user_id}/hosts/{self.host_id}/recrawl/queue",
+        )
+
+    async def get_recrawl_quota_info(self) -> dict[str, Any]:
+        """GET /v4/user/{uid}/hosts/{hid}/recrawl/quota — текущий лимит/использовано (4E).
+
+        Поля: `daily_quota`, `quota_remainder`. Если endpoint вернёт 404 (бывает у молодых
+        хостов) — отдаём пустой dict, чтобы UI не валил кнопку.
+        """
+        if not self.user_id:
+            user = await self.get_user()
+            self.user_id = str(user.user_id)
+        await self.ensure_host_id()
+        try:
+            return await self._request(
+                "GET",
+                f"/user/{self.user_id}/hosts/{self.host_id}/recrawl/quota",
+            )
+        except YandexWebmasterError as exc:
+            if "404" in str(exc):
+                return {}
+            raise
+
+    async def get_host_summary(self) -> dict[str, Any]:
+        """GET /v4/user/{uid}/hosts/{hid}/summary — общая инфа о хосте (4E).
+
+        Требует scope `webmaster:hostinfo`. Поля среди прочих:
+            host_problem_critical_score, sqi, last_access_at,
+            searchable_pages_count (в поиске Яндекса).
+        """
+        if not self.user_id:
+            user = await self.get_user()
+            self.user_id = str(user.user_id)
+        await self.ensure_host_id()
+        return await self._request(
+            "GET",
+            f"/user/{self.user_id}/hosts/{self.host_id}/summary",
+        )
+
+    async def get_host_problems(self) -> dict[str, Any]:
+        """GET /v4/user/{uid}/hosts/{hid}/possible-problems — текущие проблемы по хосту (4E).
+
+        Удобно для будущего «что не так с сайтом» в UI. Сейчас не используется
+        в дашборде, но клиент готов. Требует `webmaster:hostinfo`.
+        """
+        if not self.user_id:
+            user = await self.get_user()
+            self.user_id = str(user.user_id)
+        await self.ensure_host_id()
+        return await self._request(
+            "GET",
+            f"/user/{self.user_id}/hosts/{self.host_id}/possible-problems",
         )
 
     async def smoke_test(self) -> tuple[str, str, list[YWHost]]:
@@ -263,7 +317,6 @@ async def add_urls_with_rate_limit(
             sent.append(url)
             ok = True
         except YandexWebmasterRateLimitError as exc:
-            # Ждём столько, сколько просит сервер, и пробуем ещё раз 1 раз
             await asyncio.sleep(min(exc.retry_after, 30))
             try:
                 await client.add_to_recrawl(url)
