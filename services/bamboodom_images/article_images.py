@@ -24,13 +24,17 @@ from typing import Any
 import httpx
 import structlog
 
-from integrations.bamboodom import BamboodomAPIError, BamboodomClient
+from integrations.bamboodom import BamboodomAPIError, BamboodomClient, BamboodomRateLimitError
 from integrations.openrouter_image import (
     OpenRouterImageClient,
     OpenRouterImageError,
 )
 
 log = structlog.get_logger()
+
+# Side B rate-limits blog_upload_image to ~1/sec. Sleep slightly more than 1s
+# between requests to avoid 429 storms when we have 5-7 slots per article.
+_INTER_REQUEST_DELAY = 1.2
 
 # Целевая ширина WebP по слотам (письмо B 4S — 1024 покрывает все слоты).
 _WEBP_TARGET_WIDTH = 1024
@@ -147,18 +151,53 @@ async def _generate_one(
             log.warning("img_pipeline_pillow_failed", slot=slot, exc_info=True)
             return block, f"error:pillow:{exc}"
 
-        # 4. Upload to Side B via multipart
-        try:
-            resp = await bamboodom_client.upload_image_multipart(
-                slug=slug,
+        # 4. Upload to Side B via multipart, with 429-aware retry.
+        # Side B rate-limits to 1/sec — even with sequential parallel=1 we
+        # can hit it on bursts. Up to 2 retries with sleeps from Retry-After.
+        resp = None
+        upload_attempts = 0
+        last_exc: Exception | None = None
+        while upload_attempts < 3:
+            upload_attempts += 1
+            try:
+                resp = await bamboodom_client.upload_image_multipart(
+                    slug=slug,
+                    slot=slot,
+                    image_bytes=webp_bytes,
+                    content_type="image/webp",
+                    alt=alt,
+                )
+                break  # success
+            except BamboodomRateLimitError as exc:
+                last_exc = exc
+                wait_s = max(1.0, float(getattr(exc, "retry_after", 1) or 1))
+                log.info(
+                    "img_pipeline_upload_429",
+                    slot=slot,
+                    slug=slug,
+                    attempt=upload_attempts,
+                    wait_s=wait_s,
+                )
+                await asyncio.sleep(wait_s + 0.3)
+                continue
+            except BamboodomAPIError as exc:
+                # Non-429 client/server error — log full body and bail out.
+                log.warning(
+                    "img_pipeline_upload_failed",
+                    slot=slot,
+                    slug=slug,
+                    error=str(exc)[:1500],
+                )
+                return block, f"error:upload:{exc}"
+
+        if resp is None:
+            log.warning(
+                "img_pipeline_upload_429_exhausted",
                 slot=slot,
-                image_bytes=webp_bytes,
-                content_type="image/webp",
-                alt=alt,
+                slug=slug,
+                error=str(last_exc)[:200] if last_exc else "unknown",
             )
-        except BamboodomAPIError as exc:
-            log.warning("img_pipeline_upload_failed", slot=slot, error=str(exc)[:200])
-            return block, f"error:upload:{exc}"
+            return block, "error:upload:429_exhausted"
 
         src = ""
         if isinstance(resp, dict):
@@ -175,6 +214,8 @@ async def _generate_one(
             src=src[:80],
             webp_kb=len(webp_bytes) // 1024,
         )
+        # Respect Side B's 1/sec rate limit on blog_upload_image.
+        await asyncio.sleep(_INTER_REQUEST_DELAY)
         return block, "ok"
 
 
@@ -184,7 +225,8 @@ async def generate_article_images(
     blocks: list[dict[str, Any]],
     http_client: httpx.AsyncClient,
     settings: Any,
-    parallel: int = 3,
+    parallel: int = 1,
+    inter_request_delay: float = 1.2,
 ) -> dict[str, int]:
     """Полный pipeline: для каждого img-блока в blocks → генерим и заливаем.
 
