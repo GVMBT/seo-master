@@ -361,17 +361,23 @@ class BamboodomClient:
         Возвращает: {ok, src, slug, slot, size_kb, ...}.
         Rate-limit: 1/сек как обычный upload_image.
         """
-        headers = self._headers()
+        # Multipart fix (2026-04-27): strip our default Content-Type=application/json
+        # from headers — when present, httpx skips its own multipart/form-data;
+        # boundary=... header and Side B sees raw bytes without a proper
+        # boundary marker → HTTP 400. Per BLOG_UPLOAD_MULTIPART_V1 spec from
+        # Side B: only X-Blog-Key + Accept needed; httpx fills in Content-Type.
+        # Also: dropping `alt` from multipart fields — Side B accepts only
+        # {slug, slot, image, filename}; alt is set later via blog_publish.
+        headers = {k: v for k, v in self._headers().items() if k.lower() != "content-type"}
         query = {"action": "blog_upload_image"}
 
         ext = "webp" if "webp" in content_type else ("jpg" if "jpeg" in content_type else "png")
         files = {
             "image": (f"{slot}.{ext}", image_bytes, content_type),
         }
-        data = {
+        data: dict[str, str] = {
             "slug": slug,
             "slot": slot,
-            "alt": alt or "",
         }
 
         async def _send(client: httpx.AsyncClient) -> httpx.Response:
