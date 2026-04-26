@@ -32,13 +32,27 @@ def _resolve_channel() -> str | None:
     return raw
 
 
-def _build_post_text(title: str, url: str | None, excerpt: str = "") -> str:
-    """Формирует HTML-пост для канала. Минималистично — тайтл + excerpt + ссылка."""
+def _build_post_text(
+    title: str,
+    url: str | None,
+    excerpt: str = "",
+    extra_text: str = "",
+) -> str:
+    """Формирует HTML-пост для канала. Тайтл + excerpt + первый абзац + ссылка.
+
+    v14 (2026-04-26): excerpt лимит 280 → 600, плюс опциональный
+    extra_text (первый p-блок статьи) ещё до 700 символов. Раньше
+    пост был слишком короткий — теперь даём читателю первый кусок
+    статьи перед кликом.
+    """
     parts: list[str] = []
     parts.append(f"<b>{_escape_html(title.strip())}</b>")
     if excerpt:
         parts.append("")
-        parts.append(_escape_html(excerpt.strip()[:280]))
+        parts.append(_escape_html(excerpt.strip()[:600]))
+    if extra_text:
+        parts.append("")
+        parts.append(_escape_html(extra_text.strip()[:700]))
     if url:
         parts.append("")
         parts.append(f'<a href="{_escape_html(url)}">Читать на bamboodom.ru</a>')
@@ -54,6 +68,7 @@ async def announce_article(
     title: str,
     url: str | None,
     excerpt: str = "",
+    extra_text: str = "",
 ) -> bool:
     """Постит анонс в TG-канал. Возвращает True если успешно, False — если skip/error.
 
@@ -65,7 +80,7 @@ async def announce_article(
         log.debug("tg_announce_skipped_no_channel")
         return False
 
-    text = _build_post_text(title, url, excerpt)
+    text = _build_post_text(title, url, excerpt, extra_text=extra_text)
     try:
         await bot.send_message(channel, text, parse_mode="HTML", disable_web_page_preview=False)
         log.info("tg_announce_sent", channel=channel, title=title[:80])

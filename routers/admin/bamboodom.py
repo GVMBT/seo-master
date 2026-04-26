@@ -2075,14 +2075,26 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
 
             excerpt = ""
             cover_url = ""
+            extra_text = ""
             if isinstance(payload, dict):
                 excerpt = str(payload.get("excerpt") or "")
                 cover = payload.get("cover") or payload.get("image_url") or ""
                 if isinstance(cover, str):
                     cover_url = cover
+                # v14 (2026-04-26): tease the article in social posts —
+                # take the first non-empty p-block (skipping img/h2/etc)
+                # so readers see the lede, not just title + excerpt.
+                for blk in payload.get("blocks") or []:
+                    if not isinstance(blk, dict):
+                        continue
+                    if blk.get("type") == "p":
+                        candidate = str(blk.get("text") or "").strip()
+                        if candidate:
+                            extra_text = candidate
+                            break
 
             # 1) Простой пост в TG-канал @ecosteni через bot.send_message
-            await announce_article(callback.bot, title, article_url, excerpt=excerpt)
+            await announce_article(callback.bot, title, article_url, excerpt=excerpt, extra_text=extra_text)
 
             # 2) Публикация в TG/VK/Pinterest через connections (если включены)
             if article_url:
@@ -2097,6 +2109,7 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
                     url=article_url,
                     excerpt=excerpt,
                     image_url=cover_url,
+                    extra_text=extra_text,
                 )
                 log.info("bamboodom_announce_social", results=results)
         except Exception:

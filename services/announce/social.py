@@ -47,13 +47,28 @@ async def _fetch_image_bytes(http_client: httpx.AsyncClient, url: str) -> bytes 
         return None
 
 
-def _build_post_text(title: str, url: str, excerpt: str, content_type: str) -> str:
-    """Текст поста для соц. сетей. content_type: telegram_html / pin_text / plain_text."""
+def _build_post_text(
+    title: str,
+    url: str,
+    excerpt: str,
+    content_type: str,
+    extra_text: str = "",
+) -> str:
+    """Текст поста для соц. сетей. content_type: telegram_html / pin_text / plain_text.
+
+    v14 (2026-04-26): excerpt 280/300 → 600/700 символов, плюс
+    опциональный extra_text (первый параграф статьи) ещё до 700.
+    Так пост получается информативнее — читатель видит начало статьи,
+    а не только заголовок.
+    """
     if content_type == "telegram_html":
         parts = [f"<b>{title.strip()}</b>"]
         if excerpt:
             parts.append("")
-            parts.append(excerpt.strip()[:280])
+            parts.append(excerpt.strip()[:600])
+        if extra_text:
+            parts.append("")
+            parts.append(extra_text.strip()[:700])
         parts.append("")
         parts.append(f'<a href="{url}">Читать на bamboodom.ru</a>')
         return "\n".join(parts)
@@ -61,7 +76,10 @@ def _build_post_text(title: str, url: str, excerpt: str, content_type: str) -> s
     parts = [title.strip()]
     if excerpt:
         parts.append("")
-        parts.append(excerpt.strip()[:300])
+        parts.append(excerpt.strip()[:600])
+    if extra_text:
+        parts.append("")
+        parts.append(extra_text.strip()[:700])
     parts.append("")
     parts.append(url)
     return "\n".join(parts)
@@ -76,6 +94,7 @@ async def announce_to_social(
     url: str,
     excerpt: str = "",
     image_url: str = "",
+    extra_text: str = "",
 ) -> dict[str, str]:
     """Шлёт анонс во все привязанные платформы. Graceful degrade.
 
@@ -123,7 +142,7 @@ async def announce_to_social(
 
         request = PublishRequest(
             connection=connection,
-            content=_build_post_text(title, url, excerpt, content_type),
+            content=_build_post_text(title, url, excerpt, content_type, extra_text=extra_text),
             content_type=content_type,
             images=[image_bytes] if image_bytes else [],
             images_meta=[{"alt": title[:100]}] if image_bytes else [],
