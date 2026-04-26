@@ -39,9 +39,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Literal
 
 import httpx
 import sentry_sdk
@@ -77,6 +78,7 @@ _MAX_VALIDATION_RETRIES = 1  # auto-retry on regex violation (per §В2)
 
 # Word-count policy from ARTICLE_LENGTH_POLICY.md (v5 prompt)
 _MIN_WORDS_HARD = 1500
+_MIN_WORDS_SOFT = 1400  # 4M: soft warning, статья публикуется но с пометкой
 _MAX_WORDS_HARD = 2200
 _TARGET_WORDS_MIN = 1700
 _TARGET_WORDS_MAX = 1900
@@ -130,7 +132,15 @@ class BamboodomArticleDraft:
 
 @dataclass(slots=True)
 class ValidationIssue:
-    kind: Literal["forbidden_claim", "price_in_text", "bad_block_type", "bad_article", "too_short", "list_of_two"]
+    kind: Literal[
+        "forbidden_claim",
+        "price_in_text",
+        "bad_block_type",
+        "bad_article",
+        "too_short",
+        "list_of_two",
+        "short_article",  # 4M: soft warning 1400-1499, не блокирует ok
+    ]
     detail: str
     block_index: int | None = None
 
@@ -141,7 +151,8 @@ class ValidationResult:
 
     @property
     def ok(self) -> bool:
-        return not self.issues
+        # 4M: short_article (soft warning 1400-1499) не блокирует публикацию.
+        return not [i for i in self.issues if i.kind != "short_article"]
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +200,7 @@ class BamboodomValidator:
         if not code.startswith("F") or len(code) != 4 or not code[1:].isdigit():
             return False
         # Look back ~40 chars in the same text for the keyword pattern.
-        window = text[max(0, match_start - 40):match_start + len(code)]
+        window = text[max(0, match_start - 40) : match_start + len(code)]
         return bool(self._FROST_GRADE_CONTEXT_RE.search(window))
 
     def validate(  # noqa: C901  — tight regex-by-block check; splitting up harms readability
@@ -386,7 +397,7 @@ class BamboodomArticleService:
             return
         try:
             await cb(stage, attempt)
-        except Exception as exc:  # noqa: BLE001 — progress is best-effort; never abort generation
+        except Exception as exc:
             log.debug("bamboodom_ai_progress_cb_failed", stage=stage, error=str(exc))
 
     # ----- public API -------------------------------------------------
@@ -483,13 +494,25 @@ class BamboodomArticleService:
                     )
                     await self._emit("length_retry", attempt + 2)
                     continue  # retry with length nudge
-                # No more length retries — add advisory issue and fall through.
-                result.issues.append(
-                    ValidationIssue(
-                        kind="too_short",
-                        detail=(f"Draft is {draft.word_count} words; below hard min {_MIN_WORDS_HARD}"),
+                # 4M: soft 1400-1499 — статья пройдёт но с пометкой 'short_article'.
+                #     <1400 — старое поведение: too_short critical.
+                if draft.word_count >= _MIN_WORDS_SOFT:
+                    result.issues.append(
+                        ValidationIssue(
+                            kind="short_article",
+                            detail=(
+                                f"Draft is {draft.word_count} words; soft warning "
+                                f"(below target {_MIN_WORDS_HARD}, above min {_MIN_WORDS_SOFT})"
+                            ),
+                        )
                     )
-                )
+                else:
+                    result.issues.append(
+                        ValidationIssue(
+                            kind="too_short",
+                            detail=(f"Draft is {draft.word_count} words; below hard min {_MIN_WORDS_SOFT}"),
+                        )
+                    )
             elif draft.word_count > _MAX_WORDS_HARD:
                 # Going over max is less critical — operator can trim in moderation.
                 log.info(
@@ -762,6 +785,7 @@ def _format_codes_sample(codes_obj: Any, material: MaterialCategory) -> str:
     module — that view has descriptions, series, texture types and is far
     richer. This function is the safety net.
     """
+
     def _list(name: str) -> list[str]:
         v = getattr(codes_obj, name, None) or []
         if not isinstance(v, list):
@@ -774,8 +798,7 @@ def _format_codes_sample(codes_obj: Any, material: MaterialCategory) -> str:
             return ""
         sorted_codes = sorted(codes)
         chunks = [
-            ", ".join(sorted_codes[i:i + _CODES_PER_LINE])
-            for i in range(0, len(sorted_codes), _CODES_PER_LINE)
+            ", ".join(sorted_codes[i : i + _CODES_PER_LINE]) for i in range(0, len(sorted_codes), _CODES_PER_LINE)
         ]
         kind = "Основная" if primary else "Сопутствующая"
         prefix = f"{kind} категория ({name}, всего {len(codes)} артикулов):"

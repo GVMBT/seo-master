@@ -2001,17 +2001,30 @@ async def ai_publish_submit(
 
     article_url = _resolve_article_url(resp)
 
-    # 4G.tg: анонс в TG-канал (только production, не sandbox/draft)
-    # Сейчас sandbox=True жёстко (см. v1.2 default_draft_mode), при переключении
-    # на production анонс активируется автоматически.
+    # 4G.tg + 4L: анонс в TG-канал, VK-сообщество и Pinterest (только production).
+    # Сейчас sandbox=True жёстко; при переключении на production анонсы активируются.
     if resp.action_type in ("created", "published") and not getattr(resp, "draft_forced", False):
         try:
-            from services.announce import announce_article
+            from services.announce import (
+                announce_article,
+                announce_to_pinterest,
+                announce_to_vk,
+            )
 
             excerpt = ""
+            cover_url = ""
             if isinstance(payload, dict):
                 excerpt = str(payload.get("excerpt") or "")
+                cover = payload.get("cover") or payload.get("image_url") or ""
+                if isinstance(cover, str):
+                    cover_url = cover
             await announce_article(callback.bot, title, article_url, excerpt=excerpt)
+            if article_url:
+                await announce_to_vk(title, article_url, excerpt=excerpt, image_url=cover_url)
+            if article_url and cover_url:
+                await announce_to_pinterest(
+                    title, article_url, image_url=cover_url, description=excerpt
+                )
         except Exception:
             log.warning("bamboodom_announce_call_failed", exc_info=True)
 

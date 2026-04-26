@@ -470,6 +470,10 @@ def create_app() -> web.Application:
     app.router.add_get("/api/auth/google/redirect", google_redirect_handler)
     app.router.add_get("/api/auth/google/callback", google_callback_handler)
 
+    # Bamboodom cover-images (4K) — отдача tmp-картинок для blog_upload_image
+    from api.bamboodom_cover import bamboodom_cover_handler
+    app.router.add_get("/api/bamboodom/cover/{filename}", bamboodom_cover_handler)
+
     # Legal document redirects (for Pinterest/VK app review — needs company domain)
     from api.legal import legal_privacy, legal_terms
 

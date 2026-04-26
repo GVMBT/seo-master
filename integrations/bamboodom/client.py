@@ -314,3 +314,28 @@ class BamboodomClient:
             "blog_regenerate_sitemap_full",
             timeout=20.0,
         )
+
+    async def upload_image(
+        self,
+        source_url: str,
+        alt: str = "",
+    ) -> dict[str, Any]:
+        """POST blog_upload_image (4B.5 / 4K) — загрузить картинку на bamboodom.
+
+        Сторона B принимает:
+        - `source_url` — публичный URL (whitelist *.railway.app, *.bamboodom.ru, ...).
+          B сама скачивает, конвертит в WebP, ресайз <2000px, max 10MB.
+        - `alt` — описание для SEO (опционально).
+
+        Возвращает:
+            {ok, url, slug, size_kb, ... } — где `url` это публичный
+            URL картинки на bamboodom.ru, который вставляется в `image` блок статьи.
+
+        Rate-limit: 1/сек.
+        """
+        return await self._request(
+            "POST",
+            "blog_upload_image",
+            json_body={"source_url": source_url, "alt": alt or ""},
+            timeout=30.0,
+        )
