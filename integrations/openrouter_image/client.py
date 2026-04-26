@@ -1,7 +1,7 @@
 """OpenRouter image generation (4K.1).
 
 OpenRouter поддерживает text→image модели через chat-completions endpoint:
-- google/gemini-2.5-flash-image-preview — Gemini 2.5 Image (Imagen 3)
+- google/gemini-3.1-flash-image-preview — Gemini 3.1 Image
 - black-forest-labs/flux-1.1-pro — Flux 1.1 Pro
 
 Возвращает URL картинки (если модель отдаёт её через response_format=url)
@@ -25,7 +25,7 @@ from bot.config import get_settings
 log = structlog.get_logger()
 
 _API_BASE = "https://openrouter.ai/api/v1"
-_DEFAULT_MODEL = "google/gemini-2.5-flash-image-preview"
+_DEFAULT_MODEL = "google/gemini-3.1-flash-image-preview"
 _DEFAULT_TIMEOUT = 60.0
 _MAX_RETRIES = 1
 
