@@ -1929,6 +1929,12 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
         await callback.answer()
         return
 
+    log.info(
+        "bamboodom_ai_publish_submit_entered",
+        user_id=user.id,
+        chat_id=callback.message.chat.id if callback.message else None,
+    )
+
     # Rate-limit guard (shared with manual publish: bamboodom:publish_lock)
     acquired = await _try_acquire_publish_lock(redis, user.id)
     if not acquired:
@@ -1971,41 +1977,6 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
         payload["tags"] = tags
     if cover:
         payload["cover"] = cover
-
-    # v14.1 (2026-04-27): generate real images for every img-block.
-    # Pipeline: alt → Gemini → WebP 1024 (cropped to slot ratio) → multipart
-    # upload to blog_upload_image → src filled in-place. Gated by env flag
-    # `BAMBOODOM_IMAGES_ENABLED` (default False — until settings is set we
-    # publish with placeholder src="" as before).
-    try:
-        from bot.config import get_settings as _gs_imgs
-
-        _settings_imgs = _gs_imgs()
-        # Pre-pick a slug guess for image filenames (Side B will use it as
-        # folder name). The final article slug is determined by Side B at
-        # publish time, but for upload-time naming we use what we have:
-        # title-derived first, fallback to first 60 chars of title.
-        slug_guess = ""
-        for _b in blocks or []:
-            if not isinstance(_b, dict):
-                continue
-            if _b.get("type") == "img" and _b.get("slot") == "hero":
-                slug_guess = "_imgupload"  # marker only, B regenerates
-                break
-        if not slug_guess:
-            slug_guess = "ai-article"  # B will replace via final slug
-
-        from services.bamboodom_images.article_images import generate_article_images
-
-        img_counter = await generate_article_images(
-            slug=slug_guess,
-            blocks=blocks or [],
-            http_client=http_client,
-            settings=_settings_imgs,
-        )
-        log.info("bamboodom_ai_image_pipeline", results=img_counter)
-    except Exception:
-        log.warning("bamboodom_ai_image_pipeline_failed", exc_info=True)
 
     # v14 debug: count blocks by type + img-block by slot. This lets us tell
     # apart "model didn't generate img" vs "Side B dropped them" by comparing
@@ -2160,6 +2131,42 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
         "created_at": _now_iso(),
     }
     await _append_history(redis, history_entry)
+
+    # v14.1 (2026-04-27): schedule image pipeline in BACKGROUND. Article is
+    # already published (with empty src on img-blocks → placeholders). Pipeline
+    # generates Gemini images, uploads via multipart, then calls
+    # blog_update_article(slug, {"blocks": new_blocks}) to attach real URLs.
+    # If anything fails, the article stays with placeholders. No timeout
+    # pressure on the publish flow.
+    try:
+        from bot.config import get_settings as _gs_imgs
+
+        _settings_imgs = _gs_imgs()
+        if getattr(_settings_imgs, "bamboodom_images_enabled", False) and resp.slug:
+            from services.bamboodom_images.article_images import (
+                run_background_image_pipeline,
+            )
+
+            _img_task = asyncio.create_task(
+                run_background_image_pipeline(
+                    slug=resp.slug,
+                    blocks=blocks or [],
+                    http_client=http_client,
+                    settings=_settings_imgs,
+                    sandbox=True,
+                ),
+                name=f"img_pipeline_{resp.slug}",
+            )
+            del _img_task
+            log.info("bamboodom_ai_image_pipeline_scheduled", slug=resp.slug)
+        else:
+            log.info(
+                "bamboodom_ai_image_pipeline_skipped",
+                enabled=getattr(_settings_imgs, "bamboodom_images_enabled", False),
+                has_slug=bool(resp.slug),
+            )
+    except Exception:
+        log.warning("bamboodom_ai_image_pipeline_schedule_failed", exc_info=True)
 
     await state.clear()
     await safe_edit_text(

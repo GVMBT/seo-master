@@ -235,3 +235,56 @@ async def generate_article_images(
         results=counter,
     )
     return counter
+
+
+async def run_background_image_pipeline(
+    *,
+    slug: str,
+    blocks: list[dict[str, Any]],
+    http_client: httpx.AsyncClient,
+    settings: Any,
+    sandbox: bool = True,
+    parallel: int = 3,
+) -> None:
+    """Background task: generate images, upload, then update article.
+
+    Wraps generate_article_images + a follow-up blog_update_article call.
+    Safe to fire-and-forget via asyncio.create_task — exceptions are logged
+    but never re-raised.
+    """
+    try:
+        counter = await generate_article_images(
+            slug=slug,
+            blocks=blocks,
+            http_client=http_client,
+            settings=settings,
+            parallel=parallel,
+        )
+        log.info("bg_img_pipeline_generated", slug=slug, results=counter)
+
+        # Если ни одной картинки не сгенерилось — нет смысла дёргать update.
+        if not isinstance(counter, dict) or counter.get("ok", 0) == 0:
+            log.info("bg_img_pipeline_no_update_needed", slug=slug)
+            return
+
+        # Update article with new blocks (with real src filled in).
+        bamboodom_client = BamboodomClient(http_client=http_client)
+        try:
+            resp = await bamboodom_client.update_article(
+                slug=slug,
+                fields={"blocks": blocks},
+                sandbox=sandbox,
+            )
+            log.info(
+                "bg_img_pipeline_updated",
+                slug=slug,
+                ok=bool(resp.get("ok")) if isinstance(resp, dict) else False,
+            )
+        except BamboodomAPIError as exc:
+            log.warning(
+                "bg_img_pipeline_update_failed",
+                slug=slug,
+                error=str(exc)[:200],
+            )
+    except Exception:
+        log.warning("bg_img_pipeline_unexpected_failure", slug=slug, exc_info=True)

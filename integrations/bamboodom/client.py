@@ -397,6 +397,36 @@ class BamboodomClient:
 
         return self._handle_response("blog_upload_image", resp)
 
+    async def update_article(
+        self,
+        slug: str,
+        fields: dict[str, Any],
+        *,
+        sandbox: bool = False,
+    ) -> dict[str, Any]:
+        """POST blog_update_article (4P, 2026-04-26).
+
+        Updates only fields present in `fields` (array_key_exists на стороне B).
+        Used for late image-attach flow: publish article first with empty
+        src on img-blocks, then run image pipeline in background, then call
+        update_article(slug, {"blocks": new_blocks}) to attach real URLs.
+
+        Args:
+            slug: статья по slug.
+            fields: dict с полями для обновления — blocks, tags, cover,
+                template_id, category, и т.д.
+            sandbox: если True, добавляется ?sandbox=1.
+        """
+        params = {"sandbox": "1"} if sandbox else None
+        body = {"slug": slug, **fields}
+        return await self._request(
+            "POST",
+            "blog_update_article",
+            params=params,
+            json_body=body,
+            timeout=30.0,
+        )
+
     async def promote_from_sandbox(self, slug: str) -> dict[str, Any]:
         """POST blog_promote_from_sandbox (PROMOTE-V1) — переносит sandbox-статью в production.
 
