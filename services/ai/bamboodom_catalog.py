@@ -30,8 +30,9 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
 import structlog
@@ -301,6 +302,7 @@ def format_catalog_for_prompt(
     primary_material: str,
     max_items_per_category: int | None = None,
     compact_aux: bool = True,
+    shuffle_seed: str | None = None,
 ) -> str:
     """Render the catalog as a structured markdown block for AI consumption.
 
@@ -332,24 +334,35 @@ def format_catalog_for_prompt(
         if cat != primary_material and cat in grouped:
             order.append(cat)
 
+    # v14.1 (2026-04-27): shuffle items per category with deterministic seed
+    # derived from the article topic. Each topic gets a different rotation,
+    # so AI sees a different "first batch" of candidates and breaks out of
+    # the TK001A/TK029P/TK070C rut. Same topic re-generated → same order
+    # (deterministic, useful for retry-loop stability).
+    import hashlib
+    import random as _random
+
+    rng: _random.Random | None = None
+    if shuffle_seed:
+        seed_int = int(hashlib.sha256(shuffle_seed.encode("utf-8")).hexdigest()[:16], 16)
+        rng = _random.Random(seed_int)  # noqa: S311 — non-crypto shuffle is fine
+
     out_blocks: list[str] = []
     for cat in order:
-        items = grouped[cat]
+        items = list(grouped[cat])  # mutable copy so shuffle doesn't touch source
+        if rng is not None:
+            rng.shuffle(items)
         if max_items_per_category is not None and len(items) > max_items_per_category:
             items = items[:max_items_per_category]
         is_primary = cat == primary_material
-        rendered = _render_category_block(
-            cat, items, primary=is_primary, compact=(compact_aux and not is_primary)
-        )
+        rendered = _render_category_block(cat, items, primary=is_primary, compact=(compact_aux and not is_primary))
         if rendered:
             out_blocks.append(rendered)
 
     return "\n\n".join(out_blocks)
 
 
-def _render_category_block(
-    category: str, items: list[CatalogItem], *, primary: bool, compact: bool = False
-) -> str:
+def _render_category_block(category: str, items: list[CatalogItem], *, primary: bool, compact: bool = False) -> str:
     if not items:
         return ""
     label = "Основная" if primary else "Сопутствующая"
@@ -389,7 +402,7 @@ def _render_compact(category: str, items: list[CatalogItem]) -> str:
     """
     sorted_codes = sorted(it.code for it in items if it.code)
     chunks = [
-        ", ".join(sorted_codes[i:i + _COMPACT_CODES_PER_LINE])
+        ", ".join(sorted_codes[i : i + _COMPACT_CODES_PER_LINE])
         for i in range(0, len(sorted_codes), _COMPACT_CODES_PER_LINE)
     ]
     hint = _compact_hint_for_category(category, items)
@@ -414,10 +427,18 @@ def _compact_hint_for_category(category: str, items: list[CatalogItem]) -> str:
             bits.append(f"текстуры: {', '.join(textures)}")
         return "; ".join(bits)
     if category == "flex":
-        thicks = sorted({int(it.extra["thick_mm"]) for it in items if isinstance(it.extra.get("thick_mm"), (int, float))})
+        thicks = sorted(
+            {int(it.extra["thick_mm"]) for it in items if isinstance(it.extra.get("thick_mm"), (int, float))}
+        )
         return f"толщины: {min(thicks)}-{max(thicks)} мм" if thicks else ""
     if category == "reiki":
-        widths = sorted({int(round(float(it.extra["width_mm"]))) for it in items if isinstance(it.extra.get("width_mm"), (int, float))})
+        widths = sorted(
+            {
+                int(round(float(it.extra["width_mm"])))
+                for it in items
+                if isinstance(it.extra.get("width_mm"), (int, float))
+            }
+        )
         return f"ширина: {min(widths)}-{max(widths)} мм" if widths else ""
     if category == "profiles":
         cats = sorted({str(it.extra.get("category_name") or "") for it in items if it.extra.get("category_name")})

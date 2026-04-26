@@ -730,7 +730,11 @@ class BamboodomArticleService:
         codes_sample = _format_codes_sample(codes_obj, material)
 
         if catalog is not None:
-            catalog_text = format_catalog_for_prompt(catalog, primary_material=material)
+            catalog_text = format_catalog_for_prompt(
+                catalog,
+                primary_material=material,
+                shuffle_seed=keyword,  # v14.1: per-topic deterministic shuffle
+            )
         else:
             catalog_text = (
                 "(полный каталог временно недоступен — используй список артикулов ниже как источник истины)\n\n"
