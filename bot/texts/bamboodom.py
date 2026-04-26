@@ -282,19 +282,14 @@ BAMBOODOM_RECRAWL_HOST_NOT_FOUND = (
     "Яндекс Вебмастера. Откройте https://webmaster.yandex.ru/sites/ и "
     "подтвердите права на сайт."
 )
-BAMBOODOM_RECRAWL_FOUND = (
-    "Найдено всего на сайте: {total}\n"
-    "Из них новых (не было в прошлом запуске): {new}"
-)
+BAMBOODOM_RECRAWL_FOUND = "Найдено всего на сайте: {total}\nИз них новых (не было в прошлом запуске): {new}"
 BAMBOODOM_RECRAWL_FIRST_RUN = (
     "Это первый запуск. Бот зафиксировал текущие {total} URL'ов как стартовый "
     "снимок и больше ничего не отправил — иначе пришлось бы лить в очередь "
     "весь сайт. На следующем запуске будут отправлены только новые страницы."
 )
 BAMBOODOM_RECRAWL_NOTHING_NEW = "Новых страниц нет. Очередь Я.Вебмастера не трогаем."
-BAMBOODOM_RECRAWL_PREVIEW_HINT = (
-    "Если согласны — нажмите «Отправить в Я.Вебмастер»."
-)
+BAMBOODOM_RECRAWL_PREVIEW_HINT = "Если согласны — нажмите «Отправить в Я.Вебмастер»."
 BAMBOODOM_RECRAWL_RESULT_TITLE = "ОТПРАВЛЕНО"
 BAMBOODOM_RECRAWL_RESULT_LINE_OK = "Успешно отправлено: {count}"
 BAMBOODOM_RECRAWL_RESULT_LINE_FAIL = "С ошибками: {count}"
@@ -307,13 +302,10 @@ BAMBOODOM_RECRAWL_AUTH_FAIL = (
     "OAuth-токен Яндекс Вебмастера невалиден или просрочен. "
     "Сгенерируйте новый: https://oauth.yandex.ru/authorize?response_type=token&client_id=<ID>"
 )
-BAMBOODOM_RECRAWL_QUOTA_FAIL = (
-    "Превышена дневная квота переобхода. Попробуйте завтра."
-)
+BAMBOODOM_RECRAWL_QUOTA_FAIL = "Превышена дневная квота переобхода. Попробуйте завтра."
 BAMBOODOM_RECRAWL_NETWORK_FAIL = "Не удалось обратиться к API: {detail}"
 BAMBOODOM_RECRAWL_CRAWL_FAIL = (
-    "Не удалось обойти сайт: {detail}\n"
-    "Проверьте https://bamboodom.ru/sitemap.xml — возможно, сайт временно недоступен."
+    "Не удалось обойти сайт: {detail}\nПроверьте https://bamboodom.ru/sitemap.xml — возможно, сайт временно недоступен."
 )
 
 # --- 4E дашборд + регенерация sitemap ---
@@ -333,3 +325,20 @@ BAMBOODOM_REGEN_PROGRESS = "Прошу сервер пересобрать sitem
 BAMBOODOM_REGEN_OK = "Готово. В sitemap_blog.xml сейчас {count} статей."
 BAMBOODOM_REGEN_CACHED = "Кэш сервера: предыдущий результат от {ts}, {count} статей."
 BAMBOODOM_REGEN_FAIL = "Не удалось: {detail}"
+
+# --- 4E_full: общий sitemap (товары + всё) ---
+BAMBOODOM_REGEN_FULL_TITLE = "РЕГЕНЕРАЦИЯ SITEMAP (ВЕСЬ САЙТ)"
+BAMBOODOM_REGEN_FULL_PROGRESS = "Прошу сервер пересобрать общий sitemap.xml…"
+BAMBOODOM_REGEN_FULL_OK = "Готово. В sitemap.xml сейчас {count} URL."
+BAMBOODOM_REGEN_FULL_CACHED = "Кэш сервера: {count} URL, регенерация была в {ts}."
+BAMBOODOM_REGEN_FULL_BREAKDOWN_HEADER = "По разделам:"
+BAMBOODOM_REGEN_FULL_LABELS = {
+    "static_pages": "Статические страницы",
+    "wpc_textures": "WPC-текстуры",
+    "flex_textures": "Flex-текстуры",
+    "reiki": "Реечные панели",
+    "profiles": "Профили",
+    "lighting": "Освещение",
+    "blog_articles": "Статьи блога",
+    "verification": "Верификация",
+}

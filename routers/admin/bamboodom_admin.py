@@ -655,3 +655,86 @@ async def bamboodom_admin_regen_sitemap(
     if sitemap_url:
         screen = screen.field(E.LINK, "URL", sitemap_url)
     await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_admin_kb())
+
+
+# ---------------------------------------------------------------------------
+# bamboodom:admin:regen_full — пересборка ОБЩЕГО sitemap.xml (4E_full)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "bamboodom:admin:regen_full")
+async def bamboodom_admin_regen_sitemap_full(
+    callback: CallbackQuery,
+    user: User,
+) -> None:
+    """Кнопка «Регенерировать sitemap.xml (весь сайт)» (4E_full).
+
+    Вызывает POST blog_regenerate_sitemap_full стороны B — пересобирает общий
+    sitemap.xml со всеми разделами (товары + статьи + страницы). Нужно
+    периодически дёргать чтобы новые товары попадали в очередь Я.Вебмастера
+    через cron B (auto_reindex_cron.php).
+
+    Endpoint идемпотентен (кэш 60с).
+    """
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    await safe_edit_text(
+        msg,
+        Screen(E.SYNC, TXT.BAMBOODOM_REGEN_FULL_TITLE).blank().line(TXT.BAMBOODOM_REGEN_FULL_PROGRESS).build(),
+        reply_markup=bamboodom_recrawl_progress_kb(),
+    )
+    await callback.answer()
+
+    try:
+        client = BamboodomClient()
+        data = await client.regenerate_sitemap_full()
+    except BamboodomAPIError as exc:
+        await safe_edit_text(
+            msg,
+            Screen(E.WARNING, TXT.BAMBOODOM_REGEN_FULL_TITLE)
+            .blank()
+            .line(f"{E.CLOSE} {TXT.BAMBOODOM_REGEN_FAIL.format(detail=str(exc)[:200])}")
+            .build(),
+            reply_markup=bamboodom_admin_kb(),
+        )
+        return
+    except Exception as exc:
+        log.warning("bamboodom_regen_full_failed", exc_info=True)
+        await safe_edit_text(
+            msg,
+            Screen(E.WARNING, TXT.BAMBOODOM_REGEN_FULL_TITLE)
+            .blank()
+            .line(f"{E.CLOSE} {TXT.BAMBOODOM_REGEN_FAIL.format(detail=repr(exc)[:200])}")
+            .build(),
+            reply_markup=bamboodom_admin_kb(),
+        )
+        return
+
+    count = int(data.get("count") or 0)
+    cached = bool(data.get("cached"))
+    generated_at = str(data.get("generated_at") or "")
+    breakdown = data.get("breakdown") or {}
+    sitemap_url = str(data.get("url") or "")
+
+    if cached:
+        head_line = TXT.BAMBOODOM_REGEN_FULL_CACHED.format(count=count, ts=generated_at[:19])
+    else:
+        head_line = TXT.BAMBOODOM_REGEN_FULL_OK.format(count=count)
+
+    screen = Screen(E.CHECK, TXT.BAMBOODOM_REGEN_FULL_TITLE).blank().line(head_line)
+    if isinstance(breakdown, dict) and breakdown:
+        screen = screen.blank().line(TXT.BAMBOODOM_REGEN_FULL_BREAKDOWN_HEADER)
+        for key, label in TXT.BAMBOODOM_REGEN_FULL_LABELS.items():
+            value = breakdown.get(key)
+            if value is None:
+                continue
+            screen = screen.line(f"  — {label}: {value}")
+    if sitemap_url:
+        screen = screen.field(E.LINK, "URL", sitemap_url)
+    await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_admin_kb())

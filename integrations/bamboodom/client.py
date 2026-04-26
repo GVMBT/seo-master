@@ -284,3 +284,33 @@ class BamboodomClient:
             "blog_regenerate_sitemap",
             timeout=15.0,
         )
+
+    async def regenerate_sitemap_full(self) -> dict[str, Any]:
+        """POST blog_regenerate_sitemap_full (4E_full) — пересборка ОБЩЕГО sitemap.xml.
+
+        В отличие от `regenerate_sitemap` (который трогает только sitemap_blog.xml),
+        этот endpoint пересобирает `sitemap.xml` со всеми разделами сайта:
+        статические страницы, WPC-текстуры, flex-керамика, reiki, profiles,
+        lighting, статьи блога, верификация. Используется для того чтобы
+        новые товары/текстуры попадали в очередь Я.Вебмастера через cron B.
+
+        Cache 60 секунд, идемпотентен. Триггер — кнопка в админке нашего бота.
+        Сторона B также использует этот endpoint в их cabinet.html.
+
+        Возвращаемый dict:
+            ok: bool
+            count: int                        — всего URL в sitemap.xml
+            breakdown: dict[str, int]         — по разделам (static_pages, wpc_textures,
+                                                 flex_textures, reiki, profiles, lighting,
+                                                 blog_articles, verification)
+            generated_at: ISO ts
+            sandbox_excluded: bool
+            file: str                         — 'sitemap.xml'
+            url: str                          — публичный URL
+            cached: bool                      — True если вернулся кэш
+        """
+        return await self._request(
+            "POST",
+            "blog_regenerate_sitemap_full",
+            timeout=20.0,
+        )
