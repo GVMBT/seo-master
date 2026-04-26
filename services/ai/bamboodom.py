@@ -524,6 +524,7 @@ class BamboodomArticleService:
         draft: BamboodomArticleDraft | None = None
         validation_issues: list[str] = []
         length_retry_used = False
+        v14_retry_used = False  # 2026-04-26: retry once if model skipped img/template_id
 
         for attempt in range(_MAX_VALIDATION_RETRIES + 1):
             messages = self._augment_messages_after_validation(system, user, validation_issues)
@@ -534,6 +535,41 @@ class BamboodomArticleService:
 
             # Overwrite model's self-reported word_count with our honest count.
             draft.word_count = count_words(draft)
+
+            # v14 (2026-04-26): if the model skipped template_id or img-blocks
+            # on the first pass, retry once with an explicit reminder. This is
+            # cheap because we keep _MAX_VALIDATION_RETRIES at 1 — we either
+            # spend that retry here, on length, or on regex issues.
+            if attempt == 0 and not v14_retry_used:
+                has_hero = any(
+                    isinstance(b, dict) and b.get("type") == "img" and b.get("slot") == "hero" for b in draft.blocks
+                )
+                missing_v14 = []
+                if draft.template_id is None:
+                    missing_v14.append("template_id (1-10)")
+                if not has_hero:
+                    missing_v14.append('img-блок со slot="hero"')
+                if missing_v14:
+                    v14_retry_used = True
+                    v14_feedback = (
+                        "Твой ответ не прошёл v14-проверку — отсутствует: "
+                        + ", ".join(missing_v14)
+                        + ". Перегенерируй JSON. ОБЯЗАТЕЛЬНО включи: "
+                        '`"template_id": <1-10>`, `"template_name": "..."`, '
+                        '`"category": "<<material_category>>"`, и в массиве blocks '
+                        "после первых 1-3 текстовых блоков — "
+                        '`{"type":"img","slot":"hero","src":"","alt":"...","ratio":"21:9"}` '
+                        "и далее ещё img-блоки по схеме шаблона (минимум 4-7)."
+                    )
+                    validation_issues.append(v14_feedback)
+                    log.info(
+                        "bamboodom_ai_v14_retry_scheduled",
+                        missing=missing_v14,
+                        template_id=draft.template_id,
+                        block_count=len(draft.blocks),
+                    )
+                    await self._emit("v14_retry", attempt + 2)
+                    continue  # retry with v14 nudge
 
             await self._emit("validate", attempt + 1)
             result = validator.validate(draft, valid_article_codes=valid_codes)
