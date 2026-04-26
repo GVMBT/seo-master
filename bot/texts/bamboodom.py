@@ -438,3 +438,16 @@ BAMBOODOM_GSC_PAGES_TITLE = "ТОП СТРАНИЦ В GOOGLE (28 ДНЕЙ)"
 BAMBOODOM_GSC_QUERIES_LINE = "{i}. {q} — {clicks}/{impr} (поз. {pos:.1f})"
 BAMBOODOM_GSC_EMPTY = "Нет данных за период."
 BAMBOODOM_GSC_HINT_AUTH = "Нажмите «🔑 Авторизовать GSC» чтобы подключить Google."
+
+# --- 4N: Промоут sandbox→production ---
+BAMBOODOM_PROMOTE_TITLE = "ПРОМОУТ SANDBOX→PRODUCTION"
+BAMBOODOM_PROMOTE_PROMPT = (
+    "Введите slug sandbox-статьи которую нужно перевести в production.\n"
+    "Slug — последняя часть URL после ?slug=, например:\n"
+    "gibkaya-keramika-dlya-krylca-5-oshibok-pri-vybore-materiala"
+)
+BAMBOODOM_PROMOTE_PROGRESS = "Промоут через blog_promote_from_sandbox…"
+BAMBOODOM_PROMOTE_OK = "✅ Готово. Статья {slug} в production: {url}"
+BAMBOODOM_PROMOTE_FAIL = "❌ Не удалось: {detail}"
+BAMBOODOM_PROMOTE_INVALID = "Slug пустой или содержит недопустимые символы."
+BAMBOODOM_PROMOTE_HINT = "Только буквы, цифры и дефис. Без https:// и без &sandbox=1."

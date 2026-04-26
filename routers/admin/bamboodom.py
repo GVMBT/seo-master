@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import datetime as dt
 import json
+import re as _re_promote
 import time
 from typing import Any
 
@@ -58,6 +59,7 @@ from keyboards.bamboodom import (
     bamboodom_ai_material_kb,
     bamboodom_ai_preview_kb,
     bamboodom_ai_result_kb,
+    bamboodom_articles_kb,
     bamboodom_codes_kb,
     bamboodom_context_kb,
     bamboodom_entry_kb,
@@ -161,13 +163,13 @@ def _deep_json_decode(raw, *, max_depth: int = 4) -> object:
             try:
                 value = json.loads(value)
                 continue
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 break
         if isinstance(value, list) and value and all(isinstance(e, str) for e in value):
             try:
                 value = [json.loads(e) for e in value]
                 continue
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 break
         break
     return value
@@ -317,7 +319,7 @@ async def _read_smoke_status(redis: RedisClient) -> tuple[str, str]:
         try:
             data = json.loads(raw_fail)
             last_fail = f"{_fmt_moscow(data.get('ts'))} — {data.get('detail', '')}"
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             last_fail = raw_fail
     else:
         last_fail = TXT.BAMBOODOM_LAST_FAIL_NONE
@@ -1458,7 +1460,7 @@ def _build_ai_progress_text(material: str, keyword: str, info: dict[str, Any]) -
     pct, template = _stage_labels().get(stage, (5, TXT.BAMBOODOM_AI_STAGE_INIT))
     try:
         line = template.format(attempt=attempt)
-    except KeyError, IndexError:
+    except (KeyError, IndexError):
         line = template
     bar = _render_progress_bar(pct)
     return (
@@ -2053,3 +2055,119 @@ async def ai_publish_submit(
         _build_ai_result_text(title, resp),
         reply_markup=bamboodom_ai_result_kb(article_url),
     )
+
+
+# ---------------------------------------------------------------------------
+# 4N: Промоут sandbox-статьи в production через blog_promote_from_sandbox
+# ---------------------------------------------------------------------------
+
+
+class PromoteFSM(StatesGroup):
+    waiting_slug = State()
+
+
+_SLUG_RE_PROMOTE = _re_promote.compile(r"^[a-z0-9][a-z0-9\-]{2,200}$")
+
+
+@router.callback_query(F.data == "bamboodom:promote")
+async def bamboodom_promote_start(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """Запрашивает slug sandbox-статьи для promote (4N)."""
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    await ensure_no_active_fsm(state)
+    await state.set_state(PromoteFSM.waiting_slug)
+
+    text = (
+        Screen(E.ROCKET, TXT.BAMBOODOM_PROMOTE_TITLE)
+        .blank()
+        .line(TXT.BAMBOODOM_PROMOTE_PROMPT)
+        .blank()
+        .hint(TXT.BAMBOODOM_PROMOTE_HINT)
+        .build()
+    )
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Отмена", callback_data="bamboodom:articles")]]
+    )
+    await safe_edit_text(msg, text, reply_markup=cancel_kb)
+    await callback.answer()
+
+
+@router.message(PromoteFSM.waiting_slug)
+async def bamboodom_promote_submit(
+    message: Message,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """Принимает slug, дёргает endpoint."""
+    if not _is_admin(user):
+        return
+    slug_raw = (message.text or "").strip()
+    # Очистим от случайных префиксов
+    if "slug=" in slug_raw:
+        slug_raw = slug_raw.split("slug=", 1)[1]
+    if "&" in slug_raw:
+        slug_raw = slug_raw.split("&", 1)[0]
+    slug_raw = slug_raw.strip().strip("/")
+
+    if not _SLUG_RE_PROMOTE.match(slug_raw):
+        await message.answer(TXT.BAMBOODOM_PROMOTE_INVALID + "\n\n" + TXT.BAMBOODOM_PROMOTE_HINT)
+        return
+
+    progress_msg = await message.answer(
+        Screen(E.SYNC, TXT.BAMBOODOM_PROMOTE_TITLE).blank().line(TXT.BAMBOODOM_PROMOTE_PROGRESS).build()
+    )
+    try:
+        client = BamboodomClient()
+        result = await client.promote_from_sandbox(slug_raw)
+    except BamboodomAPIError as exc:
+        await progress_msg.edit_text(
+            Screen(E.WARNING, TXT.BAMBOODOM_PROMOTE_TITLE)
+            .blank()
+            .line(TXT.BAMBOODOM_PROMOTE_FAIL.format(detail=str(exc)[:300]))
+            .build(),
+            reply_markup=bamboodom_articles_kb(),
+        )
+        await state.clear()
+        return
+    except Exception as exc:
+        log.warning("bamboodom_promote_failed", exc_info=True)
+        await progress_msg.edit_text(
+            Screen(E.WARNING, TXT.BAMBOODOM_PROMOTE_TITLE)
+            .blank()
+            .line(TXT.BAMBOODOM_PROMOTE_FAIL.format(detail=repr(exc)[:300]))
+            .build(),
+            reply_markup=bamboodom_articles_kb(),
+        )
+        await state.clear()
+        return
+
+    if result.get("ok"):
+        url = str(result.get("url") or "")
+        await progress_msg.edit_text(
+            Screen(E.CHECK, TXT.BAMBOODOM_PROMOTE_TITLE)
+            .blank()
+            .line(TXT.BAMBOODOM_PROMOTE_OK.format(slug=slug_raw, url=url or "—"))
+            .build(),
+            reply_markup=bamboodom_articles_kb(),
+        )
+    else:
+        err = str(result.get("error") or result)
+        await progress_msg.edit_text(
+            Screen(E.WARNING, TXT.BAMBOODOM_PROMOTE_TITLE)
+            .blank()
+            .line(TXT.BAMBOODOM_PROMOTE_FAIL.format(detail=err[:300]))
+            .build(),
+            reply_markup=bamboodom_articles_kb(),
+        )
+    await state.clear()

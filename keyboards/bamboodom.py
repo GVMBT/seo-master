@@ -116,6 +116,7 @@ def bamboodom_articles_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="AI-публикация", callback_data="bamboodom:ai:start")],
         [InlineKeyboardButton(text="Публикация в sandbox", callback_data="bamboodom:publish")],
         [InlineKeyboardButton(text="История публикаций", callback_data="bamboodom:history")],
+        [InlineKeyboardButton(text="🚀 Промоут sandbox→production", callback_data="bamboodom:promote")],
         [InlineKeyboardButton(text="Настройки", callback_data="bamboodom:settings")],
         [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
     ]

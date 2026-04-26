@@ -339,3 +339,24 @@ class BamboodomClient:
             json_body={"source_url": source_url, "alt": alt or ""},
             timeout=30.0,
         )
+
+    async def promote_from_sandbox(self, slug: str) -> dict[str, Any]:
+        """POST blog_promote_from_sandbox (PROMOTE-V1) — переносит sandbox-статью в production.
+
+        Сторона B сделала endpoint 2026-04-26: читает sandbox-статью по slug,
+        проверяет через STRICT-ARTICLES-V1 и если ОК — переносит в blog.json
+        (production), убирает из blog_sandbox.json.
+
+        Идемпотентен: если статья с таким slug уже в production — вернёт ok=false
+        с маркером {"already_in_production": true}.
+
+        Ответ:
+            {ok: bool, slug, url, action_type: 'promoted', warnings: [...], ...}
+        Если STRICT-ARTICLES-V1 заблокировал → ok=false, error содержит причину.
+        """
+        return await self._request(
+            "POST",
+            "blog_promote_from_sandbox",
+            json_body={"slug": slug},
+            timeout=20.0,
+        )
