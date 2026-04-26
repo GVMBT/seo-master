@@ -163,13 +163,13 @@ def _deep_json_decode(raw, *, max_depth: int = 4) -> object:
             try:
                 value = json.loads(value)
                 continue
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 break
         if isinstance(value, list) and value and all(isinstance(e, str) for e in value):
             try:
                 value = [json.loads(e) for e in value]
                 continue
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 break
         break
     return value
@@ -319,7 +319,7 @@ async def _read_smoke_status(redis: RedisClient) -> tuple[str, str]:
         try:
             data = json.loads(raw_fail)
             last_fail = f"{_fmt_moscow(data.get('ts'))} — {data.get('detail', '')}"
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             last_fail = raw_fail
     else:
         last_fail = TXT.BAMBOODOM_LAST_FAIL_NONE
@@ -1460,7 +1460,7 @@ def _build_ai_progress_text(material: str, keyword: str, info: dict[str, Any]) -
     pct, template = _stage_labels().get(stage, (5, TXT.BAMBOODOM_AI_STAGE_INIT))
     try:
         line = template.format(attempt=attempt)
-    except (KeyError, IndexError):
+    except KeyError, IndexError:
         line = template
     bar = _render_progress_bar(pct)
     return (
@@ -1803,7 +1803,10 @@ async def _run_ai_generation(
         await state.clear()
         return
 
-    # Stash draft in FSM for the publish step
+    # Stash draft in FSM for the publish step.
+    # v14 (2026-04-26): also stash template_id, template_name, category, tags,
+    # cover so blog_publish receives the new fields. Side B uses them for
+    # routing, validation, og:image, related-articles widget.
     await state.update_data(
         ai_material=material,
         ai_keyword=keyword,
@@ -1811,6 +1814,11 @@ async def _run_ai_generation(
         ai_draft_excerpt=draft.excerpt,
         ai_draft_blocks=draft.blocks,
         ai_draft_seo=draft.seo,
+        ai_draft_template_id=draft.template_id,
+        ai_draft_template_name=draft.template_name,
+        ai_draft_category=draft.category,
+        ai_draft_tags=draft.tags,
+        ai_draft_cover=draft.cover,
     )
     await state.set_state(AIPublishFSM.preview)
 
@@ -1905,7 +1913,7 @@ async def ai_regenerate(
 
 
 @router.callback_query(F.data == "bamboodom:ai:publish", AIPublishFSM.preview)
-async def ai_publish_submit(
+async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
     callback: CallbackQuery,
     user: User,
     state: FSMContext,
@@ -1932,6 +1940,12 @@ async def ai_publish_submit(
     excerpt = data.get("ai_draft_excerpt")
     blocks = data.get("ai_draft_blocks")
     seo = data.get("ai_draft_seo") or {}
+    # v14 fields (may be None if model returned legacy v12 shape)
+    template_id = data.get("ai_draft_template_id")
+    template_name = data.get("ai_draft_template_name")
+    category = data.get("ai_draft_category")
+    tags = data.get("ai_draft_tags") or []
+    cover = data.get("ai_draft_cover") or ""
     if not title or not blocks or not isinstance(blocks, list):
         await callback.answer(TXT.BAMBOODOM_AI_GENERATION_FAILED.format(detail="state lost"), show_alert=True)
         await state.clear()
@@ -1946,6 +1960,41 @@ async def ai_publish_submit(
     }
     if isinstance(seo, dict) and seo:
         payload["seo"] = seo
+    # v14: include new fields so Side B can route/validate properly.
+    if template_id is not None:
+        payload["template_id"] = template_id
+    if template_name:
+        payload["template_name"] = template_name
+    if category:
+        payload["category"] = category
+    if isinstance(tags, list) and tags:
+        payload["tags"] = tags
+    if cover:
+        payload["cover"] = cover
+
+    # v14 debug: count blocks by type + img-block by slot. This lets us tell
+    # apart "model didn't generate img" vs "Side B dropped them" by comparing
+    # this log line with blocks_dropped_count in bamboodom_ai_publish_ok.
+    type_counter: dict[str, int] = {}
+    img_slot_counter: dict[str, int] = {}
+    for b in blocks or []:
+        if not isinstance(b, dict):
+            continue
+        bt = str(b.get("type") or "?")
+        type_counter[bt] = type_counter.get(bt, 0) + 1
+        if bt == "img":
+            sl = str(b.get("slot") or "?")
+            img_slot_counter[sl] = img_slot_counter.get(sl, 0) + 1
+    log.info(
+        "bamboodom_ai_payload_shape",
+        block_types=type_counter,
+        img_slots=img_slot_counter,
+        template_id=template_id,
+        template_name=template_name,
+        category=category,
+        tags_count=len(tags) if isinstance(tags, list) else 0,
+        cover_set=bool(cover),
+    )
 
     client = BamboodomClient(http_client=http_client, redis=redis)
     try:
@@ -1992,12 +2041,27 @@ async def ai_publish_submit(
         return
 
     # Success
+    # v14 debug: tally types of blocks Side B dropped (if any). Combined with
+    # bamboodom_ai_payload_shape above, we can see exactly what Side B
+    # rejects. blocks_dropped is a list of dicts; we extract type+slot.
+    dropped_types: dict[str, int] = {}
+    dropped_slots: dict[str, int] = {}
+    for db in resp.blocks_dropped or []:
+        if not isinstance(db, dict):
+            continue
+        dt = str(db.get("type") or "?")
+        dropped_types[dt] = dropped_types.get(dt, 0) + 1
+        if dt == "img":
+            ds = str(db.get("slot") or "?")
+            dropped_slots[ds] = dropped_slots.get(ds, 0) + 1
     log.info(
         "bamboodom_ai_publish_ok",
         slug=resp.slug,
         action_type=resp.action_type,
         blocks_parsed=resp.blocks_parsed,
         blocks_dropped_count=len(resp.blocks_dropped),
+        dropped_types=dropped_types,
+        dropped_img_slots=dropped_slots,
     )
 
     article_url = _resolve_article_url(resp)
