@@ -378,3 +378,42 @@ BAMBOODOM_DIGEST_SECTION_TRAFFIC = "Трафик"
 BAMBOODOM_DIGEST_SECTION_BLOG = "Блог"
 BAMBOODOM_DIGEST_SECTION_YW = "Я.Вебмастер"
 BAMBOODOM_DIGEST_PROGRESS = "Собираю дайджест из всех источников…"
+
+# --- 4I.1: Позиции в Яндексе ---
+BAMBOODOM_RANKS_TITLE = "ПОЗИЦИИ В ЯНДЕКСЕ"
+BAMBOODOM_RANKS_PROGRESS = "Запрашиваю позиции через DataForSEO… (~10 сек)"
+BAMBOODOM_RANKS_NO_HISTORY = "Прогона ещё не было. Жму «Обновить» — стоит ~$0.006."
+BAMBOODOM_RANKS_HEAD = "Последний прогон: {date}"
+BAMBOODOM_RANKS_LINE_TOP = "  {pos}. {kw}{delta}"
+BAMBOODOM_RANKS_LINE_NOTOP = "  —. {kw} (вне топ-100)"
+BAMBOODOM_RANKS_LEGEND = "Дельта: ↑ выросли (число позиций), ↓ просели."
+BAMBOODOM_RANKS_FAIL = "Не удалось проверить позиции: {detail}"
+BAMBOODOM_RANKS_NO_CONFIG = "DATAFORSEO_LOGIN/PASSWORD не настроены."
+BAMBOODOM_RANKS_COST = "Стоимость прогона: ~{cents}¢ (US cents)."
+
+# --- 4I.3: Просевшие статьи ---
+BAMBOODOM_DECLINING_TITLE = "ПРОСЕВШИЕ СТАТЬИ"
+BAMBOODOM_DECLINING_PROGRESS = "Сравниваю трафик неделя-к-неделе…"
+BAMBOODOM_DECLINING_EMPTY = "За последнюю неделю просевших статей не найдено."
+BAMBOODOM_DECLINING_HEADER = "Сравнение: текущая неделя vs предыдущая. Порог -30%."
+BAMBOODOM_DECLINING_LINE = "  {url}\n    {prev} → {now} ({delta})"
+
+# --- 4I.2: Keyword research ---
+BAMBOODOM_RESEARCH_TITLE = "ПОДБОР ТЕМ СТАТЕЙ"
+BAMBOODOM_RESEARCH_HINT = "Выберите категорию материала — бот найдёт темы с потенциалом."
+BAMBOODOM_RESEARCH_PROGRESS = "Запрашиваю Яндекс.Wordstat и фильтрую AI…"
+BAMBOODOM_RESEARCH_FAIL = "Не удалось подобрать темы: {detail}"
+
+# --- 4I.4: Авторасписание дайджеста ---
+BAMBOODOM_SCHEDULE_TITLE = "АВТОРАСПИСАНИЕ ДАЙДЖЕСТА"
+BAMBOODOM_SCHEDULE_ACTIVE = "✅ Автодайджест включён. Будет приходить ежедневно в 07:00 МСК."
+BAMBOODOM_SCHEDULE_INACTIVE = "Автодайджест выключен. Можно включить — будет приходить в 07:00 МСК."
+BAMBOODOM_SCHEDULE_ID = "QStash schedule_id: {sid}"
+BAMBOODOM_SCHEDULE_URL = "Webhook: {url}"
+BAMBOODOM_SCHEDULE_NO_PUBLIC_URL = (
+    "RAILWAY_PUBLIC_URL не настроен в env — QStash не сможет вызвать webhook. "
+    "Добавьте в Railway переменную RAILWAY_PUBLIC_URL=<полный_URL_сервиса>."
+)
+BAMBOODOM_SCHEDULE_CREATED = "✅ Расписание создано: {sid}"
+BAMBOODOM_SCHEDULE_DELETED = "❌ Расписание удалено."
+BAMBOODOM_SCHEDULE_FAIL = "Не удалось: {detail}"

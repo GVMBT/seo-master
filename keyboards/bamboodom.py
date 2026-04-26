@@ -24,12 +24,49 @@ def bamboodom_analytics_kb() -> InlineKeyboardMarkup:
     """Подменю «Аналитика» (4F)."""
     rows = [
         [InlineKeyboardButton(text="📰 Утренний дайджест", callback_data="bamboodom:analytics:digest")],
+        [InlineKeyboardButton(text="⏰ Авторасписание дайджеста", callback_data="bamboodom:analytics:schedule")],
         [InlineKeyboardButton(text="📈 Сводка вчера", callback_data="bamboodom:analytics:yesterday")],
         [InlineKeyboardButton(text="📈 Сводка за 7 дней", callback_data="bamboodom:analytics:week")],
         [InlineKeyboardButton(text="🔝 Топ-10 страниц (7 дней)", callback_data="bamboodom:analytics:top_pages")],
         [InlineKeyboardButton(text="🌐 Источники трафика", callback_data="bamboodom:analytics:sources")],
         [InlineKeyboardButton(text="🔎 Запросы из Яндекса", callback_data="bamboodom:analytics:queries")],
+        [InlineKeyboardButton(text="🎯 Позиции в Яндексе", callback_data="bamboodom:analytics:ranks")],
+        [InlineKeyboardButton(text="📉 Просевшие статьи", callback_data="bamboodom:analytics:declining")],
+        [InlineKeyboardButton(text="💡 Подобрать темы статей", callback_data="bamboodom:analytics:research")],
         [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_digest_schedule_kb(active: bool) -> InlineKeyboardMarkup:
+    """Меню управления автодайджестом (4I.4)."""
+    if active:
+        rows = [
+            [InlineKeyboardButton(text="❌ Выключить автодайджест", callback_data="bamboodom:analytics:schedule_off")],
+            [InlineKeyboardButton(text="📰 Прислать сейчас", callback_data="bamboodom:analytics:digest")],
+            [InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics")],
+        ]
+    else:
+        rows = [
+            [
+                InlineKeyboardButton(
+                    text="✅ Включить автодайджест 07:00 МСК", callback_data="bamboodom:analytics:schedule_on"
+                )
+            ],
+            [InlineKeyboardButton(text="📰 Прислать сейчас", callback_data="bamboodom:analytics:digest")],
+            [InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics")],
+        ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_research_kb() -> InlineKeyboardMarkup:
+    """Подменю выбора категории для keyword research (4I.2)."""
+    rows = [
+        [InlineKeyboardButton(text="WPC панели", callback_data="bamboodom:research:wpc")],
+        [InlineKeyboardButton(text="Гибкая керамика", callback_data="bamboodom:research:flex")],
+        [InlineKeyboardButton(text="Реечные панели", callback_data="bamboodom:research:reiki")],
+        [InlineKeyboardButton(text="Алюминиевые профили", callback_data="bamboodom:research:profiles")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

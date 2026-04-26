@@ -458,6 +458,10 @@ def create_app() -> web.Application:
     app.router.add_post("/api/notify", notify_handler)
     app.router.add_get("/api/health", health_handler)
 
+    # Bamboodom digest webhook (4I.4) — QStash cron 07:00 МСК
+    from api.bamboodom_digest import bamboodom_digest_handler
+    app.router.add_post("/api/bamboodom/digest", bamboodom_digest_handler)
+
     # Legal document redirects (for Pinterest/VK app review — needs company domain)
     from api.legal import legal_privacy, legal_terms
 
