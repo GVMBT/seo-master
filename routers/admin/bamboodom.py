@@ -40,6 +40,7 @@ from bot.texts.emoji import E
 from bot.texts.screens import Screen
 from cache.client import RedisClient
 from cache.keys import BAMBOODOM_PUBLISH_HISTORY_TTL, BAMBOODOM_PUBLISH_LOCK_TTL
+from db.client import SupabaseClient
 from db.models import User
 from integrations.bamboodom import (
     ArticleCodesResponse,
@@ -160,13 +161,13 @@ def _deep_json_decode(raw, *, max_depth: int = 4) -> object:
             try:
                 value = json.loads(value)
                 continue
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 break
         if isinstance(value, list) and value and all(isinstance(e, str) for e in value):
             try:
                 value = [json.loads(e) for e in value]
                 continue
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 break
         break
     return value
@@ -316,7 +317,7 @@ async def _read_smoke_status(redis: RedisClient) -> tuple[str, str]:
         try:
             data = json.loads(raw_fail)
             last_fail = f"{_fmt_moscow(data.get('ts'))} — {data.get('detail', '')}"
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             last_fail = raw_fail
     else:
         last_fail = TXT.BAMBOODOM_LAST_FAIL_NONE
@@ -1017,17 +1018,13 @@ def _append_v1_2_notes(screen, resp) -> object:
         screen = screen.blank().line(f"{E.WARNING} {TXT.BAMBOODOM_PUBLISH_DRAFT_FORCED}")
 
     if warnings:
-        screen = screen.blank().line(
-            f"{E.WARNING} {TXT.BAMBOODOM_PUBLISH_WARNINGS_HEADER.format(count=len(warnings))}"
-        )
+        screen = screen.blank().line(f"{E.WARNING} {TXT.BAMBOODOM_PUBLISH_WARNINGS_HEADER.format(count=len(warnings))}")
         for w in warnings[:5]:
             code = getattr(w, "code", None) or "warning"
             hint = getattr(w, "hint", None) or TXT.BAMBOODOM_WARNING_LABELS.get(code, code)
             category = getattr(w, "category", None)
             label = f"{code}" + (f"/{category}" if category else "")
-            screen = screen.line(
-                TXT.BAMBOODOM_PUBLISH_WARNING_LINE.format(code=label, hint=hint[:140])
-            )
+            screen = screen.line(TXT.BAMBOODOM_PUBLISH_WARNING_LINE.format(code=label, hint=hint[:140]))
             items = getattr(w, "items", None) or []
             # Show first 2 items inline (if any) — helps debug which text/article triggered
             for it in items[:2]:
@@ -1430,18 +1427,20 @@ def _stage_labels() -> dict[str, tuple[int, str]]:
     freshly added in a hotfix deployment. Build once and cache (4B.1.4)."""
     if _STAGE_LABELS:
         return _STAGE_LABELS
-    _STAGE_LABELS.update({
-        "init":              (5,  TXT.BAMBOODOM_AI_STAGE_INIT),
-        "context":           (15, TXT.BAMBOODOM_AI_STAGE_CONTEXT),
-        "build":             (25, TXT.BAMBOODOM_AI_STAGE_BUILD),
-        "call_primary":      (45, TXT.BAMBOODOM_AI_STAGE_CALL_PRIMARY),
-        "call_fallback":     (60, TXT.BAMBOODOM_AI_STAGE_CALL_FALLBACK),
-        "parse":             (75, TXT.BAMBOODOM_AI_STAGE_PARSE),
-        "validate":          (85, TXT.BAMBOODOM_AI_STAGE_VALIDATE),
-        "length_retry":      (70, TXT.BAMBOODOM_AI_STAGE_LENGTH_RETRY),
-        "validation_retry":  (65, TXT.BAMBOODOM_AI_STAGE_VALIDATION_RETRY),
-        "done":              (100, TXT.BAMBOODOM_AI_STAGE_DONE),
-    })
+    _STAGE_LABELS.update(
+        {
+            "init": (5, TXT.BAMBOODOM_AI_STAGE_INIT),
+            "context": (15, TXT.BAMBOODOM_AI_STAGE_CONTEXT),
+            "build": (25, TXT.BAMBOODOM_AI_STAGE_BUILD),
+            "call_primary": (45, TXT.BAMBOODOM_AI_STAGE_CALL_PRIMARY),
+            "call_fallback": (60, TXT.BAMBOODOM_AI_STAGE_CALL_FALLBACK),
+            "parse": (75, TXT.BAMBOODOM_AI_STAGE_PARSE),
+            "validate": (85, TXT.BAMBOODOM_AI_STAGE_VALIDATE),
+            "length_retry": (70, TXT.BAMBOODOM_AI_STAGE_LENGTH_RETRY),
+            "validation_retry": (65, TXT.BAMBOODOM_AI_STAGE_VALIDATION_RETRY),
+            "done": (100, TXT.BAMBOODOM_AI_STAGE_DONE),
+        }
+    )
     return _STAGE_LABELS
 
 
@@ -1459,7 +1458,7 @@ def _build_ai_progress_text(material: str, keyword: str, info: dict[str, Any]) -
     pct, template = _stage_labels().get(stage, (5, TXT.BAMBOODOM_AI_STAGE_INIT))
     try:
         line = template.format(attempt=attempt)
-    except (KeyError, IndexError):
+    except KeyError, IndexError:
         line = template
     bar = _render_progress_bar(pct)
     return (
@@ -1495,7 +1494,6 @@ async def _ai_progress_loop(user_id: int, bot_msg: Message, material: str, keywo
                 log.debug("bamboodom_ai_progress_tick_failed", error=str(exc))
     except asyncio.CancelledError:
         return
-
 
 
 def _extract_first_paragraphs(blocks: list[dict], limit: int) -> str:
@@ -1911,6 +1909,7 @@ async def ai_publish_submit(
     state: FSMContext,
     redis: RedisClient,
     http_client: httpx.AsyncClient,
+    db: SupabaseClient,
 ) -> None:
     if not _is_admin(user):
         await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
@@ -2001,15 +2000,12 @@ async def ai_publish_submit(
 
     article_url = _resolve_article_url(resp)
 
-    # 4G.tg + 4L: анонс в TG-канал, VK-сообщество и Pinterest (только production).
-    # Сейчас sandbox=True жёстко; при переключении на production анонсы активируются.
+    # 4G.tg + 4L v2: анонс новой статьи во все подключённые соцсети.
+    # Использует существующие publishers (services/publishers/{vk,pinterest,telegram}.py)
+    # через connections в БД. TG-канал @ecosteni остаётся отдельной фичей.
     if resp.action_type in ("created", "published") and not getattr(resp, "draft_forced", False):
         try:
-            from services.announce import (
-                announce_article,
-                announce_to_pinterest,
-                announce_to_vk,
-            )
+            from services.announce import announce_article, announce_to_social
 
             excerpt = ""
             cover_url = ""
@@ -2018,13 +2014,25 @@ async def ai_publish_submit(
                 cover = payload.get("cover") or payload.get("image_url") or ""
                 if isinstance(cover, str):
                     cover_url = cover
+
+            # 1) Простой пост в TG-канал @ecosteni через bot.send_message
             await announce_article(callback.bot, title, article_url, excerpt=excerpt)
+
+            # 2) Публикация в TG/VK/Pinterest через connections (если включены)
             if article_url:
-                await announce_to_vk(title, article_url, excerpt=excerpt, image_url=cover_url)
-            if article_url and cover_url:
-                await announce_to_pinterest(
-                    title, article_url, image_url=cover_url, description=excerpt
+                from bot.config import get_settings as _gs
+
+                _settings = _gs()
+                results = await announce_to_social(
+                    db=db,
+                    http_client=http_client,
+                    settings=_settings,
+                    title=title,
+                    url=article_url,
+                    excerpt=excerpt,
+                    image_url=cover_url,
                 )
+                log.info("bamboodom_announce_social", results=results)
         except Exception:
             log.warning("bamboodom_announce_call_failed", exc_info=True)
 

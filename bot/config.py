@@ -77,13 +77,10 @@ class Settings(BaseSettings):
     google_oauth_client_id: str = ""
     google_oauth_client_secret: SecretStr = SecretStr("")
 
-    # --- Bamboodom VK community анонс (4L) ---
-    bamboodom_vk_token: SecretStr = SecretStr("")
-    bamboodom_vk_group_id: int = 0
-
-    # --- Bamboodom Pinterest анонс (4L) ---
-    bamboodom_pinterest_token: SecretStr = SecretStr("")
-    bamboodom_pinterest_board_id: str = ""
+    # --- Bamboodom social-анонс (4L v2) ---
+    # Используем существующие publishers — нужен только project_id из БД,
+    # куда юзер привязал connections (vk, pinterest, telegram) через UI бота.
+    bamboodom_announce_project_id: int = 0
 
     # === Server ===
     port: int = 8080
