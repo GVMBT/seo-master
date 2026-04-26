@@ -287,3 +287,40 @@ async def bamboodom_search_queries(callback: CallbackQuery, user: User) -> None:
             screen = screen.line(line)
         screen = screen.blank().hint(TXT.BAMBOODOM_QUERIES_HINT)
     await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_analytics_back_kb())
+
+
+# ---------------------------------------------------------------------------
+# bamboodom:analytics:digest — утренний дайджест (4H)
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "bamboodom:analytics:digest")
+async def bamboodom_analytics_digest(callback: CallbackQuery, user: User) -> None:
+    """Утренний дайджест: всё в одном сообщении.
+
+    Источники: Метрика + blog_list + Я.Вебмастер. Каждый источник опционален —
+    если что-то упало, в дайджесте появится секция «Сбои источников».
+    """
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    await safe_edit_text(
+        msg,
+        Screen(E.SYNC, TXT.BAMBOODOM_DIGEST_TITLE).blank().line(TXT.BAMBOODOM_DIGEST_PROGRESS).build(),
+        reply_markup=bamboodom_analytics_back_kb(),
+    )
+    await callback.answer()
+
+    from services.analytics.digest import collect_and_render
+
+    try:
+        text = await collect_and_render()
+    except Exception as exc:
+        log.warning("digest_failed", exc_info=True)
+        text = Screen(E.WARNING, TXT.BAMBOODOM_DIGEST_TITLE).blank().line(f"{E.CLOSE} {repr(exc)[:200]}").build()
+    await safe_edit_text(msg, text, reply_markup=bamboodom_analytics_back_kb())

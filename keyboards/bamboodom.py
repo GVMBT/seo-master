@@ -23,6 +23,7 @@ def bamboodom_root_kb() -> InlineKeyboardMarkup:
 def bamboodom_analytics_kb() -> InlineKeyboardMarkup:
     """Подменю «Аналитика» (4F)."""
     rows = [
+        [InlineKeyboardButton(text="📰 Утренний дайджест", callback_data="bamboodom:analytics:digest")],
         [InlineKeyboardButton(text="📈 Сводка вчера", callback_data="bamboodom:analytics:yesterday")],
         [InlineKeyboardButton(text="📈 Сводка за 7 дней", callback_data="bamboodom:analytics:week")],
         [InlineKeyboardButton(text="🔝 Топ-10 страниц (7 дней)", callback_data="bamboodom:analytics:top_pages")],

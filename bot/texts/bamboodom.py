@@ -370,3 +370,11 @@ BAMBOODOM_SOURCES_EMPTY = "Нет данных за период."
 BAMBOODOM_QUERIES_TITLE = "ПОИСКОВЫЕ ЗАПРОСЫ (ЯНДЕКС, 7 ДНЕЙ)"
 BAMBOODOM_QUERIES_HINT = "Только organic-трафик. Часть запросов скрыта Яндексом (политика приватности)."
 BAMBOODOM_QUERIES_EMPTY = "Нет данных за период (или все запросы скрыты Яндексом)."
+
+# --- 4H: Утренний дайджест ---
+BAMBOODOM_DIGEST_TITLE = "УТРЕННИЙ ДАЙДЖЕСТ"
+BAMBOODOM_DIGEST_HEADER = "Сегодня {today} (данные за {yesterday})"
+BAMBOODOM_DIGEST_SECTION_TRAFFIC = "Трафик"
+BAMBOODOM_DIGEST_SECTION_BLOG = "Блог"
+BAMBOODOM_DIGEST_SECTION_YW = "Я.Вебмастер"
+BAMBOODOM_DIGEST_PROGRESS = "Собираю дайджест из всех источников…"
