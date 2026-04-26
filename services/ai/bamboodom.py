@@ -95,8 +95,45 @@ MaterialCategory = Literal["wpc", "flex", "reiki", "profiles"]
 # that dict every ~3s and re-renders the progress-bar message in Telegram.
 ProgressCallback = Callable[[str, int], Awaitable[None]]
 
-# Block types the server accepts (we use a safe subset in 4A).
-_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "h3", "p", "list", "product", "callout", "cta", "table"})
+# Block types the server accepts. v14 (2026-04-26): extended with img, h4, ul,
+# ol, quote per BAMBOODOM_ARTICLE_TEMPLATES.md spec from Side B. Old `list`
+# kept for backward-compat (Side B renders it the same as ul).
+_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset(
+    {"h2", "h3", "h4", "p", "list", "ul", "ol", "product", "callout", "cta", "table", "img", "quote"}
+)
+
+# v14 image slots — must match BAMBOODOM_ARTICLE_TEMPLATES.md section 2.
+_ALLOWED_IMG_SLOTS: frozenset[str] = frozenset(
+    {
+        "hero",
+        "wide-1",
+        "wide-2",
+        "landscape-1",
+        "landscape-2",
+        "square-1",
+        "square-2",
+        "square-3",
+        "portrait-1",
+        "portrait-2",
+    }
+)
+
+# v14 categories — must match BAMBOODOM_ARTICLE_TEMPLATES.md section 1.
+_ALLOWED_CATEGORIES: frozenset[str] = frozenset({"wpc", "flex", "reiki", "prof", "spc", "magnez", "lighting"})
+
+# v14 template names by id (1-10), per BAMBOODOM_ARTICLE_TEMPLATES.md section 3.
+_TEMPLATE_NAMES: dict[int, str] = {
+    1: "technical_guide",
+    2: "buyers_guide",
+    3: "comparison",
+    4: "case_study",
+    5: "educational",
+    6: "room_focused",
+    7: "problem_solution",
+    8: "trends",
+    9: "geo",
+    10: "magazine",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -106,17 +143,33 @@ _ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"h2", "h3", "p", "list", "prod
 
 @dataclass(slots=True)
 class BamboodomArticleDraft:
-    """Validated draft — what gets shown in FSM preview and published via API."""
+    """Validated draft — what gets shown in FSM preview and published via API.
+
+    v14 (2026-04-26): added template_id (1-10), template_name, category, tags,
+    cover per BAMBOODOM_ARTICLE_TEMPLATES.md from Side B. The old `format`
+    field (1-7) is kept for backward-compat with v12 reads but not produced
+    by the v14 pipeline.
+    """
 
     title: str
     excerpt: str
     blocks: list[dict[str, Any]]
     seo: dict[str, str] = field(default_factory=dict)
-    format: int | None = None  # 1-7 from 7-formats library, v5+
+    format: int | None = None  # legacy v5-v12 (1-7), unused in v14
+    template_id: int | None = None  # v14: 1-10 from 10-templates library
+    template_name: str | None = None  # v14: matching name (technical_guide etc)
+    category: str | None = None  # v14: wpc/flex/reiki/prof/spc/magnez/lighting
+    tags: list[str] = field(default_factory=list)  # v14: optional tags
+    cover: str = ""  # v14: optional path to hero image
     word_count: int = 0  # server-side word count (not the model's self-report)
 
     def to_publish_payload(self) -> dict[str, Any]:
-        """Shape the draft for blog_publish."""
+        """Shape the draft for blog_publish.
+
+        v14: adds template_id, template_name, category, tags, cover when set.
+        Side B validates template_id ∈ {1..10} and category ∈ allowed set,
+        returns HTTP 422 otherwise (BAMBOODOM_ARTICLE_TEMPLATES.md section 5).
+        """
         payload: dict[str, Any] = {
             "title": self.title,
             "excerpt": self.excerpt,
@@ -127,6 +180,16 @@ class BamboodomArticleDraft:
         }
         if self.seo:
             payload["seo"] = self.seo
+        if self.template_id is not None:
+            payload["template_id"] = self.template_id
+        if self.template_name:
+            payload["template_name"] = self.template_name
+        if self.category:
+            payload["category"] = self.category
+        if self.tags:
+            payload["tags"] = self.tags
+        if self.cover:
+            payload["cover"] = self.cover
         return payload
 
 
@@ -870,18 +933,64 @@ def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:  # noqa: C901 — str
         if isinstance(meta_description, str) and meta_description.strip():
             seo["meta_description"] = meta_description.strip()[:200]
 
-    # Optional: format (int 1-7) and word_count (model self-report)
+    # v12 legacy: optional format (int 1-7). v14 doesn't use it but we keep
+    # parsing for backward-compat in case an older reply rolls in.
     fmt_raw = parsed.get("format")
     fmt_val: int | None = None
     if isinstance(fmt_raw, int) and 1 <= fmt_raw <= 7:
         fmt_val = fmt_raw
     elif isinstance(fmt_raw, str) and fmt_raw.strip().isdigit():
         try:
-            candidate = int(fmt_raw.strip())
-            if 1 <= candidate <= 7:
-                fmt_val = candidate
+            cand_fmt = int(fmt_raw.strip())
+            if 1 <= cand_fmt <= 7:
+                fmt_val = cand_fmt
         except ValueError:
             pass
+
+    # v14: template_id (1-10) — required for new responses, but tolerate
+    # absence (model could fall back to v12 shape during migration).
+    tid_raw = parsed.get("template_id")
+    tid_val: int | None = None
+    if isinstance(tid_raw, int) and 1 <= tid_raw <= 10:
+        tid_val = tid_raw
+    elif isinstance(tid_raw, str) and tid_raw.strip().isdigit():
+        try:
+            cand_tid = int(tid_raw.strip())
+            if 1 <= cand_tid <= 10:
+                tid_val = cand_tid
+        except ValueError:
+            pass
+
+    # v14: template_name — should match _TEMPLATE_NAMES[template_id], but if
+    # missing we backfill from id; if mismatched we keep whatever model sent
+    # (Side B doesn't validate it strictly).
+    tname_raw = parsed.get("template_name")
+    tname_val: str | None = None
+    if isinstance(tname_raw, str) and tname_raw.strip():
+        tname_val = tname_raw.strip().lower()
+    elif tid_val is not None:
+        tname_val = _TEMPLATE_NAMES.get(tid_val)
+
+    # v14: category — required by Side B. We don't hard-fail here; let
+    # blog_publish return HTTP 422 if value is bad. We just normalise.
+    cat_raw = parsed.get("category")
+    cat_val: str | None = None
+    if isinstance(cat_raw, str) and cat_raw.strip():
+        # Normalize but don't filter — let Side B's HTTP 422 surface bad values.
+        cat_val = cat_raw.strip().lower()
+
+    # v14: tags — optional list of short strings.
+    tags_raw = parsed.get("tags")
+    tags_val: list[str] = []
+    if isinstance(tags_raw, list):
+        for t in tags_raw:
+            if isinstance(t, str) and t.strip():
+                tags_val.append(t.strip()[:40])
+
+    # v14: cover — optional path. We don't validate the path here; Side B
+    # may rewrite it after blog_upload_image lands (28.04 ETA).
+    cover_raw = parsed.get("cover")
+    cover_val = cover_raw.strip() if isinstance(cover_raw, str) else ""
 
     wc_raw = parsed.get("word_count")
     wc_val = 0
@@ -894,6 +1003,11 @@ def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:  # noqa: C901 — str
         blocks=cleaned_blocks,
         seo=seo,
         format=fmt_val,
+        template_id=tid_val,
+        template_name=tname_val,
+        category=cat_val,
+        tags=tags_val,
+        cover=cover_val,
     )
     # Always override with our own count — models underreport.
     draft.word_count = wc_val  # temporary (model's own) — overwritten later
@@ -909,21 +1023,24 @@ _WORD_RE = re.compile(r"[\w\-]+", flags=re.UNICODE)
 
 
 def count_words(draft: BamboodomArticleDraft) -> int:
-    """Sum words across text-bearing blocks (p/h2/h3/list/callout).
+    """Sum words across text-bearing blocks.
 
-    Excludes product/cta/image/table headers+rows per ARTICLE_LENGTH_POLICY.md.
+    v14: includes h4, ul, ol, quote in addition to v12 set (p/h2/h3/list/callout).
+    Excludes product/cta/img/table per ARTICLE_LENGTH_POLICY.md.
     """
     total = 0
     for block in draft.blocks:
         btype = block.get("type")
-        if btype in ("p", "h2", "h3"):
+        if btype in ("p", "h2", "h3", "h4"):
             text = block.get("text") or ""
             total += len(_WORD_RE.findall(text))
-        elif btype == "list":
+        elif btype in ("list", "ul", "ol"):
             for item in block.get("items") or []:
                 if isinstance(item, str):
                     total += len(_WORD_RE.findall(item))
         elif btype == "callout":
             total += len(_WORD_RE.findall(block.get("text") or ""))
             total += len(_WORD_RE.findall(block.get("title") or ""))
+        elif btype == "quote":
+            total += len(_WORD_RE.findall(block.get("text") or ""))
     return total
