@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     # Используем существующие publishers — нужен только project_id из БД,
     # куда юзер привязал connections (vk, pinterest, telegram) через UI бота.
     bamboodom_announce_project_id: int = 0
+    # --- Bamboodom AI image generation (4T, 2026-04-27) ---
+    # Когда True: для каждого img-блока в AI-статье сгенерируем фото
+    # через Gemini → WebP 1024 → multipart-upload в blog_upload_image.
+    # При False img-блоки идут с пустым src и B рендерит placeholder.
+    bamboodom_images_enabled: bool = False
 
     # === Server ===
     port: int = 8080

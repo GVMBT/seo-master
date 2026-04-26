@@ -320,17 +320,14 @@ class BamboodomClient:
         source_url: str,
         alt: str = "",
     ) -> dict[str, Any]:
-        """POST blog_upload_image (4B.5 / 4K) — загрузить картинку на bamboodom.
+        """POST blog_upload_image (4B.5 / 4K) — JSON-mode (legacy).
 
         Сторона B принимает:
         - `source_url` — публичный URL (whitelist *.railway.app, *.bamboodom.ru, ...).
           B сама скачивает, конвертит в WebP, ресайз <2000px, max 10MB.
         - `alt` — описание для SEO (опционально).
 
-        Возвращает:
-            {ok, url, slug, size_kb, ... } — где `url` это публичный
-            URL картинки на bamboodom.ru, который вставляется в `image` блок статьи.
-
+        Возвращает: {ok, url, slug, size_kb, ... }.
         Rate-limit: 1/сек.
         """
         return await self._request(
@@ -339,6 +336,66 @@ class BamboodomClient:
             json_body={"source_url": source_url, "alt": alt or ""},
             timeout=30.0,
         )
+
+    async def upload_image_multipart(
+        self,
+        *,
+        slug: str,
+        slot: str,
+        image_bytes: bytes,
+        content_type: str = "image/webp",
+        alt: str = "",
+    ) -> dict[str, Any]:
+        """POST blog_upload_image multipart (BLOG_UPLOAD_MULTIPART_V1, 2026-04-27).
+
+        Используется для прямой заливки сгенерированных AI-картинок в B-storage.
+        Side B сохраняет файл по схеме /img/blog/[slug]/[slot]-[N].jpg или .webp,
+        возвращает финальный публичный URL.
+
+        Параметры (multipart fields):
+        - slug: slug статьи (для папки)
+        - slot: один из 10 slot-имён (hero, wide-1, ..., portrait-2)
+        - image: binary content
+        - alt: описание для SEO (опционально)
+
+        Возвращает: {ok, src, slug, slot, size_kb, ...}.
+        Rate-limit: 1/сек как обычный upload_image.
+        """
+        headers = self._headers()
+        query = {"action": "blog_upload_image"}
+
+        ext = "webp" if "webp" in content_type else ("jpg" if "jpeg" in content_type else "png")
+        files = {
+            "image": (f"{slot}.{ext}", image_bytes, content_type),
+        }
+        data = {
+            "slug": slug,
+            "slot": slot,
+            "alt": alt or "",
+        }
+
+        async def _send(client: httpx.AsyncClient) -> httpx.Response:
+            return await client.post(
+                self.api_base,
+                params=query,
+                headers=headers,
+                files=files,
+                data=data,
+                timeout=30.0,
+            )
+
+        try:
+            if self.http_client is not None:
+                resp = await _send(self.http_client)
+            else:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await _send(client)
+        except httpx.TimeoutException as exc:
+            raise BamboodomAPIError(f"Timeout on blog_upload_image multipart: {exc}") from exc
+        except httpx.RequestError as exc:
+            raise BamboodomAPIError(f"Network error on blog_upload_image multipart: {exc}") from exc
+
+        return self._handle_response("blog_upload_image", resp)
 
     async def promote_from_sandbox(self, slug: str) -> dict[str, Any]:
         """POST blog_promote_from_sandbox (PROMOTE-V1) — переносит sandbox-статью в production.
