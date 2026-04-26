@@ -74,7 +74,7 @@ _MODEL_CHAIN_VALIDATE: tuple[str, ...] = (
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _GENERATION_TIMEOUT = 120.0  # seconds — article generation can take ~30-60s
 _MAX_JSON_RETRIES = 1  # strict JSON parse retry budget (per side B §Б1)
-_MAX_VALIDATION_RETRIES = 1  # auto-retry on regex violation (per §В2)
+_MAX_VALIDATION_RETRIES = 2  # v14 (2026-04-26): up to 2 retries (3 attempts) for full checklist
 
 # Word-count policy from ARTICLE_LENGTH_POLICY.md (v5 prompt)
 _MIN_WORDS_HARD = 1500
@@ -133,6 +133,20 @@ _TEMPLATE_NAMES: dict[int, str] = {
     8: "trends",
     9: "geo",
     10: "magazine",
+}
+
+# v14 minimum image-slots per template, per BAMBOODOM_ARTICLE_TEMPLATES.md.
+_TEMPLATE_MIN_IMG: dict[int, int] = {
+    1: 7,  # technical_guide
+    2: 5,  # buyers_guide
+    3: 5,  # comparison
+    4: 7,  # case_study
+    5: 5,  # educational
+    6: 6,  # room_focused
+    7: 5,  # problem_solution
+    8: 5,  # trends
+    9: 4,  # geo
+    10: 7,  # magazine
 }
 
 
@@ -524,7 +538,6 @@ class BamboodomArticleService:
         draft: BamboodomArticleDraft | None = None
         validation_issues: list[str] = []
         length_retry_used = False
-        v14_retry_used = False  # 2026-04-26: retry once if model skipped img/template_id
 
         for attempt in range(_MAX_VALIDATION_RETRIES + 1):
             messages = self._augment_messages_after_validation(system, user, validation_issues)
@@ -536,40 +549,46 @@ class BamboodomArticleService:
             # Overwrite model's self-reported word_count with our honest count.
             draft.word_count = count_words(draft)
 
-            # v14 (2026-04-26): if the model skipped template_id or img-blocks
-            # on the first pass, retry once with an explicit reminder. This is
-            # cheap because we keep _MAX_VALIDATION_RETRIES at 1 — we either
-            # spend that retry here, on length, or on regex issues.
-            if attempt == 0 and not v14_retry_used:
-                has_hero = any(
-                    isinstance(b, dict) and b.get("type") == "img" and b.get("slot") == "hero" for b in draft.blocks
-                )
-                missing_v14 = []
-                if draft.template_id is None:
-                    missing_v14.append("template_id (1-10)")
-                if not has_hero:
-                    missing_v14.append('img-блок со slot="hero"')
-                if missing_v14:
-                    v14_retry_used = True
+            # v14 (2026-04-26): full-checklist retry. On every attempt except
+            # the last, run the v14 quality checklist; if any item fails,
+            # feed the bullet list back to the model and retry.
+            # _MAX_VALIDATION_RETRIES is the cap — after the last attempt we
+            # ship as-is with warnings so we don't burn AI tokens forever.
+            if attempt < _MAX_VALIDATION_RETRIES:
+                v14_failures = _v14_quality_checklist(draft, valid_article_codes=valid_codes)
+                if v14_failures:
                     v14_feedback = (
-                        "Твой ответ не прошёл v14-проверку — отсутствует: "
-                        + ", ".join(missing_v14)
-                        + ". Перегенерируй JSON. ОБЯЗАТЕЛЬНО включи: "
-                        '`"template_id": <1-10>`, `"template_name": "..."`, '
-                        '`"category": "<<material_category>>"`, и в массиве blocks '
-                        "после первых 1-3 текстовых блоков — "
-                        '`{"type":"img","slot":"hero","src":"","alt":"...","ratio":"21:9"}` '
-                        "и далее ещё img-блоки по схеме шаблона (минимум 4-7)."
+                        f"Твой ответ не прошёл чек-лист качества (попытка "
+                        f"{attempt + 1}/{_MAX_VALIDATION_RETRIES + 1}). "
+                        "Исправь следующее и перегенерируй JSON ЦЕЛИКОМ:\n\n"
+                        + "\n".join(f"  • {item}" for item in v14_failures)
+                        + "\n\nВерни тот же формат JSON, но с этими исправлениями."
                     )
                     validation_issues.append(v14_feedback)
                     log.info(
                         "bamboodom_ai_v14_retry_scheduled",
-                        missing=missing_v14,
+                        attempt=attempt,
+                        failures_count=len(v14_failures),
+                        failures=v14_failures[:5],
                         template_id=draft.template_id,
                         block_count=len(draft.blocks),
+                        word_count=draft.word_count,
                     )
                     await self._emit("v14_retry", attempt + 2)
-                    continue  # retry with v14 nudge
+                    continue  # retry with full checklist feedback
+            else:
+                # Last attempt — record final checklist state for UI warning.
+                final_failures = _v14_quality_checklist(draft, valid_article_codes=valid_codes)
+                if final_failures:
+                    log.warning(
+                        "bamboodom_ai_v14_checklist_unmet",
+                        attempt=attempt,
+                        failures_count=len(final_failures),
+                        failures=final_failures,
+                        template_id=draft.template_id,
+                    )
+                    for f in final_failures:
+                        validation_issues.append(f"v14: {f}")
 
             await self._emit("validate", attempt + 1)
             result = validator.validate(draft, valid_article_codes=valid_codes)
@@ -1056,6 +1075,104 @@ def _parse_draft(raw_reply: str) -> BamboodomArticleDraft:  # noqa: C901 — str
 
 
 _WORD_RE = re.compile(r"[\w\-]+", flags=re.UNICODE)
+
+
+def _v14_quality_checklist(
+    draft: BamboodomArticleDraft,
+    valid_article_codes: frozenset[str] | None = None,
+) -> list[str]:
+    """Return human-readable failures for v14 quality requirements.
+
+    Empty list = all checks passed (publish-ready). Each item is a bullet
+    fed back to the model verbatim, so the model knows exactly what to fix.
+    """
+    failures: list[str] = []
+
+    # 1. template_id ∈ {1..10}
+    if draft.template_id is None or draft.template_id not in _TEMPLATE_NAMES:
+        failures.append(
+            "Поле `template_id` отсутствует или не из диапазона 1-10. "
+            "Выбери шаблон по правилам блока 10_ШАБЛОНОВ_СТАТЕЙ и поставь "
+            "число в `template_id`, плюс соответствующее имя в `template_name`."
+        )
+
+    # 2. category
+    if not draft.category or draft.category not in _ALLOWED_CATEGORIES:
+        failures.append(
+            "Поле `category` отсутствует или не из набора "
+            "{wpc, flex, reiki, prof, spc, magnez, lighting}. "
+            "Поставь категорию материала статьи."
+        )
+
+    # 3. img-block with slot=hero present
+    img_blocks = [b for b in draft.blocks if isinstance(b, dict) and b.get("type") == "img"]
+    img_slots = [str(b.get("slot") or "") for b in img_blocks]
+    has_hero = "hero" in img_slots
+    if not has_hero:
+        failures.append(
+            'В массиве `blocks` нет img-блока со `slot:"hero"`. '
+            "Добавь после первых 1-3 текстовых блоков "
+            '`{"type":"img","slot":"hero","src":"","alt":"...BamBooDom","ratio":"21:9"}`.'
+        )
+
+    # 4. min img-blocks per template
+    if draft.template_id in _TEMPLATE_MIN_IMG:
+        min_imgs = _TEMPLATE_MIN_IMG[draft.template_id]
+        if len(img_blocks) < min_imgs:
+            failures.append(
+                f"Для template_id={draft.template_id} "
+                f"({_TEMPLATE_NAMES.get(draft.template_id, '?')}) "
+                f"минимум {min_imgs} img-блоков, у тебя {len(img_blocks)}. "
+                "Добавь недостающие img-блоки по схеме шаблона."
+            )
+
+    # 5. word count >= 1500
+    if draft.word_count < _MIN_WORDS_HARD:
+        failures.append(
+            f"Слов в текстовых блоках всего {draft.word_count}, нужен минимум "
+            f"{_MIN_WORDS_HARD}. Расширь короткие h2-разделы фактическим "
+            "содержанием из KNOWLEDGE_BASE — без воды."
+        )
+
+    # 6. >= 2 product-blocks
+    product_blocks = [b for b in draft.blocks if isinstance(b, dict) and b.get("type") == "product"]
+    if len(product_blocks) < 2:
+        failures.append(
+            f"Product-блоков всего {len(product_blocks)}, нужно минимум 2 "
+            "(каждый с подводкой по RULE 2). Возьми артикулы из ARTICLES_CATALOG."
+        )
+
+    # 7. valid article codes
+    if valid_article_codes is not None:
+        bad_codes: list[str] = []
+        for blk in product_blocks:
+            code = str(blk.get("article", "")).strip()
+            if code and code not in valid_article_codes:
+                bad_codes.append(code)
+        if bad_codes:
+            failures.append(
+                "В product-блоках встречаются артикулы, которых нет в "
+                f"ARTICLES_CATALOG: {', '.join(bad_codes[:5])}. Замени на "
+                "реальные коды из каталога (RULE 5)."
+            )
+
+    # 8. trailing CTA
+    has_trailing_cta = any(isinstance(b, dict) and b.get("type") == "cta" for b in draft.blocks[-3:])
+    if not has_trailing_cta:
+        failures.append(
+            "В конце статьи нет cta-блока. Добавь "
+            '`{"type":"cta","text":"...","link":"/wpc.html"}` '
+            "(или /flex.html, /reiki.html, /profiles.html — по категории) "
+            "последним блоком."
+        )
+
+    # 9. SEO
+    if not draft.seo.get("meta_title"):
+        failures.append("Поле `seo.meta_title` пустое. Поставь до 60 символов.")
+    if not draft.seo.get("meta_description"):
+        failures.append("Поле `seo.meta_description` пустое. Поставь до 160 символов.")
+
+    return failures
 
 
 def count_words(draft: BamboodomArticleDraft) -> int:
