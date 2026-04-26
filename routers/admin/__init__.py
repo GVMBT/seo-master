@@ -2,7 +2,7 @@
 
 from aiogram import Router
 
-from routers.admin import bamboodom, bamboodom_admin, costs, dashboard, users
+from routers.admin import bamboodom, bamboodom_admin, bamboodom_analytics, costs, dashboard, users
 
 router = Router()
 router.include_router(users.router)
@@ -13,4 +13,5 @@ router.include_router(dashboard.router)
 # старого. Старый handler в bamboodom.router после правки слушает
 # bamboodom:articles.
 router.include_router(bamboodom_admin.router)
+router.include_router(bamboodom_analytics.router)
 router.include_router(bamboodom.router)

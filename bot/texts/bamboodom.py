@@ -342,3 +342,31 @@ BAMBOODOM_REGEN_FULL_LABELS = {
     "blog_articles": "Статьи блога",
     "verification": "Верификация",
 }
+
+# --- 4F: Аналитика (Я.Метрика) ---
+BAMBOODOM_ANALYTICS_TITLE = "АНАЛИТИКА"
+BAMBOODOM_ANALYTICS_SUBTITLE = "Сводки из Яндекс.Метрики"
+BAMBOODOM_ANALYTICS_HINT = "Данные обновляются с задержкой ~30 минут."
+BAMBOODOM_ANALYTICS_NO_TOKEN = (
+    "Не настроен YANDEX_METRIKA_TOKEN. Добавьте OAuth-токен Метрики в переменные окружения Railway."
+)
+BAMBOODOM_ANALYTICS_NO_COUNTER = "Не настроен YANDEX_METRIKA_COUNTER_ID."
+BAMBOODOM_ANALYTICS_PROGRESS = "Запрашиваю данные у Метрики…"
+BAMBOODOM_ANALYTICS_AUTH_FAIL = "OAuth-токен Метрики невалиден или нет доступа к счётчику."
+BAMBOODOM_ANALYTICS_FAIL = "Не удалось получить данные: {detail}"
+BAMBOODOM_SUMMARY_TITLE_YESTERDAY = "СВОДКА — ВЧЕРА"
+BAMBOODOM_SUMMARY_TITLE_WEEK = "СВОДКА — ПОСЛЕДНИЕ 7 ДНЕЙ"
+BAMBOODOM_SUMMARY_LABEL_VISITS = "Визиты"
+BAMBOODOM_SUMMARY_LABEL_USERS = "Посетители"
+BAMBOODOM_SUMMARY_LABEL_PAGEVIEWS = "Просмотры страниц"
+BAMBOODOM_SUMMARY_LABEL_BOUNCE = "Отказы"
+BAMBOODOM_SUMMARY_LABEL_DURATION = "Время на сайте"
+BAMBOODOM_SUMMARY_LABEL_PERIOD = "Период"
+BAMBOODOM_TOP_PAGES_TITLE = "ТОП СТРАНИЦ ЗА 7 ДНЕЙ"
+BAMBOODOM_TOP_PAGES_HINT = "Формат: # путь — просмотры (посетители)"
+BAMBOODOM_TOP_PAGES_EMPTY = "Нет данных за период."
+BAMBOODOM_SOURCES_TITLE = "ИСТОЧНИКИ ТРАФИКА (7 ДНЕЙ)"
+BAMBOODOM_SOURCES_EMPTY = "Нет данных за период."
+BAMBOODOM_QUERIES_TITLE = "ПОИСКОВЫЕ ЗАПРОСЫ (ЯНДЕКС, 7 ДНЕЙ)"
+BAMBOODOM_QUERIES_HINT = "Только organic-трафик. Часть запросов скрыта Яндексом (политика приватности)."
+BAMBOODOM_QUERIES_EMPTY = "Нет данных за период (или все запросы скрыты Яндексом)."

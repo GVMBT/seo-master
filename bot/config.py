@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     yandex_webmaster_host_id: str = ""
     yandex_webmaster_site: str = "https://bamboodom.ru"
 
+    # --- Yandex.Metrika (Bamboodom analytics, 4F) ---
+    yandex_metrika_token: SecretStr = SecretStr("")
+    yandex_metrika_counter_id: str = ""
+
     # === Server ===
     port: int = 8080
 

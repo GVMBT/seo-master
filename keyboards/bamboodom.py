@@ -14,7 +14,29 @@ def bamboodom_root_kb() -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="📝 Статьи", callback_data="bamboodom:articles")],
         [InlineKeyboardButton(text="⚙️ Администрирование", callback_data="bamboodom:admin")],
+        [InlineKeyboardButton(text="📊 Аналитика", callback_data="bamboodom:analytics")],
         [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_analytics_kb() -> InlineKeyboardMarkup:
+    """Подменю «Аналитика» (4F)."""
+    rows = [
+        [InlineKeyboardButton(text="📈 Сводка вчера", callback_data="bamboodom:analytics:yesterday")],
+        [InlineKeyboardButton(text="📈 Сводка за 7 дней", callback_data="bamboodom:analytics:week")],
+        [InlineKeyboardButton(text="🔝 Топ-10 страниц (7 дней)", callback_data="bamboodom:analytics:top_pages")],
+        [InlineKeyboardButton(text="🌐 Источники трафика", callback_data="bamboodom:analytics:sources")],
+        [InlineKeyboardButton(text="🔎 Запросы из Яндекса", callback_data="bamboodom:analytics:queries")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_analytics_back_kb() -> InlineKeyboardMarkup:
+    """Кнопка возврата с экрана конкретного отчёта."""
+    rows = [
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:analytics")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
