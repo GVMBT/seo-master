@@ -26,7 +26,16 @@ from services.external.dataforseo import DataForSEOClient
 
 log = structlog.get_logger()
 
-_MIN_VOLUME = 30  # filter out long-tail noise; matches existing research handler
+# Material-specific volume thresholds (5F, 2026-04-28). Profiles are a
+# narrow B2B niche — Google Ads barely shows volume there, so threshold is
+# lowered. Other materials keep 30 to filter long-tail noise.
+_MIN_VOLUME_DEFAULT = 30
+_MIN_VOLUME_BY_MATERIAL = {
+    "wpc": 30,
+    "flex": 30,
+    "reiki": 30,
+    "profiles": 5,
+}
 _MAX_PER_SEED = 80  # DataForSEO limit per call
 
 # Seed phrases per material — bare-bones starter set.
@@ -63,6 +72,16 @@ _SEEDS_BY_MATERIAL: dict[str, list[str]] = {
         "соединительный профиль панелей",
         "торцевой профиль для wpc",
         "L-профиль для стеновых панелей",
+        "алюминиевый профиль декоративный",
+        "профиль для стеновых панелей",
+        "угловой профиль для панелей",
+        "h профиль для панелей",
+        "f профиль для панелей",
+        "стартовый профиль для панелей",
+        "финишный профиль декоративный",
+        "плинтус для стеновых панелей",
+        "отделочный профиль",
+        "торцевая планка для wpc",
     ],
 }
 
@@ -135,10 +154,11 @@ async def collect_for_material(
             await http_client.aclose()
 
     # 2) Filter
+    min_vol = _MIN_VOLUME_BY_MATERIAL.get(material, _MIN_VOLUME_DEFAULT)
     filtered = {
         phrase: (vol, comp)
         for phrase, (vol, comp) in fetched.items()
-        if vol >= _MIN_VOLUME
+        if vol >= min_vol
     }
     log.info(
         "bbk_collect_fetched",

@@ -245,7 +245,7 @@ async def keywords_collect_run(
     fresh_stats = await repo.stats_summary()
     screen = Screen(E.HASHTAG, "Подбор ключей — готово").blank().line(
         f"Найдено фраз: {total_stats['fetched']}\n"
-        f"После фильтра (volume≥30): {total_stats['after_filter']}\n"
+        f"После фильтра (volume по материалу): {total_stats['after_filter']}\n"
         f"Сохранено новых: {total_stats['saved_new']}\n"
         f"Обновлено существующих: {total_stats['saved_updated']}"
     )
