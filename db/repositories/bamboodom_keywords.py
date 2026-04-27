@@ -105,14 +105,21 @@ class BamboodomKeywordsRepository(BaseRepository):
                 rows_to_upsert.append(payload)
                 new_count += 1
 
-        # Execute upsert in batches of 200
-        for i in range(0, len(rows_to_upsert), 200):
-            chunk = rows_to_upsert[i : i + 200]
-            await (
-                self._table(_TABLE)
-                .upsert(chunk, on_conflict="keyword,material")
-                .execute()
-            )
+        # 5G (2026-04-28): partial unique indexes (keyword, material) WHERE
+        # city IS NULL no longer match ON CONFLICT specification. Split into
+        # explicit UPDATE for rows with id (existing) and INSERT for new.
+        existing_rows = [r for r in rows_to_upsert if "id" in r]
+        new_rows = [r for r in rows_to_upsert if "id" not in r]
+
+        # UPDATE existing (one row per call — supabase-py has no bulk update by id)
+        for row in existing_rows:
+            row_id = row.pop("id")
+            await self._table(_TABLE).update(row).eq("id", row_id).execute()
+
+        # INSERT new in chunks of 200
+        for i in range(0, len(new_rows), 200):
+            chunk = new_rows[i : i + 200]
+            await self._table(_TABLE).insert(chunk).execute()
 
         log.info(
             "bbk_save_batch",
