@@ -130,11 +130,44 @@ async def announce_article(
     4W (2026-04-27): если cover_url задан, постим через send_photo с caption.
     Иначе fallback на send_message с full text. Если send_photo упал
     (например URL недоступен) — пробуем send_message, чтобы хоть текст ушёл.
+
+    5B (2026-04-27): если в env задан BAMBOODOM_TG_BOT_TOKEN — используем
+    отдельный Bot для постинга в bamboodom-канал, а не наш основной
+    @best_seo_master_bot. Удобно когда канал админит специализированный
+    бот (например @BamBooDom_bot админит @bamboodom).
     """
     channel = _resolve_channel()
     if not channel:
         log.debug("tg_announce_skipped_no_channel")
         return False
+
+    # 5B: optional dedicated bot for the bamboodom channel.
+    s = get_settings()
+    custom_token = ""
+    try:
+        secret = s.bamboodom_tg_bot_token
+        if secret is not None:
+            custom_token = (secret.get_secret_value() or "").strip()
+    except AttributeError:
+        custom_token = ""
+
+    own_bot: Any | None = None
+    if custom_token:
+        try:
+            from aiogram import Bot
+            from aiogram.client.default import DefaultBotProperties
+
+            own_bot = Bot(
+                token=custom_token,
+                default=DefaultBotProperties(parse_mode="HTML"),
+            )
+            bot = own_bot
+            log.info("tg_announce_using_custom_bot", channel=channel)
+        except Exception as exc:
+            log.warning(
+                "tg_announce_custom_bot_init_failed",
+                error=str(exc)[:200],
+            )
 
     cover_clean = (cover_url or "").strip()
 
@@ -153,6 +186,11 @@ async def announce_article(
                 title=title[:80],
                 with_cover=True,
             )
+            if own_bot is not None:
+                try:
+                    await own_bot.session.close()
+                except Exception:
+                    pass
             return True
         except Exception as exc:
             log.warning(
@@ -183,3 +221,10 @@ async def announce_article(
             error=str(exc)[:200],
         )
         return False
+    finally:
+        # 5B: close session for the dedicated bot we created.
+        if own_bot is not None:
+            try:
+                await own_bot.session.close()
+            except Exception:
+                pass

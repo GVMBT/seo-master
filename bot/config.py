@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     # --- Bamboodom TG-канал анонсов (4G.tg) ---
     # @username или числовой -100xxxxxxxxxx. Бот должен быть админом с правом постинга.
     bamboodom_tg_channel: str = ""
+    # 5B (2026-04-27): optional dedicated bot token for the bamboodom channel.
+    # When set, services/announce/tg_channel.py uses Bot(token) instead of
+    # piggybacking on the main @best_seo_master_bot. Useful when the bamboodom
+    # channel admin is a separate bot (e.g. @BamBooDom_bot for @bamboodom).
+    bamboodom_tg_bot_token: SecretStr = SecretStr("")
 
     # --- Google Search Console (4G) ---
     google_oauth_client_id: str = ""
