@@ -662,6 +662,54 @@ class TestResolveGroup:
         assert any("vk.com/club53628858" in u for u in scraped_urls)
         assert not any(u.rstrip("/").endswith("vk.com/53628858") for u in scraped_urls)
 
+    async def test_resolves_new_gid_loc_format_regression(self) -> None:
+        """Regression: VK switched group ``loc`` field from ``pid=N`` to
+        ``gid=N&id=N`` and dropped the trailing ``&subdir=`` requirement.
+
+        Real production HTML for ``vk.com/3d_design_service`` (and
+        ``vk.com/club53628858``) returns:
+
+            "loc":"?act=s&gid=53628858&id=53628858&subdir=3d_design_service"
+            "loc":"?act=s&gid=53628858&id=53628858"
+
+        The old regex (``pid=…&subdir=``) matched neither, so every group
+        connect attempt failed even after the club-prefix fix.
+        """
+        async def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "vk.com/3d_design_service" in url:
+                return httpx.Response(
+                    200,
+                    text='{"loc":"?act=s&gid=53628858&id=53628858&subdir=3d_design_service"}',
+                )
+            if "vk.com/club53628858" in url:
+                return httpx.Response(
+                    200,
+                    text='{"loc":"?act=s&gid=53628858&id=53628858"}',
+                )
+            return httpx.Response(404)
+
+        service, _ = _make_service(handler=handler)
+
+        gid_screen, _ = await service.resolve_group("3d_design_service")
+        assert gid_screen == 53628858
+
+        gid_num, _ = await service.resolve_group("53628858")
+        assert gid_num == 53628858
+
+    async def test_user_page_without_act_does_not_match(self) -> None:
+        """User page ``loc`` (``?subdir=…`` only, no ``act=s``) must not match
+        the group regex — otherwise users get connected as groups.
+        """
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "vk.com/somebody" in str(request.url):
+                return httpx.Response(200, text='{"loc":"?subdir=somebody"}')
+            return httpx.Response(404)
+
+        service, _ = _make_service(handler=handler)
+        with pytest.raises(VKOAuthError, match="Cannot resolve"):
+            await service.resolve_group("somebody")
+
     async def test_scrape_fails_falls_back_to_api(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             url = str(request.url)

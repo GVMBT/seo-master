@@ -61,8 +61,11 @@ _VK_SCREEN_NAME_RE = re.compile(
     r"(?:https?://)?(?:m\.)?vk\.(?:com|ru)/([a-zA-Z0-9][a-zA-Z0-9_.]{0,31})",
     re.IGNORECASE,
 )
-# Extracts group pid from VK SPA page: "loc":"?act=s&pid=GROUP_ID&subdir=..."
-_VK_LOC_PID_RE = re.compile(r'"loc"\s*:\s*"\?act=s&pid=(\d+)&subdir=')
+# Extracts group ID from VK SPA page "loc" field. VK uses different formats:
+#  - groups (new):    "loc":"?act=s&gid=GROUP_ID&id=GROUP_ID[&subdir=...]"
+#  - public (legacy): "loc":"?act=s&pid=GROUP_ID[&subdir=...]"
+#  - users:           "loc":"?subdir=NAME"  (no act=s — does not match)
+_VK_LOC_PID_RE = re.compile(r'"loc"\s*:\s*"\?act=s&(?:gid|pid)=(\d+)')
 
 
 def parse_vk_group_input(text: str) -> tuple[int | None, str | None]:
