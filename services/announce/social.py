@@ -112,8 +112,16 @@ async def announce_to_social(
     if image_url:
         image_bytes = await _fetch_image_bytes(http_client, image_url)
 
+    # 5C (2026-04-27): если задан BAMBOODOM_TG_CHANNEL — telegram-анонс уходит
+    # через announce_article (отдельный путь с dedicated bot), connection-based
+    # путь для telegram пропускаем чтобы не было двойных постов в одном канале.
+    bbk_tg_channel_set = bool((getattr(settings, "bamboodom_tg_channel", "") or "").strip())
+
     results: dict[str, str] = {}
     for platform in PLATFORMS:
+        if platform == "telegram" and bbk_tg_channel_set:
+            results[platform] = "skip:duplicate_with_dedicated_channel"
+            continue
         try:
             connections = await conn_repo.get_by_project_and_platform(project_id, platform)
         except Exception as exc:
