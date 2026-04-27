@@ -227,7 +227,7 @@ class BamboodomClient:
         self,
         payload: dict[str, Any],
         *,
-        sandbox: bool = True,
+        sandbox: bool = False,
     ) -> PublishResponse:
         """POST blog_publish — submit article blocks to bamboodom.ru.
 

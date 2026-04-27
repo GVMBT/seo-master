@@ -388,7 +388,7 @@ async def keywords_publish_one_preview(
             f"Кластер: {chosen.cluster_label or '—'}\n"
             f"Частотность: {chosen.search_volume}/мес"
         ).blank().line(
-            "Нажмите «Запустить» — бот сгенерирует и опубликует AI-статью в sandbox.\n"
+            "Нажмите «Запустить» — бот сгенерирует и опубликует AI-статью.\n"
             "Это займёт 3-5 минут (текст + 5-7 фото)."
         ).build()
     )

@@ -289,7 +289,7 @@ async def run_background_image_pipeline(
     payload: dict[str, Any] | None = None,
     http_client: httpx.AsyncClient,
     settings: Any,
-    sandbox: bool = True,
+    sandbox: bool = False,
     parallel: int = 1,
     # 4Z (2026-04-27): announcement timing fix — TG/VK posts must wait for
     # cover image to be ready, otherwise they go out without preview. When
