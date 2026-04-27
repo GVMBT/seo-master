@@ -42,12 +42,17 @@ _MAX_PER_SEED = 80  # DataForSEO limit per call
 # Phase 2 enhancement: derive from ARTICLES_CATALOG series + texture types.
 _SEEDS_BY_MATERIAL: dict[str, list[str]] = {
     "wpc": [
-        # core
+        # core (note: floor/decking products excluded — мы их не продаём)
         "wpc панели",
         "стеновые панели wpc",
-        "террасная доска wpc",
         "монтаж wpc панелей",
         "wpc или дпк",
+        # bamboo synonym (it's the same WPC product in our catalogue)
+        "бамбуковые панели",
+        "бамбуковые стеновые панели",
+        "бамбуковые панели для интерьера",
+        "панели из бамбука",
+        "стеновые панели бамбук",
         # synonyms (people search дпк, not always wpc)
         "дпк панели",
         "древесно-полимерный композит",
