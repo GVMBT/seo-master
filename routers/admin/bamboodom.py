@@ -163,13 +163,13 @@ def _deep_json_decode(raw, *, max_depth: int = 4) -> object:
             try:
                 value = json.loads(value)
                 continue
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 break
         if isinstance(value, list) and value and all(isinstance(e, str) for e in value):
             try:
                 value = [json.loads(e) for e in value]
                 continue
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 break
         break
     return value
@@ -319,7 +319,7 @@ async def _read_smoke_status(redis: RedisClient) -> tuple[str, str]:
         try:
             data = json.loads(raw_fail)
             last_fail = f"{_fmt_moscow(data.get('ts'))} — {data.get('detail', '')}"
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             last_fail = raw_fail
     else:
         last_fail = TXT.BAMBOODOM_LAST_FAIL_NONE
@@ -1460,7 +1460,7 @@ def _build_ai_progress_text(material: str, keyword: str, info: dict[str, Any]) -
     pct, template = _stage_labels().get(stage, (5, TXT.BAMBOODOM_AI_STAGE_INIT))
     try:
         line = template.format(attempt=attempt)
-    except KeyError, IndexError:
+    except (KeyError, IndexError):
         line = template
     bar = _render_progress_bar(pct)
     return (
@@ -2100,7 +2100,7 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
                             break
 
             # 1) Простой пост в TG-канал @ecosteni через bot.send_message
-            await announce_article(callback.bot, title, article_url, excerpt=excerpt, extra_text=extra_text)
+            await announce_article(callback.bot, title, article_url, excerpt=excerpt, extra_text=extra_text, cover_url=cover_url)
 
             # 2) Публикация в TG/VK/Pinterest через connections (если включены)
             if article_url:

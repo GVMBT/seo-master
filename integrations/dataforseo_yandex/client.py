@@ -212,7 +212,7 @@ class DataForSEOYandexClient:
                 if comp is not None:
                     try:
                         comp = float(comp)
-                    except TypeError, ValueError:
+                    except (TypeError, ValueError):
                         comp = None
                 out.append(YandexKeywordVolume(phrase=phrase, volume=vol, competition=comp))
         return out
@@ -242,7 +242,7 @@ class DataForSEOYandexClient:
                 if comp is not None:
                     try:
                         comp = float(comp)
-                    except TypeError, ValueError:
+                    except (TypeError, ValueError):
                         comp = None
                 out.append(YandexKeywordVolume(phrase=phrase, volume=vol, competition=comp))
         return out

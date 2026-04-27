@@ -188,7 +188,7 @@ async def _fetch_blog_list(
         if total is None:
             try:
                 total = int(data.get("total", 0))
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 total = None
 
         items = data.get("items") or []
