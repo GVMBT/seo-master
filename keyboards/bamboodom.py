@@ -310,7 +310,21 @@ def bamboodom_keywords_kb(stats: dict[str, dict[str, int]] | None = None) -> Inl
     if stats and any(s.get("total", 0) > 0 for s in stats.values()):
         rows.append([InlineKeyboardButton(text="📋 База ключей", callback_data="bamboodom:keywords:list")])
         rows.append([InlineKeyboardButton(text="🎯 Опубликовать пробную", callback_data="bamboodom:keywords:publish_one")])
+        rows.append([InlineKeyboardButton(text="🏙 Гео-расширение Крым", callback_data="bamboodom:keywords:geo")])
     rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_keywords_geo_kb() -> InlineKeyboardMarkup:
+    """Подменю выбора материала для гео-расширения по городам Крыма (5E)."""
+    rows = [
+        [InlineKeyboardButton(text="🌐 Все 4 материала (top-5 × 16 городов = 320 ключей)", callback_data="bamboodom:keywords:geo:all")],
+        [InlineKeyboardButton(text="WPC панели (top-10)", callback_data="bamboodom:keywords:geo:wpc")],
+        [InlineKeyboardButton(text="Гибкая керамика (top-10)", callback_data="bamboodom:keywords:geo:flex")],
+        [InlineKeyboardButton(text="Reiki", callback_data="bamboodom:keywords:geo:reiki")],
+        [InlineKeyboardButton(text="Профили", callback_data="bamboodom:keywords:geo:profiles")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:keywords")],
+    ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

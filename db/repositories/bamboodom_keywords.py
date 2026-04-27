@@ -25,6 +25,15 @@ _TABLE = "bamboodom_keywords"
 VALID_MATERIALS = ("wpc", "flex", "reiki", "profiles")
 VALID_STATUSES = ("new", "queued", "used", "failed", "skipped")
 
+# 5E (2026-04-27): geo-expansion list. 16 Crimean cities (республика Крым +
+# город федерального значения Севастополь). Used by expand_to_cities() to
+# multiply base keywords into geo-targeted variants.
+CRIMEA_CITIES = (
+    "Симферополь", "Севастополь", "Ялта", "Феодосия", "Евпатория",
+    "Керчь", "Алушта", "Судак", "Бахчисарай", "Джанкой",
+    "Саки", "Армянск", "Красноперекопск", "Старый Крым", "Белогорск", "Щёлкино",
+)
+
 
 class BamboodomKeywordsRepository(BaseRepository):
     """CRUD for bamboodom_keywords (4Y)."""
@@ -149,6 +158,85 @@ class BamboodomKeywordsRepository(BaseRepository):
             out[mat][st] = out[mat].get(st, 0) + 1
             out[mat]["total"] += 1
         return out
+
+    async def expand_to_cities(
+        self,
+        material: str,
+        cities: list[str] | tuple[str, ...] = CRIMEA_CITIES,
+        top_n: int = 10,
+    ) -> dict[str, int]:
+        """Multiply top-N base keywords by city list, save as geo variants.
+
+        For each of the top-N keywords (ordered by search_volume) of the
+        given material with city IS NULL, insert one row per city. Existing
+        (keyword, material, city) triples are skipped (no overwrite).
+
+        Returns counts: {"new": int, "skipped": int, "total": int}.
+        """
+        # 1) base keywords (city IS NULL) sorted by volume.
+        resp = await (
+            self._table(_TABLE)
+            .select("*")
+            .eq("material", material)
+            .is_("city", "null")
+            .order("search_volume", desc=True)
+            .limit(top_n)
+            .execute()
+        )
+        base_rows = resp.data or []
+        if not base_rows:
+            return {"new": 0, "skipped": 0, "total": 0}
+
+        # 2) build candidate geo-rows.
+        geo_rows: list[dict] = []
+        for br in base_rows:
+            for city in cities:
+                geo_rows.append({
+                    "keyword": br["keyword"],
+                    "material": br["material"],
+                    "city": city,
+                    "search_volume": br.get("search_volume", 0),
+                    "competition": br.get("competition"),
+                    "cluster_id": br.get("cluster_id"),
+                    "cluster_label": br.get("cluster_label"),
+                    "status": "new",
+                })
+
+        # 3) read existing (keyword, material, city) to avoid duplicates.
+        keywords = list({r["keyword"] for r in geo_rows})
+        existing_resp = await (
+            self._table(_TABLE)
+            .select("keyword, city")
+            .eq("material", material)
+            .in_("keyword", keywords)
+            .not_.is_("city", "null")
+            .execute()
+        )
+        existing_keys = {
+            (row["keyword"], row["city"])
+            for row in (existing_resp.data or [])
+        }
+
+        new_rows = [
+            r for r in geo_rows
+            if (r["keyword"], r["city"]) not in existing_keys
+        ]
+        skipped = len(geo_rows) - len(new_rows)
+
+        # 4) insert new rows in chunks.
+        for i in range(0, len(new_rows), 200):
+            chunk = new_rows[i : i + 200]
+            await self._table(_TABLE).insert(chunk).execute()
+
+        log.info(
+            "bbk_expand_to_cities",
+            material=material,
+            top_n=top_n,
+            cities=len(cities),
+            new=len(new_rows),
+            skipped=skipped,
+        )
+        return {"new": len(new_rows), "skipped": skipped, "total": len(geo_rows)}
 
     async def pick_for_publishing(
         self,

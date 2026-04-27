@@ -33,8 +33,10 @@ from bot.texts.screens import Screen
 from db.client import SupabaseClient
 from db.models import User
 from db.repositories import BamboodomKeywordsRepository
+from db.repositories.bamboodom_keywords import CRIMEA_CITIES
 from keyboards.bamboodom import (
     bamboodom_keywords_collect_kb,
+    bamboodom_keywords_geo_kb,
     bamboodom_keywords_kb,
     bamboodom_keywords_list_kb,
     bamboodom_keywords_publish_one_kb,
@@ -434,10 +436,17 @@ async def keywords_publish_run(
     # progress + cancel + autopublish pipeline that already works.
     from routers.admin.bamboodom import _run_ai_generation
 
+    # 5E (2026-04-27): if keyword has a city, expand to "<keyword> в <city>"
+    # so the AI generates a geo-targeted title / slug / text.
+    keyword_for_ai = kw.keyword
+    if kw.city:
+        keyword_for_ai = f"{kw.keyword} в {kw.city}"
+
+    city_line = f"\nГород: {kw.city}" if kw.city else ""
     progress_msg = await msg.answer(
         Screen(E.SYNC, "Пробная публикация").blank().line(
             f"Материал: {_MATERIAL_LABELS.get(kw.material, kw.material)}\n"
-            f"Ключ: {kw.keyword}\n\n"
+            f"Ключ: {keyword_for_ai}{city_line}\n\n"
             f"Генерация запущена. Прогресс ниже."
         ).build()
     )
@@ -458,7 +467,7 @@ async def keywords_publish_run(
                 state=state,
                 user_id=user.id,
                 material=kw.material,
-                keyword=kw.keyword,
+                keyword=keyword_for_ai,
                 redis=redis,
                 http_client=http_client,
             )
@@ -475,3 +484,98 @@ async def keywords_publish_run(
 
     # Detach so the user can keep navigating
     asyncio.create_task(_run_and_track(), name=f"bbk_publish_{kw.id}")
+
+
+# ---------------------------------------------------------------------------
+# 5E (2026-04-27): Гео-расширение по городам Крыма
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "bamboodom:keywords:geo")
+async def keywords_geo_menu(callback: CallbackQuery, user: User) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    cities_list = ", ".join(CRIMEA_CITIES)
+    text = (
+        Screen(E.HASHTAG, "Гео-расширение Крым").blank()
+        .line(
+            "Бот возьмёт top-N ключей по материалу и умножит каждый на список "
+            "городов Крыма. Получатся ключи вида «keyword + город».\n\n"
+            f"<b>Города ({len(CRIMEA_CITIES)}):</b>\n{cities_list}\n\n"
+            "Дубликаты пропускаются. Ключи сохраняются со status=new и "
+            "city=&lt;город&gt;. При публикации AI учтёт город в title, slug "
+            "и тексте."
+        )
+        .build()
+    )
+    await safe_edit_text(msg, text, reply_markup=bamboodom_keywords_geo_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^bamboodom:keywords:geo:(wpc|flex|reiki|profiles|all)$"))
+async def keywords_geo_run(
+    callback: CallbackQuery,
+    user: User,
+    db: SupabaseClient,
+) -> None:
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+
+    cb_data = callback.data or ""
+    target = cb_data.rsplit(":", 1)[-1]
+    materials = ["wpc", "flex", "reiki", "profiles"] if target == "all" else [target]
+    top_n = 5 if target == "all" else 10
+
+    repo = BamboodomKeywordsRepository(db)
+
+    progress_msg = await msg.answer(
+        Screen(E.SYNC, "Гео-расширение Крым").blank()
+        .line(f"Обрабатываю {len(materials)} материал(ов), top-{top_n} × {len(CRIMEA_CITIES)} городов…")
+        .build()
+    )
+    await callback.answer("Гео-расширение запущено")
+
+    results: dict[str, dict] = {}
+    for mat in materials:
+        try:
+            res = await repo.expand_to_cities(material=mat, cities=list(CRIMEA_CITIES), top_n=top_n)
+            results[mat] = res
+        except Exception as exc:
+            log.warning("bbk_geo_expand_failed", material=mat, error=str(exc)[:200])
+            results[mat] = {"new": 0, "skipped": 0, "total": 0, "error": str(exc)[:100]}
+
+    summary_lines = []
+    total_new = 0
+    total_skipped = 0
+    for mat in materials:
+        r = results.get(mat, {})
+        label = _MATERIAL_LABELS.get(mat, mat)
+        if "error" in r:
+            summary_lines.append(f"❌ {label}: {r['error']}")
+        else:
+            summary_lines.append(
+                f"✅ {label}: новых {r.get('new', 0)}, дублей {r.get('skipped', 0)}, всего {r.get('total', 0)}"
+            )
+            total_new += r.get("new", 0)
+            total_skipped += r.get("skipped", 0)
+
+    final_text = (
+        Screen(E.CHECK, "Гео-расширение Крым").blank()
+        .line("\n".join(summary_lines))
+        .blank()
+        .line(f"<b>Итого:</b> добавлено {total_new}, дублей {total_skipped}.")
+        .build()
+    )
+    await progress_msg.edit_text(final_text, reply_markup=bamboodom_keywords_kb(await repo.stats_summary()))
+

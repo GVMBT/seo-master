@@ -591,6 +591,9 @@ class BamboodomKeyword(BaseModel):
     published_at: datetime | None = None
     created_at: datetime | None = None
     last_used_at: datetime | None = None
+    # 5E (2026-04-27): geo-expansion. NULL = generic keyword, otherwise
+    # the article is targeted at a specific city (e.g. "Симферополь").
+    city: str | None = None
 
 
 class BamboodomKeywordCreate(BaseModel):
@@ -601,3 +604,4 @@ class BamboodomKeywordCreate(BaseModel):
     cluster_id: int | None = None
     cluster_label: str | None = None
     status: str = "new"
+    city: str | None = None
