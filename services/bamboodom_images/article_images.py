@@ -338,34 +338,10 @@ async def run_background_image_pipeline(
             log.warning("bg_img_pipeline_no_payload_to_republish", slug=slug)
             return
 
-        # Re-publish via blog_publish (upsert by slug). blocks were mutated
-        # in-place by generate_article_images, so payload["blocks"] now has
-        # real src values where uploads succeeded.
-        bamboodom_client = BamboodomClient(http_client=http_client)
-        # Make sure payload's blocks reference the mutated list (it already
-        # does, because we passed the same list — just being explicit).
-        new_payload = dict(payload)
-        new_payload["blocks"] = blocks
-        try:
-            resp = await bamboodom_client.publish(new_payload, sandbox=sandbox)
-            log.info(
-                "bg_img_pipeline_republished",
-                slug=slug,
-                action_type=getattr(resp, "action_type", "?"),
-                blocks_parsed=getattr(resp, "blocks_parsed", -1),
-            )
-        except BamboodomAPIError as exc:
-            log.warning(
-                "bg_img_pipeline_republish_failed",
-                slug=slug,
-                error=str(exc)[:1500],
-            )
-            # No point announcing if the article didn't publish with images.
-            return
-
-        # 4Z (2026-04-27): now that the article has real cover-image, dispatch
-        # the TG/VK announces. Find hero src first; fallback to first img with
-        # a non-empty src if no hero block exists.
+        # 4Z2 (2026-04-27): extract hero_src BEFORE republish so we can fill
+        # payload["cover"]. Side B uses cover for /blog listing thumbnails
+        # and og:image. Without it the article appears with a grey placeholder
+        # on the blog index even though hero img exists inside the article.
         hero_src = ""
         for blk in blocks or []:
             if not isinstance(blk, dict) or blk.get("type") != "img":
@@ -378,6 +354,33 @@ async def run_background_image_pipeline(
                 if isinstance(blk, dict) and blk.get("type") == "img" and blk.get("src"):
                     hero_src = str(blk["src"])
                     break
+
+        # Re-publish via blog_publish (upsert by slug). blocks were mutated
+        # in-place by generate_article_images, so payload["blocks"] now has
+        # real src values where uploads succeeded.
+        bamboodom_client = BamboodomClient(http_client=http_client)
+        new_payload = dict(payload)
+        new_payload["blocks"] = blocks
+        if hero_src and not new_payload.get("cover"):
+            # Fill cover from hero img — drives /blog listing thumbnail.
+            new_payload["cover"] = hero_src
+        try:
+            resp = await bamboodom_client.publish(new_payload, sandbox=sandbox)
+            log.info(
+                "bg_img_pipeline_republished",
+                slug=slug,
+                action_type=getattr(resp, "action_type", "?"),
+                blocks_parsed=getattr(resp, "blocks_parsed", -1),
+                cover_filled=bool(hero_src and not payload.get("cover")),
+            )
+        except BamboodomAPIError as exc:
+            log.warning(
+                "bg_img_pipeline_republish_failed",
+                slug=slug,
+                error=str(exc)[:1500],
+            )
+            # No point announcing if the article didn't publish with images.
+            return
 
         if announce_bot is not None and announce_title:
             try:
