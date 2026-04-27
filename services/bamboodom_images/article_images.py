@@ -289,7 +289,7 @@ async def run_background_image_pipeline(
     payload: dict[str, Any] | None = None,
     http_client: httpx.AsyncClient,
     settings: Any,
-    sandbox: bool = False,
+    sandbox: bool = True,
     parallel: int = 1,
     # 4Z (2026-04-27): announcement timing fix — TG/VK posts must wait for
     # cover image to be ready, otherwise they go out without preview. When
@@ -393,6 +393,40 @@ async def run_background_image_pipeline(
             )
             # No point announcing if the article didn't publish with images.
             return
+
+        # 5D (2026-04-27): auto-promote sandbox → production after successful
+        # republish with images. Bot-key cannot publish to production directly
+        # (server forces draft_forced), so we always go via sandbox + promote.
+        # If promote fails, the article stays in sandbox and the operator
+        # can manually press the "🚀 Промоут sandbox→production" button.
+        production_url: str | None = None
+        if sandbox and slug:
+            try:
+                promote_result = await bamboodom_client.promote_from_sandbox(slug)
+                if promote_result.get("ok"):
+                    production_url = str(promote_result.get("url") or "") or None
+                    log.info(
+                        "bg_img_pipeline_auto_promoted",
+                        slug=slug,
+                        production_url=production_url,
+                    )
+                else:
+                    log.warning(
+                        "bg_img_pipeline_auto_promote_failed",
+                        slug=slug,
+                        result=promote_result,
+                    )
+            except Exception:
+                log.warning(
+                    "bg_img_pipeline_auto_promote_exception",
+                    slug=slug,
+                    exc_info=True,
+                )
+
+        # If we successfully promoted, replace the sandbox URL with production
+        # one for the social announces (TG/VK/Pinterest).
+        if production_url:
+            announce_url = production_url
 
         if announce_bot is not None and announce_title:
             try:
