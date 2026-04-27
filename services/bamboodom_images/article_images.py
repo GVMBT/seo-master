@@ -342,6 +342,12 @@ async def run_background_image_pipeline(
         # payload["cover"]. Side B uses cover for /blog listing thumbnails
         # and og:image. Without it the article appears with a grey placeholder
         # on the blog index even though hero img exists inside the article.
+        # 5A (2026-04-27): make hero_src absolute. Side B returns src as a
+        # path-only string ("/img/blog/<slug>/hero-1.webp"). On the article
+        # page B prefixes the host itself, so og:image is fine. But
+        # _fetch_image_bytes in services/announce/social.py uses httpx.get()
+        # which rejects relative URLs ("Request URL is missing an http(s)
+        # protocol"). Resolve to https://bamboodom.ru/<path> when needed.
         hero_src = ""
         for blk in blocks or []:
             if not isinstance(blk, dict) or blk.get("type") != "img":
@@ -354,6 +360,12 @@ async def run_background_image_pipeline(
                 if isinstance(blk, dict) and blk.get("type") == "img" and blk.get("src"):
                     hero_src = str(blk["src"])
                     break
+
+        if hero_src and hero_src.startswith("/"):
+            hero_src = "https://bamboodom.ru" + hero_src
+        elif hero_src and not hero_src.startswith(("http://", "https://")):
+            # Defensive: just-in-case Side B switches to host-relative without /.
+            hero_src = "https://bamboodom.ru/" + hero_src.lstrip("/")
 
         # Re-publish via blog_publish (upsert by slug). blocks were mutated
         # in-place by generate_article_images, so payload["blocks"] now has
