@@ -291,6 +291,17 @@ async def run_background_image_pipeline(
     settings: Any,
     sandbox: bool = True,
     parallel: int = 1,
+    # 4Z (2026-04-27): announcement timing fix — TG/VK posts must wait for
+    # cover image to be ready, otherwise they go out without preview. When
+    # these are passed, after a successful republish the pipeline finds the
+    # hero img src, writes it to payload["cover"], and dispatches both the
+    # @ecosteni announce and the connections-based social announce.
+    announce_bot: Any | None = None,
+    announce_db: Any | None = None,
+    announce_title: str = "",
+    announce_url: str | None = None,
+    announce_excerpt: str = "",
+    announce_extra_text: str = "",
 ) -> None:
     """Background task: generate images, upload, then re-publish article.
 
@@ -300,6 +311,7 @@ async def run_background_image_pipeline(
     2. Re-publish via blog_publish (it's upsert-by-slug, allowed for our
        user-level X-Blog-Key). blog_update_article requires admin-only key
        per Side B's BLOG_API_V14 (HTTP 403 'admin only' otherwise).
+    3. Announce on TG/VK with the now-ready cover (4Z fix).
 
     payload — оригинальный JSON, который мы отправляли в blog_publish при
     первой публикации (с пустыми src в img-блоках). После генерации мы
@@ -348,5 +360,67 @@ async def run_background_image_pipeline(
                 slug=slug,
                 error=str(exc)[:1500],
             )
+            # No point announcing if the article didn't publish with images.
+            return
+
+        # 4Z (2026-04-27): now that the article has real cover-image, dispatch
+        # the TG/VK announces. Find hero src first; fallback to first img with
+        # a non-empty src if no hero block exists.
+        hero_src = ""
+        for blk in blocks or []:
+            if not isinstance(blk, dict) or blk.get("type") != "img":
+                continue
+            if blk.get("slot") == "hero" and blk.get("src"):
+                hero_src = str(blk["src"])
+                break
+        if not hero_src:
+            for blk in blocks or []:
+                if isinstance(blk, dict) and blk.get("type") == "img" and blk.get("src"):
+                    hero_src = str(blk["src"])
+                    break
+
+        if announce_bot is not None and announce_title:
+            try:
+                from services.announce import announce_article, announce_to_social
+
+                # @ecosteni via bot.send_message (cover-aware after 947a929 fix).
+                await announce_article(
+                    announce_bot,
+                    announce_title,
+                    announce_url,
+                    excerpt=announce_excerpt,
+                    extra_text=announce_extra_text,
+                    cover_url=hero_src or None,
+                )
+
+                # Connections-based publishers (VK/Pinterest/TG via project).
+                if announce_url and announce_db is not None:
+                    results = await announce_to_social(
+                        db=announce_db,
+                        http_client=http_client,
+                        settings=settings,
+                        title=announce_title,
+                        url=announce_url,
+                        excerpt=announce_excerpt,
+                        image_url=hero_src or "",
+                        extra_text=announce_extra_text,
+                    )
+                    log.info(
+                        "bg_img_pipeline_announce_done",
+                        slug=slug,
+                        with_cover=bool(hero_src),
+                        results=results,
+                    )
+                else:
+                    log.info(
+                        "bg_img_pipeline_announce_done",
+                        slug=slug,
+                        with_cover=bool(hero_src),
+                        results={"single": "ecosteni-only"},
+                    )
+            except Exception:
+                log.warning(
+                    "bg_img_pipeline_announce_failed", slug=slug, exc_info=True
+                )
     except Exception:
         log.warning("bg_img_pipeline_unexpected_failure", slug=slug, exc_info=True)

@@ -2099,25 +2099,44 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
                             extra_text = candidate
                             break
 
-            # 1) Простой пост в TG-канал @ecosteni через bot.send_message
-            await announce_article(callback.bot, title, article_url, excerpt=excerpt, extra_text=extra_text, cover_url=cover_url)
+            # 4Z (2026-04-27): if image-pipeline is enabled, the
+            # announcement is dispatched INSIDE the pipeline after republish
+            # so it can include the hero cover. Otherwise fall back to the
+            # legacy path here (no cover available yet).
+            from bot.config import get_settings as _gs_pre_announce
 
-            # 2) Публикация в TG/VK/Pinterest через connections (если включены)
-            if article_url:
-                from bot.config import get_settings as _gs
-
-                _settings = _gs()
-                results = await announce_to_social(
-                    db=db,
-                    http_client=http_client,
-                    settings=_settings,
-                    title=title,
-                    url=article_url,
+            _settings_pre = _gs_pre_announce()
+            _images_will_run = (
+                getattr(_settings_pre, "bamboodom_images_enabled", False)
+                and bool(resp.slug)
+            )
+            if not _images_will_run:
+                # Legacy fallback: dispatch announces immediately (no cover).
+                await announce_article(
+                    callback.bot,
+                    title,
+                    article_url,
                     excerpt=excerpt,
-                    image_url=cover_url,
                     extra_text=extra_text,
+                    cover_url=cover_url,
                 )
-                log.info("bamboodom_announce_social", results=results)
+                if article_url:
+                    results = await announce_to_social(
+                        db=db,
+                        http_client=http_client,
+                        settings=_settings_pre,
+                        title=title,
+                        url=article_url,
+                        excerpt=excerpt,
+                        image_url=cover_url,
+                        extra_text=extra_text,
+                    )
+                    log.info("bamboodom_announce_social", results=results)
+            else:
+                log.info(
+                    "bamboodom_announce_deferred_to_image_pipeline",
+                    slug=resp.slug,
+                )
         except Exception:
             log.warning("bamboodom_announce_call_failed", exc_info=True)
 
@@ -2155,6 +2174,12 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
                     http_client=http_client,
                     settings=_settings_imgs,
                     sandbox=True,
+                    announce_bot=callback.bot,
+                    announce_db=db,
+                    announce_title=title,
+                    announce_url=article_url,
+                    announce_excerpt=excerpt,
+                    announce_extra_text=extra_text,
                 ),
                 name=f"img_pipeline_{resp.slug}",
             )
