@@ -13,6 +13,7 @@ def bamboodom_root_kb() -> InlineKeyboardMarkup:
     """Корневой экран Bamboodom."""
     rows = [
         [InlineKeyboardButton(text="📝 Статьи", callback_data="bamboodom:articles")],
+        [InlineKeyboardButton(text="🔑 Ключи", callback_data="bamboodom:keywords")],
         [InlineKeyboardButton(text="⚙️ Администрирование", callback_data="bamboodom:admin")],
         [InlineKeyboardButton(text="📊 Аналитика", callback_data="bamboodom:analytics")],
         [InlineKeyboardButton(text="К панели", callback_data="admin:panel")],
@@ -293,4 +294,55 @@ def bamboodom_ai_result_kb(article_url: str | None) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text="Открыть статью", url=article_url)])
     rows.append([InlineKeyboardButton(text="Ещё статью", callback_data="bamboodom:ai:start")])
     rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:articles")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# 4Y (2026-04-27): «Ключи» — DataForSEO collection + DB + manual publish
+# ---------------------------------------------------------------------------
+
+
+def bamboodom_keywords_kb(stats: dict[str, dict[str, int]] | None = None) -> InlineKeyboardMarkup:
+    """Корневой экран ключей. Показывает stats по 4 материалам если есть."""
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(text="🔍 Подобрать ключи", callback_data="bamboodom:keywords:collect")],
+    ]
+    if stats and any(s.get("total", 0) > 0 for s in stats.values()):
+        rows.append([InlineKeyboardButton(text="📋 База ключей", callback_data="bamboodom:keywords:list")])
+        rows.append([InlineKeyboardButton(text="🎯 Опубликовать пробную", callback_data="bamboodom:keywords:publish_one")])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_keywords_collect_kb() -> InlineKeyboardMarkup:
+    """Подменю выбора материала(ов) для сбора ключей."""
+    rows = [
+        [InlineKeyboardButton(text="🌐 Все 4 материала", callback_data="bamboodom:keywords:collect:all")],
+        [InlineKeyboardButton(text="WPC панели", callback_data="bamboodom:keywords:collect:wpc")],
+        [InlineKeyboardButton(text="Гибкая керамика", callback_data="bamboodom:keywords:collect:flex")],
+        [InlineKeyboardButton(text="Реечные панели", callback_data="bamboodom:keywords:collect:reiki")],
+        [InlineKeyboardButton(text="Алюминиевые профили", callback_data="bamboodom:keywords:collect:profiles")],
+        [InlineKeyboardButton(text="Назад", callback_data="bamboodom:keywords")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_keywords_list_kb(materials_with_data: list[str]) -> InlineKeyboardMarkup:
+    """Кнопки для просмотра базы по материалам."""
+    label_map = {"wpc": "WPC", "flex": "Flex", "reiki": "Reiki", "profiles": "Profiles"}
+    rows = [
+        [InlineKeyboardButton(text=label_map.get(m, m), callback_data=f"bamboodom:keywords:list:{m}")]
+        for m in materials_with_data
+    ]
+    rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:keywords")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bamboodom_keywords_publish_one_kb(keyword_id: int | None) -> InlineKeyboardMarkup:
+    """Кнопки на превью пробной публикации."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if keyword_id is not None:
+        rows.append([InlineKeyboardButton(text="✅ Запустить публикацию", callback_data=f"bamboodom:keywords:publish:{keyword_id}")])
+        rows.append([InlineKeyboardButton(text="🔁 Другой ключ", callback_data="bamboodom:keywords:publish_one")])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data="bamboodom:keywords")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

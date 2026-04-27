@@ -569,3 +569,35 @@ class PromptVersionUpdate(BaseModel):
     is_active: bool | None = None
     success_rate: Decimal | None = None
     avg_quality: Decimal | None = None
+
+
+# ---------------------------------------------------------------------------
+# 14. bamboodom_keywords (4Y, 2026-04-27)
+# ---------------------------------------------------------------------------
+
+
+class BamboodomKeyword(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    keyword: str
+    material: str  # wpc / flex / reiki / profiles
+    search_volume: int = 0
+    competition: float | None = None
+    cluster_id: int | None = None
+    cluster_label: str | None = None
+    status: str = "new"  # new / queued / used / failed / skipped
+    published_slug: str | None = None
+    published_at: datetime | None = None
+    created_at: datetime | None = None
+    last_used_at: datetime | None = None
+
+
+class BamboodomKeywordCreate(BaseModel):
+    keyword: str
+    material: str
+    search_volume: int = 0
+    competition: float | None = None
+    cluster_id: int | None = None
+    cluster_label: str | None = None
+    status: str = "new"
