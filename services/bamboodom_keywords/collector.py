@@ -31,7 +31,7 @@ log = structlog.get_logger()
 # lowered. Other materials keep 30 to filter long-tail noise.
 _MIN_VOLUME_DEFAULT = 30
 _MIN_VOLUME_BY_MATERIAL = {
-    "wpc": 30,
+    "wpc": 10,       # 5G: lowered from 30 — narrow Russian-term niche on Google Ads
     "flex": 30,
     "reiki": 30,
     "profiles": 5,
@@ -42,13 +42,28 @@ _MAX_PER_SEED = 80  # DataForSEO limit per call
 # Phase 2 enhancement: derive from ARTICLES_CATALOG series + texture types.
 _SEEDS_BY_MATERIAL: dict[str, list[str]] = {
     "wpc": [
+        # core
         "wpc панели",
         "стеновые панели wpc",
         "террасная доска wpc",
-        "wpc для бассейна",
-        "панели для интерьера",
         "монтаж wpc панелей",
         "wpc или дпк",
+        # synonyms (people search дпк, not always wpc)
+        "дпк панели",
+        "древесно-полимерный композит",
+        "композитные панели для стен",
+        # use-cases / room intents
+        "декоративные панели для стен",
+        "стеновые панели в гостиную",
+        "стеновые панели для прихожей",
+        "стеновые панели для ванной",
+        "панели для бассейна",
+        "панели для отделки балкона",
+        "обшить стену панелями",
+        "панели на стену в спальню",
+        # exterior / facade
+        "фасадные панели для дома",
+        "наружные панели для фасада",
     ],
     "flex": [
         "гибкая керамика",

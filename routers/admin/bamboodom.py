@@ -1045,16 +1045,35 @@ def _append_v1_2_notes(screen, resp) -> object:
     return screen
 
 
+def _canonicalise_blog_url(url: str) -> str:
+    """5H (2026-04-28): normalise legacy /article.html?slug=X (production, no
+    sandbox) to canonical /blog/X. Server B exposes both — but TG/VK/Pinterest
+    posts should reference the new clean URL form. If sandbox=1 is in the
+    query, leave the URL untouched (preview only)."""
+    if "sandbox=1" in url:
+        return url
+    if "/article.html?slug=" not in url:
+        return url
+    # Extract slug — accept slug=foo or slug=foo&...
+    after = url.split("/article.html?slug=", 1)[1]
+    slug = after.split("&", 1)[0].rstrip("/")
+    if not slug:
+        return url
+    # Replace path: keep everything before /article.html
+    prefix = url.split("/article.html?slug=", 1)[0]
+    return f"{prefix}/blog/{slug}"
+
+
 def _resolve_article_url(resp: PublishResponse) -> str | None:
     """Convert server-provided relative URL to full HTTP link for inline button."""
     if not resp.url:
         return None
     url = resp.url
-    if url.startswith(("http://", "https://")):
-        return url
-    # relative — prepend host
-    host = TXT.BAMBOODOM_URL_HOST.rstrip("/")
-    return f"{host}{url if url.startswith('/') else '/' + url}"
+    if not url.startswith(("http://", "https://")):
+        host = TXT.BAMBOODOM_URL_HOST.rstrip("/")
+        url = f"{host}{url if url.startswith('/') else '/' + url}"
+    # Canonicalise to /blog/<slug> for production URLs.
+    return _canonicalise_blog_url(url)
 
 
 @router.callback_query(F.data == "bamboodom:publish")

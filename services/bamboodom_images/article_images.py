@@ -428,6 +428,16 @@ async def run_background_image_pipeline(
         if production_url:
             announce_url = production_url
 
+        # 5H (2026-04-28): canonicalise legacy /article.html?slug=X (production)
+        # to /blog/X for cleaner social posts. sandbox URLs untouched.
+        if announce_url and "sandbox=1" not in announce_url and "/article.html?slug=" in announce_url:
+            after = announce_url.split("/article.html?slug=", 1)[1]
+            slug_only = after.split("&", 1)[0].rstrip("/")
+            if slug_only:
+                prefix = announce_url.split("/article.html?slug=", 1)[0]
+                announce_url = f"{prefix}/blog/{slug_only}"
+                log.info("bg_img_pipeline_announce_url_canonicalised", slug=slug, url=announce_url)
+
         if announce_bot is not None and announce_title:
             try:
                 from services.announce import announce_article, announce_to_social
