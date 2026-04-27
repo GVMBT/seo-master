@@ -40,12 +40,15 @@ _INTER_REQUEST_DELAY = 1.2
 _WEBP_TARGET_WIDTH = 1024
 
 # Аспекты слотов для crop'а Gemini-вывода (он рисует 16:9 fixed).
+# 4W layout v3 (2026-04-27): landscape-* и wide-* теперь оба full-width 16:9
+# на стороне B (раньше landscape был ограничен центром 900px). hero оставляем
+# в 21:9 — он узкий cinematic cover. square/portrait без изменений.
 _SLOT_ASPECTS: dict[str, tuple[int, int]] = {
     "hero": (21, 9),
     "wide-1": (16, 9),
     "wide-2": (16, 9),
-    "landscape-1": (3, 2),
-    "landscape-2": (3, 2),
+    "landscape-1": (16, 9),
+    "landscape-2": (16, 9),
     "square-1": (1, 1),
     "square-2": (1, 1),
     "square-3": (1, 1),

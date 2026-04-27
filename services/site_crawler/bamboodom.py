@@ -132,15 +132,25 @@ def _normalize_url(raw: str, base: str = DEFAULT_SITE) -> str | None:
 
 
 def _is_blog_article(url: str) -> bool:
-    """Только URL'ы статей блога (`/article.html?slug=...`).
+    """URL статьи блога: новый формат `/blog/<slug>` или старый `/article.html?slug=...`.
+
+    4W layout v3 (2026-04-27): сторона B перешла на `/blog/<slug>` для
+    production-статей. Старый `/article.html?slug=...` остаётся как
+    rewrite-target для sandbox. Принимаем оба формата чтобы crawler
+    видел и старые, и новые статьи во время переходного периода.
 
     Бот не должен слать в очередь Я.Вебмастера товары и общие страницы —
     их шлёт `auto_reindex_cron.php` стороны B.
     """
     parsed = urlparse(url)
-    if parsed.path.rstrip("/").lower() != "/article.html":
-        return False
-    return "slug=" in (parsed.query or "")
+    path = parsed.path.rstrip("/").lower()
+    # New canonical: /blog/<slug>
+    if path.startswith("/blog/") and len(path) > len("/blog/"):
+        return True
+    # Legacy: /article.html?slug=...
+    if path == "/article.html":
+        return "slug=" in (parsed.query or "")
+    return False
 
 
 # ---------------------------------------------------------------------------
