@@ -15,13 +15,14 @@ from __future__ import annotations
 import httpx
 import structlog
 
+from bot.config import get_settings
 from db.models import BamboodomKeywordCreate
 from db.repositories import BamboodomKeywordsRepository
-from integrations.dataforseo_yandex import DataForSEOYandexClient
 from services.bamboodom_keywords.clusterer import (
     cluster_keywords,
     label_to_cluster_id,
 )
+from services.external.dataforseo import DataForSEOClient
 
 log = structlog.get_logger()
 
@@ -89,29 +90,49 @@ async def collect_for_material(
     if progress_cb:
         await progress_cb("fetching")
 
-    # 1) DataForSEO calls — sequential to respect Yandex rate limits at vendor.
-    # Parallel=2 should be safe but vendor sometimes flaps; sequential adds
-    # ~5-10 seconds total per material which is fine for an admin-triggered job.
-    dfs_client = DataForSEOYandexClient()
+    # 1) DataForSEO calls.
+    # IMPORTANT (4Y, 2026-04-27): DataForSEO Yandex `keywords_data/yandex/*`
+    # endpoints all return 40402 "Invalid Path" — Yandex keywords API is gone
+    # from DataForSEO. Switched to Google Ads suggestions via DataForSEOClient
+    # (services/external/dataforseo.py). location_code=2804 (Ukraine) because
+    # Russia (2643) is banned for Google Ads keyword_suggestions endpoint.
+    # Russian-language search trends overlap heavily between Yandex/Google.
+    if http_client is None:
+        # Fallback for callers that didn't pass an http client.
+        own_http = True
+        http_client = httpx.AsyncClient(timeout=60.0)
+    else:
+        own_http = False
+
+    settings = get_settings()
+    dfs_client = DataForSEOClient(
+        login=settings.dataforseo_login,
+        password=settings.dataforseo_password.get_secret_value(),
+        http_client=http_client,
+    )
     fetched: dict[str, tuple[int, float | None]] = {}
-    for seed in seeds:
-        try:
-            results = await dfs_client.keywords_for_seed(seed=seed, limit=_MAX_PER_SEED)
-        except Exception as exc:
-            log.warning(
-                "bbk_collect_seed_failed",
-                seed=seed,
-                material=material,
-                error=str(exc)[:200],
-            )
-            continue
-        for v in results:
-            phrase = (v.phrase or "").strip().lower()
-            if not phrase:
+    try:
+        for seed in seeds:
+            try:
+                results = await dfs_client.keyword_suggestions(seed=seed, limit=_MAX_PER_SEED)
+            except Exception as exc:
+                log.warning(
+                    "bbk_collect_seed_failed",
+                    seed=seed,
+                    material=material,
+                    error=str(exc)[:200],
+                )
                 continue
-            existing_vol = fetched.get(phrase, (0, None))[0]
-            if v.volume > existing_vol:
-                fetched[phrase] = (v.volume, v.competition)
+            for v in results:
+                phrase = (v.phrase or "").strip().lower()
+                if not phrase:
+                    continue
+                existing_vol = fetched.get(phrase, (0, None))[0]
+                if v.volume > existing_vol:
+                    fetched[phrase] = (v.volume, v.competition)
+    finally:
+        if own_http:
+            await http_client.aclose()
 
     # 2) Filter
     filtered = {
