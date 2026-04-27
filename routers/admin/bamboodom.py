@@ -2151,6 +2151,7 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
                 run_background_image_pipeline(
                     slug=resp.slug,
                     blocks=blocks or [],
+                    payload=payload,
                     http_client=http_client,
                     settings=_settings_imgs,
                     sandbox=True,

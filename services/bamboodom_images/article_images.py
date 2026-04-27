@@ -283,16 +283,26 @@ async def run_background_image_pipeline(
     *,
     slug: str,
     blocks: list[dict[str, Any]],
+    payload: dict[str, Any] | None = None,
     http_client: httpx.AsyncClient,
     settings: Any,
     sandbox: bool = True,
-    parallel: int = 3,
+    parallel: int = 1,
 ) -> None:
-    """Background task: generate images, upload, then update article.
+    """Background task: generate images, upload, then re-publish article.
 
-    Wraps generate_article_images + a follow-up blog_update_article call.
-    Safe to fire-and-forget via asyncio.create_task — exceptions are logged
-    but never re-raised.
+    Flow:
+    1. generate_article_images mutates blocks in-place — fills src for each
+       img-block that uploaded successfully.
+    2. Re-publish via blog_publish (it's upsert-by-slug, allowed for our
+       user-level X-Blog-Key). blog_update_article requires admin-only key
+       per Side B's BLOG_API_V14 (HTTP 403 'admin only' otherwise).
+
+    payload — оригинальный JSON, который мы отправляли в blog_publish при
+    первой публикации (с пустыми src в img-блоках). После генерации мы
+    заменяем blocks на обновлённые и шлём весь payload заново.
+
+    Safe to fire-and-forget — exceptions logged but never re-raised.
     """
     try:
         counter = await generate_article_images(
@@ -304,29 +314,36 @@ async def run_background_image_pipeline(
         )
         log.info("bg_img_pipeline_generated", slug=slug, results=counter)
 
-        # Если ни одной картинки не сгенерилось — нет смысла дёргать update.
+        # If nothing got generated, no point republishing.
         if not isinstance(counter, dict) or counter.get("ok", 0) == 0:
             log.info("bg_img_pipeline_no_update_needed", slug=slug)
             return
 
-        # Update article with new blocks (with real src filled in).
+        if not isinstance(payload, dict):
+            log.warning("bg_img_pipeline_no_payload_to_republish", slug=slug)
+            return
+
+        # Re-publish via blog_publish (upsert by slug). blocks were mutated
+        # in-place by generate_article_images, so payload["blocks"] now has
+        # real src values where uploads succeeded.
         bamboodom_client = BamboodomClient(http_client=http_client)
+        # Make sure payload's blocks reference the mutated list (it already
+        # does, because we passed the same list — just being explicit).
+        new_payload = dict(payload)
+        new_payload["blocks"] = blocks
         try:
-            resp = await bamboodom_client.update_article(
-                slug=slug,
-                fields={"blocks": blocks},
-                sandbox=sandbox,
-            )
+            resp = await bamboodom_client.publish(new_payload, sandbox=sandbox)
             log.info(
-                "bg_img_pipeline_updated",
+                "bg_img_pipeline_republished",
                 slug=slug,
-                ok=bool(resp.get("ok")) if isinstance(resp, dict) else False,
+                action_type=getattr(resp, "action_type", "?"),
+                blocks_parsed=getattr(resp, "blocks_parsed", -1),
             )
         except BamboodomAPIError as exc:
             log.warning(
-                "bg_img_pipeline_update_failed",
+                "bg_img_pipeline_republish_failed",
                 slug=slug,
-                error=str(exc)[:200],
+                error=str(exc)[:1500],
             )
     except Exception:
         log.warning("bg_img_pipeline_unexpected_failure", slug=slug, exc_info=True)
