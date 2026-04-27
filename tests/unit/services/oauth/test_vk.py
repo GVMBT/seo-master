@@ -622,8 +622,12 @@ class TestResolveGroup:
         assert name == "testgroup"
 
     async def test_resolves_numeric_id_via_scraping(self) -> None:
+        """Numeric IDs are scraped at vk.com/club{id} (bare numbers resolve to users)."""
+        scraped_urls: list[str] = []
+
         async def handler(request: httpx.Request) -> httpx.Response:
-            if "vk.com/999" in str(request.url):
+            scraped_urls.append(str(request.url))
+            if "vk.com/club999" in str(request.url):
                 return httpx.Response(200, text='{"loc":"?act=s&pid=999&subdir=myclub"}')
             return httpx.Response(404)
 
@@ -631,6 +635,32 @@ class TestResolveGroup:
         gid, name = await service.resolve_group("999")
         assert gid == 999
         assert name == "club999"
+        assert any("vk.com/club999" in u for u in scraped_urls)
+        assert not any(u.endswith("vk.com/999") for u in scraped_urls)
+
+    async def test_resolves_vk_com_clubN_input_regression(self) -> None:
+        """Regression: input ``vk.com/club53628858`` (numeric ID) must scrape
+        ``vk.com/club53628858``, not ``vk.com/53628858``.
+
+        Reproduces user report where a real group could not be connected
+        because the bare number was being passed to the scraper.
+        """
+        scraped_urls: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            scraped_urls.append(str(request.url))
+            if "vk.com/club53628858" in str(request.url):
+                return httpx.Response(
+                    200,
+                    text='{"loc":"?act=s&pid=53628858&subdir=club53628858"}',
+                )
+            return httpx.Response(404)
+
+        service, _ = _make_service(handler=handler)
+        gid, _name = await service.resolve_group("53628858")
+        assert gid == 53628858
+        assert any("vk.com/club53628858" in u for u in scraped_urls)
+        assert not any(u.rstrip("/").endswith("vk.com/53628858") for u in scraped_urls)
 
     async def test_scrape_fails_falls_back_to_api(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -674,7 +704,7 @@ class TestResolveGroup:
         async def handler(request: httpx.Request) -> httpx.Response:
             url = str(request.url)
             # Scrape returns pid=999 but user typed "123"
-            if "vk.com/123" in url:
+            if "vk.com/club123" in url:
                 return httpx.Response(200, text='{"loc":"?act=s&pid=999&subdir=club123"}')
             if "groups.getById" in url:
                 return httpx.Response(200, json={

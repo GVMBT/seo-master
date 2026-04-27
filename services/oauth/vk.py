@@ -202,7 +202,10 @@ class VKOAuthService:
 
         Returns numeric group_id or None if not found / not a group.
         """
-        url = f"https://vk.com/{screen_name}"
+        # Bare numeric IDs must be prefixed with "club" — vk.com/{number}
+        # resolves to a user (idN) or 404, never to a group page.
+        path = f"club{screen_name}" if screen_name.isdigit() else screen_name
+        url = f"https://vk.com/{path}"
         try:
             resp = await self._http.get(
                 url,
