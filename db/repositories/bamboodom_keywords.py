@@ -34,6 +34,35 @@ CRIMEA_CITIES = (
     "Саки", "Армянск", "Красноперекопск", "Старый Крым", "Белогорск", "Щёлкино",
 )
 
+# 5N (2026-04-28): commercial / long-tail markers. A 2-word generic phrase
+# like "бамбуковые панели" is NOT a good geo candidate — multiplying it by
+# 16 cities produces near-duplicate articles that Yandex penalises. Only
+# expand keywords that look long-tail or commercial.
+_GEO_COMMERCIAL_MARKERS = (
+    "купить", "цена", "цены", "стоимость", "стоит", "сколько",
+    "заказ", "заказать", "доставка", "недорого", "дешево", "акция",
+    "монтаж", "установк", "установить",
+    "выбор", "выбрать", "сравнение", "отзыв",
+)
+
+
+def is_geo_candidate(keyword: str) -> bool:
+    """A keyword is geo-eligible if it has >=3 words OR contains a
+    commercial/intent marker. Pure 2-word generic terms (e.g. "wpc панели",
+    "бамбуковые панели") are excluded — multiplying them by cities would
+    produce near-duplicate articles.
+    """
+    kw = (keyword or "").strip().lower()
+    if not kw:
+        return False
+    word_count = len([w for w in kw.split() if w.strip()])
+    if word_count >= 3:
+        return True
+    for m in _GEO_COMMERCIAL_MARKERS:
+        if m in kw:
+            return True
+    return False
+
 
 class BamboodomKeywordsRepository(BaseRepository):
     """CRUD for bamboodom_keywords (4Y)."""
@@ -194,6 +223,13 @@ class BamboodomKeywordsRepository(BaseRepository):
         if not base_rows:
             return {"new": 0, "skipped": 0, "total": 0}
 
+        # 5N: filter out generic 2-word phrases — they make near-duplicate
+        # articles when multiplied by cities.
+        skipped_too_generic = sum(1 for r in base_rows if not is_geo_candidate(r["keyword"]))
+        base_rows = [r for r in base_rows if is_geo_candidate(r["keyword"])]
+        if not base_rows:
+            return {"new": 0, "skipped": 0, "total": 0, "skipped_too_generic": skipped_too_generic}
+
         # 2) build candidate geo-rows.
         geo_rows: list[dict] = []
         for br in base_rows:
@@ -242,8 +278,14 @@ class BamboodomKeywordsRepository(BaseRepository):
             cities=len(cities),
             new=len(new_rows),
             skipped=skipped,
+            skipped_too_generic=skipped_too_generic,
         )
-        return {"new": len(new_rows), "skipped": skipped, "total": len(geo_rows)}
+        return {
+            "new": len(new_rows),
+            "skipped": skipped,
+            "total": len(geo_rows),
+            "skipped_too_generic": skipped_too_generic,
+        }
 
     async def pick_for_publishing(
         self,

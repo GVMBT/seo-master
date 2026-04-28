@@ -741,6 +741,11 @@ class BamboodomArticleService:
                 + codes_sample
             )
 
+        # 5N (2026-04-28): geo-focus block. If keyword mentions a city,
+        # inject explicit instructions to make the article LOCALLY DIFFERENT
+        # so 16 city-variants don't end up as near-duplicates.
+        geo_focus = self._build_geo_focus_block(keyword)
+
         def _fill(text: str) -> str:
             return (
                 text.replace("<<knowledge_base>>", kb_text)
@@ -750,9 +755,69 @@ class BamboodomArticleService:
                 .replace("<<current_date>>", current_date)
                 .replace("<<article_codes_sample>>", codes_sample)
                 .replace("<<articles_catalog>>", catalog_text)
+                .replace("<<geo_focus>>", geo_focus)
             )
 
         return _fill(template["system"]), _fill(template["user"])
+
+    # 5N (2026-04-28): per-city profiles for Crimean cities. Used to inject
+    # local context so geo-variants are substantively different.
+    _CITY_PROFILES = {
+        "Симферополь": "столица Крыма, континентальный климат, центр строительной торговли; основной канал - самовывоз и доставка по городу",
+        "Севастополь": "город федерального значения, побережье Чёрного моря, повышенная влажность и солевая нагрузка на фасады; крупный частный сектор",
+        "Ялта": "ЮБК, субтропический микроклимат, влажность и интенсивный УФ; курортная застройка, гостиницы и виллы",
+        "Феодосия": "восточное побережье, степной приморский климат, ветровая нагрузка; перепады влажности",
+        "Евпатория": "западное побережье, песчаные пляжи, ветры и солевая взвесь; курортный жилой фонд",
+        "Керчь": "восточная оконечность Крыма, Керченский пролив, ветры и резкие температурные перепады",
+        "Алушта": "ЮБК между Симферополем и Ялтой, защищённая бухта, мягкий климат; частные дома и пансионаты",
+        "Судак": "юго-восток ЮБК, степной приморский климат, виноградарский регион; гостевые дома и виллы",
+        "Бахчисарай": "предгорье, континентальный климат, исторический центр; реставрация и частное домостроение",
+        "Джанкой": "север Крыма, степная зона, континентальный климат с большой амплитудой температур",
+        "Саки": "западное побережье, лиманный климат, грязелечебный курорт; санаторный фонд",
+        "Армянск": "север Крыма у Перекопа, степь, ветры и низкая влажность; промышленная зона",
+        "Красноперекопск": "север Крыма, степь, повышенная солёность почв и воздуха",
+        "Старый Крым": "предгорье, мягкий микроклимат, исторический город",
+        "Белогорск": "центральный Крым, предгорье, континентальный климат",
+        "Щёлкино": "Керченский полуостров, побережье Азовского моря, ветры; курортный посёлок",
+    }
+
+    def _build_geo_focus_block(self, keyword: str) -> str:
+        """Detect a Crimean city in the keyword. If found, return a focused
+        instruction block requiring genuinely city-specific content. Empty
+        string when no city — generic article continues unchanged.
+        """
+        kw_lower = (keyword or "").lower()
+        matched_city = None
+        matched_profile = None
+        for city, profile in self._CITY_PROFILES.items():
+            # Match on stem to catch inflected forms (Симферополь, Симферополе…)
+            stem = city[:-2] if len(city) > 4 else city
+            if stem.lower() in kw_lower:
+                matched_city = city
+                matched_profile = profile
+                break
+        if not matched_city:
+            return ""
+
+        return (
+            f"=== GEO-FOCUS: статья под город {matched_city} ===\n"
+            f"Эта статья - один из 16 гео-вариантов под разные города Крыма. "
+            f"Её задача - НЕ повторять текст других вариантов. ОБЯЗАТЕЛЬНО:\n"
+            f"  1. Title и H1 содержат '{matched_city}' (например: '...в {matched_city}').\n"
+            f"  2. Slug содержит название города в конце (через дефис).\n"
+            f"  3. В первом lead-абзаце упомяни {matched_city} явно. Контекст: "
+            f"{matched_profile}.\n"
+            f"  4. Отдельный H2-раздел 'Особенности применения в {matched_city}' "
+            f"(минимум 2-3 абзаца): местный климат, влажность, требования к материалу "
+            f"под локальные условия. БЕЗ этого раздела статья - дубликат.\n"
+            f"  5. Короткий раздел про доставку и работу в {matched_city} "
+            f"(1-2 абзаца): откуда везут, сроки.\n"
+            f"  6. НЕ ПИШИ общие фразы 'у нас в России', 'по всей стране' - "
+            f"фокус только на {matched_city} и Крыму.\n"
+            f"  7. ОСТАЛЬНОЙ контент (что такое материал, общие преимущества) - "
+            f"короче обычного. Основной упор на гео-специфику.\n"
+            f"=========================================="
+        )
 
     @staticmethod
     def _augment_messages_after_validation(
