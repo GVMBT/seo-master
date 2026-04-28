@@ -56,12 +56,63 @@ _SLOT_ASPECTS: dict[str, tuple[int, int]] = {
     "portrait-2": (2, 3),
 }
 
-# Базовый стилевой промпт для Gemini — добавляется к alt-тексту от модели.
-_STYLE_SUFFIX = (
-    " Photorealistic editorial interior photography, neutral palette with "
-    "warm wood and stone accents, soft natural daylight. No people, no text, "
-    "no watermarks. Sharp focus, high detail."
+# 5T (2026-04-28): material-aware Gemini style suffix.
+# Раньше был один общий _STYLE_SUFFIX про "interior + neutral palette" —
+# из-за этого WPC рисовался как реечные планки или мраморные блоки. Теперь
+# каждому материалу дан жёсткий гайдрейл по геометрии и текстуре.
+
+_STYLE_BY_MATERIAL: dict[str, str] = {
+    "wpc": (
+        " CRITICAL GEOMETRY (do not deviate): WPC panels are LARGE FLAT WALL "
+        "SHEETS, exactly 1220 mm WIDE and 2440-3000 mm TALL. Always shown as "
+        "continuous flat wide vertical or horizontal SHEETS covering the "
+        "wall edge-to-edge. ABSOLUTELY NOT narrow slats, NOT vertical "
+        "battens, NOT wood planks, NOT rakes, NOT 30-50mm wide stripes — "
+        "those are a different product (рейки). NO 3D ribs, NO grooves, NO "
+        "vertical lines between sheets — surface is smooth and flat. "
+        "Wood-print or stone-print decorative laminate on a single flat "
+        "plane. Joint between two sheets (when visible) is a thin 1-2mm "
+        "vertical seam, never a wide groove. "
+        "Photorealistic editorial interior photography, soft natural "
+        "daylight, no people, no text, no watermarks, sharp focus, high detail."
+    ),
+    "flex": (
+        " CRITICAL: flexible ceramic facade tile (гибкая керамика) — thin "
+        "flexible composite sheet (2-17mm) with stone/brick/travertine print, "
+        "applied directly on flat or CURVED surfaces (column, archway, "
+        "rounded façade corner) with subtle joint lines. NOT solid stone, "
+        "NOT 3D brick, NOT raised pattern. Photorealistic editorial "
+        "architectural photography, natural daylight, no people, no text, "
+        "no watermarks, sharp focus, high detail."
+    ),
+    "reiki": (
+        " CRITICAL: vertical wooden slat wall panels (реечные панели) — "
+        "30-50 mm wide vertical wooden battens with NARROW 5-10mm SHADOW "
+        "GAPS between them. Acoustic wall feature. NOT a flat panel, NOT "
+        "a wide sheet — clearly separate vertical strips. Photorealistic "
+        "editorial interior photography, soft warm daylight, no people, "
+        "no text, no watermarks, sharp focus, high detail."
+    ),
+    "profiles": (
+        " CRITICAL: aluminum decorative finishing profile — narrow elongated "
+        "metal trim, sharp clean edges, brushed or polished metallic finish. "
+        "Used at joints between wall panels, corner trims, edge caps. "
+        "Macro/detail composition. Photorealistic, sharp focus, high detail, "
+        "no people, no text."
+    ),
+}
+
+_STYLE_SUFFIX_DEFAULT = (
+    " Photorealistic editorial interior photography, neutral palette, "
+    "soft natural daylight, no people, no text, no watermarks, sharp focus."
 )
+
+
+def _style_suffix_for(material: str | None) -> str:
+    """Pick material-specific Gemini suffix; fall back to neutral default."""
+    if not material:
+        return _STYLE_SUFFIX_DEFAULT
+    return _STYLE_BY_MATERIAL.get(material.strip().lower(), _STYLE_SUFFIX_DEFAULT)
 
 
 def _crop_and_webp(raw_bytes: bytes, slot: str, target_width: int = _WEBP_TARGET_WIDTH) -> bytes:
@@ -108,6 +159,7 @@ async def _generate_one(
     bamboodom_client: BamboodomClient,
     image_client: OpenRouterImageClient,
     semaphore: asyncio.Semaphore,
+    material: str | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Генерирует одну картинку для блока. Возвращает (block_ref, status).
 
@@ -121,7 +173,7 @@ async def _generate_one(
     if not alt:
         return block, "skip:no_alt"
 
-    prompt = alt + _STYLE_SUFFIX
+    prompt = alt + _style_suffix_for(material)
 
     async with semaphore:
         # 1. Gemini generation
@@ -230,6 +282,7 @@ async def generate_article_images(
     settings: Any,
     parallel: int = 1,
     inter_request_delay: float = 1.2,
+    material: str | None = None,
 ) -> dict[str, int]:
     """Полный pipeline: для каждого img-блока в blocks → генерим и заливаем.
 
@@ -255,6 +308,7 @@ async def generate_article_images(
             bamboodom_client=bamboodom_client,
             image_client=image_client,
             semaphore=semaphore,
+            material=material,
         )
         for b in img_blocks
     ]
@@ -320,12 +374,20 @@ async def run_background_image_pipeline(
     Safe to fire-and-forget — exceptions logged but never re-raised.
     """
     try:
+        # Extract material from payload.category for material-aware
+        # Gemini prompts (5T). Falls back to None → default suffix.
+        material_from_payload = None
+        if isinstance(payload, dict):
+            cat = payload.get("category")
+            if isinstance(cat, str) and cat.strip():
+                material_from_payload = cat.strip().lower()
         counter = await generate_article_images(
             slug=slug,
             blocks=blocks,
             http_client=http_client,
             settings=settings,
             parallel=parallel,
+            material=material_from_payload,
         )
         log.info("bg_img_pipeline_generated", slug=slug, results=counter)
 
