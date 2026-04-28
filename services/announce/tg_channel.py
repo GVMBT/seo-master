@@ -173,33 +173,61 @@ async def announce_article(
 
     if cover_clean:
         caption = _build_caption(title, url, excerpt, extra_text=extra_text)
-        try:
-            await bot.send_photo(
-                channel,
-                photo=cover_clean,
-                caption=caption,
-                parse_mode="HTML",
-            )
-            log.info(
-                "tg_announce_sent",
-                channel=channel,
-                title=title[:80],
-                with_cover=True,
-            )
+        # 5L (2026-04-28): retry send_photo on race conditions where Telegram
+        # tries to fetch the cover URL before beget/CDN has finished serving
+        # it. We saw "failed to get HTTP URL content" right after upload —
+        # the URL works seconds later. Retry 3 times with backoff 4/8/12s.
+        import asyncio as _aio
+        last_exc: Exception | None = None
+        sent_ok = False
+        for attempt in range(1, 4):
+            try:
+                await bot.send_photo(
+                    channel,
+                    photo=cover_clean,
+                    caption=caption,
+                    parse_mode="HTML",
+                )
+                log.info(
+                    "tg_announce_sent",
+                    channel=channel,
+                    title=title[:80],
+                    with_cover=True,
+                    attempt=attempt,
+                )
+                sent_ok = True
+                break
+            except Exception as exc:
+                last_exc = exc
+                err = str(exc)
+                # Only retry on transient URL-fetch errors. Do not retry on
+                # auth/rate-limit issues — those won't be fixed by waiting.
+                transient = "failed to get HTTP URL content" in err or "WEBPAGE_CURL_FAILED" in err
+                log.warning(
+                    "tg_announce_photo_attempt_failed",
+                    channel=channel,
+                    cover=cover_clean[:120],
+                    attempt=attempt,
+                    transient=transient,
+                    error=err[:200],
+                )
+                if not transient or attempt == 3:
+                    break
+                await _aio.sleep(4 * attempt)
+        if sent_ok:
             if own_bot is not None:
                 try:
                     await own_bot.session.close()
                 except Exception:
                     pass
             return True
-        except Exception as exc:
-            log.warning(
-                "tg_announce_photo_failed_fallback_to_text",
-                channel=channel,
-                cover=cover_clean[:120],
-                error=str(exc)[:200],
-            )
-            # fall through to send_message fallback below
+        # All retries failed — fall through to text-only fallback.
+        log.warning(
+            "tg_announce_photo_failed_fallback_to_text",
+            channel=channel,
+            cover=cover_clean[:120],
+            error=str(last_exc)[:200] if last_exc else "unknown",
+        )
 
     text = _build_post_text(title, url, excerpt, extra_text=extra_text)
     try:

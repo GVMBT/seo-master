@@ -439,6 +439,12 @@ async def run_background_image_pipeline(
                 log.info("bg_img_pipeline_announce_url_canonicalised", slug=slug, url=announce_url)
 
         if announce_bot is not None and announce_title:
+            # 5L (2026-04-28): give beget/CDN a few seconds to actually serve
+            # the freshly uploaded webp files before Telegram tries to fetch
+            # them. Without this we saw "failed to get HTTP URL content" on
+            # cover URL even though the file was on disk a second earlier.
+            import asyncio as _aio
+            await _aio.sleep(5)
             try:
                 from services.announce import announce_article, announce_to_social
 
