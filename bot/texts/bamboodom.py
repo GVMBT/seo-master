@@ -82,14 +82,14 @@ BAMBOODOM_SMOKE_ENDPOINTS_MORE = "…+{count} ещё"
 # Publish (Session 3A) — manual sandbox publishing via FSM
 # ---------------------------------------------------------------------------
 
-BAMBOODOM_PUBLISH_BUTTON = "Публикация в sandbox"
+BAMBOODOM_PUBLISH_BUTTON = "Публикация (JSON)"
 
 # Entry screen (first FSM state)
 BAMBOODOM_PUBLISH_ENTRY_TITLE = "ПУБЛИКАЦИЯ В SANDBOX"
 BAMBOODOM_PUBLISH_ENTRY_HINT = (
     "Отправьте JSON статьи одним сообщением, либо прикрепите как .json файл (если превышает 4096 символов)."
 )
-BAMBOODOM_PUBLISH_SANDBOX_NOTE = "Режим: sandbox. После image-pipeline статья auto-promote-ится в production."
+BAMBOODOM_PUBLISH_SANDBOX_NOTE = "Режим: production. Статья сразу публикуется на /blog/<slug>."
 
 # Example JSON: uses TK001A (stable WPC article) + draft:false (instant preview in sandbox).
 BAMBOODOM_PUBLISH_EXAMPLE_JSON = """{
@@ -119,7 +119,7 @@ BAMBOODOM_PUBLISH_CONFIRM_TITLE = "ПРЕДПРОСМОТР"
 BAMBOODOM_PUBLISH_CONFIRM_TEXT = (
     "Перед отправкой проверьте:\n— Заголовок: {title}\n— Excerpt: {excerpt}\n— Блоков: {blocks_count}\n— Режим: {mode}"
 )
-BAMBOODOM_PUBLISH_MODE_SANDBOX = "sandbox → auto-promote"
+BAMBOODOM_PUBLISH_MODE_SANDBOX = "production"
 
 # Rate limit / lock
 BAMBOODOM_PUBLISH_LOCKED = "Подождите 3 секунды между публикациями."
@@ -127,7 +127,7 @@ BAMBOODOM_PUBLISH_PROGRESS = "Отправляю статью…"
 
 # Result screen
 BAMBOODOM_PUBLISH_RESULT_TITLE = "РЕЗУЛЬТАТ ПУБЛИКАЦИИ"
-BAMBOODOM_PUBLISH_SUCCESS = "Статья отправлена. После загрузки фото — auto-promote в production."
+BAMBOODOM_PUBLISH_SUCCESS = "Статья опубликована на /blog/<slug>."
 BAMBOODOM_PUBLISH_BADGE_SANDBOX = "SANDBOX · автоудаление через 7 дней"
 BAMBOODOM_PUBLISH_ACTION_CREATED = "создана"
 BAMBOODOM_PUBLISH_ACTION_UPDATED = "обновлена"
@@ -185,14 +185,14 @@ BAMBOODOM_AI_PREVIEW_FIRST_PARAGRAPHS = "\n\n<b>Первые абзацы:</b>\n
 BAMBOODOM_AI_PREVIEW_VALIDATION_WARN = "\n\n⚠ Валидатор нашёл {count} замечаний (auto-retry не помог):"
 
 # Submit / publish
-BAMBOODOM_AI_PUBLISHING_PROGRESS = "Публикую в sandbox…"
+BAMBOODOM_AI_PUBLISHING_PROGRESS = "Публикую…"
 BAMBOODOM_AI_SANDBOX_NOTE = (
     "Первые 5-10 AI-статей идут в sandbox — сторона B проверяет их у себя, после апрува перейдём на production."
 )
 
 # Result
 BAMBOODOM_AI_RESULT_TITLE = "AI-СТАТЬЯ ОПУБЛИКОВАНА"
-BAMBOODOM_AI_RESULT_SUCCESS = "Статья сгенерирована AI. После загрузки фото — auto-promote в production."
+BAMBOODOM_AI_RESULT_SUCCESS = "Статья сгенерирована AI и опубликована на /blog."
 
 # Cancel
 BAMBOODOM_AI_CANCELLED = "Публикация отменена."

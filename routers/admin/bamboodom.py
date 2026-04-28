@@ -1221,7 +1221,7 @@ async def bamboodom_publish_submit(
     http_client: httpx.AsyncClient,
     state: FSMContext,
 ) -> None:
-    """Send the pre-approved payload to blog_publish?sandbox=1."""
+    """Send the pre-approved payload to blog_publish (production, trusted bot)."""
     if not _is_admin(user):
         await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
         return
@@ -1256,7 +1256,7 @@ async def bamboodom_publish_submit(
     client = BamboodomClient(http_client=http_client, redis=redis)
 
     try:
-        resp = await client.publish(payload, sandbox=True)
+        resp = await client.publish(payload, sandbox=False)
     except BamboodomAuthError:
         log.info("bamboodom_publish_failed", reason="auth")
         await state.clear()
@@ -2023,7 +2023,7 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
 
     client = BamboodomClient(http_client=http_client, redis=redis)
     try:
-        resp = await client.publish(payload, sandbox=True)
+        resp = await client.publish(payload, sandbox=False)
     except BamboodomAuthError:
         await safe_edit_text(
             msg,
@@ -2192,7 +2192,7 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
                     payload=payload,
                     http_client=http_client,
                     settings=_settings_imgs,
-                    sandbox=True,
+                    sandbox=False,
                     announce_bot=callback.bot,
                     announce_db=db,
                     announce_title=title,
