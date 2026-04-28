@@ -117,6 +117,7 @@ def bamboodom_articles_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="AI-публикация", callback_data="bamboodom:ai:start")],
         [InlineKeyboardButton(text="Публикация (JSON)", callback_data="bamboodom:publish")],
         [InlineKeyboardButton(text="История публикаций", callback_data="bamboodom:history")],
+        [InlineKeyboardButton(text="🔁 Перегенерить фото для slug", callback_data="bamboodom:regen_photos")],
         [InlineKeyboardButton(text="Настройки", callback_data="bamboodom:settings")],
         [InlineKeyboardButton(text="Назад", callback_data="bamboodom:entry")],
     ]

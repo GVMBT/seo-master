@@ -2335,3 +2335,192 @@ async def bamboodom_promote_submit(
             reply_markup=bamboodom_articles_kb(),
         )
     await state.clear()
+
+
+# ---------------------------------------------------------------------------
+# 5S (2026-04-28): Перегенерация фото для уже опубликованной статьи.
+# Используется когда image-pipeline сломан на стороне B (как было 28.04
+# из-за rate-limit) и часть фото потерялась. Читает существующие blocks
+# через blog_get, очищает src в img-блоках, прогоняет через image-pipeline,
+# делает republish-by-slug.
+# ---------------------------------------------------------------------------
+
+
+class RegenPhotosFSM(StatesGroup):
+    waiting_slug = State()
+
+
+@router.callback_query(F.data == "bamboodom:regen_photos")
+async def bamboodom_regen_photos_start(
+    callback: CallbackQuery,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """Запрашивает slug статьи для перегенерации фото."""
+    if not _is_admin(user):
+        await callback.answer(S.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    msg = safe_message(callback)
+    if not msg:
+        await callback.answer()
+        return
+    await ensure_no_active_fsm(state)
+    await state.set_state(RegenPhotosFSM.waiting_slug)
+
+    text = (
+        Screen(E.SYNC, "ПЕРЕГЕНЕРИРОВАТЬ ФОТО")
+        .blank()
+        .line(
+            "Введите slug статьи, у которой нужно перезалить фото.\n"
+            "Бот:\n"
+            "  1. Прочитает блоки статьи через blog_get.\n"
+            "  2. Очистит src во всех img-блоках.\n"
+            "  3. Запустит image-pipeline (Gemini + upload на beget).\n"
+            "  4. Republish (upsert-by-slug) — статья обновится с новыми фото.\n\n"
+            "Slug — последняя часть URL после ?slug= или /blog/, например:\n"
+            "<code>bambukovye-paneli-na-stenu-kak-vybrat-wpc-dlya-interera</code>"
+        )
+        .build()
+    )
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Отмена", callback_data="bamboodom:articles")]]
+    )
+    await safe_edit_text(msg, text, reply_markup=cancel_kb)
+    await callback.answer()
+
+
+@router.message(RegenPhotosFSM.waiting_slug)
+async def bamboodom_regen_photos_submit(
+    message: Message,
+    user: User,
+    state: FSMContext,
+    redis: RedisClient,
+    http_client: httpx.AsyncClient,
+) -> None:
+    if not _is_admin(user):
+        return
+    slug_raw = (message.text or "").strip()
+    if "slug=" in slug_raw:
+        slug_raw = slug_raw.split("slug=", 1)[1]
+    if "&" in slug_raw:
+        slug_raw = slug_raw.split("&", 1)[0]
+    if "/blog/" in slug_raw:
+        slug_raw = slug_raw.split("/blog/", 1)[1]
+    slug_raw = slug_raw.strip().strip("/")
+
+    if not _SLUG_RE_PROMOTE.match(slug_raw):
+        await message.answer(
+            "Slug должен быть только из букв, цифр и дефисов — попробуйте ещё раз."
+        )
+        return
+
+    progress_msg = await message.answer(
+        Screen(E.SYNC, "ПЕРЕГЕНЕРИРОВАТЬ ФОТО")
+        .blank()
+        .line(f"Читаю статью {slug_raw} через blog_get…")
+        .build()
+    )
+
+    settings = get_settings()
+    client = BamboodomClient(http_client=http_client, redis=redis)
+
+    # 1) blog_get
+    try:
+        article_resp = await client.get_article(slug_raw)
+    except BamboodomAPIError as exc:
+        await progress_msg.edit_text(
+            Screen(E.WARNING, "ПЕРЕГЕНЕРИРОВАТЬ ФОТО")
+            .blank()
+            .line(f"Не удалось прочитать статью: {str(exc)[:300]}")
+            .build(),
+            reply_markup=bamboodom_articles_kb(),
+        )
+        await state.clear()
+        return
+    except Exception as exc:
+        await progress_msg.edit_text(
+            Screen(E.WARNING, "ПЕРЕГЕНЕРИРОВАТЬ ФОТО")
+            .blank()
+            .line(f"Неожиданная ошибка: {repr(exc)[:300]}")
+            .build(),
+            reply_markup=bamboodom_articles_kb(),
+        )
+        await state.clear()
+        return
+
+    article = article_resp.get("article") if isinstance(article_resp, dict) else None
+    if not isinstance(article, dict):
+        await progress_msg.edit_text(
+            Screen(E.WARNING, "ПЕРЕГЕНЕРИРОВАТЬ ФОТО")
+            .blank()
+            .line("Сервер не вернул article в blog_get.")
+            .build(),
+            reply_markup=bamboodom_articles_kb(),
+        )
+        await state.clear()
+        return
+
+    blocks = list(article.get("blocks") or [])
+    img_count = sum(1 for b in blocks if isinstance(b, dict) and b.get("type") == "img")
+    if not img_count:
+        await progress_msg.edit_text(
+            Screen(E.WARNING, "ПЕРЕГЕНЕРИРОВАТЬ ФОТО")
+            .blank()
+            .line("В статье нет img-блоков. Перегенерировать нечего.")
+            .build(),
+            reply_markup=bamboodom_articles_kb(),
+        )
+        await state.clear()
+        return
+
+    # 2) Clear src on all img blocks
+    cleared = 0
+    for b in blocks:
+        if isinstance(b, dict) and b.get("type") == "img":
+            b["src"] = ""
+            cleared += 1
+
+    payload = {
+        "title": article.get("title", ""),
+        "excerpt": article.get("excerpt", ""),
+        "slug": slug_raw,
+        "tags": article.get("tags") or [],
+        "category": article.get("category") or "wpc",
+        "template_id": article.get("template_id"),
+        "template_name": article.get("template_name"),
+        "blocks": blocks,
+        "draft": False,
+    }
+
+    await progress_msg.edit_text(
+        Screen(E.SYNC, "ПЕРЕГЕНЕРИРОВАТЬ ФОТО")
+        .blank()
+        .line(
+            f"Найдено {img_count} img-блоков, очищены src.\n"
+            "Запускаю image-pipeline (Gemini → beget → republish).\n"
+            "Это займёт 1-2 минуты."
+        )
+        .build(),
+        reply_markup=bamboodom_articles_kb(),
+    )
+
+    # 3) run image-pipeline (async, don't block FSM)
+    from services.bamboodom_images.article_images import run_background_image_pipeline
+    asyncio.create_task(
+        run_background_image_pipeline(
+            slug=slug_raw,
+            blocks=blocks,
+            payload=payload,
+            http_client=http_client,
+            settings=settings,
+            sandbox=False,
+            announce_bot=None,  # no announce on photo regeneration
+            announce_db=None,
+            announce_title="",
+            announce_url=None,
+        ),
+        name=f"img_regen_{slug_raw}",
+    )
+    await state.clear()
+

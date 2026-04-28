@@ -172,6 +172,18 @@ class BamboodomClient:
         data = await self._request("GET", "blog_key_test", timeout=_DEFAULT_TIMEOUT)
         return KeyTestResponse.model_validate(data)
 
+    async def get_article(self, slug: str) -> dict:
+        """GET blog_get — read existing article by slug.
+
+        Public endpoint per LETTER_TO_SIDE_A_5L. Returns:
+            {"ok": true, "article": {"slug": "...", "title": "...",
+                                     "blocks": [...], ...}}
+        """
+        data = await self._request(
+            "GET", "blog_get", params={"slug": slug}, timeout=_DEFAULT_TIMEOUT
+        )
+        return data
+
     async def get_context(
         self,
         *,
