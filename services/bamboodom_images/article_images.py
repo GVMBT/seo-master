@@ -73,6 +73,12 @@ _STYLE_BY_MATERIAL: dict[str, str] = {
         "Wood-print or stone-print decorative laminate on a single flat "
         "plane. Joint between two sheets (when visible) is a thin 1-2mm "
         "vertical seam, never a wide groove. "
+        "If the scene shows INSTALLATION (glue being applied): glue is "
+        "applied as DOTS or BEADS from a CARTRIDGE GUN onto the BACK of the "
+        "panel (small round dollops in a regular pattern). DO NOT show a "
+        "notched trowel spreading glue across the panel surface — that is a "
+        "tile/ceramic technique and is wrong for WPC. DO NOT show glue "
+        "spread as a continuous layer with a roller or flat trowel. "
         "Photorealistic editorial interior photography, soft natural "
         "daylight, no people, no text, no watermarks, sharp focus, high detail."
     ),
