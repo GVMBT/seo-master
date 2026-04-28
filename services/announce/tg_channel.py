@@ -173,47 +173,103 @@ async def announce_article(
 
     if cover_clean:
         caption = _build_caption(title, url, excerpt, extra_text=extra_text)
-        # 5L (2026-04-28): retry send_photo on race conditions where Telegram
-        # tries to fetch the cover URL before beget/CDN has finished serving
-        # it. We saw "failed to get HTTP URL content" right after upload —
-        # the URL works seconds later. Retry 3 times with backoff 4/8/12s.
+        # 5Q (2026-04-28): Telegram refuses to serve webp via URL fetch
+        # ("Bad Request: wrong type of the web page content"). Even though
+        # bamboodom serves webp with proper Content-Type. Workaround:
+        # fetch the file ourselves, convert to JPEG via Pillow, send as
+        # multipart with BufferedInputFile.
         import asyncio as _aio
         last_exc: Exception | None = None
         sent_ok = False
-        for attempt in range(1, 4):
-            try:
-                await bot.send_photo(
-                    channel,
-                    photo=cover_clean,
-                    caption=caption,
-                    parse_mode="HTML",
-                )
-                log.info(
-                    "tg_announce_sent",
-                    channel=channel,
-                    title=title[:80],
-                    with_cover=True,
-                    attempt=attempt,
-                )
-                sent_ok = True
-                break
-            except Exception as exc:
-                last_exc = exc
-                err = str(exc)
-                # Only retry on transient URL-fetch errors. Do not retry on
-                # auth/rate-limit issues — those won't be fixed by waiting.
-                transient = "failed to get HTTP URL content" in err or "WEBPAGE_CURL_FAILED" in err
-                log.warning(
-                    "tg_announce_photo_attempt_failed",
-                    channel=channel,
-                    cover=cover_clean[:120],
-                    attempt=attempt,
-                    transient=transient,
-                    error=err[:200],
-                )
-                if not transient or attempt == 3:
+        photo_bytes: bytes | None = None
+        photo_filename = "cover.jpg"
+
+        # Try to download + convert once, then retry only the send.
+        try:
+            import httpx as _httpx
+            from PIL import Image as _PilImage  # type: ignore[import-not-found]
+            from io import BytesIO as _BytesIO
+
+            async with _httpx.AsyncClient(timeout=20.0) as _hc:
+                for fetch_attempt in range(1, 4):
+                    try:
+                        r = await _hc.get(cover_clean)
+                        if r.status_code == 200 and r.content:
+                            raw = r.content
+                            try:
+                                img = _PilImage.open(_BytesIO(raw)).convert("RGB")
+                                buf = _BytesIO()
+                                img.save(buf, format="JPEG", quality=88, optimize=True)
+                                photo_bytes = buf.getvalue()
+                                log.info(
+                                    "tg_announce_cover_converted",
+                                    src_size=len(raw),
+                                    jpeg_size=len(photo_bytes),
+                                    fetch_attempt=fetch_attempt,
+                                )
+                                break
+                            except Exception as conv_exc:
+                                log.warning(
+                                    "tg_announce_cover_convert_failed",
+                                    error=str(conv_exc)[:200],
+                                )
+                                break
+                        log.warning(
+                            "tg_announce_cover_fetch_status",
+                            status=r.status_code,
+                            fetch_attempt=fetch_attempt,
+                        )
+                    except Exception as fexc:
+                        log.warning(
+                            "tg_announce_cover_fetch_failed",
+                            error=str(fexc)[:200],
+                            fetch_attempt=fetch_attempt,
+                        )
+                    if fetch_attempt < 3:
+                        await _aio.sleep(3 * fetch_attempt)
+        except Exception as outer:
+            log.warning("tg_announce_cover_pipeline_failed", error=str(outer)[:200])
+
+        if photo_bytes is None:
+            # Could not fetch/convert — fall through to text-only
+            log.warning(
+                "tg_announce_photo_failed_fallback_to_text",
+                channel=channel,
+                cover=cover_clean[:120],
+                error="cover_bytes_unavailable",
+            )
+        else:
+            from aiogram.types import BufferedInputFile as _BufferedInputFile
+            for attempt in range(1, 4):
+                try:
+                    await bot.send_photo(
+                        channel,
+                        photo=_BufferedInputFile(photo_bytes, filename=photo_filename),
+                        caption=caption,
+                        parse_mode="HTML",
+                    )
+                    log.info(
+                        "tg_announce_sent",
+                        channel=channel,
+                        title=title[:80],
+                        with_cover=True,
+                        attempt=attempt,
+                    )
+                    sent_ok = True
                     break
-                await _aio.sleep(4 * attempt)
+                except Exception as exc:
+                    last_exc = exc
+                    err = str(exc)
+                    log.warning(
+                        "tg_announce_photo_attempt_failed",
+                        channel=channel,
+                        cover=cover_clean[:120],
+                        attempt=attempt,
+                        error=err[:200],
+                    )
+                    if attempt == 3:
+                        break
+                    await _aio.sleep(3 * attempt)
         if sent_ok:
             if own_bot is not None:
                 try:
