@@ -330,7 +330,10 @@ async def keywords_list_show(callback: CallbackQuery, user: User, db: SupabaseCl
     for it in items:
         flag = {"new": "🆕", "used": "✅", "failed": "❌", "queued": "⏳", "skipped": "⏭"}.get(it.status, "•")
         cluster = it.cluster_label or "—"
-        screen = screen.line(f"{flag} <code>{it.keyword}</code> ({cluster}) — {it.search_volume}")
+        # 5N: show city when set so geo-variants don't look like duplicates
+        # of the same base keyword.
+        city_part = f" · 🏙 {it.city}" if it.city else ""
+        screen = screen.line(f"{flag} <code>{it.keyword}</code>{city_part} ({cluster}) — {it.search_volume}")
 
     await safe_edit_text(msg, screen.build(), reply_markup=bamboodom_keywords_kb(await repo.stats_summary()))
     await callback.answer()
