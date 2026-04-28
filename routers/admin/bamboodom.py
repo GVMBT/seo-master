@@ -2185,21 +2185,41 @@ async def ai_publish_submit(  # noqa: C901 — strict end-to-end FSM handler
                 run_background_image_pipeline,
             )
 
+            # 5W (2026-04-28): fire-and-forget background task must use its
+            # own httpx.AsyncClient — the request-scoped http_client closes
+            # when the parent callback handler returns, while this task can
+            # run for several minutes (Gemini × 5 + multipart uploads +
+            # republish + announces).
+            async def _run_pipeline_with_own_client(
+                _slug=resp.slug,
+                _blocks=blocks or [],
+                _payload=payload,
+                _settings=_settings_imgs,
+                _bot=callback.bot,
+                _db=db,
+                _title=title,
+                _url=article_url,
+                _excerpt=excerpt,
+                _extra=extra_text,
+            ) -> None:
+                async with httpx.AsyncClient(timeout=120.0) as own_client:
+                    await run_background_image_pipeline(
+                        slug=_slug,
+                        blocks=_blocks,
+                        payload=_payload,
+                        http_client=own_client,
+                        settings=_settings,
+                        sandbox=False,
+                        announce_bot=_bot,
+                        announce_db=_db,
+                        announce_title=_title,
+                        announce_url=_url,
+                        announce_excerpt=_excerpt,
+                        announce_extra_text=_extra,
+                    )
+
             _img_task = asyncio.create_task(
-                run_background_image_pipeline(
-                    slug=resp.slug,
-                    blocks=blocks or [],
-                    payload=payload,
-                    http_client=http_client,
-                    settings=_settings_imgs,
-                    sandbox=False,
-                    announce_bot=callback.bot,
-                    announce_db=db,
-                    announce_title=title,
-                    announce_url=article_url,
-                    announce_excerpt=excerpt,
-                    announce_extra_text=extra_text,
-                ),
+                _run_pipeline_with_own_client(),
                 name=f"img_pipeline_{resp.slug}",
             )
             del _img_task
@@ -2507,20 +2527,29 @@ async def bamboodom_regen_photos_submit(
 
     # 3) run image-pipeline (async, don't block FSM)
     from services.bamboodom_images.article_images import run_background_image_pipeline
-    asyncio.create_task(
-        run_background_image_pipeline(
-            slug=slug_raw,
-            blocks=blocks,
-            payload=payload,
-            http_client=http_client,
-            settings=settings,
-            sandbox=False,
-            announce_bot=None,  # no announce on photo regeneration
-            announce_db=None,
-            announce_title="",
-            announce_url=None,
-        ),
-        name=f"img_regen_{slug_raw}",
-    )
+
+    # 5W (2026-04-28): own httpx.AsyncClient — request-scoped one closes
+    # when handler returns, but this task takes 1-2 min.
+    async def _regen_with_own_client(
+        _slug=slug_raw,
+        _blocks=blocks,
+        _payload=payload,
+        _settings=settings,
+    ) -> None:
+        async with httpx.AsyncClient(timeout=120.0) as own_client:
+            await run_background_image_pipeline(
+                slug=_slug,
+                blocks=_blocks,
+                payload=_payload,
+                http_client=own_client,
+                settings=_settings,
+                sandbox=False,
+                announce_bot=None,
+                announce_db=None,
+                announce_title="",
+                announce_url=None,
+            )
+
+    asyncio.create_task(_regen_with_own_client(), name=f"img_regen_{slug_raw}")
     await state.clear()
 

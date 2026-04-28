@@ -464,26 +464,34 @@ async def keywords_publish_run(
         pass
 
     async def _run_and_track() -> None:
-        try:
-            await _run_ai_generation(
-                bot_msg=progress_msg,
-                state=state,
-                user_id=user.id,
-                material=kw.material,
-                keyword=keyword_for_ai,
-                redis=redis,
-                http_client=http_client,
-            )
-            # Successful generation lands the article in preview state.
-            # The actual publish happens via "Опубликовать" button in the AI
-            # publish flow. Status will move to 'used' there. For now mark as
-            # used optimistically so it doesn't get re-picked.
-            data = await state.get_data()
-            slug_hint = data.get("ai_published_slug") or data.get("preview_slug")
-            await repo.mark_status(kw.id, "used", published_slug=slug_hint)
-        except Exception as exc:
-            log.warning("bbk_publish_failed", kw_id=kw.id, error=str(exc)[:200])
-            await repo.mark_status(kw.id, "failed")
+        # 5W (2026-04-28): create a STANDALONE httpx.AsyncClient inside the
+        # detached task. The http_client from aiogram DI is request-scoped
+        # and closes as soon as the parent callback handler returns —
+        # while this task can run for 5-10 minutes (AI generation + retry +
+        # image-pipeline). Reusing the closed parent client crashes the
+        # retry attempt with "Cannot send a request, as the client has been
+        # closed." (we hit this once validator forced an AI retry).
+        async with httpx.AsyncClient(timeout=120.0) as own_client:
+            try:
+                await _run_ai_generation(
+                    bot_msg=progress_msg,
+                    state=state,
+                    user_id=user.id,
+                    material=kw.material,
+                    keyword=keyword_for_ai,
+                    redis=redis,
+                    http_client=own_client,
+                )
+                # Successful generation lands the article in preview state.
+                # The actual publish happens via "Опубликовать" button in
+                # the AI publish flow. Status will move to 'used' there.
+                # For now mark as used optimistically so it doesn't get re-picked.
+                data = await state.get_data()
+                slug_hint = data.get("ai_published_slug") or data.get("preview_slug")
+                await repo.mark_status(kw.id, "used", published_slug=slug_hint)
+            except Exception as exc:
+                log.warning("bbk_publish_failed", kw_id=kw.id, error=str(exc)[:200])
+                await repo.mark_status(kw.id, "failed")
 
     # Detach so the user can keep navigating
     asyncio.create_task(_run_and_track(), name=f"bbk_publish_{kw.id}")
